@@ -19,7 +19,6 @@ import {
   UI,
   UiNode,
   conceal,
-  honesty,
   isRevealed,
   reveal,
 } from '@/ui3d';
@@ -27,6 +26,8 @@ import { fmtUnit } from '@/content';
 import type { ColorLike } from '@/style';
 import type { StepUiBinding } from './step-ui';
 import { controlDefault, notifyChange } from './step-ui';
+import { arrangeControls, slotOf, type ControlSlot } from './model/controls';
+import { honestyModel } from './model/step';
 import type { ControlSpec, HonestySpec, When } from './step-ui-types';
 
 export interface BuiltControls {
@@ -75,18 +76,9 @@ export function honestyChips(
   relayout: () => void = () => undefined,
 ): { chips: Chip[]; tick: ((t: number) => void)[] } {
   const tick: ((t: number) => void)[] = [];
-  const chips = list.map((h) => {
-    if (h === 'notToScale' || h === 'simplified' || h === 'illustrative') return honesty[h]();
-    const c =
-      'slowed' in h
-        ? honesty.slowed(h.slowed, h.text)
-        : 'sped' in h
-          ? honesty.sped(h.sped, h.text)
-          : 'enlarged' in h
-            ? honesty.enlarged(h.enlarged, h.text)
-            : 'kind' in h
-              ? honesty[h.kind](h.text)
-              : honesty.note(h.text ?? '');
+  // texts, icons and predicates from the shared step model (the DOM panel renders the same list)
+  const chips = honestyModel(list).map((h) => {
+    const c = new Chip({ kind: 'honesty', icon: h.icon, text: h.text });
     const fn = bindVisible(c, h.visible, relayout);
     if (fn) tick.push(fn);
     return c;
@@ -127,33 +119,9 @@ export function buildControls(
   // the widget calls the onChange of the spec that built it (an id may be declared in several steps)
   const change = (c: ControlSpec) => (value: Out) => notifyChange(binding, c.id, value, c);
   const board = opts.where === 'board';
-  // dock order: sliders, toggles (one row), blocks, readouts (one row), buttons (action row)
-  const sliders: UiNode[] = [];
-  const toggles: UiNode[] = [];
-  const blocks: UiNode[] = [];
-  const readouts: UiNode[] = [];
-  const actions: UiNode[] = [];
-  const ordered: UiNode[] = []; // board: declared order, consecutive readouts share a row
-  let readoutRow: UiNode | null = null;
-  const place = (node: UiNode, kind: 'slider' | 'toggle' | 'block' | 'readout' | 'action'): void => {
-    if (board) {
-      if (kind === 'readout' || kind === 'toggle') {
-        if (!readoutRow) {
-          readoutRow = group([], { gap: 22, align: 'end' });
-          ordered.push(readoutRow);
-        }
-        readoutRow.add(node);
-        return;
-      }
-      readoutRow = null;
-      if (kind === 'action') actions.push(node);
-      else ordered.push(node);
-      return;
-    }
-    ({ slider: sliders, toggle: toggles, block: blocks, readout: readouts, action: actions })[kind].push(
-      node,
-    );
-  };
+  // grouping and order: `model/controls.ts` (shared with the DOM dock)
+  const placed: { slot: ControlSlot; item: UiNode }[] = [];
+  const place = (node: UiNode, slot: ControlSlot): void => void placed.push({ slot, item: node });
   const watch = (node: UiNode, c: ControlSpec, input: { disabled: boolean } | null): void => {
     node.name = `ctl-${c.id}`;
     const fn = bindVisible(node, c.visible, opts.relayout);
@@ -208,7 +176,7 @@ export function buildControls(
           if (p?.label !== undefined) w.label = p.label;
           w.setRange(p?.min ?? c.min, p?.max ?? c.max);
         });
-        place(w, 'slider');
+        place(w, slotOf(c));
         break;
       }
       case 'toggle': {
@@ -220,7 +188,7 @@ export function buildControls(
         });
         watch(w, c, w);
         setters.set(c.id, (v) => (w.value = Boolean(v)));
-        place(w, 'toggle');
+        place(w, slotOf(c));
         break;
       }
       case 'segmented': {
@@ -238,7 +206,7 @@ export function buildControls(
           : tabs;
         watch(node, c, tabs);
         if (node !== tabs) tabs.name = `ctl-${c.id}:tabs`;
-        place(node, 'block');
+        place(node, slotOf(c));
         break;
       }
       case 'button': {
@@ -251,7 +219,7 @@ export function buildControls(
         });
         watch(w, c, w);
         flashers.set(c.id, () => w.flash());
-        place(w, 'action');
+        place(w, slotOf(c));
         break;
       }
       case 'readout': {
@@ -274,7 +242,7 @@ export function buildControls(
           else w.setNow(v);
           if (c.color) w.color = c.color(v);
         });
-        place(w, 'readout');
+        place(w, slotOf(c));
         break;
       }
       case 'gauge': {
@@ -291,7 +259,7 @@ export function buildControls(
         });
         watch(w, c, null);
         tick.push(() => w.setNow(c.get()));
-        place(w, c.kind === 'linear' ? 'block' : 'readout');
+        place(w, slotOf(c));
         break;
       }
       case 'chart': {
@@ -300,14 +268,14 @@ export function buildControls(
         c.init?.(w);
         const update = c.update;
         if (update) tick.push((t) => update(w, t));
-        place(w, 'block');
+        place(w, slotOf(c));
         break;
       }
       case 'custom': {
         const update = c.update;
         if (update) tick.push(update);
         watch(c.node, c, null);
-        place(c.node, 'block');
+        place(c.node, slotOf(c));
         break;
       }
       case 'table': {
@@ -331,7 +299,7 @@ export function buildControls(
             }
             if (c.highlight) w.highlight = c.highlight();
           });
-        place(w, 'block');
+        place(w, slotOf(c));
         break;
       }
       case 'stats': {
@@ -347,7 +315,7 @@ export function buildControls(
         });
         watch(w, c, null);
         tick.push(() => c.items.forEach((it, i) => w.set(i, fmt(it), it.color?.())));
-        place(w, 'block');
+        place(w, slotOf(c));
         break;
       }
       case 'note': {
@@ -367,20 +335,21 @@ export function buildControls(
           const t = tone();
           if (t !== undefined) w.color = t;
         });
-        place(w, 'block');
+        place(w, slotOf(c));
         break;
       }
     }
   };
   for (const c of controls) add(c);
-  let body: UiNode[];
-  if (board) body = ordered;
-  else {
-    body = [...sliders];
-    if (toggles.length) body.push(group(toggles, { gap: 18 }));
-    body.push(...blocks);
-    if (readouts.length) body.push(group(readouts, { gap: 22, align: 'end' }));
-  }
+  const layout = arrangeControls(placed, opts.where);
+  const actions = layout.actions;
+  const body = layout.body.map((g) =>
+    g.kind === 'one'
+      ? g.item
+      : g.kind === 'toggles'
+        ? group(g.items, { gap: 18 })
+        : group(g.items, { gap: 22, align: 'end' }),
+  );
   const groups = body.filter((n) => n.dir === 'row' && n.wrap && !n.name);
   if (groups.length) tick.push(autoHide(groups));
   return {

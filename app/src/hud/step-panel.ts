@@ -19,7 +19,8 @@ import {
   reveal,
 } from '@/ui3d';
 import type { HudContext, HudModule } from './context';
-import { onReadingLevel, quizCopy, stepCopy } from './level';
+import { onReadingLevel, quizCopy } from './level';
+import { QUIZ_TITLE, STEP_PENDING, stepModel } from './model/step';
 import { buildLinks } from './step-links';
 import { buildSections, caption } from './step-sections';
 
@@ -88,7 +89,7 @@ export function createStepPanel(hud: HudContext, popups: UiNode): StepPanel {
         name: 'quiz-card',
         variant: 'plain',
         items,
-        title: 'Міні-квіз розділу',
+        title: QUIZ_TITLE,
         width: 'fill',
         onDone: closeQuiz,
       });
@@ -109,7 +110,7 @@ export function createStepPanel(hud: HudContext, popups: UiNode): StepPanel {
     }
     quiz = new QuizCard({
       items,
-      title: 'Міні-квіз розділу',
+      title: QUIZ_TITLE,
       width: 560,
       visible: false,
       onDone: closeQuiz,
@@ -120,34 +121,30 @@ export function createStepPanel(hud: HudContext, popups: UiNode): StepPanel {
 
   const fill = (): void => {
     if (!manifest || !stepId) return;
-    const index = manifest.steps.findIndex((s) => s.id === stepId);
-    const step = manifest.steps[index];
-    if (!step) return;
-    const data = stepCopy(hud.engine, content, stepId);
-    counter.text = `КРОК ${index + 1} / ${manifest.steps.length}`;
-    title.text = data?.title ?? step.title;
-    const pages = data?.panel.length ? data.panel : [step.blurb];
+    const model = stepModel(manifest, content, stepId, hud.engine.readingLevel());
+    if (!model) return;
+    counter.text = model.counter.toUpperCase();
+    title.text = model.title;
     // phones and tablets: a unit is a real pixel there, 17 px is the comfortable reading size (desktop: 19 units)
     const size = touch ? UI.text.small : UI.text.body;
-    pager.setPages(pages.map((text) => new Label(text, { size, lineHeight: 1.46 }, { width: 'fill' })));
+    pager.setPages(model.pages.map((text) => new Label(text, { size, lineHeight: 1.46 }, { width: 'fill' })));
     extra.clear();
-    const sections = data ? buildSections(hud, data) : null;
+    const sections = model.copy ? buildSections(hud, model.copy) : null;
     if (sections) extra.add(sections);
-    const links = buildLinks(hud, content, manifest, index);
+    const links = buildLinks(hud, content, manifest, model.index);
     if (links) extra.add(links);
-    if (index === manifest.steps.length - 1 && quizCopy(hud.engine, content).length)
+    if (model.quiz)
       extra.add(
         new Button({
           name: 'chapter-quiz',
-          label: 'Міні-квіз розділу',
+          label: QUIZ_TITLE,
           icon: 'quiz',
           variant: 'primary',
           alignSelf: 'start',
           onClick: openQuiz,
         }),
       );
-    if (!data && content === null && manifest.steps.length > 0 && !step.blurb)
-      extra.add(new Label('Текст цього кроку ще готується.', { size: UI.text.small, color: TEXT_COLOR.dim }));
+    if (model.pending) extra.add(new Label(STEP_PENDING, { size: UI.text.small, color: TEXT_COLOR.dim }));
     scroll.scrollTo(0, true);
     hud.relayout();
   };

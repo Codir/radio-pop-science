@@ -4,6 +4,7 @@
  * автоповтор 8 частинок/s»). The buttons are named `ctl-<id>:minus` / `ctl-<id>:plus` like the items of a
  * segmented control, so tests find them with `__ui.locate`.
  */
+import { domKit, type DomWidget } from '@/hud';
 import type { ColorLike } from '@/style';
 import { Button, Label, UiNode } from '@/ui3d';
 
@@ -28,6 +29,8 @@ export interface CountStepperOptions {
 
 export interface CountStepper {
   node: UiNode;
+  /** The same row for the DOM interface (`custom.dom`): the buttons carry the same `ctl-<id>:…` names. */
+  dom(): DomWidget;
   /** Call every frame with the engine time: drives the auto-repeat and refreshes the number. */
   update(t: number): void;
   /** Forget a held button (the step was left while it was down). */
@@ -85,8 +88,32 @@ export function createCountStepper(opts: CountStepperOptions): CountStepper {
     ],
   });
   let shown = Number.NaN;
+  // the DOM twin (built on first show under `?hud=dom`); the hold logic and the value stay shared
+  let view: { value: HTMLElement; minus: HTMLButtonElement; plus: HTMLButtonElement } | null = null;
+  const dom = (): DomWidget => {
+    const { h, tone } = domKit;
+    const domButton = (delta: 1 | -1, caption: string): HTMLButtonElement => {
+      const b = h('button.btn', { type: 'button', 'data-ui': `ctl-${opts.id}:${delta > 0 ? 'plus' : 'minus'}` }, caption);
+      b.addEventListener('pointerdown', (e) => {
+        if (e.button === 0) Object.assign(hold, { held: delta, since: hold.now, fired: 0 });
+      });
+      for (const type of ['pointerup', 'pointercancel', 'pointerleave'] as const)
+        b.addEventListener(type, () => (hold.held = 0));
+      b.addEventListener('click', () => {
+        if (hold.fired === 0) step(delta);
+        hold.fired = 0;
+      });
+      return b;
+    };
+    view = { value: h('output.value'), minus: domButton(-1, opts.minus), plus: domButton(1, opts.plus) };
+    const el = h('div.kd-stepper', null, h('span.label', null, opts.label), view.minus, view.value, view.plus);
+    tone(el, opts.color);
+    shown = Number.NaN; // write the value into the new view on the next update
+    return { el };
+  };
   return {
     node,
+    dom,
     update(t) {
       hold.now = t;
       if (hold.held !== 0) {
@@ -97,9 +124,16 @@ export function createCountStepper(opts: CountStepperOptions): CountStepper {
         }
       }
       const v = opts.get();
-      if (v !== shown) value.text = String((shown = v));
+      if (v !== shown) {
+        value.text = String((shown = v));
+        if (view) view.value.textContent = String(v);
+      }
       minus.disabled = v <= opts.min();
       plus.disabled = v >= opts.max();
+      if (view) {
+        view.minus.disabled = minus.disabled;
+        view.plus.disabled = plus.disabled;
+      }
     },
     release() {
       hold.held = 0;

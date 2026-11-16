@@ -52,6 +52,15 @@ const FIELDS = [
   'quiz.*.{question,explanation}',
   'quiz.*.options.*',
   'crossReferences.*.{where,note}',
+  // path-format exports (docs/PATH_FORMAT.md)
+  '{hook,know,bridge}',
+  'now.*',
+  'next.title',
+  'steps.*.{idea,text,action,takeaway}',
+  'steps.*.{more,honesty}.*',
+  'steps.*.recall.*.title',
+  'steps.*.terms.*.{name,card}',
+  'glossary.*.{name,card}',
 ];
 
 function* walk(node, parts) {

@@ -47,17 +47,56 @@ export interface VolumeIdentity {
   readonly aside?: { readonly label: string };
   /** Line of the home screen while the volume has no chapters yet («Том у роботі — …»). */
   readonly emptyNote?: string;
+  /** Chapter document format: `classic` (volume 1, default) or `path` (docs/PATH_FORMAT.md). */
+  readonly format?: string;
   readonly axis: {
     readonly label: string;
     readonly unit: string;
     readonly hint?: string;
     readonly range?: string;
+    /** Named floors: the ruler shows these words at their axis values instead of formatted numbers. */
+    readonly floors?: readonly AxisFloor[];
   };
-  /** Parts of the volume, in order. `label` is the short on-screen name. */
-  readonly groups: readonly { readonly id: string; readonly label: string; readonly short?: string }[];
-  /** Planned chapters in journey order (built or not) — the document pipeline's source of truth. */
-  readonly journey: readonly { readonly id: string; readonly group: string; readonly parent?: string }[];
+  /** Parts of the volume, in order. `label` is the short on-screen name; `layer` its role (VOLUME_STRUCTURE §2). */
+  readonly groups: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly short?: string;
+    readonly layer?: string;
+  }[];
+  /**
+   * Planned chapters in journey order (built or not) — the document pipeline's source of truth. A path volume
+   * also gives each chapter its question (`title`), length (`minutes`) and floor (an `axis.floors` id), so the
+   * map can show chapters that are not built yet.
+   */
+  readonly journey: readonly PlannedChapter[];
 }
+
+export interface PlannedChapter {
+  readonly id: string;
+  readonly group: string;
+  readonly parent?: string;
+  readonly title?: string;
+  readonly minutes?: number;
+  readonly floor?: string;
+}
+
+/** A named level of the journey axis («стенд», «один атом»). */
+export interface AxisFloor {
+  readonly id: string;
+  readonly label: string;
+  readonly value: number;
+  /**
+   * The floor's name uses a word the journey has not introduced yet: `plain` («ряди кульок») is shown instead
+   * until the reader has opened the step `namedAt` (`chapter/step` of this volume) that introduces it.
+   */
+  readonly plain?: string;
+  readonly namedAt?: string;
+}
+
+/** Role of a group of chapters in the volume (docs/VOLUME_STRUCTURE.md §2). */
+export type VolumeLayer = 'prologue' | 'path' | 'branch' | 'practicum';
+const LAYERS: readonly string[] = ['prologue', 'path', 'branch', 'practicum'];
 
 /** The axis of a volume's journey map — electricity: scale in metres; another volume: frequency, time, level… */
 export interface JourneyAxis {
@@ -79,6 +118,8 @@ export interface JourneyAxis {
   readonly majorEvery: number;
   /** Ruler label of an axis value (`10⁻¹⁰ m`). */
   format(value: number): string;
+  /** Named floors of the axis (empty: the ruler shows `format` at every major tick). */
+  readonly floors: readonly AxisFloor[];
   /**
    * What the chapter transition does when the axis value grows: electricity zooms **out** when the scale
    * grows. `in` suits axes where "more" means "closer" (level of detail).
@@ -94,6 +135,8 @@ export interface JourneyGroup {
   readonly short: string;
   /** Generic journey-map emblem of the group's chapters until they ship their own (`@/hud` emblem names). */
   readonly emblem: string;
+  /** Role of the group (`path` when `volume.json` does not say). */
+  readonly layer: VolumeLayer;
 }
 
 /** Geometry hints of the journey map, in map units (defaults: `DEFAULT_MAP_LAYOUT`). */
@@ -174,9 +217,14 @@ export interface VolumeManifest {
     readonly axis: JourneyAxis;
     readonly groups: readonly JourneyGroup[];
     readonly layout: JourneyLayout;
-    /** Planned chapters in journey order (ids only — built chapters register themselves). */
-    readonly planned: readonly { readonly id: string; readonly group: string; readonly parent?: string }[];
+    /**
+     * Planned chapters in journey order (built chapters register themselves). In a path volume the entries
+     * carry `title`, `minutes` and `floor`, and the map shows the unbuilt ones as planned.
+     */
+    readonly planned: readonly PlannedChapter[];
   };
+  /** Chapter document format of the volume: `path` chapters use the one-reader step panel. */
+  readonly format: 'classic' | 'path';
   /** What the glossary shows when opened inside this volume: its own terms, or the whole library's. */
   readonly glossary: { readonly scope: 'volume' | 'library' };
   /** Default environment of the volume: the look of its chapters unless a chapter chooses otherwise. */
@@ -188,7 +236,7 @@ export interface VolumeManifest {
 export interface VolumeSpec {
   readonly journey: {
     /** `label` and `unit` come from `volume.json`. */
-    readonly axis: Omit<JourneyAxis, 'label' | 'unit' | 'hint' | 'range'>;
+    readonly axis: Omit<JourneyAxis, 'label' | 'unit' | 'hint' | 'range' | 'floors'>;
     /** Emblem of each group (`@/hud` emblem names); groups without an entry use the generic emblem. */
     readonly emblems?: Readonly<Record<string, string>>;
     readonly layout?: Partial<JourneyLayout>;
@@ -236,6 +284,24 @@ export function defineVolume(identity: VolumeIdentity, spec: VolumeSpec): Volume
   for (const c of identity.journey)
     if (c.parent !== undefined && !planned.has(c.parent))
       fail(`chapter '${c.id}': unknown parent '${c.parent}'`);
+  const format = identity.format ?? 'classic';
+  if (format !== 'classic' && format !== 'path') return fail(`format must be 'classic' or 'path'`);
+  for (const g of identity.groups)
+    if (g.layer !== undefined && !LAYERS.includes(g.layer))
+      fail(`group '${g.id}': unknown layer '${g.layer}'`);
+  const floors = identity.axis.floors ?? [];
+  const floorIds = new Set(floors.map((f) => f.id));
+  for (const f of floors)
+    if (
+      (f.plain === undefined) !== (f.namedAt === undefined) ||
+      (f.namedAt && f.namedAt.split('/').length !== 2)
+    )
+      fail(`floor '${f.id}': 'plain' and 'namedAt' (chapter/step) go together`);
+  for (const c of identity.journey) {
+    if (c.floor !== undefined && !floorIds.has(c.floor))
+      fail(`chapter '${c.id}': unknown floor '${c.floor}'`);
+    if (c.minutes !== undefined && !(c.minutes > 0)) fail(`chapter '${c.id}': minutes must be positive`);
+  }
   const axis = spec.journey.axis;
   if (!(axis.max > axis.min) || !(axis.tick > 0) || !(axis.majorEvery >= 1))
     fail('journey axis needs max > min, tick > 0, majorEvery ≥ 1');
@@ -261,21 +327,47 @@ export function defineVolume(identity: VolumeIdentity, spec: VolumeSpec): Volume
         label: identity.axis.label,
         unit: identity.axis.unit,
         hint: identity.axis.hint ?? identity.axis.label,
-        range: identity.axis.range ?? `${axis.format(axis.min)} … ${axis.format(axis.max)}`,
+        range:
+          identity.axis.range ??
+          (floors.length > 1
+            ? `${floors[0]!.plain ?? floors[0]!.label} … ${floors[floors.length - 1]!.plain ?? floors[floors.length - 1]!.label}`
+            : `${axis.format(axis.min)} … ${axis.format(axis.max)}`),
+        floors,
       },
       groups: identity.groups.map((g) => ({
         id: g.id,
         label: g.label,
         short: g.short ?? g.label,
         emblem: spec.journey.emblems?.[g.id] ?? 'generic',
+        layer: (g.layer ?? 'path') as VolumeLayer,
       })),
       layout: { ...DEFAULT_MAP_LAYOUT, ...spec.journey.layout },
       planned: identity.journey,
     },
+    format,
     glossary: spec.glossary ?? { scope: 'volume' },
     theme: { ...spec.theme, accent: spec.theme.accent ?? accent },
     fixtures: spec.fixtures,
   };
+}
+
+/** Axis value of a named floor (undefined for an unknown or missing id). */
+export function floorValue(volume: VolumeManifest, floor: string | undefined): number | undefined {
+  return volume.journey.axis.floors.find((f) => f.id === floor)?.value;
+}
+
+/**
+ * The name of a floor as the reader may see it now: its `plain` name until the step that introduces the word
+ * has been opened (`visited`: full chapter id `volume/chapter` → opened step ids, the store's progress).
+ */
+export function floorLabel(
+  volume: VolumeManifest,
+  floor: AxisFloor,
+  visited: Readonly<Record<string, readonly string[]>>,
+): string {
+  if (!floor.namedAt || floor.plain === undefined) return floor.label;
+  const [chapter, step] = floor.namedAt.split('/') as [string, string];
+  return visited[`${volume.id}/${chapter}`]?.includes(step) ? floor.label : floor.plain;
 }
 
 /** Short on-screen name of a group of the volume (empty for an unknown group). */

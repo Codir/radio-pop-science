@@ -828,3 +828,9 @@ APIs.
 **QA** — `tools/qa/mobile-check.mjs`, `chapter-check --mobile`, `webkit-smoke.mjs`, `shot.mjs --touch --extra
 "ff=phone&safe=…" --q auto`, `snap.mjs` (deterministic per-step PNGs and `--compare` for before / after),
 `touch.mjs` (tap / long press / drag / pinch through the DevTools protocol). See `docs/MOBILE.md` §6.
+
+## 24. Path volumes in chapter code (M7)
+
+`StepUiSpec.goal?: When` — a path chapter's step goal (the panel shows «Висновок» once it holds).
+`floorLabel(volume, floor, visited)`, `floorValue(volume, id)` (`@/engine/api`) — floor names as the reader may see
+them and their axis values. The journey map inside a step and the «де ми» ladder: UI_API §11a.

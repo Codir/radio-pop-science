@@ -4,7 +4,7 @@
  * flow in the cells all follow the same model sample (STC: 1000 W/m², 25 °C).
  */
 import { fmtNumber } from '@/content';
-import type { Chart } from '@/ui3d';
+import type { ChartApi } from '@/ui3d';
 import type { StepFactory } from '../chapter';
 import { doc } from '../content';
 import { L, fill } from '../labels';
@@ -34,7 +34,7 @@ export const ivCurve: StepFactory = (lab) => {
   ctx.qa.probe('knob5', rig.bench.knob);
   ctx.qa.expose('bench5', () => (sample ? { v: sample.op.vV, i: sample.op.iA, p: sample.op.pW, r: ohm(), best: game.best, left: game.left } : null));
 
-  const boxes = (chart: Chart, s: BenchSample, changed: boolean): void => {
+  const boxes = (chart: ChartApi, s: BenchSample, changed: boolean): void => {
     if (!changed) return;
     const a = s.analysis;
     chart.setData('ideal', [0, a.vocV, a.vocV], [a.iscA, a.iscA, 0]);
@@ -45,7 +45,7 @@ export const ivCurve: StepFactory = (lab) => {
   };
   let lineR = NaN;
   let lineOn = false;
-  const loadLine = (chart: Chart): void => {
+  const loadLine = (chart: ChartApi): void => {
     const on = ui.value<boolean>('line5');
     const r = ohm();
     if (on === lineOn && (r === lineR || !on)) return;

@@ -31,6 +31,14 @@ const PASS: [string, string][] = [
   [`${CH}/scene.ts`, "export { a } from '@/volumes/electricity/sim/core/x';"],
   [`${CH}/index.ts`, "export { default } from '../../content/generated/demo.manifest.json';"],
   ['src/volumes/_demo/chapters/one/scene.ts', "export { a } from '@/volumes/_demo/sim/x';"],
+  // the volume's scene library, and a dev sandbox showcasing another volume's
+  [`${CH}/scene.ts`, "export { a } from '@electricity/shared/stage/stand';"],
+  [`${CH}/parts/a.ts`, "export { a } from '../../../shared/copper';"],
+  [
+    'src/volumes/_dev/chapters/_sandbox-circuit-stage/scene.ts',
+    "export { a } from '@circuit/shared/stage/stand';",
+  ],
+  ['src/volumes/_path/chapters/x/scene.ts', "export { a } from '../../../circuit/shared/copper/rows';"],
 ];
 
 const FAIL: [string, string][] = [
@@ -45,6 +53,9 @@ const FAIL: [string, string][] = [
   ['src/volumes/_demo/chapters/one/scene.ts', "export { a } from '../../../electricity/sim/atom';"],
   [`${CH}/scene.ts`, "export { default } from '@electricity/volume';"],
   [`${CH}/scene.ts`, "export { a } from '@/volumes/_dev/chapters/_sandbox-ui/scene';"],
+  // a published volume never reaches into another volume's library; a sandbox only into `shared/**`
+  [`${CH}/scene.ts`, "export { a } from '@circuit/shared/stage/stand';"],
+  ['src/volumes/_dev/chapters/_sandbox-circuit-stage/scene.ts', "export { a } from '@circuit/sim/x';"],
 ];
 
 describe('lint: chapter-boundary', () => {
@@ -71,6 +82,18 @@ describe('lint: volume-boundary', () => {
     expect(await volumeErrors(sim, "export { a } from '../../electricity/sim/core/y';")).toHaveLength(1);
     expect(await volumeErrors(sim, "export { a } from './y';")).toEqual([]);
     expect(await volumeErrors(sim, "export { a } from '@/content';")).toEqual([]);
+    // a sandbox chapter may showcase another volume's scene library, a sandbox library may not
+    const sandbox = 'src/volumes/_dev/chapters/_sandbox-circuit-stage/scene.ts';
+    expect(await volumeErrors(sandbox, "export { a } from '@circuit/shared/stage/stand';")).toEqual([]);
+    expect(
+      await volumeErrors('src/volumes/_dev/sim/x.ts', "export { a } from '@circuit/shared/x';"),
+    ).toHaveLength(1);
+    expect(
+      await volumeErrors(
+        'src/volumes/circuit/chapters/wire/scene.ts',
+        "export { a } from '@electricity/shared/x';",
+      ),
+    ).toHaveLength(1);
   });
   it('keeps the platform free of volume names', async () => {
     expect(

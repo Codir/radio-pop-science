@@ -16,10 +16,22 @@ import { Button, Label, ScrollView, Tabs, UiNode, type Panel, type TabItem } fro
 import type { StepBoard } from '../board';
 import type { HudContext } from '../context';
 import type { StepPanel } from '../step-panel';
-import { TOUCH, settleSnap, sheetGeometry, sideWidth, touchTop, type SheetGeometry, type SheetSnap } from './geometry';
+import {
+  SHEET_TAB_LABEL as TAB_LABEL,
+  TOUCH,
+  settleSnap,
+  sheetGeometry,
+  sideWidth,
+  touchTop,
+  type SheetControl,
+  type SheetGeometry,
+  type SheetInsets,
+  type SheetSnap,
+  type SheetTab,
+} from '../model/sheet';
 import { Grip, SheetPlate } from './plates';
 
-export type SheetTab = 'text' | 'controls' | 'board';
+export type { SheetInsets, SheetTab };
 
 /** The step column's nodes the sheet shows as its views. */
 export interface SheetParts {
@@ -29,25 +41,14 @@ export interface SheetParts {
   readonly board: StepBoard;
 }
 
-export interface SheetInsets {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
-
-export interface TouchSheet {
+export interface TouchSheet extends SheetControl {
   readonly node: UiNode;
-  readonly tab: SheetTab;
-  readonly snap: SheetSnap;
   /** Take the column's views into the sheet (`true`) or release them for the desktop layouts (`false`). */
   adopt(on: boolean): void;
   /** Lay the sheet out; `has` — which tabs the step on screen offers besides the text. */
   layout(m: HudMetrics, has: { controls: boolean; board: boolean }): void;
   /** A new step is on screen: back to the text, at the height remembered for this kind of step. */
   enterStep(instant: boolean): void;
-  setTab(tab: SheetTab): void;
-  setSnap(snap: SheetSnap, opts?: { instant?: boolean }): void;
   /**
    * Show a card (an opened hotspot, the chapter quiz) in place of the views; the returned function removes it.
    * `back`: put a «Назад» button above a card that has no close button of its own.
@@ -56,8 +57,6 @@ export interface TouchSheet {
   /** Area the sheet and the compact header take from the scene, HUD units from each edge. */
   insets(m: HudMetrics): SheetInsets;
 }
-
-const TAB_LABEL: Record<SheetTab, string> = { text: 'Текст', controls: 'Керування', board: 'Графіки' };
 
 export function createTouchSheet(hud: HudContext, parts: SheetParts): TouchSheet {
   const tweens = hud.surface.host.tweens;

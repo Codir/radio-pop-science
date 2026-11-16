@@ -249,6 +249,7 @@ export const atomBuilderStep: StepFactory = ({ ctx, ui }) => {
           type: 'custom' as const,
           id: kind.id,
           node: steppers[i]!.node,
+          dom: () => steppers[i]!.dom(),
           update: (t: number) => steppers[i]!.update(t),
         })),
         presetButton('hydrogen'),

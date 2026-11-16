@@ -1,0 +1,201 @@
+/* Chrome regions of the DOM interface (D2): spine, system row, tooltip, toasts, loading pill.
+   Numbers from the WebGL views (hud/spine.ts, system.ts, tooltips.ts, ui3d/widgets/toast.ts, hud/hints.ts). */
+
+/* a region switched off (touch shells keep the WebGL view until D7) */
+.kd-layer > .off {
+  display: none !important;
+}
+
+/* ---- spine (hud/spine.ts): left edge, centred 30 units below the middle ---------------------------- */
+.kd-spine-host {
+  left: calc(var(--safe) - 6 * var(--u));
+  top: calc(60 * var(--u));
+  bottom: 0;
+  height: fit-content;
+  margin-block: auto;
+}
+.kd-spine {
+  position: relative;
+}
+/* only the dots take the pointer: the rows and the fan plate let it through to what lies beside them (the board
+   right of the spine — the WebGL fan does not block either) */
+.kd-layer > .kd-spine-host,
+.kd-spine-host .spine-row,
+.kd-spine-host .spine-fan {
+  pointer-events: none;
+}
+.kd-spine-host .sdot {
+  pointer-events: auto;
+}
+.kd-spine .rail {
+  position: absolute;
+  left: calc(20.5 * var(--u));
+  top: calc(20 * var(--u));
+  bottom: calc(20 * var(--u));
+  width: calc(3 * var(--u));
+  border-radius: calc(1.5 * var(--u));
+  background: linear-gradient(to bottom, rgb(var(--c-slate-rgb) / 0.55), rgb(var(--c-bg-violet-rgb) / 0.5));
+}
+.spine-row {
+  display: flex;
+  align-items: center;
+  gap: calc(2 * var(--u));
+}
+.spine-row.gap {
+  margin-top: calc(12 * var(--u));
+}
+.sdot {
+  --d: 13;
+  display: grid;
+  place-items: center;
+  width: calc(44 * var(--u));
+  height: calc(44 * var(--u));
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.sdot.small {
+  --d: 9;
+  width: calc(30 * var(--u));
+  height: calc(34 * var(--u));
+}
+.sdot > span {
+  grid-area: 1 / 1;
+  border-radius: 50%;
+}
+.sdot .core {
+  width: calc(var(--d) * var(--u));
+  height: calc(var(--d) * var(--u));
+  box-sizing: border-box;
+  border: calc(1.5 * var(--u)) solid rgb(var(--c-mist-rgb) / 0.55);
+  background: color-mix(in srgb, var(--c-bg-indigo) 52%, color-mix(in srgb, var(--accent) 80%, var(--c-mist)));
+  transition: width 0.25s var(--ease-state), height 0.25s var(--ease-state), background var(--dur-hover), box-shadow var(--dur-hover);
+}
+.sdot:hover .core {
+  --d: 16;
+  border-color: var(--c-white);
+  background: color-mix(in srgb, var(--c-bg-indigo) 20%, var(--accent));
+  box-shadow: 0 0 calc(10 * var(--u)) rgb(var(--accent-rgb) / 0.25);
+}
+.sdot.small:hover .core {
+  --d: 12;
+}
+.sdot.on .core {
+  --d: 20;
+  border-color: var(--c-white);
+  /* lit tone (×1.4) as the WebGL dot reaches the screen: paler, with the bloom as a glow */
+  background: color-mix(in srgb, var(--accent) 55%, var(--c-white));
+  box-shadow:
+    0 0 calc(4 * var(--u)) rgb(255 255 255 / 0.45),
+    0 0 calc(14 * var(--u)) rgb(var(--accent-rgb) / 0.6);
+}
+.sdot.small.on .core {
+  --d: 16;
+}
+/* progress arc around the dot (`--p` of the chapter's visited steps) */
+.sdot .arc {
+  width: calc((var(--d) + 9) * var(--u));
+  height: calc((var(--d) + 9) * var(--u));
+  background: conic-gradient(rgb(var(--accent-rgb) / 0.85) var(--p, 0%), transparent 0);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 2.4 * var(--u)), #000 calc(100% - 2.4 * var(--u)));
+  mask: radial-gradient(closest-side, transparent calc(100% - 2.4 * var(--u)), #000 calc(100% - 2.4 * var(--u)));
+}
+.sdot.on .arc {
+  --d: 20;
+}
+.spine-fan {
+  display: flex;
+  padding: 0 calc(6 * var(--u));
+  border-radius: calc(18 * var(--u));
+  background: rgb(var(--c-bg-void-rgb) / 0.62);
+  box-shadow: inset 0 0 0 1px rgb(var(--c-slate-rgb) / 0.5);
+}
+
+/* ---- system row (hud/system.ts): top-right ------------------------------------------------------- */
+.kd-system {
+  right: var(--safe);
+  top: var(--safe);
+  display: flex;
+  align-items: center;
+  gap: calc(8 * var(--u));
+}
+.kd-root .btn.selected {
+  border-color: var(--c-yellow);
+  background: linear-gradient(to bottom, var(--c-bg-violet), rgb(var(--c-bg-deep-rgb) / 0.98));
+}
+
+/* ---- tooltip (ui3d/widgets/tooltip.ts): next to its element, never following the pointer ----------- */
+.kd-tip {
+  box-sizing: border-box;
+  max-width: calc(388 * var(--u));
+  padding: calc(7 * var(--u)) calc(14 * var(--u));
+  border: calc(1.3 * var(--u)) solid rgb(var(--accent-rgb) / 0.5);
+  border-radius: calc(12 * var(--u));
+  background: linear-gradient(to bottom, rgb(var(--c-bg-indigo-rgb) / 0.985), rgb(var(--c-bg-deep-rgb) / 0.99));
+  box-shadow: 0 calc(4 * var(--u)) calc(20 * var(--u)) rgb(var(--c-bg-void-rgb) / 0.5);
+  font-size: calc(var(--t-small) * var(--u));
+  line-height: 1.32;
+  pointer-events: none !important;
+}
+
+/* ---- toasts (ui3d/widgets/toast.ts): centred under the header ------------------------------------- */
+.kd-toasts {
+  left: 50%;
+  top: calc(var(--dy, 96) * var(--u));
+  transform: translateX(calc(-50% + var(--dx, 0) * var(--u)));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(10 * var(--u));
+  pointer-events: none !important;
+}
+.kd-toast {
+  display: flex;
+  align-items: center;
+  gap: calc(10 * var(--u));
+  box-sizing: border-box;
+  min-height: calc(var(--hit) * var(--u));
+  padding: calc(10 * var(--u)) calc(20 * var(--u)) calc(10 * var(--u)) calc(16 * var(--u));
+  border: calc(1.5 * var(--u)) solid rgb(var(--accent-rgb) / 0.75);
+  border-radius: calc(22 * var(--u));
+  background: linear-gradient(to bottom, rgb(var(--c-bg-indigo-rgb) / 0.985), rgb(var(--c-bg-deep-rgb) / 0.99));
+  box-shadow:
+    0 0 calc(12 * var(--u)) rgb(var(--accent-rgb) / 0.2),
+    0 calc(-3 * var(--u)) calc(28 * var(--u)) rgb(var(--c-bg-void-rgb) / 0.45);
+  font-size: calc(var(--t-small) * var(--u));
+  line-height: 1.36;
+  pointer-events: auto; /* the message can be selected */
+}
+.kd-toast > .ic {
+  --ic: 22;
+  color: var(--accent);
+}
+
+/* ---- loading pill (hud/hints.ts): above the navigator -------------------------------------------- */
+.kd-loading-host {
+  left: 0;
+  right: 0;
+  bottom: calc(var(--safe) + 96 * var(--u));
+  display: flex;
+  justify-content: center;
+  pointer-events: none !important;
+}
+.kd-loading {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: calc(12 * var(--u));
+  padding: calc(8 * var(--u)) calc(18 * var(--u)) calc(8 * var(--u)) calc(10 * var(--u));
+  border-radius: calc(26 * var(--u));
+  font-size: calc(var(--t-small) * var(--u));
+  white-space: nowrap;
+}
+.kd-spin {
+  width: calc(34 * var(--u));
+  height: calc(34 * var(--u));
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) var(--p, 25%), rgb(var(--c-bg-void-rgb) / 0.8) 0);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 4 * var(--u)), #000 calc(100% - 4 * var(--u)));
+  mask: radial-gradient(closest-side, transparent calc(100% - 4 * var(--u)), #000 calc(100% - 4 * var(--u)));
+}

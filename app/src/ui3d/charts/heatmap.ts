@@ -43,15 +43,28 @@ export interface HeatMapProps extends NodeProps {
   unit?: string;
 }
 
+/** The public API of a heat map, whichever renderer draws it (WebGL here, DOM in `@/hud-dom`). */
+export interface HeatMapApi {
+  /** Current marker position (null without a marker). */
+  readonly marker: { x: number; y: number } | null;
+  /** Move the marker; `notify` calls `onPick` as if the user had dragged it there. */
+  setMarker(x: number, y: number, notify?: boolean): void;
+}
+
 const PAD = { left: 52, right: 12, top: 26, bottom: 40 };
 
-export class HeatMap extends UiNode {
+export class HeatMap extends UiNode implements HeatMapApi {
   private readonly axes: { x: Axis; y: Axis };
   private mark: { x: number; y: number } | null;
   private readonly texture: DataTexture;
   private readonly overlay: UiNode;
+  /**
+   * @internal The DOM twin drawn instead of this node under `?hud=dom` (a `custom` control with this node, see
+   * `@/hud-dom/custom`): marker moves are forwarded to it, so chapters keep one object.
+   */
+  twin: HeatMapApi | null = null;
 
-  constructor(private readonly cfg: HeatMapProps) {
+  constructor(/** @internal */ readonly cfg: HeatMapProps) {
     super({ dir: 'stack', width: 'fill', height: 240, ...cfg });
     this.axes = { x: new Axis(cfg.x), y: new Axis(cfg.y) };
     this.mark = cfg.marker ? { ...cfg.marker } : null;
@@ -126,6 +139,7 @@ export class HeatMap extends UiNode {
   }
 
   setMarker(x: number, y: number, notify = false): void {
+    this.twin?.setMarker(x, y, false);
     this.mark = { x, y };
     this.overlay.repaint();
     if (notify) this.cfg.onPick?.(x, y, this.cfg.value(x, y));

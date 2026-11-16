@@ -94,8 +94,9 @@ export function chapterCard(o: ChapterCardOptions): Panel {
   const c = o.chapter;
   const key = contentKey(c);
   const done = c.steps.filter((s) => isVisited(o.visited, key, s.id)).length;
-  const next = c.steps.find((s) => !isVisited(o.visited, key, s.id)) ?? c.steps[0]!;
-  const start = o.currentStep ?? next.id;
+  // (a planned chapter has no steps yet: it has no start either, and the card shows no button)
+  const next = c.steps.find((s) => !isVisited(o.visited, key, s.id)) ?? c.steps[0];
+  const start = o.currentStep ?? next?.id ?? '';
   const compact = o.compact === true;
   const list = new ScrollView({
     height: 'hug',

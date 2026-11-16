@@ -14,41 +14,52 @@ export interface AsideRow {
   fit(room: number): void;
 }
 
+/** One way out of this home screen: to the default volume, or to an aside volume. */
+export interface AsideLink {
+  /** QA name: `home-back`, `home-aside-<id>`. */
+  readonly name: string;
+  readonly label: string;
+  readonly icon: 'prev' | 'book';
+  readonly volume: string;
+}
+
+/** The links of a volume's home screen (none for a volume in the main flow other than the default one). */
+export function asideLinks(hud: Hud, volume: VolumeManifest): AsideLink[] {
+  const { library } = hud.engine;
+  const home = library.defaultVolume;
+  if (volume.aside !== null)
+    return [{ name: 'home-back', label: `До тому «${home.title}»`, icon: 'prev', volume: home.id }];
+  if (volume.id !== home.id) return [];
+  return library.aside.map((v) => ({
+    name: `home-aside-${v.id}`,
+    label: v.aside ?? v.title,
+    icon: 'book',
+    volume: v.id,
+  }));
+}
+
+/** Go to a volume from a home screen: its home screen takes over in place (`Hud.register`), or opens. */
+export function enterVolume(hud: Hud, id: string): void {
+  const { store, nav } = hud.engine;
+  // a first visit: the volume's first step loads behind its home screen, not visited until the learner gets there
+  if (store.get().lastIn[id] === undefined) hud.landing.arm();
+  void nav.gotoVolume(id).then((ok) => {
+    if (ok && hud.overlay !== 'home') hud.open('home');
+  });
+}
+
 /** The row of buttons, or null when this home screen has none. */
 export function createAsideRow(hud: Hud, volume: VolumeManifest): AsideRow | null {
-  const { library, store, nav } = hud.engine;
-  const home = library.defaultVolume;
-  const enter = (id: string): void => {
-    // a first visit: the volume's first step loads behind its home screen, not visited until the learner gets there
-    if (store.get().lastIn[id] === undefined) hud.landing.arm();
-    // the home screen of the volume entered takes over in place (`Hud.register`); open it if none was open
-    void nav.gotoVolume(id).then((ok) => {
-      if (ok && hud.overlay !== 'home') hud.open('home');
-    });
-  };
-  const buttons =
-    volume.aside !== null
-      ? [
-          new Button({
-            name: 'home-back',
-            label: `До тому «${home.title}»`,
-            icon: 'prev',
-            variant: 'ghost',
-            onClick: () => enter(home.id),
-          }),
-        ]
-      : volume.id === home.id
-        ? library.aside.map(
-            (v) =>
-              new Button({
-                name: `home-aside-${v.id}`,
-                label: v.aside ?? v.title,
-                icon: 'book',
-                variant: 'ghost',
-                onClick: () => enter(v.id),
-              }),
-          )
-        : [];
+  const buttons = asideLinks(hud, volume).map(
+    (l) =>
+      new Button({
+        name: l.name,
+        label: l.label,
+        icon: l.icon,
+        variant: 'ghost',
+        onClick: () => enterVolume(hud, l.volume),
+      }),
+  );
   if (buttons.length === 0) return null;
   const node = new UiNode({
     name: 'home-aside',

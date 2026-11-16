@@ -3,13 +3,18 @@
  * platforms, and the scale ruler's decade labels. Projected from map space every frame — constant size,
  * crisp, on a dark plate so they read over the glowing path.
  */
+import { NBSP } from '@/content';
 import { Label, TEXT_COLOR, UI, UiNode, rgba, type Painter } from '@/ui3d';
 import type { MapCamera } from './camera';
+import type { AxisFloor } from '@/engine/api';
 import type { MapLayout, MapNode } from './layout';
 
 class NodeLabel extends UiNode {
   readonly progress: Label;
-  constructor(readonly node: MapNode) {
+  constructor(
+    readonly node: MapNode,
+    words: boolean,
+  ) {
     super({
       dir: 'col',
       align: 'center',
@@ -22,7 +27,8 @@ class NodeLabel extends UiNode {
     this.progress = new Label(
       '',
       {
-        font: 'mono',
+        // named floors and «у планах» are words: the body face; scale numbers keep the mono face
+        font: words ? 'body' : 'mono',
         size: UI.text.caption,
         color: TEXT_COLOR.mute,
         nowrap: true,
@@ -35,6 +41,8 @@ class NodeLabel extends UiNode {
     this.add(
       new Label(node.chapter.title, {
         font: 'bodyBold',
+        // a planned chapter (not built yet) is named in a quieter tone
+        color: node.chapter.real ? undefined : TEXT_COLOR.dim,
         size: child ? UI.text.caption : UI.text.small,
         align: 'center',
         maxWidth: child ? 170 : 200,
@@ -48,7 +56,7 @@ class NodeLabel extends UiNode {
     p.rect(0, 0, this.bw, this.bh, {
       r: 12,
       fill: rgba('bg.void', 0.8),
-      border: [tone[0], tone[1], tone[2], 0.45],
+      border: [tone[0], tone[1], tone[2], this.node.chapter.real ? 0.45 : 0.16],
       bw: 1,
     });
   }
@@ -56,7 +64,7 @@ class NodeLabel extends UiNode {
 
 export class MapLabels extends UiNode {
   private readonly labels: NodeLabel[];
-  private readonly ticks: { node: Label; exp: number }[] = [];
+  private readonly ticks: { node: Label; exp: number; floor?: AxisFloor }[] = [];
   private readonly out = { x: 0, y: 0, visible: false, scale: 1 };
 
   constructor(
@@ -64,23 +72,47 @@ export class MapLabels extends UiNode {
     private readonly rulerX: number,
   ) {
     super({ dir: 'stack', width: 'fill', height: 'fill' });
-    this.labels = layout.nodes.map((n) => new NodeLabel(n));
+    this.labels = layout.nodes.map((n) => new NodeLabel(n, layout.axis.floors.length > 0));
     for (const l of this.labels) this.add(l);
-    for (const { value: e } of layout.ticks.filter((t) => t.major)) {
+    for (const { value: e, label, floor } of layout.ticks.filter((t) => t.major)) {
       const node = new Label(
-        layout.axis.format(e),
-        { font: 'mono', size: UI.text.caption, color: TEXT_COLOR.dim, nowrap: true },
+        label,
+        // named floors are words, read in the body face; numbers keep the mono face
+        {
+          font: layout.axis.floors.length ? 'body' : 'mono',
+          size: UI.text.caption,
+          color: TEXT_COLOR.dim,
+          nowrap: true,
+        },
         { float: { ax: 0.5, ay: 0.5, px: 1, py: 0.5 }, opacity: 0 },
       );
-      this.ticks.push({ node, exp: e });
+      this.ticks.push({ node, exp: e, floor });
       this.add(node);
     }
   }
 
-  /** Progress text under a chapter title, e.g. `10⁻¹⁰ m · 3/10`. */
+  /**
+   * Names of the floors as the reader may see them now (`floorLabel`: a floor named with a word the journey has
+   * not introduced yet shows its plain name); `name(label)` maps a chapter's axis label the same way.
+   */
+  setFloors(name: (floor: AxisFloor) => string): void {
+    for (const t of this.ticks) if (t.floor) t.node.text = name(t.floor);
+    this.floorName = (label) => {
+      const f = this.layout.axis.floors.find((x) => x.label === label);
+      return f ? name(f) : label;
+    };
+  }
+  private floorName = (label: string): string => label;
+
+  /** Progress text under a chapter title, e.g. `10⁻¹⁰ m · 3/10`; a planned chapter: `у планах · ≈ 9 хв`. */
   setProgress(index: number, done: number, total: number): void {
-    const n = this.layout.nodes[index]!;
-    const scale = n.chapter.axisLabel.length <= 12 ? `${n.chapter.axisLabel} · ` : '';
+    const c = this.layout.nodes[index]!.chapter;
+    if (!c.real) {
+      this.labels[index]!.progress.text = c.minutes ? `у планах · ≈${NBSP}${c.minutes}${NBSP}хв` : 'у планах';
+      return;
+    }
+    const axisLabel = this.floorName(c.axisLabel);
+    const scale = axisLabel.length <= 12 ? `${axisLabel} · ` : '';
     this.labels[index]!.progress.text = `${scale}${done}/${total}`;
   }
 

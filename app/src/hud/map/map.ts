@@ -4,11 +4,12 @@
  * into its steps and jumps to any step through the engine. Also serves as the hero scene of the home screen
  * (`attract` mode: slow drift, no labels).
  */
-import { chapterProgress, contentKey, isVisited, journeyProgress } from '@/content';
-import { groupLabel } from '@/engine/api';
+import { chapterProgress, contentKey, isVisited } from '@/content';
+import { floorLabel, groupLabel } from '@/engine/api';
 import { col } from '@/style';
 import { Button, Label, Panel, ProgressRing, TEXT_COLOR, UI, UiNode, conceal, reveal } from '@/ui3d';
-import type { Journey } from '../journey';
+import { chapterWords, type Journey } from '../journey';
+import { mapSummary, type MapSummary } from '../model/map';
 import type { Hud, Overlay } from '../shell';
 import { Backdrop } from './backdrop';
 import { MapCamera } from './camera';
@@ -16,6 +17,17 @@ import { chapterCard } from './card';
 import { MapLabels } from './labels';
 import { layoutJourney, pathPoint, type MapLayout, type MapNode } from './layout';
 import { MapWorld } from './world';
+
+/**
+ * The map's chrome drawn by the DOM interface (`@/hud-dom/map`, `?hud=dom`): title bar, «Закрити», «Уся подорож»,
+ * the hint and the chapter card. The world, the labels and the gestures stay here (WebGL).
+ */
+export interface MapChrome {
+  /** Progress changed (and on attach): the title bar's ring and line. */
+  refresh(summary: MapSummary): void;
+  /** A stop was selected (its card; `currentStep`: the reader's step when it is the chapter on screen), or null. */
+  card(node: MapNode | null, currentStep: string | null): void;
+}
 
 export class JourneyMap implements Overlay {
   readonly fullscreen = true;
@@ -43,6 +55,9 @@ export class JourneyMap implements Overlay {
   private shown = false;
   /** True while this view holds `runtime.suspendWorld(true)`. */
   private suspending = false;
+  /** The DOM chrome, once attached; the WebGL title bar, buttons, hint and card leave the view then. */
+  private chrome: MapChrome | null = null;
+  private readonly glChrome: UiNode[];
 
   constructor(
     private readonly hud: Hud,
@@ -111,7 +126,7 @@ export class JourneyMap implements Overlay {
       onClick: () => this.select(-1),
     });
     const hint = (this.hint = new Label(
-      'Тягніть, щоб мандрувати шляхом · колесо — масштаб · ← → — сусідні розділи · Enter — увійти',
+      `Тягніть, щоб мандрувати шляхом · колесо — масштаб · ← → — сусідні ${chapterWords(journey.volume)[1]} · Enter — увійти`,
       { size: UI.text.caption, color: TEXT_COLOR.mute, nowrap: true },
       { float: { ax: 0.5, ay: 1 } },
     ));
@@ -126,6 +141,7 @@ export class JourneyMap implements Overlay {
       children: [catcher, this.labels, this.bar, overview, close, hint, this.cardSlot],
     });
     hud.modal.add(this.ui);
+    this.glChrome = [this.bar, overview, close, hint, this.cardSlot];
     // two fingers on the open map zoom the map, not the scene behind it
     engine.input.capturePinch((scale) => {
       if (!this.isOpen) return false;
@@ -208,6 +224,18 @@ export class JourneyMap implements Overlay {
       () => this.refresh(),
     );
     this.refresh();
+  }
+
+  /** Hand the chrome to the DOM interface (`@/hud-dom/map`); the world, labels and gestures stay WebGL. */
+  attachChrome(chrome: MapChrome): void {
+    this.chrome = chrome;
+    for (const n of this.glChrome) n.detach();
+    this.refresh();
+  }
+
+  /** The selected stop (−1: the overview). */
+  get selection(): number {
+    return this.selected;
   }
 
   /** Index of the node of the chapter on screen (−1 if it is not on the map, e.g. a dev sandbox). */
@@ -296,7 +324,8 @@ export class JourneyMap implements Overlay {
     this.setCard(node);
   }
 
-  private enter(node: MapNode, stepId: string | null): void {
+  /** Travel into a chapter: `stepId`, or its first unopened step (a planned chapter only says it is not built). */
+  enter(node: MapNode, stepId: string | null): void {
     const c = node.chapter;
     if (!c.real) {
       this.hud.toast(`«${c.title}» ще будується.`, { tone: 'warning', duration: 2.5 });
@@ -314,20 +343,28 @@ export class JourneyMap implements Overlay {
     for (const old of [...this.cardSlot.children])
       conceal(old, { dx: 30, dy: 0, onDone: () => old.detach() });
     if (!node || this.attract) {
+      this.chrome?.card(null, null);
       this.world.setBeads(null, [], col('white'));
       return;
     }
     const state = this.hud.engine.store.get();
     const m = this.hud.metrics;
     const visited = state.progress.visited;
+    const currentStep =
+      state.volumeId === node.chapter.volume && state.chapterId === node.chapter.id && !this.hud.unseenStep
+        ? state.stepId
+        : null;
+    this.world.setBeads(
+      node,
+      node.chapter.steps.map((s) => isVisited(visited, contentKey(node.chapter), s.id)),
+      col(node.chapter.accent),
+    );
+    if (this.chrome) return this.chrome.card(node, currentStep);
     const card = chapterCard({
       chapter: node.chapter,
       group: groupLabel(this.journey.volume, node.chapter.group),
       visited,
-      currentStep:
-        state.volumeId === node.chapter.volume && state.chapterId === node.chapter.id && !this.hud.unseenStep
-          ? state.stepId
-          : null,
+      currentStep,
       compact: m.shell === 'side' && m.height < 560,
       maxHeight:
         m.shell === 'side'
@@ -344,11 +381,6 @@ export class JourneyMap implements Overlay {
     card.visible = false;
     this.cardSlot.add(card);
     reveal(card, { dx: 40, dy: 0 });
-    this.world.setBeads(
-      node,
-      node.chapter.steps.map((s) => isVisited(visited, contentKey(node.chapter), s.id)),
-      col(node.chapter.accent),
-    );
   }
 
   /** Point the camera at the selection (or frame the whole journey). */
@@ -445,19 +477,18 @@ export class JourneyMap implements Overlay {
 
   private refresh(): void {
     const visited = this.hud.engine.store.get().progress.visited;
+    this.labels.setFloors((f) => floorLabel(this.journey.volume, f, visited));
     this.layout.nodes.forEach((n, i) => {
       const p = chapterProgress(visited, n.chapter);
       this.labels.setProgress(i, p.done, p.total);
     });
-    const all = journeyProgress(visited, this.journey.chapters);
-    this.total.value = all.fraction;
-    this.total.label = `${Math.round(all.fraction * 100)}%`;
+    const sum = mapSummary(this.journey, visited);
+    this.total.value = sum.fraction;
+    this.total.label = sum.label;
     // a phone's title bar shares its row with the close button: the short form there
     const m = this.hud.metrics;
-    this.totalText.text =
-      m.shell !== 'desk' && m.width < 520
-        ? `${all.done} з ${all.total} кроків`
-        : `Переглянуто ${all.done} з ${all.total} кроків · ${this.journey.chapters.length} розділів`;
+    this.totalText.text = m.shell !== 'desk' && m.width < 520 ? sum.short : sum.text;
+    this.chrome?.refresh(sum);
   }
 
   private update(dt: number): void {

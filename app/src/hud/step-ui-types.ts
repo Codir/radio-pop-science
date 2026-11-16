@@ -4,8 +4,9 @@
  * never place panels.
  */
 import type { Object3D, Vector3 } from 'three';
+import type { TweenScope } from '@/engine/api';
 import type { ColorLike } from '@/style';
-import type { Chart, ChartProps, GaugeZone, IconName, SliderScale, UiNode } from '@/ui3d';
+import type { ChartApi, ChartProps, GaugeZone, IconName, SliderScale, UiNode } from '@/ui3d';
 
 /**
  * A condition re-evaluated every frame while the step is on screen (keep it cheap: read `ui.value(…)` or a
@@ -33,6 +34,12 @@ export interface SliderSpec extends Base, SliderScale {
   format?: (value: number) => string;
   marks?: readonly { value: number; label: string }[];
   onChange?: (value: number) => void;
+  /**
+   * How the reader moved it (DOM interface; UI_API §3.3 «a slider that scrubs an animation»): `drag` — the thumb
+   * is being dragged, follow it directly; `jump` — a click / tap on the track, ease to the new value; `step` —
+   * a key or the wheel, ease. Called after `onChange` with the same value. The WebGL slider does not call it.
+   */
+  onInput?: (value: number, how: 'drag' | 'jump' | 'step') => void;
 }
 
 export interface ToggleSpec extends Base {
@@ -88,16 +95,43 @@ export interface GaugeSpec extends Base {
 export interface ChartSpec extends Base {
   type: 'chart';
   chart: ChartProps;
+  // method syntax on purpose: callbacks typed `(chart: Chart) => …` stay assignable (parameter bivariance)
   /** Called once when the chart is created (fill static curves). */
-  init?: (chart: Chart) => void;
+  init?(chart: ChartApi): void;
   /** Called every frame while visible (push live samples, move markers). `t` = engine time in seconds. */
-  update?: (chart: Chart, t: number) => void;
+  update?(chart: ChartApi, t: number): void;
+}
+
+/** What the DOM interface hands a `custom.dom` factory (docs/HUD_DOM.md §8). */
+export interface DomHost {
+  /** Tweens on the engine clock (morphs, reveals); QA freezes this clock, so screenshots stay deterministic. */
+  readonly tweens: TweenScope;
+  /** Reduced motion is on (setting or `prefers-reduced-motion`): jump instead of animating. */
+  reducedMotion(): boolean;
+}
+
+/** A widget of the DOM interface: an element plus its per-frame tick and clean-up. */
+export interface DomWidget {
+  readonly el: HTMLElement;
+  /** Called every frame while the step is on screen, after `CustomSpec.update`. `t` = engine time, seconds. */
+  update?(t: number): void;
+  /** Called when the chapter is left (a widget only detached when its step is left). */
+  dispose?(): void;
 }
 
 export interface CustomSpec extends Base {
   type: 'custom';
-  /** Any widget tree built with `@/ui3d` (it is detached, not disposed, when the step is left). */
+  /**
+   * Any widget tree built with `@/ui3d` — drawn by the WebGL interface (`?hud=gl`); it is detached, not
+   * disposed, when the step is left. Under `?hud=dom` a kit chart node (`HeatMap`, `RadarChart`) gets a DOM
+   * twin automatically; any other node needs `dom`.
+   */
   node: UiNode;
+  /**
+   * The same widget for the DOM interface (`?hud=dom`), built once on first show; lifetime like `node`. Name its
+   * controls `data-ui="ctl-<id>:<item>"` like the WebGL buttons so tests find both.
+   */
+  dom?: (host: DomHost) => DomWidget;
   update?: (t: number) => void;
 }
 
@@ -210,8 +244,13 @@ export interface HotspotSpec {
  */
 export interface BoardSpec {
   title?: string;
-  /** Width hint: `sm` 380, `md` 520 (default), `lg` 680 px-eq; shrinks to the free width on small screens. */
-  size?: 'sm' | 'md' | 'lg';
+  /**
+   * Width hint: `sm` 380, `md` 520 (default), `lg` 680 px-eq; shrinks to the free width on small screens.
+   * `fill` (DOM interface) — the step's subject is the board (the volume map of `prologue/map`): it takes the
+   * free scene area between the spine and the step column, centred in it; its widgets grow with it (the WebGL
+   * board treats it as `lg`).
+   */
+  size?: 'sm' | 'md' | 'lg' | 'fill';
   /** Charts, tables, stats, readouts, gauges, notes, buttons, custom nodes — top to bottom, readouts in rows. */
   children: readonly ControlSpec[];
   /** Show only while this holds. */
@@ -228,4 +267,26 @@ export interface StepUiSpec {
   hint?: string;
   /** Restore control values to their declared defaults every time the step is entered. */
   reset?: boolean;
+  /**
+   * Path-format chapters (docs/PATH_FORMAT.md, field «Ціль»): the step's goal. The panel shows the takeaway once
+   * this holds (polled per frame) and keeps it for the rest of the session; a step without `goal` shows its
+   * takeaway at once.
+   */
+  goal?: When;
+  /**
+   * Path-format chapters: the reader's action is under way (the race runs, the scene is sped up). Honesty chips
+   * marked `→` in the document («→ прискорено ×20») appear once this has held, and stay for the visit.
+   */
+  acting?: When;
+  /**
+   * The step navigator stays hidden (no pointer, no focus, forward keys do nothing) until `hiddenUntil` first
+   * holds — a predicate, or `'goal'` for the step's `goal` — then it is revealed smoothly (`hud/nav-gate.ts`).
+   */
+  nav?: { hiddenUntil: When | 'goal' };
+  /**
+   * The step panel's content held back on entry until this holds (e.g. a self-playing transition has finished:
+   * no text to read mid-motion): the plate stays as a calm empty plate, then title and text fade in on the engine
+   * clock; hint timers start then. Per visit; reduced motion shows the content at once (DOM interface).
+   */
+  panel?: { hiddenUntil: When };
 }

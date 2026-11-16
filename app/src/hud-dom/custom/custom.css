@@ -1,0 +1,157 @@
+/* Area `custom` (docs/HUD_DOM.md §8): chapter overlays (`hudLayer`) and the shared look of ported chapter
+   widgets. Lengths are units × --u. */
+
+/* a chapter overlay covers the screen but takes no pointer itself; its children do */
+.kd-layer > .kd-hud-layer {
+  inset: 0;
+  pointer-events: none;
+}
+.kd-hud-layer > * {
+  position: absolute;
+  pointer-events: auto;
+}
+
+/* ---- atom: particle count steppers «−  N  +» (atom/parts/count-stepper.ts); tone = the particle colour --- */
+.kd-stepper {
+  display: flex;
+  align-items: center;
+  gap: calc(8 * var(--u));
+  width: 100%;
+}
+.kd-stepper > .label {
+  flex: 1;
+  min-width: 0;
+  font-size: calc(var(--t-small) * var(--u));
+  color: var(--c-mist);
+  white-space: nowrap;
+}
+.kd-stepper > .btn {
+  width: calc(56 * var(--u));
+  padding: 0;
+}
+.kd-stepper > .value {
+  width: calc(52 * var(--u));
+  text-align: center;
+  font: 500 calc(22 * var(--u)) / 1.2 var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--accent-rgb));
+}
+
+/* ---- diagrams drawn as SVG from the WebGL drawing code (current: schematic, energy ribbon) -------------- */
+.kd-diagram {
+  width: 100%;
+  height: calc(var(--h) * var(--u));
+}
+.kd-diagram > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.kd-sankey text {
+  font-family: var(--mono);
+  font-weight: 500;
+}
+
+/* ---- chip pickers (lab-battery 01, the metal ladder): wrapping chips, the chosen ones lime ------------- */
+.kd-chip-pick {
+  display: flex;
+  flex-direction: column;
+  gap: calc(6 * var(--u));
+  width: 100%;
+}
+.kd-chip-pick > .label {
+  font-size: calc(var(--t-small) * var(--u));
+  color: var(--c-mist);
+}
+.kd-chip-pick > .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(6 * var(--u));
+}
+.kd-chip-pick .chip {
+  --tone-rgb: var(--c-mist-rgb);
+  min-height: calc(32 * var(--u));
+}
+.kd-chip-pick .chip.on {
+  --tone-rgb: var(--c-lime-rgb);
+  border-color: rgb(var(--tone-rgb));
+}
+
+/* ---- atom: the scale ruler (atom/parts/ruler.ts) — right of the spine, centred 24 units low; wide only ---- */
+.kd-ruler {
+  left: calc(var(--safe) + 60 * var(--u));
+  top: calc(50% + 24 * var(--u));
+  width: calc(84 * var(--u));
+  height: calc(486 * var(--u));
+  transform: translateY(-50%);
+  pointer-events: none !important;
+  /* caption, the smallest interface text (D8 check); the WebGL ruler draws 14 units, unchanged under `gl` */
+  font-size: calc(var(--t-caption) * var(--u));
+  line-height: 1.2;
+  color: var(--c-steel);
+  white-space: nowrap;
+}
+.kd-root:not(.wide) .kd-ruler {
+  display: none;
+}
+/* dark backing so the scale stays readable over bright scenes (6 / 10 units beyond the box) */
+.kd-ruler::before {
+  content: '';
+  position: absolute;
+  inset: calc(-10 * var(--u)) calc(-6 * var(--u));
+  border-radius: calc(18 * var(--u));
+  background: rgb(var(--c-bg-void-rgb) / 0.42);
+}
+.kd-ruler > * {
+  position: absolute;
+}
+.kd-ruler > .track {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.kd-ruler .rail {
+  stroke: rgb(var(--c-slate-rgb) / 0.85);
+  stroke-width: 2;
+}
+.kd-ruler .tick {
+  stroke: rgb(var(--c-steel-rgb) / 0.65);
+  stroke-width: 1.4;
+}
+.kd-ruler .tick.major {
+  stroke: rgb(var(--c-mist-rgb) / 0.8);
+  stroke-width: 2;
+}
+.kd-ruler .pointer {
+  stroke: color-mix(in srgb, var(--c-cyan), white 25%);
+  stroke-width: 2;
+}
+.kd-ruler .dot {
+  fill: color-mix(in srgb, var(--c-cyan), white 45%);
+  stroke: rgb(255 255 255 / 0.9);
+  stroke-width: 1.5;
+  filter: drop-shadow(0 0 calc(5 * var(--u)) rgb(var(--c-cyan-rgb) / 0.8));
+}
+.kd-ruler > .title,
+.kd-ruler > .value {
+  left: 50%;
+  transform: translateX(-50%);
+}
+.kd-ruler > .title {
+  top: 0;
+}
+.kd-ruler > .value {
+  top: calc(22 * var(--u));
+  min-width: 12ch;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: calc(19 * var(--u));
+  color: var(--c-white);
+}
+.kd-ruler > .mark {
+  left: calc(28 * var(--u));
+  transform: translateY(-50%);
+  font-family: var(--mono);
+}

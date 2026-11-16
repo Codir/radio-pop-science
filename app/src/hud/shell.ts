@@ -26,7 +26,8 @@ import {
 } from '@/ui3d';
 import type { DomModule, HudContext, HudModule, OverlayName, RegionHooks } from './context';
 import { Landing } from './landing';
-import { touchTop } from './touch/geometry';
+import { touchTop } from './model/sheet';
+import { tickNavGate } from './nav-gate';
 
 /** Screen edge a region counts toward (`auto`: right on wide screens, bottom otherwise). */
 export type InsetSide = 'left' | 'right' | 'top' | 'bottom' | 'auto';
@@ -107,6 +108,9 @@ export class Hud implements HudContext {
   private readonly modules: RegionHooks[] = [];
   private readonly volumeListeners: ((volume: VolumeManifest) => void)[] = [];
   private readonly overlays = new Map<OverlayName, Overlay>();
+  /** The views as registered (WebGL); `overlays` holds what is shown — the DOM twin where one is set. */
+  private readonly given = new Map<OverlayName, Overlay>();
+  private readonly twins = new Map<OverlayName, (view: Overlay) => Overlay>();
   private readonly insetSources: InsetSource[] = [];
   /** Where focus was when an overlay opened (DOM interface: it returns there on close). */
   private focusBefore: Element | null = null;
@@ -234,12 +238,25 @@ export class Hud implements HudContext {
    * replaced while it is open hands over in place (the home screen of one volume becomes the other's).
    */
   register(name: OverlayName, overlay: Overlay): void {
+    this.given.set(name, overlay);
+    const view = this.twins.get(name)?.(overlay) ?? overlay;
     const old = this.overlays.get(name);
-    this.overlays.set(name, overlay);
-    if (old && old !== overlay && this.overlay === name) {
+    this.overlays.set(name, view);
+    if (old && old !== view && this.overlay === name) {
       old.close();
-      overlay.open();
+      view.open();
     }
+  }
+
+  /**
+   * DOM interface (`@/hud-dom`, docs/HUD_DOM.md §16): from now on the view registered under `name` is replaced by
+   * `twin(view)` — its DOM twin, built from the WebGL view it stands in for (cache per view in the twin). A view
+   * registered before is swapped at once, in place if it is open.
+   */
+  domTwin(name: OverlayName, twin: (view: Overlay) => Overlay): void {
+    this.twins.set(name, twin);
+    const given = this.given.get(name);
+    if (given) this.register(name, given);
   }
 
   relayout(): void {
@@ -409,6 +426,8 @@ export class Hud implements HudContext {
     // a chapter that loads behind a full-screen view (a volume entered from the lobby or the library) adds its
     // own HUD objects after the chrome was hidden: they step aside as well
     if (!this.chromeShown && this.overlay) this.chapterHud(false);
+    // the step navigator held back until the step's condition (stepUi `nav.hiddenUntil`)
+    tickNavGate(this.chapter, this.engine.nav.position);
     for (const mod of this.modules) mod.update?.(dt);
   }
 

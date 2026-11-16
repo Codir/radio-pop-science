@@ -2,6 +2,7 @@
  * Help overlay: how to control the course with a mouse, by touch and from the keyboard.
  */
 import { Icon, Label, Panel, TEXT_COLOR, UI, UiNode, rgba, type IconName, type Painter } from '@/ui3d';
+import { helpModel } from '../model/help';
 import type { Hud, Overlay } from '../shell';
 import { createModal } from './modal';
 
@@ -62,74 +63,27 @@ export function createHelp(hud: Hud): Overlay {
     width: 1040,
     fresh: true, // the device may have changed (a tablet got a keyboard, emulation was switched)
     build(body) {
-      const device = hud.engine.device;
-      if (device.pointer === 'coarse') {
-        // touch-first devices: what a finger can do, first and in full; keys only where a keyboard is likely
-        const cols = new UiNode({ dir: 'col', gap: 14, width: 'fill' });
-        cols.add(
-          section('touch', 'Дотик', [
-            [['1 палець'], 'обертати сцену, тягнути об’єкти й повзунки'],
-            [['2 пальці'], 'наблизити чи віддалити (щипок)'],
-            [['дотик'], 'кнопки, гарячі точки, об’єкти з блакитним контуром'],
-            [['утримати'], 'назва об’єкта у підказці'],
-          ]),
-          section('layers', 'Панель кроку', [
-            [['потягнути'], 'вище — читати, нижче — бачити сцену'],
-            [['вкладки'], '«Текст», «Керування», «Графіки» кроку'],
-            [['Далі'], 'наступний крок; стрілка ліворуч — попередній'],
-          ]),
-          section('map', 'Мапа подорожі', [
-            [['тягнути'], 'мандрувати шляхом'],
-            [['щипок'], 'змінити масштаб'],
-            [['дотик'], 'картка розділу з його кроками'],
-          ]),
-        );
-        if (device.formFactor !== 'phone')
-          cols.add(
-            section('keyboard', 'Клавіатура (якщо є)', [
-              [['←', '→'], 'попередній і наступний крок'],
-              [['M'], 'мапа подорожі'],
-              [['Esc'], 'закрити вікно'],
-            ]),
-          );
-        body.add(cols);
+      const model = helpModel(hud.engine.device, hud.volume);
+      const all = model.sections.map((x) => section(x.icon, x.title, x.rows));
+      if (model.touchFirst) {
+        body.add(new UiNode({ dir: 'col', gap: 14, width: 'fill', children: all }));
         return;
       }
       const cols = new UiNode({ dir: 'row', gap: 14, wrap: true, width: 'fill', align: 'start' });
-      const wide = hud.metrics.width > 1100;
-      const w = wide ? 318 : 'fill';
-      const mouse = section('mouse', 'Миша', [
-        [['тягнути'], 'обертати сцену навколо об’єкта'],
-        [['колесо'], 'наблизити або віддалити'],
-        [['клац'], 'кнопки, гарячі точки, об’єкти з блакитним контуром'],
-        [['навести'], 'назва об’єкта у підказці'],
-      ]);
-      const touch = section('touch', 'Дотик', [
-        [['1 палець'], 'обертати сцену, тягнути повзунки'],
-        [['2 пальці'], 'масштаб (щипок) і зсув'],
-        [['дотик'], 'кнопки й гарячі точки'],
-      ]);
-      const keys = section('keyboard', 'Клавіатура', [
-        [['←', '→'], 'попередній і наступний крок'],
-        [['Home', 'End'], 'перший і останній крок розділу'],
-        [['M'], 'мапа подорожі'],
-        [['F'], 'на весь екран'],
-        [['Tab'], 'перейти до наступного елемента керування'],
-        [['Enter'], 'натиснути вибраний елемент'],
-        [['Esc'], 'закрити вікно або зняти вибір'],
-      ]);
-      for (const s of [mouse, touch, keys]) {
+      const w = hud.metrics.width > 1100 ? 318 : 'fill';
+      for (const s of all) {
         s.width = w;
         cols.add(s);
       }
-      body.add(
-        cols,
-        new Label(
-          'На мапі подорожі: тягніть, щоб мандрувати шляхом, колесо змінює масштаб, ← → обирають сусідні розділи, ↓ ↑ — типи станцій і лабораторії, Enter відкриває розділ.',
-          { size: UI.text.small, color: TEXT_COLOR.dim, lineHeight: 1.4 },
-          { width: 'fill' },
-        ),
-      );
+      body.add(cols);
+      if (model.note)
+        body.add(
+          new Label(
+            model.note,
+            { size: UI.text.small, color: TEXT_COLOR.dim, lineHeight: 1.4 },
+            { width: 'fill' },
+          ),
+        );
     },
   });
 }

@@ -30,15 +30,30 @@ export interface RadarProps extends NodeProps {
   legend?: boolean;
 }
 
-export class RadarChart extends UiNode {
+/** The public API of a radar chart, whichever renderer draws it (WebGL here, DOM in `@/hud-dom`). */
+export interface RadarApi {
+  /** Replace the whole set of series; the legend follows. */
+  setSeries(series: readonly RadarSeries[]): void;
+  /** Replace a series' values; with `duration` (seconds) the polygon morphs on the engine clock. */
+  setValues(id: string, values: readonly number[], opts?: { duration?: number }): void;
+  /** Emphasise one series (others dim); null restores all. */
+  highlight(id: string | null): void;
+}
+
+export class RadarChart extends UiNode implements RadarApi {
   private readonly plot = new PlotMesh();
   private readonly web: UiNode;
   private series: RadarSeries[];
   private highlighted: string | null = null;
   private dirty = true;
   private legend: Legend | null = null;
+  /**
+   * @internal The DOM twin drawn instead of this node under `?hud=dom` (a `custom` control with this node, see
+   * `@/hud-dom/custom`): every public call is forwarded to it, so chapters keep one object.
+   */
+  twin: RadarApi | null = null;
 
-  constructor(private readonly cfg: RadarProps) {
+  constructor(/** @internal */ readonly cfg: RadarProps) {
     super({ dir: 'col', gap: 8, align: 'center', ...cfg, children: [] });
     this.series = [...cfg.series];
     const d = cfg.size ?? 240;
@@ -100,6 +115,7 @@ export class RadarChart extends UiNode {
 
   /** Replace the whole set of series (e.g. the chemistries the user ticked); the legend follows. */
   setSeries(series: readonly RadarSeries[]): void {
+    this.twin?.setSeries(series);
     this.series = [...series];
     this.dirty = true;
     this.syncLegend();
@@ -110,6 +126,7 @@ export class RadarChart extends UiNode {
    * clock, otherwise it jumps.
    */
   setValues(id: string, values: readonly number[], opts: { duration?: number } = {}): void {
+    this.twin?.setValues(id, values, opts);
     const from = this.series.find((s) => s.id === id)?.values ?? values.map(() => 0);
     const host = this.surface?.host;
     if (!opts.duration || !host || host.reducedMotion()) {
@@ -129,6 +146,11 @@ export class RadarChart extends UiNode {
     }); // prettier-ignore
   }
 
+  /** @internal The current series and emphasis (the DOM twin starts from them). */
+  snapshot(): { series: readonly RadarSeries[]; highlighted: string | null } {
+    return { series: this.series, highlighted: this.highlighted };
+  }
+
   private syncLegend(): void {
     this.legend?.detach();
     this.legend = null;
@@ -139,6 +161,7 @@ export class RadarChart extends UiNode {
 
   /** Emphasise one series (others dim); null restores all. */
   highlight(id: string | null): void {
+    this.twin?.highlight(id);
     this.highlighted = id;
     this.dirty = true;
   }

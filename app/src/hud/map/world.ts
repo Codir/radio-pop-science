@@ -57,30 +57,31 @@ export class MapWorld {
       this.group.add(mesh);
     };
 
-    // main path: a tube with energy pulses travelling from the atom to the socket
+    // main path: a tube with energy pulses travelling from the atom to the socket (none for a lone chapter)
     const curve = new CatmullRomCurve3(
       layout.spine.map((n) => new Vector3(n.x, n.y, n.z)),
       false,
       'catmullrom',
       0.5,
     );
-    add(
-      new Mesh(
-        new TubeGeometry(curve, 260, 7, 10),
-        own(
-          K.energy({
-            color: 'bg.plum',
-            emissive: 'violet',
-            emissiveIntensity: 0.55,
-            pulseColor: 'yellow',
-            repeat: 16,
-            speed: 0.07,
-            length: 0.5,
-            intensity: 3.2,
-          }),
+    if (layout.spine.length > 1)
+      add(
+        new Mesh(
+          new TubeGeometry(curve, 260, 7, 10),
+          own(
+            K.energy({
+              color: 'bg.plum',
+              emissive: 'violet',
+              emissiveIntensity: 0.55,
+              pulseColor: 'yellow',
+              repeat: 16,
+              speed: 0.07,
+              length: 0.5,
+              intensity: 3.2,
+            }),
+          ),
         ),
-      ),
-    );
+      );
 
     // satellite branches and stems, merged into one glowing mesh
     const thin: BufferGeometry[] = [];
@@ -125,8 +126,15 @@ export class MapWorld {
     );
     nodes.forEach((n, i) => {
       disc.setMatrixAt(i, _m.compose(_p.set(n.x, n.y, n.z), _q.identity(), _s.setScalar(n.radius)));
-      disc.setColorAt(i, _c.copy(col(n.chapter.accent)).multiplyScalar(0.72).lerp(col('bg.indigo'), 0.25));
-      this.rings.setColorAt(i, col(n.chapter.accent));
+      // a planned chapter (not built yet) stands as a quiet slate platform with a faint rim
+      const planned = !n.chapter.real;
+      disc.setColorAt(
+        i,
+        planned
+          ? _c.copy(col('slate')).lerp(col('bg.indigo'), 0.35)
+          : _c.copy(col(n.chapter.accent)).multiplyScalar(0.72).lerp(col('bg.indigo'), 0.25),
+      );
+      this.rings.setColorAt(i, planned ? _c.copy(col('steel')).multiplyScalar(0.55) : col(n.chapter.accent));
     });
     add(disc);
     add(this.rings);
@@ -247,8 +255,9 @@ export class MapWorld {
           own.quaternion.copy(_q);
           own.scale.setScalar(size);
         }
-        // a chapter-provided emblem replaces the generic instance (collapsed to nothing)
-        set.mesh.setMatrixAt(j, _m.compose(_p, _q, _s.setScalar(own ? 0 : size)));
+        // a chapter-provided emblem replaces the generic instance (collapsed to nothing); a planned chapter
+        // has no emblem yet — its platform stands empty
+        set.mesh.setMatrixAt(j, _m.compose(_p, _q, _s.setScalar(own || !n.chapter.real ? 0 : size)));
       });
       set.mesh.instanceMatrix.needsUpdate = true;
     }

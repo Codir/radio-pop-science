@@ -30,9 +30,17 @@ export interface PhasorProps extends NodeProps {
   periods?: number;
 }
 
+/** The public API of a phasor scope, whichever renderer draws it (WebGL here, DOM in `@/hud-dom`). */
+export interface PhasorApi {
+  /** Rotation angle ωt in radians. */
+  setAngle(angle: number): void;
+  /** Change a phasor's amplitude / phase. */
+  setPhasor(id: string, patch: Partial<Pick<Phasor, 'amplitude' | 'phase'>>): void;
+}
+
 const SAMPLES = 96;
 
-export class PhasorScope extends UiNode {
+export class PhasorScope extends UiNode implements PhasorApi {
   private angle = 0;
   private phasors: Phasor[];
   private readonly plot = new PlotMesh();

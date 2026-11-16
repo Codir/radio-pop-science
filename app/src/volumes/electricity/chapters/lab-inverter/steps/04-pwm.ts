@@ -6,7 +6,7 @@
  */
 import { Vector3 } from 'three';
 import { fmtPercent, fmtUnit } from '@/content';
-import { STATUS, type Chart } from '@/ui3d';
+import { STATUS, type ChartApi } from '@/ui3d';
 import type { StepFactory } from '../chapter';
 import { roomy } from '../world';
 import { doc } from '../labels';
@@ -23,7 +23,7 @@ export const pwm: StepFactory = (lab) => {
   const station = scopeStation(lab);
   const { scope, waves } = station;
   const kind = (): LabWave => ui.value<LabWave>('wave4');
-  let chart: Chart | null = null;
+  let chart: ChartApi | null = null;
   let charted = -1;
 
   /** All settings of the laboratory from the controls (the filter of step 5 is used for the «після фільтра» trace). */
@@ -44,7 +44,7 @@ export const pwm: StepFactory = (lab) => {
   }
   for (const id of ['wave4', 'fc4', 'ma4', 'width4']) ui.onChange(id, apply);
 
-  function plot(c: Chart): void {
+  function plot(c: ChartApi): void {
     // harmonics above 0,1 V as bars over frequency (both axes logarithmic)
     const xs: number[] = [];
     const ys: number[] = [];

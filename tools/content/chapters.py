@@ -46,6 +46,7 @@ def use_volume(vid):
     """Point the module at a volume. Tools read these names at call time, never at import time."""
     global VOLUME, META, DOCS_DIR, CHAPTER_DIR, EXPORT_DIR, GENERATED_DIR, INDEX_PATH, GLOSSARY_PATH
     global CURRICULUM_PATH, VOLUME_ALLOWLIST, JOURNEY, CHAPTER_IDS, GROUP, PARENT, GROUP_TITLE, EXTRA_DOCS, AXIS_LABEL
+    global FORMAT, PLANNED
     META = volume_meta(vid)
     if META['id'] != vid:
         raise SystemExit('volume.json of %r declares id %r' % (vid, META['id']))
@@ -67,6 +68,13 @@ def use_volume(vid):
     EXTRA_DOCS = list(META.get('docs', {}).get('extra', []))
     # Name of the header line that carries the chapter's place on the journey axis («Масштаб» for electricity).
     AXIS_LABEL = META['axis']['label']
+    # Document format (docs/PATH_FORMAT.md): `classic` (volume 1) or `path`. A path volume plans its whole journey
+    # in volume.json before the chapters are written, so its CHAPTER_IDS are the planned chapters that have a
+    # document; PLANNED keeps every journey id.
+    FORMAT = META.get('format', 'classic')
+    PLANNED = list(CHAPTER_IDS)
+    if FORMAT == 'path':
+        CHAPTER_IDS = [c for c in CHAPTER_IDS if os.path.exists(os.path.join(CHAPTER_DIR, c + '.md'))]
 
 
 _FOREIGN = {}
@@ -118,8 +126,11 @@ def cli_volumes(default_all=False):
     return volume_ids() if default_all else [DEFAULT_VOLUME]
 
 
-def run_volumes(fn, default_all=False):
-    """Run `fn()` once per selected volume (see `cli_volumes`); returns the worst exit code."""
+def run_volumes(fn, default_all=False, path=None):
+    """Run `fn()` once per selected volume (see `cli_volumes`); returns the worst exit code.
+
+    A volume in the path format (docs/PATH_FORMAT.md) runs `path()` instead; a tool without one does not apply
+    to such volumes (doccheck covers them with its group `path`)."""
     volumes = cli_volumes(default_all)
     code = 0
     for vid in volumes:
@@ -130,7 +141,10 @@ def run_volumes(fn, default_all=False):
         if not os.path.isdir(CHAPTER_DIR):
             print('volume %s has no documents yet (%s): nothing to do' % (vid, rel(CHAPTER_DIR)))
             continue
-        code = max(code, fn() or 0)
+        if FORMAT == 'path' and path is None:
+            print('volume %s is in the path format: not applicable (doccheck group path)' % vid)
+            continue
+        code = max(code, (path if FORMAT == 'path' else fn)() or 0)
     use_volume(DEFAULT_VOLUME)
     return code
 

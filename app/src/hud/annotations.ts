@@ -168,21 +168,19 @@ export function mountAnnotations(hud: Hud): (spec: StepUiSpec | null) => void {
             const m = hud.metrics;
             if (m.shell !== 'desk' && hud.touch.card) {
               // phones and tablets: the card opens in the sheet, where the thumb and the reading are
-              const inSheet = new Card({
-                variant: 'plain',
-                kicker: 'Гаряча точка',
-                icon: 'info',
-                title: h.title ?? display(bound),
-                body: h.text ?? bound?.text ?? '',
-                onClose: closeCard,
-              });
+              const text = { kicker: 'Гаряча точка', title: h.title ?? display(bound), body: h.text ?? bound?.text ?? '' };
+              const inSheet = new Card({ variant: 'plain', icon: 'info', ...text, onClose: closeCard });
               inSheet.pad = 0;
-              const dismiss = hud.touch.card(inSheet, () => {
-                if (card?.node === inSheet) {
-                  card = null;
-                  marker.open = false;
-                }
-              });
+              const dismiss = hud.touch.card(
+                inSheet,
+                () => {
+                  if (card?.node === inSheet) {
+                    card = null;
+                    marker.open = false;
+                  }
+                },
+                { text }, // the DOM sheet draws the card from its copy
+              );
               marker.open = true;
               card = { node: inSheet, marker, dismiss };
               h.onOpen?.();

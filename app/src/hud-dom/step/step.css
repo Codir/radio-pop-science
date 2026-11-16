@@ -67,6 +67,58 @@
   font: 800 calc(var(--t-h1) * var(--u)) / 1.14 var(--display);
   text-wrap: pretty;
 }
+/* the column is short of height: the title takes the compact size (setCompact) */
+.sp-title.compact {
+  font-size: calc(var(--t-h3) * var(--u));
+}
+/* head: counter left, «Просто | Докладно» right; the switch overhangs into the gaps so the head keeps the
+   counter's height (the panel box stays the WebGL one) */
+.sp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(12 * var(--u));
+  height: calc(var(--t-caption) * 1.3 * var(--u));
+}
+.level {
+  display: flex;
+  gap: calc(2 * var(--u));
+  padding: calc(2 * var(--u));
+  border-radius: calc(15 * var(--u));
+  background: rgb(var(--c-bg-void-rgb) / 0.66);
+  border: 1px solid rgb(var(--c-slate-rgb) / 0.7);
+}
+.level .seg {
+  height: calc(24 * var(--u));
+  padding: 0 calc(11 * var(--u));
+  border: 0;
+  border-radius: calc(12 * var(--u));
+  background: transparent;
+  color: var(--c-mist);
+  font: 600 calc(var(--t-caption) * var(--u)) / 1 var(--body);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-hover), color var(--dur-hover);
+}
+.level .seg:hover {
+  color: var(--c-white);
+  background: rgb(var(--accent-rgb) / 0.16);
+}
+.level .seg[aria-checked='true'] {
+  background: var(--accent);
+  color: var(--c-bg-void);
+  box-shadow: 0 0 calc(8 * var(--u)) rgb(var(--accent-rgb) / 0.35);
+}
+.level.dim {
+  opacity: 0.45;
+}
+.level.dim .seg {
+  cursor: default;
+}
+.level.dim .seg:hover:not([aria-checked='true']) {
+  background: transparent;
+  color: var(--c-mist);
+}
 .badges {
   display: flex;
   flex-wrap: wrap;
@@ -76,6 +128,7 @@
   display: none;
 }
 .sp-scroll {
+  position: relative; /* offsets of opened sections end here (scroll.ts) */
   flex: 0 1 auto;
   min-height: calc(60 * var(--u));
   overflow-y: auto;
@@ -104,6 +157,8 @@
   font: 500 calc(var(--t-caption) * var(--u)) / 1 var(--mono);
   color: var(--c-steel);
 }
+/* gaps of the WebGL twins: extra column 12 (step-panel.ts), sections 10, the terms column 10, the other
+   section columns 8 (step-sections.ts) */
 .sp-extra,
 .sections,
 .sec-col {
@@ -111,11 +166,22 @@
   flex-direction: column;
   gap: calc(10 * var(--u));
 }
+.sp-extra {
+  gap: calc(12 * var(--u));
+}
+.sec-col:not(:has(> .term-slot)) {
+  gap: calc(8 * var(--u));
+}
 .sec-bar,
 .chips {
   display: flex;
   flex-wrap: wrap;
   gap: calc(8 * var(--u));
+}
+/* the open section keeps its yellow rim under the pointer too (the WebGL `selected` state wins over hover;
+   base.css's `.btn:hover:not(:disabled)` is more specific than `.btn[aria-expanded]`) */
+.sec-bar > .btn.btn[aria-expanded='true'] {
+  border-color: var(--c-yellow);
 }
 .sec-body[hidden] {
   display: none;
@@ -166,6 +232,35 @@
   font-weight: 600;
   text-align: left;
 }
+/* a table wider than four columns: one key–value card per row */
+.fact-card {
+  display: flex;
+  flex-direction: column;
+  gap: calc(2 * var(--u));
+}
+.fact-card-title {
+  font: 600 calc(var(--t-small) * var(--u)) / 1.3 var(--body);
+  color: var(--c-yellow);
+}
+.kd-table.kv {
+  font-size: calc(var(--t-caption) * var(--u));
+}
+.kd-table.kv td:first-child {
+  color: var(--c-mist);
+}
+.pending {
+  font-size: calc(var(--t-small) * var(--u));
+  color: var(--c-steel);
+}
+/* read by screen readers only */
+.kd-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .kd-table th,
 .kd-table td {
   padding: calc(4 * var(--u)) calc(10 * var(--u)) calc(4 * var(--u)) 0;
@@ -195,7 +290,7 @@
   --w: 14;
   display: grid;
   place-items: center;
-  width: calc(44 * var(--u));
+  width: calc(var(--seg, 44) * var(--u));
   height: calc(var(--hit) * var(--u));
   padding: 0;
   border: 0;
@@ -236,13 +331,230 @@
   flex-direction: column;
   gap: calc(8 * var(--u));
 }
+/* the caption is a WebGL Label (`caption()`, default line height 1.42), not the 1.3 of `.kicker` */
+.links > .kicker {
+  line-height: 1.42;
+}
 .chip.link {
   --tone-rgb: var(--c-mist-rgb);
   max-width: 100%;
   min-height: calc(32 * var(--u));
-  padding-block: calc(5 * var(--u));
   text-align: left;
+}
+/* The WebGL chip draws its rim inside its padding box; a CSS border adds to the box. Take the border width
+   (1.3 units, base.css) off the padding so the step regions' chips have the WebGL size: otherwise every chip
+   is 2.6 units wider (and a multi-line one taller), and a row of «Див. також» chips breaks one chip earlier. */
+.sp .chip {
+  padding: 0 calc(11.7 * var(--u)) 0 calc(9.7 * var(--u));
+}
+.sp .chip.multi {
+  padding: calc(6.7 * var(--u)) calc(12.7 * var(--u)) calc(6.7 * var(--u)) calc(10.7 * var(--u));
 }
 .chip.link.dim {
   opacity: 0.55;
+}
+
+/* buttons in the text (quiz entry, «Відкрити глосарій») keep their own width, as `alignSelf: 'start'` */
+.sp-extra > .btn,
+.term-card > .btn {
+  align-self: flex-start;
+}
+
+/* the content held back until the step's condition (stepUi `panel.hiddenUntil`): a calm empty plate */
+.sp.held .sp-title,
+.sp.held .sp-scroll,
+.sp.held .badges,
+.sp.held .pager,
+.sp.held .sp-head {
+  visibility: hidden;
+}
+
+/* a path chapter's step title is a short name under the chapter question (the header): one calm size that the
+   column never switches — an opened «Докладніше» only scrolls the text */
+.sp.path .sp-title,
+.sp.path .sp-title.compact {
+  font-size: calc(var(--t-h2) * var(--u));
+}
+.path-main > [data-ui='path-to-card'] {
+  align-self: flex-start;
+  margin-left: calc(-14 * var(--u));
+}
+
+/* ---- path-format step (path-body.ts, docs/PATH_FORMAT.md): one reader, one text, one disclosure ------------ */
+.path-main,
+.path-card {
+  display: flex;
+  flex-direction: column;
+  gap: calc(16 * var(--u));
+}
+.path-text,
+.path-more-body,
+.path-sec {
+  display: flex;
+  flex-direction: column;
+  gap: calc(10 * var(--u));
+}
+.path-sec {
+  gap: calc(6 * var(--u));
+}
+.path-p {
+  margin: 0;
+  font-size: calc(var(--t-body) * var(--u));
+  line-height: 1.52;
+  text-wrap: pretty;
+  hyphens: manual;
+}
+/* a new term of the step: part of the sentence, quietly marked, opens its card */
+.term-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px dotted rgb(var(--accent-rgb) / 0.75);
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  line-height: inherit;
+  cursor: pointer;
+  user-select: text;
+}
+.term-link:hover {
+  border-bottom-style: solid;
+}
+.term-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.path-action {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(12 * var(--u));
+  padding: calc(12 * var(--u)) calc(14 * var(--u));
+  border-radius: calc(var(--r-card) * var(--u));
+  border: 1px solid rgb(var(--accent-rgb) / 0.3);
+  background: rgb(var(--accent-rgb) / 0.08);
+}
+.path-action > .ic {
+  flex: none;
+  margin-top: calc(2 * var(--u));
+  color: var(--accent);
+}
+.path-action > div {
+  flex: 1;
+  min-width: 0;
+}
+/* a short instruction fills its box (Chrome's «pretty» balances paragraphs of ≤ 4 lines) */
+.path-action .path-p {
+  text-wrap: wrap;
+}
+.path-action .kicker {
+  color: var(--accent);
+}
+.path-hint {
+  margin: 0;
+  padding-left: calc(14 * var(--u));
+  font-size: calc(var(--t-small) * var(--u));
+  line-height: 1.45;
+  color: var(--c-mist);
+}
+.path-hint .kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6 * var(--u));
+  margin-right: calc(4 * var(--u));
+}
+.path-takeaway {
+  display: flex;
+  flex-direction: column;
+  gap: calc(6 * var(--u));
+  padding: calc(2 * var(--u)) 0 calc(2 * var(--u)) calc(14 * var(--u));
+  border-left: calc(3 * var(--u)) solid var(--accent);
+}
+.path-takeaway .kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6 * var(--u));
+  color: var(--accent);
+}
+.path-takeaway .path-p {
+  font-weight: 600;
+  color: var(--c-white);
+}
+.path-recall {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(8 * var(--u));
+}
+.path-recall .btn,
+.path-main > [data-ui='path-back'],
+.path-more-toggle {
+  align-self: flex-start;
+  margin-left: calc(-14 * var(--u)); /* a ghost button's label lines up with the text */
+}
+/* long labels («Згадайте: …», «Повернутися: …») wrap inside the button instead of running out of the panel */
+.path-recall .btn,
+.path-main > [data-ui='path-back'],
+.path-card > .btn {
+  height: auto;
+  min-height: calc(var(--h) * var(--u));
+  padding-block: calc(6 * var(--u));
+  white-space: normal;
+  text-align: start;
+  line-height: 1.3;
+}
+.path-honest {
+  display: flex;
+  flex-direction: column;
+  gap: calc(8 * var(--u));
+}
+.path-note {
+  margin: 0;
+  font-size: calc(var(--t-caption) * var(--u));
+  line-height: 1.45;
+  color: var(--c-steel);
+}
+.path-note-k {
+  color: var(--c-mist);
+  font-weight: 600;
+}
+.path-more {
+  display: flex;
+  flex-direction: column;
+  gap: calc(6 * var(--u));
+  padding-top: calc(10 * var(--u));
+  border-top: 1px solid rgb(var(--c-slate-rgb) / 0.55);
+}
+.path-more-toggle .ic {
+  transition: transform var(--dur-hover);
+}
+.path-more-toggle[aria-expanded='true'] .ic {
+  transform: rotate(180deg);
+}
+.path-more-body .path-p {
+  font-size: calc(var(--t-small) * var(--u));
+  color: var(--c-mist);
+}
+.path-card > .btn {
+  align-self: flex-start;
+}
+.path-now {
+  display: flex;
+  flex-direction: column;
+  gap: calc(8 * var(--u));
+  margin: 0;
+  padding-left: 1.4em;
+  font-size: calc(var(--t-body) * var(--u));
+  line-height: 1.5;
+}
+.path-now li::marker {
+  color: var(--accent);
+  font-weight: 700;
+}
+.path-bridge {
+  color: var(--c-mist);
+}
+.path-end {
+  margin: 0;
+  color: var(--c-steel);
 }

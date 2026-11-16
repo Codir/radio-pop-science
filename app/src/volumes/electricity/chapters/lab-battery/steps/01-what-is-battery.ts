@@ -8,6 +8,7 @@
 import { Vector3 } from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { audio } from '@/audio';
+import { domKit, type DomWidget } from '@/hud';
 import { galvanicPair, type Electrode } from '@electricity/sim/lab-battery';
 import { K, col } from '@/style';
 import { Chip, Label, TEXT_COLOR, UI, col as column, row } from '@/ui3d';
@@ -49,7 +50,14 @@ export const whatIsBattery: StepFactory = (lab) => {
       instant,
     );
     ladder.setPair(pair.anode, pair.cathode, emfV);
+    syncChips();
+  };
+  const syncChips = (): void => {
     for (const [metal, chip] of chips) chip.color = chosen.includes(metal) ? 'lime' : 'mist';
+    for (const [metal, b] of domChips) {
+      b.classList.toggle('on', chosen.includes(metal));
+      b.setAttribute('aria-pressed', String(chosen.includes(metal)));
+    }
   };
   const pick = (metal: Electrode): void => {
     if (chosen.includes(metal)) return;
@@ -77,6 +85,20 @@ export const whatIsBattery: StepFactory = (lab) => {
       row({ wrap: true, gap: 6, width: 'fill', children: [...chips.values()] }),
     ],
   });
+  // the same chips in the DOM interface (`?hud=dom`, `custom.dom`): same `ctl-metal1:<metal>` names
+  const domChips = new Map<Electrode, HTMLButtonElement>();
+  const ladderDom = (): DomWidget => {
+    const { h } = domKit;
+    const list = h('div.chips');
+    for (const metal of LADDER) {
+      const b = h('button.chip.kd-pick', { type: 'button', 'data-ui': `ctl-metal1:${metal}` }, metal);
+      b.addEventListener('click', () => pick(metal));
+      domChips.set(metal, b);
+      list.append(b);
+    }
+    syncChips();
+    return { el: h('div.kd-chip-pick', { role: 'group', 'aria-label': L.ladder }, h('span.label', null, L.ladder), list) };
+  };
 
   /* -------------------------------------------------------------- drag a puck from the ladder */
   const ghostMat = K.toon({ color: 'white', gloss: 0.5, emissive: 'cyan', emissiveIntensity: 0.35 });
@@ -152,7 +174,7 @@ export const whatIsBattery: StepFactory = (lab) => {
           ],
           value: 'discharge',
         },
-        { type: 'custom', id: 'metal1', node: ladderChips },
+        { type: 'custom', id: 'metal1', node: ladderChips, dom: ladderDom },
         { type: 'readout', id: 'emf1', label: L.emf, unit: 'V', digits: 2, get: () => emfV },
         note('ideal1', L.idealised, 'honesty'),
         note('water1', L.reactsWithWater, 'alarm', () => water),

@@ -23,6 +23,7 @@ export interface ContentSource {
   simpleQuiz?: ChapterContent['simpleQuiz'];
   crossReferences?: ChapterContent['crossReferences'];
   labels?: Readonly<Record<string, string>>;
+  path?: ChapterContent['path'];
 }
 
 export function defineContent(
@@ -64,6 +65,7 @@ export function defineContent(
       quiz: s.quiz,
       labels: s.labels,
       simple: s.simple,
+      path: s.path,
     };
   });
   for (const q of [...(source.quiz ?? []), ...(source.simpleQuiz ?? [])]) {
@@ -82,6 +84,7 @@ export function defineContent(
     simpleQuiz: source.simpleQuiz,
     crossReferences: source.crossReferences,
     labels: { ...(source.labels ?? {}), ...(extra.labels ?? {}) },
+    path: source.path,
   };
 }
 

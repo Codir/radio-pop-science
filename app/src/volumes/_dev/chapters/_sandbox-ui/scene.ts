@@ -1,5 +1,6 @@
 import { Mesh, SphereGeometry, TorusGeometry } from 'three';
 import { defineScene } from '@/engine/api';
+import { hudLayer } from '@/hud';
 import { K } from '@/style';
 import { UiNode, conceal, hudSurface, reveal } from '@/ui3d';
 import { cardsDemo } from './parts/cards';
@@ -10,6 +11,8 @@ import { readoutsDemo } from './parts/readouts';
 import { declareBoardStep } from './parts/step-board';
 import { declareOverflowStep } from './parts/step-overflow';
 import { declareStepUi } from './parts/step-ui';
+import { domChartsDemo } from './parts/dom-charts';
+import { domWidgetsDemo } from './parts/dom-widgets';
 
 export default defineScene((ctx) => {
   const { root, stage, camera } = ctx;
@@ -30,6 +33,7 @@ export default defineScene((ctx) => {
     world: { camera: 'main', show: [desk.surface] },
     overflow: { camera: 'main' },
     board: { camera: 'main' },
+    widgets: { camera: 'main' },
   });
 
   const stepUiApi = declareStepUi(ctx, { core, ring });
@@ -38,10 +42,13 @@ export default defineScene((ctx) => {
   const ui = hudSurface(ctx);
   const readouts = readoutsDemo();
   const extras = extrasDemo();
+  // `?hud=dom`: the chart pages are drawn by the DOM interface (D4) on a chapter layer instead
+  const layer = hudLayer(ctx, 'sandbox-layer');
+  const domCharts = layer ? domChartsDemo(ctx, layer) : null;
+  const domWidgets = layer ? domWidgetsDemo(ctx, layer) : null;
   const pages: Record<string, UiNode> = {
     controls: controlsDemo(),
-    readouts: readouts.node,
-    charts: extras.node,
+    ...(domCharts ? {} : { readouts: readouts.node, charts: extras.node }),
     cards: cardsDemo(),
   };
   const host = new UiNode({
@@ -61,6 +68,8 @@ export default defineScene((ctx) => {
   let spin = 0;
   return {
     enterStep(stepId, info) {
+      domCharts?.show(stepId);
+      domWidgets?.show(stepId);
       for (const [id, p] of Object.entries(pages)) {
         if (id === stepId) reveal(p, { instant: info.instant, dx: -30, dy: 0 });
         else conceal(p, { instant: info.instant, dx: -30, dy: 0 });
@@ -71,8 +80,12 @@ export default defineScene((ctx) => {
       ring.rotation.z = spin;
       desk.update(t);
       core.position.y = Math.sin(t * 1.3) * 0.12;
-      readouts.update(t);
-      extras.update(t);
+      domWidgets?.update(t);
+      if (domCharts) domCharts.update(t);
+      else {
+        readouts.update(t);
+        extras.update(t);
+      }
       boardStep.update();
     },
   };

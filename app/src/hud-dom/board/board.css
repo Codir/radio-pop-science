@@ -1,0 +1,41 @@
+/* Step board of the DOM interface (D3; WebGL twin hud/board.ts): title row with the fold button, a scrolling
+   body of controls (built by hud-dom/dock), buttons last. Placed by the column's layout pass. */
+.bd {
+  display: flex;
+  flex-direction: column;
+  gap: calc(12 * var(--u));
+  padding: calc(16 * var(--u)) calc(20 * var(--u));
+}
+.bd-head {
+  display: flex;
+  align-items: center;
+  gap: calc(8 * var(--u));
+}
+.bd-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font: 700 calc(var(--t-h3) * var(--u)) / 1.24 var(--body);
+}
+.bd-fold {
+  margin-left: auto;
+}
+.bd-body {
+  display: flex;
+  flex-direction: column;
+  gap: calc(12 * var(--u));
+  min-height: 0;
+}
+.bd-scroll {
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--accent-rgb) / 0.5) transparent;
+}
+/* the fold button discloses the body, but keeps the plain button look (base.css marks open disclosures yellow) */
+.bd-fold.btn[aria-expanded] {
+  border-color: rgb(var(--accent-rgb) / 0.55);
+}
+.bd-fold.btn[aria-expanded]:not(:hover) {
+  background: linear-gradient(to bottom, rgb(var(--c-bg-indigo-rgb) / 0.96), rgb(var(--c-bg-deep-rgb) / 0.98));
+  box-shadow: 0 0 calc(10 * var(--u)) rgb(var(--accent-rgb) / 0.1);
+}

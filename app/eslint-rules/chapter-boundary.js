@@ -6,7 +6,11 @@
 //
 // `chapter-boundary` — a chapter's files may import each other freely (`steps/x.ts` → `../parts/y`), the
 // platform through `@/…`, and their OWN volume's `sim/**` and `content/**` (through the volume alias
-// `@<volume>/…`, `@/volumes/<volume>/…` or a relative path). Never another chapter, never another volume.
+// `@<volume>/…`, `@/volumes/<volume>/…` or a relative path). Never another chapter, never another volume —
+// except that a chapter of a dev volume (`_dev`, `_path`: sandboxes) may showcase another volume's `shared/**`.
+//
+// `shared/**` of a volume is its scene library (one world for the whole volume: the stand, the copper rows …),
+// importable by every chapter of that volume (docs/VOLUMES.md §2).
 //
 // `volume-boundary` — nothing inside one volume imports another volume, and platform code never names a volume
 // (volumes are discovered with `import.meta.glob`).
@@ -17,7 +21,10 @@ import { fileURLToPath } from 'node:url';
 const SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src');
 const VOLUMES = path.join(SRC, 'volumes');
 /** What a chapter may use from its own volume. */
-const SHARED_IN_VOLUME = new Set(['sim', 'content']);
+const SHARED_IN_VOLUME = new Set(['sim', 'content', 'shared']);
+
+/** A dev volume (`_dev`, `_path`) may import `shared/**` of another volume to showcase it. */
+const showcase = (from, seg) => from.startsWith('_') && seg[1] === 'shared' && seg.length > 2;
 
 function volumeIds() {
   try {
@@ -58,7 +65,12 @@ function visitor(check) {
     const source = node.source;
     if (source && source.type === 'Literal' && typeof source.value === 'string') check(source, source.value);
   };
-  return { ImportDeclaration: on, ExportNamedDeclaration: on, ExportAllDeclaration: on, ImportExpression: on };
+  return {
+    ImportDeclaration: on,
+    ExportNamedDeclaration: on,
+    ExportAllDeclaration: on,
+    ImportExpression: on,
+  };
 }
 
 /** @type {import('eslint').Rule.RuleModule} */
@@ -69,10 +81,12 @@ export const chapterBoundary = {
     schema: [],
     messages: {
       leaves:
-        'Import "{{spec}}" leaves the chapter directory. Use "@/…" for the platform and "@<volume>/sim/…", "@<volume>/content/…" for the volume.',
-      other: 'Import "{{spec}}" reaches into another chapter ("{{target}}"). Chapters must not import other chapters.',
-      volume: 'Import "{{spec}}" reaches into another volume ("{{target}}"). A chapter uses only its own volume.',
-      area: 'Import "{{spec}}": a chapter may use only "sim/**" and "content/**" of its volume, not "{{target}}".',
+        'Import "{{spec}}" leaves the chapter directory. Use "@/…" for the platform and "@<volume>/sim/…", "@<volume>/content/…", "@<volume>/shared/…" for the volume.',
+      other:
+        'Import "{{spec}}" reaches into another chapter ("{{target}}"). Chapters must not import other chapters.',
+      volume:
+        'Import "{{spec}}" reaches into another volume ("{{target}}"). A chapter uses only its own volume.',
+      area: 'Import "{{spec}}": a chapter may use only "sim/**", "content/**" and "shared/**" of its volume, not "{{target}}".',
     },
   },
   create(context) {
@@ -90,7 +104,8 @@ export const chapterBoundary = {
         // a relative path into the platform (`../../../../kit`) or to src/volumes itself
         context.report({ node, messageId: 'leaves', data: { spec } });
       } else if (seg[0] !== here.volume) {
-        context.report({ node, messageId: 'volume', data: { spec, target: seg[0] } });
+        if (!showcase(here.volume, seg))
+          context.report({ node, messageId: 'volume', data: { spec, target: seg[0] } });
       } else if (seg[1] === 'chapters') {
         context.report({ node, messageId: 'other', data: { spec, target: seg[2] ?? '' } });
       } else if (!SHARED_IN_VOLUME.has(seg[1] ?? '')) {
@@ -128,7 +143,7 @@ export const volumeBoundary = {
         // files directly in src/volumes/ (library.json consumers) and main.ts are not "platform libraries"
         if (path.dirname(file) === VOLUMES || path.dirname(file) === SRC) return;
         context.report({ node, messageId: 'platform', data: { spec } });
-      } else if (volume !== here.volume) {
+      } else if (volume !== here.volume && !(here.chapter && showcase(here.volume, seg))) {
         context.report({ node, messageId: 'cross', data: { spec, target: volume } });
       }
     });

@@ -11,6 +11,7 @@ export function createLoading(hud: Hud): HudModule {
   const ring = new ProgressRing({ size: 34 });
   const text = new Label('Завантаження розділу…', { size: UI.text.small, nowrap: true });
   const node = new Panel({
+    name: 'loading', // the DOM interface takes its place (`hud-dom/chrome/loading.ts`)
     variant: 'card',
     dir: 'row',
     align: 'center',

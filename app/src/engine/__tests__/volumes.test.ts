@@ -27,7 +27,7 @@ const chaptersOf = (volume: string): ChapterManifest[] =>
 
 describe('volumes in the repository', () => {
   it('has the volumes this test knows about', () => {
-    expect(volumes.map((v) => v.dir).sort()).toEqual(['_demo', '_dev', 'circuit', 'electricity']);
+    expect(volumes.map((v) => v.dir).sort()).toEqual(['_demo', '_dev', '_path', 'circuit', 'electricity']);
     expect(Object.keys(IDENTITIES)).toHaveLength(volumes.length);
   });
 
@@ -154,7 +154,10 @@ describe('defineVolume', () => {
       label: 'Основи',
       short: 'Основи',
       emblem: 'generic',
+      layer: 'path',
     });
+    expect(v.format).toBe('classic');
+    expect(v.journey.axis.floors).toEqual([]);
     expect(v.journey.layout.dx).toBeGreaterThan(0);
   });
 
@@ -176,6 +179,10 @@ describe('defineVolume', () => {
     expect(bad({ journey: [{ id: 'wave', group: 'nope' }] })).toThrow(/unknown group/);
     expect(bad({ journey: [{ id: 'wave', group: 'basics', parent: 'nope' }] })).toThrow(/unknown parent/);
     expect(bad({ headline: 'tagline' })).toThrow(/headline/);
+    expect(bad({ format: 'scroll' })).toThrow(/format/);
+    expect(bad({ groups: [{ id: 'basics', label: 'Основи', layer: 'aside' }] })).toThrow(/layer/);
+    expect(bad({ journey: [{ id: 'wave', group: 'basics', floor: 'roof' }] })).toThrow(/unknown floor/);
+    expect(bad({ journey: [{ id: 'wave', group: 'basics', minutes: 0 }] })).toThrow(/minutes/);
     expect(() =>
       defineVolume(identity, { ...spec, journey: { axis: { ...spec.journey.axis, max: 0 } } }),
     ).toThrow(/axis/);

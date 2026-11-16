@@ -10,7 +10,7 @@ import { Vector3 } from 'three';
 import { fmtNumber, fmtPercent, fmtSI, fmtUnit } from '@/content';
 import { createFlow, createHeatShimmer } from '@/fx';
 import { col } from '@/style';
-import { STATUS, type Chart } from '@/ui3d';
+import { STATUS, type ChartApi } from '@/ui3d';
 import { TRANSMISSION, transmission } from '@electricity/sim/transformer';
 import type { StepFactory } from '../chapter';
 import { doc, hot } from '../labels';
@@ -59,7 +59,7 @@ export const whyHighVoltage: StepFactory = (tx) => {
     shown = kv;
     grow = instant ? 1 : 0;
   };
-  const drawCurve = (c: Chart): void => {
+  const drawCurve = (c: ChartApi): void => {
     const key = `${P()}|${U()}`;
     if (key === curveKey) return;
     curveKey = key;

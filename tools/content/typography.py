@@ -271,4 +271,4 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(C.run_volumes(main))
+    sys.exit(C.run_volumes(main, path=main))  # the rules do not depend on the document format

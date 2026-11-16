@@ -1,0 +1,434 @@
+/* DOM modal overlays (modal.ts): settings, help, glossary, quiz. Lengths in units (× --u) as the WebGL kit;
+   flat 2D only (DECISIONS §59 p). Hooks for the touch shells (D7): .ov-modal, .ov-panel, .ov-bar, .ov-body and
+   the per-overlay class .ov-<name>; the root's .kd-shell-* / .kd-ff-* classes select them. */
+
+.kd-layer > .ov-modal {
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: max(var(--safe), var(--safe-top, 0px)) max(var(--safe), var(--safe-right, 0px))
+    max(var(--safe), var(--safe-bottom, 0px)) max(var(--safe), var(--safe-left, 0px));
+}
+.ov-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(var(--c-bg-void-rgb) / 0.72);
+}
+.ov-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: calc(14 * var(--u));
+  width: min(calc(var(--w) * var(--u)), 100%);
+  max-height: 100%;
+  padding: calc(24 * var(--u)) calc(26 * var(--u)) calc(26 * var(--u));
+  contain: layout paint;
+}
+/* the dialog takes focus on open (modal.ts): no ring around the whole panel */
+.ov-modal .ov-panel:focus-visible {
+  outline: none;
+}
+.ov-bar {
+  display: flex;
+  align-items: center;
+  gap: calc(12 * var(--u));
+}
+.ov-bar .ov-icon {
+  --ic: 28;
+  color: var(--c-cyan);
+}
+.ov-title {
+  flex: 1;
+  min-width: 0;
+  font: 800 calc(var(--t-h2) * var(--u)) / 1.2 var(--display);
+}
+.ov-body {
+  display: flex;
+  flex-direction: column;
+  gap: calc(16 * var(--u));
+  min-height: 0;
+  /* room for the focus ring of the controls at the edge, and for the scrollbar */
+  margin: 0 calc(-8 * var(--u));
+  padding: calc(4 * var(--u)) calc(8 * var(--u));
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--accent-rgb) / 0.5) transparent;
+}
+
+/* ---- a labelled row of a form (settings): caption, control, hint ---------------------------------------- */
+.ov-field {
+  display: flex;
+  flex-direction: column;
+  gap: calc(6 * var(--u));
+}
+.ov-label {
+  font: 600 calc(var(--t-small) * var(--u)) / 1.3 var(--body);
+}
+.ov-hint {
+  margin: 0;
+  font-size: calc(var(--t-caption) * var(--u));
+  line-height: 1.34;
+  color: var(--c-steel);
+}
+.ov-rule {
+  height: 0;
+  margin: calc(2 * var(--u)) 0;
+  border: 0;
+  border-top: 1px solid rgb(var(--c-slate-rgb) / 0.6);
+}
+.ov-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(12 * var(--u));
+}
+/* the dock's controls (dock/controls) in a dialog: full width, the label beside the switch */
+.ov-panel .dk-seg {
+  width: 100%;
+}
+.ov-panel .dk-toggle {
+  align-self: flex-start;
+  text-align: start;
+}
+.ov-panel .dk-slider {
+  width: 100%;
+}
+
+/* ---- help: sections of key caps (help.ts) ------------------------------------------------------------- */
+.ov-help {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(300 * var(--u)), 1fr));
+  gap: calc(14 * var(--u));
+  align-items: start;
+}
+.ov-help.stack {
+  grid-template-columns: 1fr;
+}
+.ov-help-part {
+  display: flex;
+  flex-direction: column;
+  gap: calc(10 * var(--u));
+  padding: calc(14 * var(--u)) calc(16 * var(--u));
+  border-radius: calc(var(--r-inset) * var(--u));
+  background: rgb(var(--c-bg-void-rgb) / 0.45);
+  border: 1px solid rgb(var(--c-slate-rgb) / 0.5);
+}
+.ov-help-title {
+  display: flex;
+  align-items: center;
+  gap: calc(10 * var(--u));
+  margin: 0;
+  font: 800 calc(var(--t-h3) * var(--u)) / 1.2 var(--display);
+}
+.ov-help-title .ov-help-icon {
+  --ic: 24;
+  color: var(--c-cyan);
+}
+.ov-keys {
+  display: grid;
+  grid-template-columns: calc(112 * var(--u)) 1fr;
+  gap: calc(8 * var(--u)) calc(10 * var(--u));
+  align-items: center;
+  margin: 0;
+}
+.ov-keys dt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(4 * var(--u));
+}
+.ov-keys dd {
+  margin: 0;
+  font-size: calc(var(--t-small) * var(--u));
+  line-height: 1.3;
+  color: var(--c-mist);
+}
+.kd-root kbd {
+  display: inline-block;
+  box-sizing: border-box;
+  min-width: calc(34 * var(--u));
+  padding: calc(3 * var(--u)) calc(9 * var(--u));
+  border: 1px solid rgb(var(--c-mist-rgb) / 0.5);
+  border-radius: calc(7 * var(--u));
+  background: var(--c-bg-indigo);
+  font: 500 calc(var(--t-caption) * var(--u)) / 1.3 var(--mono);
+  text-align: center;
+  white-space: nowrap;
+}
+.ov-help-note {
+  font-size: calc(var(--t-small) * var(--u));
+  line-height: 1.4;
+  color: var(--c-mist);
+}
+
+/* ---- glossary (glossary.ts, glossary-list.ts): search, scope, parts and letters stay; the list scrolls -- */
+.ov-glossary .ov-panel {
+  height: min(calc(780 * var(--u)), 100%);
+}
+.ov-body.ov-glossary-body {
+  overflow: hidden;
+  flex: 1;
+}
+.ov-scope:empty {
+  display: none;
+}
+.ov-search {
+  display: flex;
+  align-items: center;
+  gap: calc(12 * var(--u));
+}
+.ov-search-box {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: calc(8 * var(--u));
+  box-sizing: border-box;
+  min-width: 0;
+  height: calc(var(--hit) * var(--u));
+  padding: 0 calc(4 * var(--u)) 0 calc(14 * var(--u));
+  border: calc(1.3 * var(--u)) solid rgb(var(--c-cyan-rgb) / 0.55);
+  border-radius: calc(var(--hit) * var(--u) / 2);
+  background: rgb(var(--c-bg-void-rgb) / 0.75);
+  cursor: text;
+}
+.ov-search-box:focus-within {
+  border-color: var(--c-cyan);
+  box-shadow: 0 0 calc(8 * var(--u)) rgb(var(--c-cyan-rgb) / 0.3);
+}
+.ov-search-box .ov-search-icon {
+  --ic: 20;
+  color: var(--c-steel);
+}
+.ov-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--c-white);
+  font: 400 calc(var(--t-small) * var(--u)) / 1 var(--body);
+  -webkit-user-select: text;
+  user-select: text;
+  outline: none;
+}
+/* the box shows the focus (:focus-within), not a ring around the bare field */
+.ov-search-box .ov-search-input:focus-visible {
+  outline: none;
+}
+.ov-search-input::placeholder {
+  color: var(--c-steel);
+}
+.ov-search-input::-webkit-search-cancel-button {
+  display: none;
+}
+.ov-search .btn.off {
+  visibility: hidden;
+}
+.ov-count {
+  min-width: calc(80 * var(--u));
+  text-align: end;
+  font-size: calc(var(--t-caption) * var(--u));
+  color: var(--c-steel);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ov-letters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(4 * var(--u));
+}
+.chip.ov-letter {
+  --tone-rgb: var(--c-mist-rgb);
+  justify-content: center;
+  min-width: calc(36 * var(--u));
+  min-height: calc(32 * var(--u));
+  padding: 0 calc(8 * var(--u));
+  font-weight: 600;
+}
+.chip.ov-letter[aria-pressed='true'] {
+  --tone-rgb: var(--accent-rgb);
+  border-color: var(--accent);
+  background: rgb(var(--accent-rgb) / 0.22);
+}
+.ov-glossary-list {
+  position: relative; /* rows' offsetTop is measured from here (glossary-list.ts) */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  margin: 0 calc(-8 * var(--u));
+  padding: 0 calc(8 * var(--u));
+  border-top: 1px solid rgb(var(--c-slate-rgb) / 0.5);
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--accent-rgb) / 0.5) transparent;
+}
+.ov-terms-note {
+  padding-top: calc(12 * var(--u));
+  font-size: calc(var(--t-small) * var(--u));
+  color: var(--c-mist);
+}
+.ov-term {
+  /* rows below the fold are not laid out until they scroll near (typing cost, the fixture's 959 terms) */
+  content-visibility: auto;
+  contain-intrinsic-size: auto calc(118 * var(--u));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(3 * var(--u));
+  padding: calc(14 * var(--u)) calc(8 * var(--u)) calc(10 * var(--u));
+  border-bottom: 1px solid rgb(var(--c-slate-rgb) / 0.35);
+}
+.ov-term.focus {
+  border-radius: calc(var(--r-inset) * var(--u));
+  background: rgb(var(--accent-rgb) / 0.1);
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.5);
+}
+.ov-term-name {
+  margin: 0;
+  font: 400 calc(var(--t-body) * var(--u)) / 1.3 var(--body);
+}
+.ov-term-intl {
+  margin: 0;
+  font-size: calc(var(--t-caption) * var(--u));
+  color: var(--c-steel);
+}
+.ov-term-def {
+  margin: calc(2 * var(--u)) 0 0;
+  font-size: calc(var(--t-small) * var(--u));
+  line-height: 1.4;
+  color: var(--c-mist);
+  max-width: 68ch;
+}
+.btn.ov-term-link {
+  max-width: 100%;
+  margin-left: calc(-14 * var(--u));
+  color: var(--c-cyan);
+}
+.btn.ov-term-link span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ov-terms-more {
+  height: 1px;
+}
+
+/* ---- quiz (quiz.ts) ------------------------------------------------------------------------------------ */
+.ov-quiz .ov-bar .ov-icon {
+  color: var(--c-yellow);
+}
+.ov-quiz .ov-title {
+  font-size: calc(var(--t-h3) * var(--u));
+}
+.ov-quiz-dots {
+  display: flex;
+  gap: calc(8 * var(--u));
+}
+.ov-quiz-dots li {
+  width: calc(10 * var(--u));
+  height: calc(10 * var(--u));
+  border-radius: 50%;
+  border: calc(1.5 * var(--u)) solid rgb(var(--c-mist-rgb) / 0.6);
+}
+.ov-quiz-dots li.done {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.ov-quiz-dots li.at:not(.done) {
+  border-color: var(--c-yellow);
+}
+.ov-quiz-stage {
+  display: flex;
+  flex-direction: column;
+  gap: calc(8 * var(--u));
+}
+.ov-quiz-q {
+  margin-bottom: calc(4 * var(--u));
+  font: 600 calc(var(--t-body) * var(--u)) / 1.36 var(--body);
+}
+.ov-quiz-opts {
+  display: flex;
+  flex-direction: column;
+  gap: calc(8 * var(--u));
+}
+.ov-quiz-opt {
+  display: flex;
+  align-items: center;
+  gap: calc(12 * var(--u));
+  box-sizing: border-box;
+  width: 100%;
+  min-height: calc(52 * var(--u));
+  padding: calc(9 * var(--u)) calc(14 * var(--u)) calc(9 * var(--u)) calc(12 * var(--u));
+  border: calc(1.5 * var(--u)) solid rgb(var(--accent-rgb) / 0.35);
+  border-radius: calc(var(--r-control) * var(--u));
+  background: linear-gradient(
+    to bottom,
+    rgb(var(--c-bg-indigo-rgb) / 0.92),
+    rgb(var(--c-bg-deep-rgb) / 0.96)
+  );
+  color: var(--c-white);
+  font: 400 calc(var(--t-small) * var(--u)) / 1.34 var(--body);
+  text-align: start;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-hover),
+    background var(--dur-hover),
+    transform var(--dur-press);
+}
+.ov-quiz-opt:hover:not([aria-disabled='true']) {
+  border-color: rgb(var(--accent-rgb) / 0.85);
+}
+.ov-quiz-opt:active:not([aria-disabled='true']) {
+  transform: scale(0.98);
+}
+.ov-quiz-opt[aria-disabled='true'] {
+  cursor: default;
+}
+.ov-quiz-opt.right {
+  --tone-rgb: var(--c-green-rgb);
+  border-color: rgb(var(--c-green-rgb) / 0.85);
+  background: rgb(var(--c-green-rgb) / 0.2);
+}
+.ov-quiz-opt.wrong {
+  border-color: rgb(var(--c-red-rgb) / 0.85);
+  background: rgb(var(--c-red-rgb) / 0.18);
+}
+.ov-quiz-letter {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(28 * var(--u));
+  height: calc(28 * var(--u));
+  border-radius: 50%;
+  border: calc(1.2 * var(--u)) solid rgb(var(--accent-rgb) / 0.6);
+  background: rgb(var(--c-bg-void-rgb) / 0.7);
+  font: 800 calc(var(--t-caption) * var(--u)) / 1 var(--display);
+  color: var(--c-mist);
+}
+.ov-quiz-text {
+  flex: 1;
+}
+.ov-quiz-opt .ov-quiz-mark {
+  --ic: 22;
+  flex: none;
+  width: calc(22 * var(--u));
+}
+.ov-quiz-opt.right .ov-quiz-mark {
+  color: var(--c-green);
+}
+.ov-quiz-opt.wrong .ov-quiz-mark {
+  color: var(--c-red);
+}
+.ov-quiz-why,
+.ov-quiz-note {
+  font-size: calc(var(--t-small) * var(--u));
+  line-height: 1.4;
+  color: var(--c-mist);
+}
+.btn.ov-quiz-next {
+  align-self: flex-end;
+}
+.ov-quiz-score {
+  font: 800 calc(var(--t-h2) * var(--u)) / 1.2 var(--display);
+}

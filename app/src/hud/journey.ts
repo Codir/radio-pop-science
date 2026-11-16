@@ -4,7 +4,15 @@
  * (dev, `?fixture`) from the volume's fixture (`VolumeManifest.fixtures.journey`) so both views can be
  * exercised at full scale before the real chapters exist.
  */
-import type { ChapterManifest, Engine, FixtureChapter, VolumeManifest } from '@/engine/api';
+import { chapterProgress, type Visited } from '@/content';
+import {
+  floorValue,
+  type ChapterManifest,
+  type Engine,
+  type FixtureChapter,
+  type VolumeLayer,
+  type VolumeManifest,
+} from '@/engine/api';
 import type { AccentName } from '@/style';
 
 export interface JourneyStep {
@@ -24,8 +32,15 @@ export interface JourneyChapter {
   readonly axisValue: number;
   readonly accent: AccentName;
   readonly steps: readonly JourneyStep[];
-  /** False for fixture entries that have no chapter behind them (they cannot be opened). */
+  /**
+   * False for chapters that are planned but not built (fixture entries, or `volume.json` journey entries with
+   * a `title` — a path volume plans its whole journey): they are drawn as planned and cannot be opened.
+   */
   readonly real: boolean;
+  /** Role of the chapter's group (prologue, path, branch, practicum). */
+  readonly layer: VolumeLayer;
+  /** Planned length in minutes (`volume.json` journey), null when the volume does not say. */
+  readonly minutes: number | null;
   /** Journey-map emblem loader of real chapters. */
   readonly emblem?: ChapterManifest['emblem'];
 }
@@ -40,6 +55,8 @@ export interface Journey {
   childrenOf(id: string): readonly JourneyChapter[];
   get(id: string): JourneyChapter | undefined;
   readonly stepCount: number;
+  /** Chapters that exist (can be opened); the rest are planned. */
+  readonly built: number;
   /** True when built from the fixture. */
   readonly fixture: boolean;
 }
@@ -59,28 +76,89 @@ function build(volume: VolumeManifest, chapters: readonly JourneyChapter[], fixt
     childrenOf: (id) => kids.get(id) ?? [],
     get: (id) => byId.get(id),
     stepCount: chapters.reduce((n, c) => n + c.steps.length, 0),
+    built: chapters.filter((c) => c.real).length,
     fixture,
   };
 }
 
 export function journeyFromManifests(volume: VolumeManifest, manifests: readonly ChapterManifest[]): Journey {
-  return build(
-    volume,
-    manifests.map((m) => ({
-      volume: volume.id,
-      id: m.id,
-      title: m.title,
-      group: m.group,
-      parent: m.parent ?? null,
-      axisLabel: m.axisLabel,
-      axisValue: m.axisValue,
-      accent: m.theme.accent,
-      steps: m.steps.map((s) => ({ id: s.id, title: s.title })),
-      real: true,
-      emblem: m.emblem,
-    })),
-    false,
+  const plan = new Map(volume.journey.planned.map((p) => [p.id, p]));
+  const layerOf = (group: string): VolumeLayer =>
+    volume.journey.groups.find((g) => g.id === group)?.layer ?? 'path';
+  const real = new Map(
+    manifests.map((m): [string, JourneyChapter] => [
+      m.id,
+      {
+        volume: volume.id,
+        id: m.id,
+        title: m.title,
+        group: m.group,
+        parent: m.parent ?? null,
+        axisLabel: m.axisLabel,
+        axisValue: m.axisValue,
+        accent: m.theme.accent,
+        steps: m.steps.map((s) => ({ id: s.id, title: s.title })),
+        real: true,
+        emblem: m.emblem,
+        layer: layerOf(m.group),
+        minutes: plan.get(m.id)?.minutes ?? null,
+      },
+    ]),
   );
+  // Planned chapters with a title (a path volume plans its whole journey in volume.json) keep their place on
+  // the map until they are built; built chapters the plan does not list follow in registry order.
+  const planned = volume.journey.planned.filter((p) => p.title !== undefined || real.has(p.id));
+  if (!planned.some((p) => p.title !== undefined)) return build(volume, [...real.values()], false);
+  const chapters = planned.map(
+    (p): JourneyChapter =>
+      real.get(p.id) ?? {
+        volume: volume.id,
+        id: p.id,
+        title: p.title!,
+        group: p.group,
+        parent: p.parent ?? null,
+        axisLabel: volume.journey.axis.floors.find((f) => f.id === p.floor)?.label ?? '',
+        axisValue: floorValue(volume, p.floor) ?? volume.journey.axis.origin,
+        accent: volume.accent,
+        steps: [],
+        real: false,
+        layer: layerOf(p.group),
+        minutes: p.minutes ?? null,
+      },
+  );
+  const listed = new Set(planned.map((p) => p.id));
+  return build(volume, [...chapters, ...[...real.values()].filter((c) => !listed.has(c.id))], false);
+}
+
+/** Plural forms of the volume's word for a chapter: «глава» in a path volume (VOLUME_STRUCTURE), else «розділ». */
+export function chapterWords(volume: VolumeManifest): readonly [string, string, string] {
+  return volume.format === 'path' ? ['глава', 'глави', 'глав'] : ['розділ', 'розділи', 'розділів'];
+}
+
+/**
+ * What is left of the journey: chapters not finished and their minutes (a chapter counts in proportion to
+ * its unopened steps; a planned chapter in full). Branches are optional and do not count. `minutes` is null
+ * when the volume gives no chapter lengths.
+ */
+export function journeyRemaining(
+  visited: Visited,
+  journey: Pick<Journey, 'chapters'>,
+): { chapters: number; total: number; minutes: number | null; totalMinutes: number } {
+  let chapters = 0;
+  let total = 0;
+  let minutes: number | null = null;
+  let totalMinutes = 0;
+  for (const c of journey.chapters) {
+    if (c.layer === 'branch') continue;
+    total++;
+    const p = c.real ? chapterProgress(visited, c) : { fraction: 0 };
+    if (p.fraction < 1) chapters++;
+    if (c.minutes !== null) {
+      minutes = (minutes ?? 0) + c.minutes * (1 - p.fraction);
+      totalMinutes += c.minutes;
+    }
+  }
+  return { chapters, total, minutes: minutes === null ? null : Math.round(minutes), totalMinutes };
 }
 
 /** True when the page was opened with `?fixture` (development aid; ignored in production builds without it). */
@@ -101,7 +179,9 @@ export async function loadJourney(engine: Engine, volume: VolumeManifest): Promi
   const planned: readonly FixtureChapter[] = await fixture();
   return build(
     volume,
-    planned.map((f) => real.get(f.id) ?? { ...f, volume: volume.id, real: false }),
+    planned.map(
+      (f) => real.get(f.id) ?? { ...f, volume: volume.id, real: false, layer: 'path', minutes: null },
+    ),
     true,
   );
 }

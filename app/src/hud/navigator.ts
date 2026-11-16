@@ -4,9 +4,10 @@
  */
 import { fullChapterId, type ChapterManifest } from '@/engine/api';
 import { isVisited } from '@/content';
-import { Button, Label, Panel, Stepper, TEXT_COLOR, UI, UiNode, rgba, type Painter } from '@/ui3d';
+import { Button, Label, Panel, Stepper, TEXT_COLOR, UI, UiNode, reveal, rgba, type Painter } from '@/ui3d';
 import type { HudContext, HudModule } from './context';
-import { TOUCH, sheetGeometry } from './touch/geometry';
+import { TOUCH, sheetGeometry } from './model/sheet';
+import { navHidden, onNavGate } from './nav-gate';
 
 /** Opaque strip behind the navigation row of the bottom sheet (touch portrait): content scrolls under it. */
 class NavPlate extends UiNode {
@@ -86,6 +87,19 @@ export function createNavigator(hud: HudContext): HudModule {
   };
   store.subscribe((s) => s.target, sync);
   store.subscribe((s) => s.progress, sync);
+  // held back until the step's condition (stepUi `nav.hiddenUntil`, nav-gate.ts): the buttons step aside (the
+  // node keeps its place and its visibility, which the DOM interface owns), then fade back in
+  const parts = [prev, middle, next];
+  const gate = (held: boolean): void => {
+    for (const p of parts) {
+      if (held) p.visible = false;
+      else if (!p.visible) {
+        p.visible = true;
+        reveal(p, { dy: 0, scale: 1, duration: 0.6 });
+      }
+    }
+  };
+  onNavGate(gate);
 
   return {
     node,
@@ -99,6 +113,7 @@ export function createNavigator(hud: HudContext): HudModule {
         fit,
       );
       sync();
+      gate(navHidden());
     },
     onStep: sync,
     onLayout(m) {
@@ -107,7 +122,10 @@ export function createNavigator(hud: HudContext): HudModule {
         const touch = mode !== 'desk';
         // touch: no dots (the counter says where we are; the map jumps to any step)
         dots.visible = !touch;
-        counter.setStyle({ size: touch ? UI.text.small : UI.text.caption, color: touch ? TEXT_COLOR.dim : TEXT_COLOR.mute });
+        counter.setStyle({
+          size: touch ? UI.text.small : UI.text.caption,
+          color: touch ? TEXT_COLOR.dim : TEXT_COLOR.mute,
+        });
         counter.height = touch ? 28 : 22;
         node.variant = mode === 'sheet' ? 'plain' : 'card';
         node.layerUp = mode === 'sheet' ? 1 : 0;

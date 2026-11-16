@@ -1,6 +1,7 @@
 /**
  * Geometry of the touch shells (F5, `docs/MOBILE.md`), in HUD units — on phones and tablets one unit is one
- * CSS px. Pure functions of the HUD metrics, shared by the sheet, the header, the navigator and the QA hook.
+ * CSS px. Pure functions of the HUD metrics, shared by both renderers of the sheet (WebGL `hud/touch/sheet.ts`,
+ * DOM `hud-dom/touch/sheet.ts`), the header, the navigator and the QA hook.
  *
  * `sheet` shell (portrait): a bottom sheet with three snap heights
  *   peek — grip, step title, tabs, navigation row (the scene keeps everything above);
@@ -12,6 +13,33 @@ import type { HudMetrics } from '@/engine/api';
 
 export type SheetSnap = 'peek' | 'half' | 'full';
 export const SHEET_SNAPS: readonly SheetSnap[] = ['peek', 'half', 'full'];
+
+/** The views of the sheet: «Текст», «Керування», «Графіки». */
+export type SheetTab = 'text' | 'controls' | 'board';
+export const SHEET_TAB_LABEL: Readonly<Record<SheetTab, string>> = { text: 'Текст', controls: 'Керування', board: 'Графіки' };
+
+/** Area the sheet and the compact header take from the scene, HUD units from each edge. */
+export interface SheetInsets {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/** The copy of a card shown in the sheet (an opened hotspot). */
+export interface SheetCardText {
+  kicker: string;
+  title: string;
+  body: string;
+}
+
+/** What the QA hook and the step panel may ask of either sheet (`hud.touch.sheet`). */
+export interface SheetControl {
+  readonly tab: SheetTab;
+  readonly snap: SheetSnap;
+  setTab(tab: SheetTab): void;
+  setSnap(snap: SheetSnap, opts?: { instant?: boolean }): void;
+}
 
 export const TOUCH = {
   /** Compact header: one row of 44-unit targets. */

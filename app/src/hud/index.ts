@@ -23,7 +23,9 @@ import { Hud, type Overlay } from './shell';
 import { setToastSink } from './step-ui';
 import { createSpine } from './spine';
 import { createSystemButtons } from './system';
+import { viewSources } from './views';
 import { createMenu } from './touch/menu';
+import type { TouchSheet } from './touch/sheet';
 import { mountTooltips } from './tooltips';
 
 let instance: Hud | null = null;
@@ -64,7 +66,8 @@ export const plugin: EnginePlugin = {
         column: column.node,
         board: column.board.node,
         navigator: navigator.node,
-        sheet: h.touch.sheet?.node,
+        // the WebGL sheet only (the DOM sheet is a region of `#kd-hud`)
+        sheet: (h.touch.sheet as Partial<TouchSheet> | null)?.node,
       }),
     );
     h.mount(createLoading(h));
@@ -72,10 +75,9 @@ export const plugin: EnginePlugin = {
     h.register('settings', createSettings(h));
     h.register('help', createHelp(h));
     h.register('menu', createMenu(h));
-    h.register(
-      'library',
-      createLibrary(h, () => stage),
-    );
+    const libraryView = createLibrary(h, () => stage);
+    viewSources.set(libraryView, { journey: null, stage: () => stage });
+    h.register('library', libraryView);
 
     // Spine, journey map, home and glossary belong to a volume: one set per volume, built when the volume is
     // first entered and swapped in whenever the chapter on screen belongs to another volume.
@@ -100,8 +102,7 @@ export const plugin: EnginePlugin = {
           home: createHome(h, journey, bare),
           glossary: createGlossary(h, journey),
         };
-        views.set(volume.id, v);
-        return v;
+        return keep(volume, v, journey);
       }
       const spine = createSpine(h, journey);
       const map = new JourneyMap(h, journey);
@@ -124,9 +125,17 @@ export const plugin: EnginePlugin = {
         home: createHome(h, journey, map),
         glossary: createGlossary(h, journey),
       };
+      return keep(volume, v, journey);
+    };
+    /** Store the views of a volume; their DOM twins (`?hud=dom`) are built from the same journey and stage. */
+    function keep(volume: VolumeManifest, v: VolumeViews, journey: Journey): VolumeViews {
+      const source = { journey, stage: () => v.stage };
+      viewSources.set(v.home, source);
+      viewSources.set(v.glossary, source);
+      if (v.map) viewSources.set(v.map, source);
       views.set(volume.id, v);
       return v;
-    };
+    }
     // no deep link in the address bar → land on the home screen of the volume once its first chapter is up
     let landing = engine.router.route.chapterId === null;
     // the step that loads behind that home screen is not "visited" until the learner reaches it
@@ -210,3 +219,7 @@ export const plugin: EnginePlugin = {
 export type { HudContext, HudModule, OverlayName } from './context';
 export { stepUi, type StepUi, type StepUiApi, type ControlPatch } from './step-ui';
 export type * from './step-ui-types';
+/** Chapter overlays of the DOM interface (`?hud=dom`; null under `gl`) — replaces `hudSurface` (HUD_DOM §13). */
+export { hudLayer } from '@/hud-dom/custom/layer';
+/** Element helpers for `custom.dom` widgets and `hudLayer` content (docs/UI_API.md §8). */
+export * as domKit from '@/hud-dom/custom/kit';

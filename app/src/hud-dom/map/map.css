@@ -1,0 +1,475 @@
+/* Full-screen views of the DOM interface (map area): journey-map chrome (chrome.ts, card.ts), home (home.ts),
+   library (library.ts). The views lie over the WebGL map world: their roots let the pointer through (drag, wheel
+   and clicks on the map reach the canvas), only plates and buttons take it. Flat 2D (DECISIONS §59 p).
+   Hooks for the touch shells (D7): .mp-*, .hm-*, .lb-* with the root's .kd-shell-* / .kd-ff-* classes. */
+
+.kd-layer > .mp-root,
+.kd-layer > .hm-root,
+.kd-layer > .lb-root {
+  inset: 0;
+  pointer-events: none;
+  --edge-t: max(var(--safe), var(--safe-top, 0px));
+  --edge-r: max(var(--safe), var(--safe-right, 0px));
+  --edge-b: max(var(--safe), var(--safe-bottom, 0px));
+  --edge-l: max(var(--safe), var(--safe-left, 0px));
+}
+/* the view takes focus on open (no ring around the whole screen) */
+.kd-layer > .mp-root:focus-visible,
+.kd-layer > .hm-root:focus-visible,
+.kd-layer > .lb-root:focus-visible {
+  outline: none;
+}
+.mp-root .mp-bar,
+.mp-root .btn,
+.mp-root .mp-card,
+.hm-root .btn,
+.lb-root .lb-col {
+  pointer-events: auto;
+}
+
+/* ---- journey map: title bar, buttons, hint, card ------------------------------------------------------ */
+.mp-bar {
+  position: absolute;
+  left: var(--edge-l);
+  top: var(--edge-t);
+  display: flex;
+  align-items: center;
+  gap: calc(14 * var(--u));
+  max-width: calc(100% - var(--edge-l) - var(--edge-r) - 380 * var(--u));
+  padding: calc(10 * var(--u)) calc(18 * var(--u)) calc(10 * var(--u)) calc(12 * var(--u));
+}
+.ring.mp-ring {
+  width: calc(var(--size) * var(--u));
+  height: calc(var(--size) * var(--u));
+}
+.mp-bar-text {
+  min-width: 0;
+}
+.mp-title {
+  font: 800 calc(var(--t-h2) * var(--u)) / 1.15 var(--display);
+  white-space: nowrap;
+}
+.mp-line {
+  font-size: calc(var(--t-small) * var(--u));
+  line-height: 1.3;
+  color: var(--c-mist);
+}
+.mp-actions {
+  position: absolute;
+  right: var(--edge-r);
+  top: var(--edge-t);
+  display: flex;
+  gap: calc(12 * var(--u));
+}
+.mp-hint {
+  position: absolute;
+  left: 50%;
+  bottom: var(--edge-b);
+  transform: translateX(-50%);
+  display: none;
+  font-size: calc(var(--t-caption) * var(--u));
+  color: var(--c-steel);
+  white-space: nowrap;
+  text-shadow: 0 0 calc(6 * var(--u)) var(--c-bg-void);
+}
+.kd-root.wide.kd-shell-desk .mp-root:not(.selected) .mp-hint {
+  display: block;
+}
+/* the card: right of the focused platform on wide screens, at the bottom otherwise */
+.mp-card-slot {
+  position: absolute;
+  right: var(--edge-r);
+  top: calc(var(--edge-t) + 96 * var(--u));
+  bottom: calc(var(--edge-b) + 56 * var(--u));
+  width: min(calc(470 * var(--u)), 100% - var(--edge-l) - var(--edge-r));
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+.kd-root:not(.wide) .mp-card-slot {
+  top: auto;
+  right: auto;
+  left: 50%;
+  bottom: var(--edge-b);
+  height: 50%;
+  width: min(calc(620 * var(--u)), 100% - var(--edge-l) - var(--edge-r));
+  translate: -50% 0;
+  align-items: flex-end;
+}
+.mp-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: calc(12 * var(--u));
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 100%;
+  padding: calc(18 * var(--u)) calc(18 * var(--u)) calc(18 * var(--u));
+}
+.mp-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(12 * var(--u));
+}
+.mp-card-names {
+  flex: 1;
+  min-width: 0;
+}
+.mp-card-names .kicker {
+  white-space: normal;
+}
+.mp-card-title {
+  margin-top: calc(2 * var(--u));
+  font: 800 calc(var(--t-h2) * var(--u)) / 1.16 var(--display);
+}
+.mp-planned-dot {
+  flex: none;
+  width: calc(46 * var(--u));
+  height: calc(46 * var(--u));
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: calc(2 * var(--u)) dashed var(--c-steel);
+}
+.mp-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(8 * var(--u));
+}
+.mp-card.planned .mp-facts .chip:last-child {
+  --tone-rgb: var(--c-steel-rgb);
+  color: var(--c-mist);
+}
+.mp-steps {
+  display: flex;
+  flex-direction: column;
+  gap: calc(2 * var(--u));
+  min-height: 0;
+  margin: 0 calc(-4 * var(--u));
+  padding: calc(2 * var(--u)) calc(4 * var(--u));
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--accent-rgb) / 0.5) transparent;
+}
+.mp-step {
+  display: flex;
+  align-items: center;
+  gap: calc(12 * var(--u));
+  box-sizing: border-box;
+  width: 100%;
+  min-height: calc(var(--hit) * var(--u));
+  padding: calc(6 * var(--u)) calc(12 * var(--u)) calc(6 * var(--u)) calc(8 * var(--u));
+  border: calc(1.3 * var(--u)) solid transparent;
+  border-radius: calc(12 * var(--u));
+  background: rgb(var(--c-bg-violet-rgb) / 0.25);
+  color: var(--c-mist);
+  font: 400 calc(var(--t-small) * var(--u)) / 1.28 var(--body);
+  text-align: start;
+  cursor: pointer;
+  transition:
+    background var(--dur-hover),
+    border-color var(--dur-hover),
+    transform var(--dur-press);
+}
+.mp-step:hover {
+  background: rgb(var(--c-bg-violet-rgb) / 0.75);
+  border-color: rgb(var(--c-cyan-rgb) / 0.5);
+}
+.mp-step:active {
+  transform: scale(0.985);
+}
+.mp-step.seen,
+.mp-step.current {
+  color: var(--c-white);
+}
+.mp-step.current {
+  border-color: rgb(var(--c-yellow-rgb) / 0.7);
+}
+.mp-no {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(30 * var(--u));
+  height: calc(30 * var(--u));
+  border-radius: 50%;
+  border: 1px solid rgb(var(--c-mist-rgb) / 0.5);
+  background: rgb(var(--c-bg-void-rgb) / 0.8);
+  font: 500 calc(var(--t-caption) * var(--u)) / 1 var(--mono);
+  color: var(--c-white);
+}
+.mp-step.seen .mp-no {
+  background: color-mix(in srgb, var(--c-bg-indigo) 55%, var(--c-green));
+}
+.mp-step.current .mp-no {
+  background: var(--c-yellow);
+  color: var(--c-bg-void);
+}
+.mp-step-title {
+  flex: 1;
+}
+.mp-step .mp-mark {
+  --ic: 18;
+  color: var(--c-green);
+}
+.mp-step.current .mp-mark {
+  color: var(--c-yellow);
+}
+.btn.mp-go {
+  --h: 58;
+  width: 100%;
+}
+.mp-note {
+  font-size: calc(var(--t-small) * var(--u));
+  color: var(--c-mist);
+}
+
+/* ---- home screen ---------------------------------------------------------------------------------------- */
+.hm-veil {
+  position: absolute;
+  left: 50%;
+  top: 2%;
+  width: min(calc(1200 * var(--u)), 100%);
+  height: calc(560 * var(--u));
+  translate: -50% 0;
+  background: radial-gradient(closest-side, rgb(var(--c-bg-void-rgb) / 0.55), rgb(var(--c-bg-void-rgb) / 0));
+  pointer-events: none;
+}
+.hm-col {
+  position: absolute;
+  left: 50%;
+  top: 9%;
+  translate: -50% 0;
+  width: calc(100% - var(--edge-l) - var(--edge-r));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(18 * var(--u));
+  text-align: center;
+}
+.kd-root:not(.wide) .hm-col {
+  top: 12%;
+}
+.hm-root.bare .hm-col {
+  top: 44%;
+  translate: -50% -50%;
+}
+.hm-root.bare .hm-veil {
+  top: 44%;
+  height: calc(420 * var(--u));
+  translate: -50% -50%;
+}
+.kicker.hm-kicker {
+  color: var(--c-cyan);
+  letter-spacing: 0.22em;
+}
+.hm-title {
+  max-width: 100%;
+  font: 800 calc(var(--t-hero) * var(--u)) / 1.08 var(--display);
+  text-shadow: 0 0 calc(24 * var(--u)) rgb(var(--c-bg-void-rgb) / 0.6);
+  text-wrap: balance;
+}
+.hm-tagline {
+  font: 800 calc(var(--t-h2) * var(--u)) / 1.2 var(--display);
+  color: var(--c-mist);
+}
+.hm-lead {
+  max-width: calc(760 * var(--u));
+  font-size: calc(var(--t-h3) * var(--u));
+  line-height: 1.4;
+  color: var(--c-mist);
+  text-wrap: pretty;
+}
+.hm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: calc(16 * var(--u));
+  margin-top: calc(6 * var(--u));
+}
+.hm-root .btn.lg {
+  --h: 58;
+  --fs: var(--t-body);
+  padding: 0 calc(26 * var(--u));
+}
+.hm-facts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: calc(10 * var(--u));
+}
+.chip.hm-note {
+  margin-top: calc(10 * var(--u));
+  white-space: normal;
+}
+.hm-aside {
+  position: absolute;
+  left: 50%;
+  bottom: max(5%, calc(28 * var(--u)), var(--safe-bottom, 0px));
+  translate: -50% 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: calc(12 * var(--u));
+  width: calc(100% - var(--edge-l) - var(--edge-r));
+}
+.hm-aside .btn {
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+  height: auto;
+  min-height: calc(var(--h) * var(--u));
+  padding-block: calc(9 * var(--u));
+  line-height: 1.2;
+}
+/* touch shells (F5's rules): clear of the notch; a phone held upright stacks the actions, a phone held sideways
+   has no height to spare for a tall top margin */
+.kd-shell-sheet .hm-col,
+.kd-shell-side .hm-col {
+  top: calc(var(--edge-t) + 8vh);
+}
+.kd-ff-phone .hm-col {
+  gap: calc(12 * var(--u));
+}
+.kd-ff-phone.kd-shell-side .hm-col {
+  top: calc(var(--edge-t) + 14 * var(--u));
+}
+.kd-ff-phone.kd-shell-sheet .hm-actions {
+  flex-direction: column;
+  gap: calc(10 * var(--u));
+}
+.kd-ff-phone .hm-title {
+  font-size: clamp(calc(28 * var(--u)), (100vw - 2 * var(--safe) - 32 * var(--u)) / 13, calc(var(--t-hero) * var(--u)));
+}
+/* upright, the title has the width to itself: as large as one line of the volume's name allows */
+.kd-ff-phone.kd-shell-sheet .hm-title {
+  font-size: clamp(calc(28 * var(--u)), 9vw, calc(var(--t-hero) * var(--u)));
+}
+.kd-ff-phone .hm-lead {
+  font-size: calc(var(--t-small) * var(--u));
+}
+
+/* ---- library screen --------------------------------------------------------------------------------------- */
+.lb-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(var(--c-bg-void-rgb) / 0.62);
+  pointer-events: auto;
+}
+.lb-col {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(16 * var(--u));
+  padding: max(9vh, var(--edge-t)) var(--edge-r) var(--edge-b) var(--edge-l);
+  box-sizing: border-box;
+  text-align: center;
+}
+.kicker.lb-kicker {
+  color: var(--c-cyan);
+  letter-spacing: 0.22em;
+}
+.lb-title {
+  font: 800 calc(var(--t-h1) * var(--u)) / 1.1 var(--display);
+}
+.lb-shelf {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: calc(22 * var(--u));
+  max-width: calc(1342 * var(--u));
+  margin-top: calc(8 * var(--u));
+  text-align: start;
+}
+.lb-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: calc(14 * var(--u));
+  box-sizing: border-box;
+  width: min(calc(430 * var(--u)), 100%);
+  padding: calc(20 * var(--u)) calc(22 * var(--u));
+}
+.lb-head {
+  display: flex;
+  align-items: center;
+  gap: calc(16 * var(--u));
+}
+.lb-emblem {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(76 * var(--u));
+  height: calc(76 * var(--u));
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: calc(2 * var(--u)) solid rgb(var(--accent-rgb) / 0.95);
+  background: rgb(var(--accent-rgb) / 0.28);
+  box-shadow: 0 0 calc(14 * var(--u)) rgb(var(--accent-rgb) / 0.45);
+}
+.lb-emblem .ic {
+  --ic: 36;
+}
+.lb-names {
+  flex: 1;
+  min-width: 0;
+}
+.lb-name {
+  font: 800 calc(var(--t-h2) * var(--u)) / 1.14 var(--display);
+}
+.lb-sub,
+.lb-lead {
+  font-size: calc(var(--t-small) * var(--u));
+  line-height: 1.38;
+  color: var(--c-mist);
+}
+.lb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(8 * var(--u));
+}
+.lb-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* ---- touch shells (F5's rules, until D7 restyles): a round close button, «Уся подорож» under it (portrait) or
+   beside it (landscape), the title bar keeps the rest of the row; a smaller card title */
+.kd-shell-sheet .mp-close .mp-btn-label,
+.kd-shell-side .mp-close .mp-btn-label {
+  display: none;
+}
+.kd-shell-sheet .btn.mp-close,
+.kd-shell-side .btn.mp-close {
+  width: calc(var(--h) * var(--u));
+  padding: 0;
+}
+.kd-shell-sheet .mp-actions {
+  flex-direction: column-reverse;
+  align-items: flex-end;
+}
+.kd-shell-sheet .mp-bar,
+.kd-shell-side .mp-bar {
+  max-width: calc(100% - var(--edge-l) - var(--edge-r) - 62 * var(--u));
+}
+.kd-shell-side .mp-bar {
+  max-width: calc(100% - var(--edge-l) - var(--edge-r) - 240 * var(--u));
+}
+.kd-ff-phone .mp-title {
+  font-size: calc(var(--t-h3) * var(--u));
+}
+.kd-ff-phone .mp-card-title {
+  font-size: calc(var(--t-h3) * var(--u));
+}
+.kd-shell-side .mp-card-slot {
+  top: auto;
+  left: auto;
+  right: var(--edge-r);
+  bottom: var(--edge-b);
+  height: calc(100% - var(--edge-t) - var(--edge-b) - 70 * var(--u));
+  width: min(46%, calc(470 * var(--u)));
+  translate: none;
+  align-items: flex-end;
+}

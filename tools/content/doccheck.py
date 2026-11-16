@@ -249,8 +249,29 @@ def main():
     return 1 if failed else 0
 
 
+def main_path():
+    """A volume in the path format (docs/PATH_FORMAT.md): group `path` (tools/content/path_check.py) and the
+    format-independent groups; the generated files are written by the same tools as for volume 1."""
+    import path_check
+    failed = path_check.main()
+    vol = ['--volume', C.VOLUME]
+    checks = [('typography', 'typography.py', ['--check'] + vol), ('index', 'build_index.py', ['--check'] + vol),
+              ('glossary', 'build_glossary.py', ['--check'] + vol), ('export', 'export_content.py', ['--check'] + vol),
+              ('runtime', 'export_runtime.py', ['--check'] + vol),
+              ('fonts', '../../app/scripts/font-coverage.mjs', vol)]
+    for name, script, args in checks:
+        rc, out = run(script, *args)
+        print('  %-11s %s — %s' % (name, 'ok' if rc == 0 else 'FAIL', out[-1]))
+        if rc != 0:
+            failed += 1
+            for line in out[:-1][:40]:
+                print('      ' + line)
+    print('doccheck[%s]: %s' % (C.VOLUME, 'ALL GREEN' if not failed else '%d check group(s) FAILED' % failed))
+    return 1 if failed else 0
+
+
 def main_all():
-    code = C.run_volumes(main, default_all=True)
+    code = C.run_volumes(main, default_all=True, path=main_path)
     print('doccheck: %s' % ('ALL GREEN' if code == 0 else 'FAILED'))
     return code
 

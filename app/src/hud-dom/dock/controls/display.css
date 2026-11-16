@@ -1,0 +1,230 @@
+/* Read-only controls of the dock / board: readout, stat grid, gauge, table, status note (WebGL twins
+   ui3d/widgets/{readout,gauge,table,chip}.ts). Numbers are tabular with a reserved width: a live value never
+   re-lays the dock out (HUD_DOM §7). */
+
+/* ---- readout ---------------------------------------------------------------------------------------------- */
+.dk-readout {
+  display: flex;
+  flex-direction: column;
+  min-width: calc(96 * var(--u));
+}
+.dk-num {
+  display: block;
+  height: calc(34 * var(--u));
+  font: 500 calc(var(--t-h2) * var(--u)) / calc(34 * var(--u)) var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.dk-num.text {
+  font-family: var(--body);
+  font-weight: 700;
+}
+
+/* ---- stat grid (2 per row in the dock, 3 on the board) ---------------------------------------------------- */
+.dk-stats {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
+  gap: calc(8 * var(--u));
+  margin: 0;
+}
+.dk-stat {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: calc(2 * var(--u));
+  padding: calc(8 * var(--u)) calc(12 * var(--u));
+  border: calc(1 * var(--u)) solid rgb(var(--c-slate-rgb) / 0.55);
+  border-radius: calc(8 * var(--u));
+  background: rgb(var(--c-bg-void-rgb) / 0.55);
+}
+.dk-stat .dk-cap {
+  white-space: normal;
+  line-height: 1.2;
+}
+.dk-stat-num {
+  margin: 0;
+  font: 500 calc(var(--t-h3) * var(--u)) / 1.333 var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- gauge: radial dial (SVG in units) and linear bar ----------------------------------------------------- */
+.dk-gauge {
+  --tone: var(--accent);
+}
+.dk-gauge.radial {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  width: calc(132 * var(--u));
+  height: calc(126.72 * var(--u));
+}
+.dk-dial {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.dk-dial .well {
+  stroke: rgb(var(--c-bg-void-rgb) / 0.85);
+}
+.dk-dial .zone {
+  opacity: 0.6;
+}
+.dk-dial .fill {
+  stroke: color-mix(in srgb, var(--tone) 78%, white);
+  filter: drop-shadow(0 0 calc(3 * var(--u)) var(--tone));
+}
+.dk-dial .needle {
+  stroke: var(--c-white);
+  stroke-width: 4;
+  stroke-linecap: round;
+  transform-box: view-box;
+  transform-origin: 66px 66px; /* the dial's centre in its 132-unit view box */
+}
+.dk-dial .hub {
+  fill: var(--c-mist);
+  stroke: color-mix(in srgb, var(--tone) 80%, white);
+  stroke-width: 2.5;
+}
+.dk-gauge-num {
+  position: relative;
+  font: 500 calc(var(--t-h3) * var(--u)) / calc(26 * var(--u)) var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.dk-gauge.radial .dk-cap {
+  position: relative;
+}
+.dk-gauge.linear {
+  display: flex;
+  flex-direction: column;
+  gap: calc(2 * var(--u));
+  width: 100%;
+}
+.dk-gauge.linear .dk-gauge-num {
+  font-size: calc(var(--t-small) * var(--u));
+}
+.dk-lbar {
+  --t: 0;
+  position: relative;
+  height: calc(22 * var(--u));
+}
+.dk-lbar > span {
+  position: absolute;
+  box-sizing: border-box;
+}
+.dk-lbar .rail,
+.dk-lbar .fill {
+  top: calc(7 * var(--u));
+  height: calc(10 * var(--u));
+  border-radius: calc(5 * var(--u));
+}
+.dk-lbar .rail {
+  left: 0;
+  right: 0;
+  border: calc(1 * var(--u)) solid rgb(var(--c-slate-rgb) / 0.6);
+  background: rgb(var(--c-bg-void-rgb) / 0.85);
+}
+.dk-lbar .zone {
+  top: calc(19.5 * var(--u));
+  height: calc(3 * var(--u));
+  border-radius: calc(1.5 * var(--u));
+  opacity: 0.8;
+}
+.dk-lbar .fill {
+  left: 0;
+  width: max(calc(10 * var(--u)), calc(var(--t) * 100%));
+  border: calc(1 * var(--u)) solid var(--tone);
+  background: color-mix(in srgb, var(--tone) 78%, white);
+  box-shadow: 0 0 calc(7 * var(--u)) color-mix(in srgb, var(--tone) 50%, transparent);
+}
+.dk-lbar .mark {
+  top: calc(2 * var(--u));
+  left: calc(var(--t) * 100%);
+  width: calc(5 * var(--u));
+  height: calc(20 * var(--u));
+  border-radius: calc(2.5 * var(--u));
+  background: var(--c-white);
+  box-shadow: 0 0 calc(5 * var(--u)) rgb(255 255 255 / 0.5);
+  transform: translateX(-50%);
+}
+
+/* ---- table ------------------------------------------------------------------------------------------------- */
+.dk-table {
+  width: 100%;
+  margin: calc(-2 * var(--u)) 0; /* the row spacing applies at the outer edges too: the WebGL table has none there */
+  border-collapse: separate;
+  border-spacing: 0 calc(2 * var(--u));
+  font-size: calc(var(--t-small) * var(--u));
+  line-height: 1.25;
+  color: var(--c-mist);
+}
+.dk-table.dense {
+  font-size: calc(var(--t-caption) * var(--u));
+}
+.dk-table th,
+.dk-table td {
+  padding: calc(6 * var(--u)) calc(10 * var(--u));
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.dk-table th {
+  font-weight: 700;
+  box-shadow: inset 0 calc(-1.5 * var(--u)) rgb(var(--c-slate-rgb) / 0.8); /* the head rule takes no room */
+}
+.dk-table :is(th, td):first-child {
+  text-align: left;
+  font-weight: 700;
+}
+.dk-table td:first-child {
+  color: var(--c-white);
+}
+.dk-table tbody tr:nth-child(odd) td {
+  background: rgb(var(--c-bg-void-rgb) / 0.45);
+}
+.dk-table td:first-child {
+  border-radius: calc(6 * var(--u)) 0 0 calc(6 * var(--u));
+}
+.dk-table td:last-child {
+  border-radius: 0 calc(6 * var(--u)) calc(6 * var(--u)) 0;
+}
+.dk-table td:only-child {
+  border-radius: calc(6 * var(--u));
+}
+/* the WebGL row: accent 16 % fill, 60 % rim — blended in linear light, so stronger in sRGB here */
+.dk-table tr[aria-current] td {
+  background: rgb(var(--accent-rgb) / 0.4);
+  box-shadow:
+    inset 0 calc(1 * var(--u)) rgb(var(--accent-rgb) / 0.8),
+    inset 0 calc(-1 * var(--u)) rgb(var(--accent-rgb) / 0.8);
+}
+.dk-table tr[aria-current] td:first-child {
+  box-shadow:
+    inset 0 calc(1 * var(--u)) rgb(var(--accent-rgb) / 0.8),
+    inset 0 calc(-1 * var(--u)) rgb(var(--accent-rgb) / 0.8),
+    inset calc(1 * var(--u)) 0 rgb(var(--accent-rgb) / 0.8);
+}
+.dk-table tr[aria-current] td:last-child {
+  box-shadow:
+    inset 0 calc(1 * var(--u)) rgb(var(--accent-rgb) / 0.8),
+    inset 0 calc(-1 * var(--u)) rgb(var(--accent-rgb) / 0.8),
+    inset calc(-1 * var(--u)) 0 rgb(var(--accent-rgb) / 0.8);
+}
+
+/* ---- status note (a status chip: tone ok by default, or the spec's colour). `.chip.` because core/base.css is
+   bundled after the area styles and would win a tie ---------------------------------------------------------- */
+.chip.dk-note {
+  --tone-rgb: var(--c-ui-ok-rgb);
+  align-self: flex-start;
+  max-width: calc(400 * var(--u));
+  /* the 1.3-unit CSS border adds to the box (the WebGL rim is inside): taken off the chip padding, as D2 does */
+  padding: calc(6.7 * var(--u)) calc(12.7 * var(--u)) calc(6.7 * var(--u)) calc(10.7 * var(--u));
+  font-weight: 700;
+}
+.chip.dk-note.toned {
+  --tone-rgb: var(--accent-rgb);
+}

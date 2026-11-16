@@ -4,19 +4,26 @@
 import type { ChapterManifest, Engine, HudMetrics, Position, VolumeManifest } from '@/engine/api';
 import type { ChapterContent } from '@/content';
 import type { ToastOptions, UiNode, UiSurface } from '@/ui3d';
-import type { SheetInsets, TouchSheet } from './touch/sheet';
+import type { SheetCardText, SheetControl, SheetInsets } from './model/sheet';
 
-/** Hooks of the touch shells (F5): installed by the sheet when a phone / tablet layout is first built. */
+/**
+ * Hooks of the touch shells (F5): installed by the sheet when a phone / tablet layout is first built — the WebGL
+ * sheet (`hud/touch/sheet.ts`) or, under `?hud=dom`, the DOM sheet (`hud-dom/touch`).
+ */
 export interface TouchHooks {
   /** Area the sheet and the compact header take from the scene (HUD units from each edge). */
   insets: ((m: HudMetrics) => SheetInsets) | null;
-  /** Show a card (an opened hotspot) inside the sheet; returns a function that removes it. */
-  card: ((card: UiNode, onDismiss: () => void, opts?: { back?: boolean }) => () => void) | null;
-  /** The sheet itself (QA hook, menu). */
-  sheet: TouchSheet | null;
+  /**
+   * Show a card (an opened hotspot) inside the sheet; returns a function that removes it. `text`: the card's copy,
+   * for the DOM sheet, which draws its own card instead of the WebGL node.
+   */
+  card: ((card: UiNode, onDismiss: () => void, opts?: { back?: boolean; text?: SheetCardText }) => () => void) | null;
+  /** The sheet itself (QA hook, step panel). */
+  sheet: SheetControl | null;
 }
 
-export type OverlayName = 'library' | 'map' | 'home' | 'settings' | 'glossary' | 'help' | 'menu';
+/** Full-screen views and modal overlays; `quiz` exists only in the DOM interface (the WebGL quiz is a card of the step panel). */
+export type OverlayName = 'library' | 'map' | 'home' | 'settings' | 'glossary' | 'help' | 'menu' | 'quiz';
 
 export interface HudContext {
   readonly engine: Engine;

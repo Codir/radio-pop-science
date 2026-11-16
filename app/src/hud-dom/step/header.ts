@@ -1,11 +1,14 @@
 /**
- * DOM chapter header (top-left): progress ring, «ЧАСТИНА · БАТЬКІВСЬКИЙ РОЗДІЛ», chapter title, axis chip.
- * Same data as `hud/header.ts`.
+ * DOM chapter header (top-left; WebGL twin `hud/header.ts`): progress ring (SVG), «ТОМ · ЧАСТИНА ·
+ * БАТЬКІВСЬКИЙ РОЗДІЛ» (capitals by CSS, the volume only at the library level), chapter title `<h1>`, the
+ * chapter's place on the journey axis with its hint as tooltip. Data: `hud/model/header.ts`.
  */
-import { groupLabel, type ChapterManifest } from '@/engine/api';
+import type { ChapterManifest, HudMetrics } from '@/engine/api';
+import { headerModel, headerTitleMax } from '@/hud/model/header';
 import { chapterProgress } from '@/content';
 import type { Hud } from '@/hud/shell';
-import { h, setStyle, setText } from '../core/dom';
+import { axisChipText, onWhere, whereFloor } from '@/hud/where';
+import { h, setClass, setStyle, setText } from '../core/dom';
 import { icon } from '../core/icons';
 import { setRich } from '../core/rich';
 
@@ -27,7 +30,11 @@ function ring(): { el: HTMLElement; set(fraction: number, label: string): void }
   arc.setAttribute('class', 'arc');
   svg.append(track, arc);
   const text = h('span.ring-label');
-  const el = h('div.ring', { role: 'img', 'data-ui': 'header-ring', title: 'Переглянуто кроків у розділі' }, text);
+  const el = h(
+    'div.ring',
+    { role: 'img', 'data-ui': 'header-ring', 'data-tip': 'Переглянуто кроків у розділі' },
+    text,
+  );
   el.prepend(svg);
   return {
     el,
@@ -42,37 +49,52 @@ function ring(): { el: HTMLElement; set(fraction: number, label: string): void }
 export function createDomHeader(hud: Hud): {
   el: HTMLElement;
   onChapter(m: ChapterManifest): void;
+  onLayout(m: HudMetrics): void;
 } {
   const r = ring();
   const kicker = h('div.kicker');
   const title = h('h1.hd-title');
   const axis = h('span.axis-text');
   const chip = h('span.chip.scale', null, icon('ruler'), axis);
-  const el = h('header.kd.card.hd', { 'data-ui': 'header' }, r.el, h('div.hd-text', null, kicker, title), chip);
+  const el = h(
+    'header.kd.card.hd',
+    { 'data-ui': 'header' },
+    r.el,
+    h('div.hd-text', null, kicker, title),
+    chip,
+  );
   let manifest: ChapterManifest | null = null;
+  // the floor the reader is on (path volumes: reported by the chapter, plain names until introduced)
+  const floor = (): void => {
+    if (!manifest) return;
+    // touch shells show the chip only while the chapter reports a floor (a dive): the phone's «де ми» cue
+    setClass(el, 'where', whereFloor(`${manifest.volume}/${manifest.id}`) !== null);
+    setRich(axis, axisChipText(manifest, hud.engine.library.get(manifest.volume), hud.engine.store.get().progress.visited));
+  };
   const progress = (): void => {
     if (!manifest) return;
     const p = chapterProgress(hud.engine.store.get().progress.visited, manifest);
     r.set(p.fraction, `${p.done}/${p.total}`);
+    floor();
   };
   hud.engine.store.subscribe((s) => s.progress, progress);
+  onWhere(floor);
   return {
     el,
     onChapter(m) {
       manifest = m;
-      const volume = hud.engine.library.get(m.volume);
-      const parent = hud.engine.library.registry(m.volume)?.parentOf(m.id);
-      const path = [
-        volume && hud.libraryLevel ? volume.title : '',
-        volume ? groupLabel(volume, m.group) : '',
-        parent ? parent.title : '',
-      ];
-      // uppercase by CSS: copying the kicker gives the words as written
-      setText(kicker, path.filter((p) => p !== '').join(' · '));
-      setText(title, m.title);
-      setRich(axis, m.axisLabel);
-      chip.title = volume?.journey.axis.hint ?? '';
+      const model = headerModel(m, hud.engine.library, hud.libraryLevel);
+      // capitals by CSS: copying the kicker gives the words as written
+      setText(kicker, model.path);
+      setText(title, model.title);
+      setRich(axis, model.axisLabel);
+      floor();
+      if (model.axisHint) chip.dataset.tip = model.axisHint;
+      else delete chip.dataset.tip;
       progress();
+    },
+    onLayout(m) {
+      setStyle(title, 'max-width', `calc(${headerTitleMax(m.layout, m.width).toFixed(1)} * var(--u))`);
     },
   };
 }

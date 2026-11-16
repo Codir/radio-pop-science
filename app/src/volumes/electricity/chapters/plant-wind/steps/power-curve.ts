@@ -7,7 +7,7 @@
  */
 import { audio } from '@/audio';
 import { TURBINE_6MW, createTurbineSim, ratedSpeed, turbinePowerW, windPowerW } from '@electricity/sim/plant-wind';
-import { STATUS, type Chart } from '@/ui3d';
+import { STATUS, type ChartApi } from '@/ui3d';
 import { HOTSPOTS } from '../hotspots';
 import { hot } from './hot';
 import type { StepFactory } from './types';
@@ -21,7 +21,7 @@ export const powerCurve: StepFactory = ({ ui, L, live, hero }) => {
   const sim = createTurbineSim({ vMs: 7 });
   const stormControl = (): boolean => ui.value<string>('pc.sc') === 'control';
   let curveFor: boolean | null = null;
-  const drawCurve = (chart: Chart, sc: boolean): void => {
+  const drawCurve = (chart: ChartApi, sc: boolean): void => {
     const p = (v: number): number => turbinePowerW(TURBINE_6MW, v, sc) * MW;
     const fill = (id: string, xs: number[], floor = 0): void => chart.setData(id, xs, xs.map((v) => Math.max(floor, p(v))));
     // zone I is drawn as a low plinth so that «штиль» is visible on the axis

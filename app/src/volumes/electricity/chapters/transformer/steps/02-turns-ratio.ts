@@ -9,7 +9,7 @@
 import { Vector3 } from 'three';
 import { fmtNumber, fmtSI, fmtUnit } from '@/content';
 import { createHalo, createWire } from '@/fx';
-import { STATUS, type Chart } from '@/ui3d';
+import { STATUS, type ChartApi } from '@/ui3d';
 import { TEACHING, teachingTransformer, type TeachingResult } from '@electricity/sim/transformer';
 import type { StepFactory } from '../chapter';
 import { doc, hot } from '../labels';
@@ -82,7 +82,7 @@ export const turnsRatio: StepFactory = (tx) => {
     const out = new Vector3();
     return () => tx.stageRoot.localToWorld(out.set(x, y, z));
   };
-  const drawScope = (c: Chart): void => {
+  const drawScope = (c: ChartApi): void => {
     const u2 = res.secondaryV * Math.SQRT2;
     const key = `${Math.round(u2 * 10)}`;
     if (key === chartKey) return;

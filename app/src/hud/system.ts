@@ -3,7 +3,7 @@
  */
 import { Button, UiNode } from '@/ui3d';
 import type { HudContext, HudModule } from './context';
-import { TOUCH } from './touch/geometry';
+import { TOUCH } from './model/sheet';
 
 export function createSystemButtons(hud: HudContext): HudModule {
   const { store } = hud.engine;

@@ -2,24 +2,37 @@
  * DOM step navigator (bottom centre of the free area): previous / one segment per step / next.
  * Same behaviour as `hud/navigator.ts`; segments are real buttons with the step title as their name.
  */
-import { fullChapterId, type ChapterManifest } from '@/engine/api';
+import { fullChapterId, type ChapterManifest, type HudMetrics } from '@/engine/api';
 import { isVisited } from '@/content';
+import { navHidden, onNavGate } from '@/hud/nav-gate';
 import type { Hud } from '@/hud/shell';
-import { h, setClass, setText } from '../core/dom';
+import { h, setClass, setStyle, setText } from '../core/dom';
 import { icon } from '../core/icons';
 
-export function createDomNavigator(hud: Hud): { el: HTMLElement; onChapter(m: ChapterManifest): void; sync(): void } {
+export interface DomNavigator {
+  readonly el: HTMLElement;
+  onChapter(m: ChapterManifest): void;
+  onLayout(m: HudMetrics): void;
+  sync(): void;
+}
+
+export function createDomNavigator(hud: Hud): DomNavigator {
   const { nav, store } = hud.engine;
   let manifest: ChapterManifest | null = null;
   const prev = h(
     'button.btn.icon',
-    { type: 'button', 'data-ui': 'nav-prev', title: 'Попередній крок (←)', 'aria-label': 'Попередній крок' },
+    {
+      type: 'button',
+      'data-ui': 'nav-prev',
+      'data-tip': 'Попередній крок (←)',
+      'aria-label': 'Попередній крок',
+    },
     icon('prev'),
   );
   const nextLabel = h('span', null, 'Далі');
   const next = h(
     'button.btn.primary.md',
-    { type: 'button', 'data-ui': 'nav-next', title: 'Наступний крок (→)' },
+    { type: 'button', 'data-ui': 'nav-next', 'data-tip': 'Наступний крок (→)' },
     nextLabel,
     icon('next'),
   );
@@ -56,6 +69,32 @@ export function createDomNavigator(hud: Hud): { el: HTMLElement; onChapter(m: Ch
   store.subscribe((s) => s.target, sync);
   store.subscribe((s) => s.progress, sync);
 
+  // held back until the step's condition (stepUi `nav.hiddenUntil`, hud/nav-gate.ts): the bar keeps its place
+  // (the camera's free area does not jump), fades in on the engine clock, and takes no pointer or focus meanwhile
+  const fade = { o: 1 };
+  const apply = (): void => {
+    setStyle(el, 'opacity', fade.o >= 1 ? '' : fade.o.toFixed(3));
+    setStyle(el, 'visibility', fade.o <= 0.001 ? 'hidden' : '');
+  };
+  let tween: { kill(): void } | null = null;
+  const gate = (held: boolean): void => {
+    el.inert = held;
+    setClass(el, 'held', held);
+    tween?.kill();
+    tween = null;
+    const reduced = document.documentElement.classList.contains('kd-reduced');
+    if (held || document.documentElement.classList.contains('kd-freeze')) {
+      fade.o = held ? 0 : 1;
+      return apply();
+    }
+    tween = hud.host.tweens.to(
+      fade,
+      { o: 1 },
+      { duration: reduced ? 0.12 : 0.6, ease: 'power1.out', onUpdate: apply },
+    );
+  };
+  onNavGate(gate);
+
   return {
     el,
     sync,
@@ -63,12 +102,25 @@ export function createDomNavigator(hud: Hud): { el: HTMLElement; onChapter(m: Ch
       manifest = m;
       dots.replaceChildren(
         ...m.steps.map((s, i) => {
-          const b = h('button.dot', { type: 'button', title: `${i + 1}. ${s.title}`, 'aria-label': `Крок ${i + 1}: ${s.title}` });
+          const b = h('button.dot', {
+            type: 'button',
+            'data-tip': `${i + 1}. ${s.title}`,
+            'aria-label': `Крок ${i + 1}: ${s.title}`,
+          });
           b.addEventListener('click', () => void nav.goto(fullChapterId(m), s.id));
           return h('li', null, b);
         }),
       );
+      // segment width as the WebGL stepper: half the screen shared by the steps, 22…44 units each
+      const fit = Math.min(44, Math.max(22, (hud.metrics.width * 0.5) / Math.max(m.steps.length, 1)));
+      setStyle(dots, '--seg', fit.toFixed(2));
       sync();
+      gate(navHidden());
+    },
+    onLayout(m) {
+      // centred in the area the step column leaves free on wide screens (as hud/navigator.ts)
+      const shift = m.layout === 'wide' ? -(hud.engine.hud.insetFractions().right * m.cssWidth) / 2 : 0;
+      setStyle(el, '--shift', `${shift.toFixed(1)}px`);
     },
   };
 }

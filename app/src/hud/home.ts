@@ -4,7 +4,7 @@
  * comes from the volume manifest. When the library level is shown, a button leads up to the library. The first pointer or key gesture
  * here is also what unlocks audio (the engine resolves `input.gesture`).
  */
-import { contentKey, journeyProgress, plural } from '@/content';
+import { contentKey } from '@/content';
 import {
   Button,
   Chip,
@@ -20,6 +20,7 @@ import {
 } from '@/ui3d';
 import { createAsideRow } from './home-aside';
 import type { Journey } from './journey';
+import { homeModel, homeStart } from './model/home';
 import type { Hud, Overlay } from './shell';
 
 /** Soft dark veil behind the title so it reads over the glowing map. */
@@ -43,8 +44,10 @@ export interface HomeStage {
 export function createHome(hud: Hud, journey: Journey, map: HomeStage): Overlay {
   const { store, library } = hud.engine;
   const volume = journey.volume;
-  // a volume without chapters yet (the lobby): its names and `emptyNote`, nothing to start or to map
-  const empty = journey.chapters.length === 0;
+  // a volume without built chapters yet (the lobby): its names and `emptyNote`, nothing to start; it stands on
+  // the bare backdrop, or on the map of its planned chapters when the volume plans them (a path volume)
+  const model = homeModel(journey, library.showsLibrary(volume.id));
+  const empty = model.empty;
   const kicker = new Label(volume.kicker.toLocaleUpperCase('uk'), {
     font: 'bodyBold',
     size: UI.text.small,
@@ -87,19 +90,11 @@ export function createHome(hud: Hud, journey: Journey, map: HomeStage): Overlay 
     gap: 10,
     wrap: true,
     justify: 'center',
-    children: [
-      new Chip({
-        kind: 'plain',
-        icon: 'layers',
-        text: `${journey.chapters.length} ${plural(journey.chapters.length, ['розділ', 'розділи', 'розділів'])}`,
-      }),
-      new Chip({
-        kind: 'plain',
-        icon: 'target',
-        text: `${journey.stepCount} ${plural(journey.stepCount, ['крок', 'кроки', 'кроків'])}`,
-      }),
-      new Chip({ kind: 'scale', text: volume.journey.axis.range }),
-    ],
+    children: model.facts.map((f) =>
+      f.icon
+        ? new Chip({ kind: f.kind, icon: f.icon, text: f.text })
+        : new Chip({ kind: f.kind, text: f.text }),
+    ),
   });
   const actions = new UiNode({
     dir: 'row',
@@ -108,7 +103,7 @@ export function createHome(hud: Hud, journey: Journey, map: HomeStage): Overlay 
     justify: 'center',
     align: 'center',
     // the way up to the library exists only while the library level is shown (more than one volume)
-    children: library.showsLibrary(volume.id)
+    children: model.library
       ? [
           resume,
           start,
@@ -125,18 +120,17 @@ export function createHome(hud: Hud, journey: Journey, map: HomeStage): Overlay 
   });
   // the subtitle under a title headline (a volume whose headline is its subtitle shows the lead only)
   const tagline =
-    volume.headline === volume.title && volume.subtitle
-      ? new Label(volume.subtitle, {
+    model.tagline !== null
+      ? new Label(model.tagline, {
           font: 'display',
           size: UI.text.h2,
           color: TEXT_COLOR.dim,
           align: 'center',
         })
       : null;
-  const note =
-    empty && volume.emptyNote
-      ? new Chip({ name: 'home-empty', kind: 'plain', icon: 'clock', text: volume.emptyNote })
-      : null;
+  const note = model.note
+    ? new Chip({ name: 'home-empty', kind: 'plain', icon: 'clock', text: model.note })
+    : null;
   const column = new UiNode({
     dir: 'col',
     align: 'center',
@@ -206,7 +200,7 @@ export function createHome(hud: Hud, journey: Journey, map: HomeStage): Overlay 
     }
     veil.float = { ax: 0.5, ay: 0, dy: m.height * 0.02 };
     veil.width = Math.min(1200, m.width);
-    if (empty) {
+    if (model.bare) {
       // nothing below the names: they stand a little above the middle of the screen, the veil behind them
       column.float = { ax: 0.5, ay: 0.5, dy: -m.height * 0.06 };
       veil.float = { ax: 0.5, ay: 0.5, dy: -m.height * 0.06 };
@@ -221,12 +215,11 @@ export function createHome(hud: Hud, journey: Journey, map: HomeStage): Overlay 
     open() {
       const s = store.get();
       const chapters = library.registry(volume.id)?.chapters ?? [];
-      const seen =
-        journeyProgress(s.progress.visited, chapters).done > 0 && s.lastIn[volume.id] !== undefined;
+      const { seen, startLabel, first } = homeStart(s.progress.visited, s.lastIn, volume.id, chapters);
       // returning users continue where they stopped; first-time users start the journey on the map
       resume.visible = seen;
-      start.label = seen ? 'Почати спочатку' : 'Почати подорож';
-      start.onClick = seen ? () => hud.goto(contentKey(chapters[0]!)) : () => hud.open('map');
+      start.label = startLabel;
+      start.onClick = seen && first ? () => hud.goto(contentKey(first)) : () => hud.open('map');
       map.setAttract(true);
       reveal(root, { dy: 0, scale: 1, duration: 0.5 });
       revealAll(column.children, { dy: -22 }, 0.07);

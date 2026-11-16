@@ -4,7 +4,7 @@
  * `BenchSample` drives the 3D rig, so chart and scene always show one state.
  */
 import type { ChartSpec } from '@/hud';
-import type { Chart } from '@/ui3d';
+import type { ChartApi } from '@/ui3d';
 import type { IvAnalysis } from '@electricity/sim/lab-pv';
 import { L } from '../labels';
 import type { BenchSample } from '../sim-bindings/bench-model';
@@ -21,7 +21,7 @@ export interface CurveChartOptions {
   /** Extra series ids declared by the step (it fills them in `extra`). */
   series?: ChartSpec['chart']['series'];
   /** Called after the standard update with `changed` = the curve was redrawn this frame. */
-  extra?: (chart: Chart, sample: BenchSample, changed: boolean) => void;
+  extra?: (chart: ChartApi, sample: BenchSample, changed: boolean) => void;
 }
 
 interface Seen {
@@ -38,7 +38,7 @@ export function axesFor(n: number): { vMax: number; iMax: number; pMax: number }
 }
 
 export function curveChart(id: string, get: () => BenchSample | null, o: CurveChartOptions = {}): ChartSpec {
-  const seen = new WeakMap<Chart, Seen>();
+  const seen = new WeakMap<ChartApi, Seen>();
   return {
     type: 'chart',
     id,

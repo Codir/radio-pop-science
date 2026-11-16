@@ -7,7 +7,32 @@
   "accent": "amber",
   "emblem": "lightning",
   "status": "published",
-  "axis": { "label": "Масштаб", "unit": "m", "hint": "Характерний масштаб розділу" },
-  "groups": [],
-  "journey": []
+  "format": "path",
+  "axis": {
+    "label": "Поверх",
+    "unit": "",
+    "hint": "Де ми: від стенда до одного атома",
+    "floors": [
+      { "id": "atom", "label": "один атом", "value": 0, "plain": "одна кулька", "namedAt": "wire/atoms" },
+      { "id": "rows", "label": "ряди атомів", "value": 1, "plain": "ряди кульок", "namedAt": "wire/atoms" },
+      { "id": "part", "label": "деталь", "value": 2 },
+      { "id": "stand", "label": "стенд", "value": 3 }
+    ]
+  },
+  "groups": [
+    { "id": "prologue", "label": "Пролог", "layer": "prologue" },
+    { "id": "path", "label": "Шлях", "layer": "path" },
+    { "id": "practicum", "label": "Практикум", "layer": "practicum" }
+  ],
+  "journey": [
+    { "id": "prologue", "group": "prologue", "title": "Клацнув вимикач — і світло. Що сталося за цю мить?", "minutes": 4, "floor": "stand" },
+    { "id": "wire", "group": "path", "title": "З чого зроблений дріт?", "minutes": 10, "floor": "rows" },
+    { "id": "charge", "group": "path", "title": "Що тримає електрон біля ядра?", "minutes": 10, "floor": "atom" },
+    { "id": "battery", "group": "path", "title": "Що робить батарейка?", "minutes": 7, "floor": "part" },
+    { "id": "flow", "group": "path", "title": "Що тече в дроті?", "minutes": 14, "floor": "stand" },
+    { "id": "resistance", "group": "path", "title": "Що заважає струму?", "minutes": 7, "floor": "rows" },
+    { "id": "lamp", "group": "path", "title": "Чому лампочка світиться?", "minutes": 11, "floor": "part" },
+    { "id": "drain", "group": "path", "title": "Чому батарейка сідає?", "minutes": 9, "floor": "part" },
+    { "id": "build", "group": "practicum", "title": "Зберіть коло самі", "minutes": 10, "floor": "stand" }
+  ]
 }

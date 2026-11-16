@@ -1,0 +1,184 @@
+/* DOM charts (docs/HUD_DOM.md §8): Canvas2D marks under absolutely positioned DOM text. Lengths are units ×
+   --u like every other area; sizes and colours are those of the WebGL chart (ui3d/charts/chart-paint.ts). */
+
+.kd-chart {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(6 * var(--u));
+  width: 100%;
+  min-width: 0;
+}
+.kd-chart-frame {
+  position: relative;
+  height: calc(var(--h) * var(--u));
+  contain: layout;
+}
+.kd-chart-frame.scrub {
+  cursor: ew-resize;
+  touch-action: pan-y;
+}
+.kd-chart-frame:focus-visible,
+.kd-heat-handle:focus-visible {
+  outline: calc(2 * var(--u)) solid var(--c-yellow);
+  outline-offset: calc(3 * var(--u));
+}
+.kd-chart-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.kd-chart-text {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.kd-chart-text > span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+  line-height: 1.2;
+  pointer-events: auto;
+  will-change: transform;
+}
+.kd-tick {
+  font-family: var(--mono);
+  font-size: calc((var(--t-caption) - 1) * var(--u));
+  font-variant-numeric: tabular-nums;
+  color: var(--c-mist);
+}
+/* the X tick mark: 1.2 × 6 units, its top 1 unit under the plot (the label's top is 9 units under it) */
+.kd-tick.x::before {
+  content: '';
+  position: absolute;
+  left: calc(50% - 0.6 * var(--u));
+  top: calc(-8 * var(--u));
+  width: calc(1.2 * var(--u));
+  height: calc(6 * var(--u));
+  background: var(--c-steel);
+}
+.kd-tick.x:empty {
+  min-height: 1px;
+}
+.kd-axis-title,
+.kd-mark-label {
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: calc(var(--t-caption) * var(--u));
+  color: var(--c-white);
+}
+.kd-mark-label {
+  padding: calc(1 * var(--u)) calc(5 * var(--u));
+  border-radius: calc(5 * var(--u));
+  background: rgb(var(--c-bg-void-rgb) / 0.85);
+}
+.kd-chart-text > .kd-axis-label {
+  font-family: var(--body);
+  font-size: calc(var(--t-caption) * var(--u));
+  color: var(--c-mist);
+}
+
+.kd-chart-text > .kd-phasor-t {
+  color: var(--c-steel);
+}
+
+/* ---- radar (ui3d/charts/radar.ts): web box d + 190 × d + 64 units, legend centred under it ------------- */
+.kd-radar {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(8 * var(--u));
+}
+.kd-radar-web {
+  position: relative;
+  width: calc(var(--w) * var(--u));
+  max-width: 100%;
+  height: calc(var(--h) * var(--u));
+  contain: layout paint;
+}
+.kd-radar-web > .kd-axis-label {
+  position: absolute;
+  white-space: nowrap;
+  line-height: 1.2;
+  font-size: calc(var(--t-caption) * var(--u));
+  color: var(--c-mist);
+}
+
+/* ---- heat map (ui3d/charts/heatmap.ts): crosshair on the plot, an invisible 44-unit handle on the marker --- */
+.kd-chart-frame.pick {
+  cursor: crosshair;
+  touch-action: none;
+}
+.kd-heat-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(var(--hit) * var(--u));
+  height: calc(var(--hit) * var(--u));
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: grab;
+  will-change: transform;
+}
+
+/* ---- legend (ui3d/widgets/legend.ts)------------------------------------------------------------------- */
+.kd-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(4 * var(--u)) calc(14 * var(--u));
+  font-size: calc(var(--t-caption) * var(--u));
+  line-height: 1.2;
+  color: var(--c-mist);
+}
+.kd-legend.chart {
+  padding-left: calc(56 * var(--u));
+}
+.kd-legend.center {
+  justify-content: center;
+}
+.kd-legend > li {
+  display: flex;
+  align-items: center;
+  gap: calc(6 * var(--u));
+  white-space: nowrap;
+}
+.kd-swatch {
+  flex: none;
+  background: var(--sw);
+}
+.kd-swatch.line,
+.kd-swatch.dash {
+  width: calc(24 * var(--u));
+  height: calc(3.5 * var(--u));
+  border-radius: calc(1.75 * var(--u));
+}
+.kd-swatch.dash {
+  background: repeating-linear-gradient(90deg, var(--sw) 0 calc(4 * var(--u)), transparent 0 calc(8 * var(--u)));
+}
+.kd-swatch.dot {
+  width: calc(11 * var(--u));
+  height: calc(11 * var(--u));
+  border-radius: 50%;
+}
+.kd-swatch.box {
+  width: calc(12 * var(--u));
+  height: calc(12 * var(--u));
+  border-radius: calc(3 * var(--u));
+}
+
+/* visually hidden, still read by screen readers (data tables of static charts) */
+.kd-sr {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

@@ -55,7 +55,7 @@ export {
 } from './widgets/table';
 export { QuizCard, dismissCard, type QuizProps } from './widgets/quiz';
 export { reveal, conceal, revealAll, shake, isRevealed, type RevealOptions } from './core/anim';
-export { Chart, type ChartProps, type SeriesSpec, type MarkerSpec } from './charts/chart';
+export { Chart, type ChartApi, type ChartProps, type SeriesSpec, type MarkerSpec } from './charts/chart';
 export { Axis, type AxisSpec } from './charts/axis';
 export { PlotMesh } from './charts/plot';
 export {
@@ -67,7 +67,7 @@ export {
 } from './anchors/layer';
 export { Callout, worldLabelSize } from './anchors/callout';
 export { HotspotMarker } from './anchors/hotspot';
-export { RadarChart, type RadarProps, type RadarSeries } from './charts/radar';
-export { HeatMap, type HeatMapProps } from './charts/heatmap';
-export { PhasorScope, type Phasor, type PhasorProps } from './charts/phasor';
+export { RadarChart, type RadarApi, type RadarProps, type RadarSeries } from './charts/radar';
+export { HeatMap, type HeatMapApi, type HeatMapProps } from './charts/heatmap';
+export { PhasorScope, type Phasor, type PhasorApi, type PhasorProps } from './charts/phasor';
 export { mathMarkup } from './widgets/math';

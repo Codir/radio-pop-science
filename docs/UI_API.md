@@ -173,6 +173,51 @@ Its area is reported to the camera director (left inset on wide screens, top oth
 frame your shots for it. Board children are ordinary `ControlSpec`s (values, `ui.set`, `ui.press` work the same);
 they keep the declared order, consecutive readouts / toggles share a row, buttons go last.
 
+### 3.3 A slider that scrubs an animation (owner, DECISIONS §60 p)
+
+The frame follows the slider: while the thumb is dragged the scene is exactly where the thumb is; a click on the
+track (or a key, the wheel) sets a target and the scene eases there. The thumb shows the target, the track's fill
+shows where the scene is now. A continuous range with named marks (no `stops`), the scene keeps `target` and
+`shown`:
+
+```ts
+const s = { target: 0, shown: 0, drag: false, told: -1 };
+ui.define({ dive: { controls: [{ type: 'slider', id: 'depth', label: labels[0], min: 0, max: 1, value: 0,
+  format: () => '', marks: [{ value: 0, label: labels[1] }, { value: 0.5, label: labels[2] }, { value: 1, label: labels[3] }],
+  onChange: (v) => (s.target = v),                       // every change, any source
+  onInput: (v, how) => (s.drag = how === 'drag'),        // 'drag' | 'jump' (a click on the track) | 'step' (keys, wheel)
+}] } });
+// update(dt):
+s.shown = s.drag ? s.target : s.shown + (s.target - s.shown) * (1 - Math.exp(-dt / 0.25));
+if (Math.abs(s.shown - s.told) > 0.002) ui.patch('depth', { current: (s.told = s.shown) }); // the fill
+```
+
+Grabbed mid-glide (the scene still travels to a clicked target): the slider keeps reporting `jump` — the scene
+eases on, now toward the hand — until the patched `current` has caught up with the thumb (within 2 %); from then
+on the drag is `drag` and followed directly. So the scene never jumps to the hand; this needs the chapter to patch
+`current` every frame as above. Keys: ←/→ one step (Shift ×10), Home / End — eased. Touch: the DOM range has `touch-action: pan-y` (a horizontal
+drag is the slider's, a vertical swipe scrolls the dock). The WebGL slider calls only `onChange` (treat it as a
+jump: ease) and ignores `current`. Live example: `_path/_sandbox-flow/drift` (`volumes/_path/shared/placeholder.ts`).
+
+### 3.3a The panel's text held back until a moment (`panel: { hiddenUntil }`)
+
+`ui.define({ dive: { …, panel: { hiddenUntil: () => !unfolding.playing } } })`: on entry the step panel is a calm
+empty plate of its full size (no text to read mid-motion), then title and text fade in on the engine clock (0.7 s).
+Per visit; reduced motion and a frozen QA clock show the content at once; the hint timers (15 s, 40 s) start when
+it appears. QA: the panel has the class `held` meanwhile. DOM interface (`hud-dom/step/step-panel.ts`).
+
+Boards enter calmly: a corner board slides in from the spine's side (0.6 s, after 0.12 s), a `fill` board rises in
+place (0.9 s, after 0.25 s) — after the step's own change, on the engine clock.
+
+### 3.4 The step navigator held back until the reader has acted
+
+`stepUi(ctx).define({ click: { goal, nav: { hiddenUntil: () => lampOn } } })` (or `hiddenUntil: 'goal'`): the
+navigator (the desk's bottom bar; the phone sheet's row) is hidden — no pointer, no focus, the forward keys
+(→, PgDn, Space, End) do nothing, back stays — until the predicate first holds; then it fades in on the engine
+clock (reduced motion: short; frozen QA clock: at once) and stays for the session. A deep link arrives the same
+way. QA reads `__ui.navHidden()` (mobile-flows skips «Далі» then). `hud/nav-gate.ts`; example
+`_path/_sandbox-path/core` (`holdNav`).
+
 ## 4. Controls and readouts (`ControlSpec`)
 
 | `type` | Fields | Notes |
@@ -268,6 +313,13 @@ alarm|info`; `STATUS` in `@/ui3d` is the same map), power flow `FLOW` (`flow.act
 `SEMANTIC.phaseL1…L3`. One draw call per chart for all curves.
 A 3D Sankey ribbon is **not** in the kit (it is a scene object, see the report).
 
+**Both interfaces (D4, `docs/HUD_DOM.md` §21).** A `chart` control works unchanged under `?hud=gl` (WebGL `Chart`)
+and `?hud=dom` (DOM chart: Canvas2D marks, every word and number DOM, selectable). `init` / `update` receive a
+`ChartApi` — `setData`, `push`, `clearData`, `setAxis`, `setMarker`; type helper functions with `ChartApi`, not
+`Chart` (callbacks typed `(c: Chart) => …` still compile). Under `dom` a scrub chart is also a keyboard slider
+(←/→ 1 %, Shift 10 %), a heat map's marker a focusable handle (arrow keys), static series get a hidden data table.
+`PhasorScope`, `RadarChart`, `HeatMap` used as a `custom` node get their DOM twin automatically (below).
+
 ## 8. World consoles and chapter-owned HUD
 
 ```ts
@@ -289,6 +341,22 @@ ctx.root.add(surface);                       // or add it to the machine it belo
 - Embedded meshes (chart curves, radar, phasors) are clipped by scroll views like the rest of the UI.
 - `hudSurface(ctx)` gives a full-screen camera-anchored surface for chapter-specific overlays that the step UI
   cannot express (it hides automatically under the map / home screen). Prefer `stepUi` with a `custom` control.
+  It is WebGL-only and goes with the WebGL HUD (D9); for the DOM interface use **`hudLayer(ctx, name?)`** from
+  `@/hud`: a full-screen element in the chrome layer (hidden with the chrome, removed with the chapter), `null`
+  under `?hud=gl` — keep the WebGL path for that case (example: `atom/parts/ruler.ts`).
+- **A `custom` control in both interfaces**: give `dom: (host) => ({ el, update?, dispose? })` next to `node`.
+  Built once on first show (detached, not disposed, when the step is left); `update` runs after the spec's
+  `update`; name buttons inside `data-ui="ctl-<id>:<item>"` like the WebGL ones. `host` = `{ tweens,
+  reducedMotion() }` (engine clock). A `node` that is a kit `HeatMap` / `RadarChart` needs nothing: the platform
+  builds its DOM twin and the node forwards every call to it. Any other node without `dom` is drawn by the WebGL
+  fallback with one warning (D9 makes that a `chapter-check` failure).
+- **`domKit`** (from `@/hud`) for those widgets: `h('div.cls', attrs, …children)`, `setText` / `setStyle` /
+  `setClass` (write on change), `svg(tag, attrs)`, `observeUnits(el, (w, h) => …)` (size in HUD units, on resize
+  only), `tone(el, color)` (sets `--accent`), `color(token, alpha, lit)` / `rgbaColor(rgba)` (CSS colours that
+  match the WebGL painter), `svgPainter(g)` — a `ShapePainter` (`line`, `circle`, `rect` with the `Painter`'s
+  signatures, y up) so one `draw(p)` serves `paint(p)` and an SVG (`current/parts/schematic.ts`, `sankey.ts`).
+  Style with the platform classes (`.btn`, `.chip`, `.kd-stepper`, `.kd-chip-pick`, `.kd-diagram`) — chapters
+  ship no CSS. Lengths in CSS are `calc(N * var(--u))`; nothing may move with the pointer (DECISIONS §59 p).
 
 ## 9. Journey-map emblem (`emblem.ts`, optional)
 
@@ -344,6 +412,20 @@ class Lamp extends UiNode {
 centre, y up. Colours are palette tokens through `rgba(token, alpha)`; `lit(c, k)` with k > 1 makes it bloom.
 Call `node.repaint()` after a look-only change and `node.relayout()` after a size change. Text of a paint layer
 always draws over that layer's shapes; things that must cover text (popups) go one layer up (`layerUp: 1`).
+
+## 11a. The volume's journey inside a chapter (`@/hud-dom/journey`, M7)
+
+- `journeyInset(ctx, { id?, onOpen? })` → a `CustomSpec` for a board or the dock: the journey map of the volume
+  (the same stops, floors with `floorLabel` names, built / planned / «ви тут», «лишилося ≈ N хв»). Every stop is
+  a button; opening it shows its card (question, floor, minutes, state) and calls `onOpen(chapterId)` — read it
+  in the step's `goal`. DOM: a plot, a list on narrow widgets (`data-ui="journey-stop:<id>"`, `journey-card`);
+  WebGL / touch sheet («Графіки»): numbered stop buttons `ctl-<id>:<chapter>` and the same card.
+  `stepUi(ctx).define({ map: { board: { title: 'Мапа тому', size: 'lg', children: [journeyInset(ctx, { onOpen })] },
+  goal: () => opened.size >= 7 } })` (`circuit/prologue/steps/map.ts`).
+- `floorLadder(ctx, { floor: () => floorId | null })` → `{ update() }`: the «де ми» ladder of the volume's floors,
+  the current one lit, plain names until introduced; lower left on a desk, hidden on touch shells (the header
+  carries the floor: `hud/where.ts`, the axis chip on a desk, a floor chip in the phone's header row);
+  `null` hides it. Call `update()` from the scene's update. DOM interface only (WebGL: no-op).
 
 ## 12. Numbers and units (`@/content`)
 

@@ -87,7 +87,7 @@ export const lossesStep: StepFactory = (bench) => {
         title: OWN.ribbon,
         size: 'sm',
         children: [
-          { type: 'custom', id: 'sankey8', node: ribbon },
+          { type: 'custom', id: 'sankey8', node: ribbon, dom: () => ribbon.dom(OWN.ribbon) },
           {
             type: 'stats',
             id: 'out8',

@@ -41,14 +41,18 @@ named, and how to start a volume. Code-level API: `docs/ENGINE_API.md` §22, `do
 
 | | Shared by all volumes (platform) | Per volume |
 |---|---|---|
-| Code | `app/src/{engine,style,text,ui3d,hud,fx,kit,audio,content}`, `app/public/fonts` | `app/src/volumes/<volume>/`: `volume.json`, `volume.ts`, `chapters.ts`, `chapters/<id>/`, `sim/`, `content/generated/`, optional `fixtures/` |
+| Code | `app/src/{engine,style,text,ui3d,hud,fx,kit,audio,content}`, `app/public/fonts` | `app/src/volumes/<volume>/`: `volume.json`, `volume.ts`, `chapters.ts`, `chapters/<id>/`, `sim/`, `shared/` (scene library), `content/generated/`, optional `fixtures/` |
 | Documents | `docs/*.md` (ARCHITECTURE, STYLE_GUIDE, ENGINE/UI/FX/KIT API, DECISIONS, AGENT_GUIDE, CONTENT_EXPORT, this file), `docs/briefs/` | `docs/volumes/<volume>/`: `CURRICULUM.md`, `chapters/<id>.md` (+ `_shared-*.md`, `_notes-*.md`), `chapters/_export/` (generated), `INDEX.md`, `GLOSSARY.md` (generated), optional `terms_allowlist.tsv` |
 | Visual language | palette, K materials, environments, motion, UI kit; the **global core** of the semantic colour code (STYLE_GUIDE §2.2.1) | the volume's semantic table (STYLE_GUIDE §2.2.2 for electricity), its accent and default environment |
 | Navigation | library screen, HUD, glossary overlay, journey-map renderer | journey axis (label, unit, range, formatter, zoom direction), groups, map layout hints, emblems, home-screen text |
 | Tools | `tools/content/*` (take `--volume`), `tools/qa/*`, export schema, global `terms_allowlist.tsv` | journey order / groups / parents / extra documents / extra checks in `volume.json` |
 | Rules | AGENT_GUIDE, term rule (DECISIONS §54), mobile rules (§57), honesty chips, QA budgets | rulings that concern one subject (recorded in DECISIONS, marked with the volume) |
 
-`sim/**` is per volume on purpose (a chapter may import only its own volume's simulations). When a second
+`sim/**` is per volume on purpose (a chapter may import only its own volume's simulations). `shared/**` is the
+volume's **scene library** — one world for the whole volume (`circuit`: `shared/stage`, `shared/copper`):
+every chapter of the volume imports it; chapters of a dev volume (`_dev`, `_path`) may import another volume's
+`shared/**` to showcase it in a sandbox; nothing else crosses volumes (lint `local/chapter-boundary`,
+`local/volume-boundary`). When a second
 volume needs a model that already exists in another one, promote that model to the platform through a
 request — do not import across volumes (lint `local/volume-boundary` forbids it).
 
@@ -158,7 +162,8 @@ sizes). Deploy.
 ## 5. Rules of thumb
 
 - Platform code never names a volume (lint: `local/volume-boundary`); a volume never imports another volume;
-  a chapter imports the platform and its own volume's `sim/**` and `content/**` only.
+  a chapter imports the platform and its own volume's `sim/**`, `content/**` and `shared/**` only (a dev
+  sandbox may also import another volume's `shared/**`).
 - Anything a volume wants to look or read differently is a field of its manifest, not an `if (volume === …)`.
 - Text of the volume shell (titles, group names, axis words, home-screen lines) is data in `volume.json`;
   chapter text comes from the documents through `tools/content` — never typed in code.
@@ -175,3 +180,22 @@ sizes). Deploy.
 - Releasing the HUD views (map, spine, home, glossary) of volumes the user has left: they are built once per
   visited volume and kept. Fine for a handful of volumes; revisit before the library has many.
 - Per-volume settings: all settings are global today (quality, sound, text scale, motion).
+
+## 7. A path volume (`"format": "path"`, docs/PATH_FORMAT.md; first: `circuit`, sandbox `_path`)
+
+The manifest plans the whole journey before any chapter exists; the map and the home screen read it.
+
+| `volume.json` field | Meaning |
+|---|---|
+| `format: "path"` | chapter documents in the path format; the tools run `path_format / path_export / path_check` |
+| `groups[].layer` | `prologue` · `path` · `branch` · `practicum` (VOLUME_STRUCTURE §2; default `path`). Branches are optional and do not count in «лишилося» |
+| `journey[].title` | the chapter's question — a planned (unbuilt) chapter is drawn on the map with it, as planned: slate platform, no emblem, «у планах · ≈ N хв», cannot be opened |
+| `journey[].minutes` | length of the chapter; the home screen shows the total («≈ 82 хв»), the map «Пройдено X з Y глав · лишилося ≈ N хв» (a built chapter counts by its unopened steps) |
+| `journey[].floor` | id of a floor of `axis.floors`: the height of a planned chapter, and `axisLabel` / `axisValue` of the generated chapter manifest (`index.ts`: `axisValue: meta.axisValue`) |
+| `axis.floors[]` | `{ id, label, value, plain?, namedAt? }` — the ruler shows these names instead of formatted numbers («стенд», «деталь», «ряди атомів», «один атом»); a name with a word the journey has not introduced yet shows `plain` («ряди кульок») until the reader has opened the step `namedAt` (`chapter/step`) — `floorLabel(volume, floor, visited)`, also for a scene's «де ми» ladder |
+| `path.budgets` | optional overrides of the checker's budgets (the dev sandbox has 2-step chapters) |
+
+- A volume whose planned chapters have titles keeps its map even with **no built chapter**: the lobby home
+  (names + `emptyNote`, nothing to start) stands on the map of planned chapters instead of the bare backdrop.
+- The word for a chapter on the home screen and the map is «глава» in a path volume, «розділ» otherwise.
+- `Nav` is unchanged; «Згадайте…» links use `hud/recall.ts → RecallTrail` (follow a link, the way back).

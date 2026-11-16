@@ -1,0 +1,284 @@
+/* Inputs of the dock / board: slider, toggle, segmented control, sheet tabs (WebGL twins ui3d/widgets/{slider,
+   toggle,tabs}.ts — sizes in units as there: track 44, rail 10, knob 26, switch 54 × 30, well 44). */
+
+/* ---- slider -------------------------------------------------------------------------------------------- */
+.dk-slider {
+  display: flex;
+  flex-direction: column;
+}
+.dk-value {
+  flex: none;
+  min-width: 14ch;
+  font: 500 calc(var(--t-small) * var(--u)) / 1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.dk-track {
+  --t: 0;
+  position: relative;
+  height: calc(var(--hit) * var(--u));
+}
+.dk-rail,
+.dk-fill {
+  position: absolute;
+  top: 50%;
+  height: calc(10 * var(--u));
+  box-sizing: border-box;
+  border-radius: calc(5 * var(--u));
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.dk-rail {
+  left: calc(8 * var(--u));
+  right: calc(8 * var(--u));
+  background: rgb(var(--c-bg-void-rgb) / 0.85);
+  border: calc(1 * var(--u)) solid rgb(var(--c-slate-rgb) / 0.7);
+}
+/* the filled part ends under the knob's centre + half the rail (as the WebGL track) */
+.dk-fill {
+  left: calc(8 * var(--u));
+  /* --c: where an animation driven by the slider is now (`ui.patch(id, { current })`); default the thumb */
+  width: calc(var(--c, var(--t)) * (100% - 26 * var(--u)) + 10 * var(--u));
+  background: color-mix(in srgb, var(--accent) 78%, white);
+  border: calc(1 * var(--u)) solid var(--accent);
+  box-shadow: 0 0 calc(8 * var(--u)) rgb(var(--accent-rgb) / 0.5);
+  transition: box-shadow var(--dur-hover);
+}
+.dk-track:hover .dk-fill,
+.dk-slider.drag .dk-fill {
+  box-shadow: 0 0 calc(13 * var(--u)) rgb(var(--accent-rgb) / 0.68);
+}
+.dk-ticks i {
+  position: absolute;
+  top: 50%;
+  left: calc(13 * var(--u) + var(--m) * (100% - 26 * var(--u)));
+  width: calc(2.5 * var(--u));
+  height: calc(18 * var(--u));
+  border-radius: calc(1.2 * var(--u));
+  background: rgb(var(--c-mist-rgb) / 0.55);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.dk-range {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: ew-resize;
+  touch-action: pan-y; /* horizontal drags are the slider's, vertical swipes scroll the dock */
+}
+.dk-range::-webkit-slider-runnable-track {
+  height: 100%;
+  background: transparent;
+}
+.dk-range::-moz-range-track {
+  height: 100%;
+  background: transparent;
+}
+.dk-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  width: calc(26 * var(--u));
+  height: calc(26 * var(--u));
+  margin-top: calc(9 * var(--u));
+  border: calc(3.5 * var(--u)) solid color-mix(in srgb, var(--accent) 70%, white);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent) 80%, white) 0 15%, transparent 16%),
+    linear-gradient(to bottom, var(--c-white), var(--c-mist));
+  box-shadow: 0 0 calc(10 * var(--u)) rgb(var(--accent-rgb) / 0.6);
+  transition: transform var(--dur-hover), box-shadow var(--dur-hover);
+}
+.dk-range::-moz-range-thumb {
+  box-sizing: border-box;
+  width: calc(26 * var(--u));
+  height: calc(26 * var(--u));
+  border: calc(3.5 * var(--u)) solid color-mix(in srgb, var(--accent) 70%, white);
+  border-radius: 50%;
+  background: linear-gradient(to bottom, var(--c-white), var(--c-mist));
+  box-shadow: 0 0 calc(10 * var(--u)) rgb(var(--accent-rgb) / 0.6);
+}
+.dk-range:hover::-webkit-slider-thumb,
+.dk-slider.drag .dk-range::-webkit-slider-thumb {
+  transform: scale(1.154);
+  box-shadow: 0 0 calc(18 * var(--u)) rgb(var(--accent-rgb) / 0.8);
+}
+.dk-range:active::-webkit-slider-thumb {
+  transform: scale(1.04);
+}
+.dk-track .dk-range:focus-visible {
+  outline-offset: calc(-6 * var(--u));
+}
+.dk-slider.off {
+  opacity: 0.38;
+}
+.dk-slider.off .dk-range {
+  cursor: default;
+}
+/* value bubble over the knob while a pointer drags (fades out 0.35 s after the release, as the WebGL bubble) */
+.dk-bubble {
+  position: absolute;
+  z-index: 1;
+  bottom: calc(100% - 7 * var(--u));
+  left: calc(13 * var(--u) + var(--t) * (100% - 26 * var(--u)));
+  padding: calc(5 * var(--u)) calc(12 * var(--u));
+  border-radius: calc(16 * var(--u));
+  background: rgb(255 255 255 / 0.97);
+  box-shadow: 0 0 calc(10 * var(--u)) rgb(255 255 255 / 0.45);
+  color: var(--c-bg-void);
+  font: 500 calc(var(--t-small) * var(--u)) / 1.2 var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s 0.35s;
+}
+.dk-bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: calc(-3.5 * var(--u));
+  width: calc(9 * var(--u));
+  height: calc(9 * var(--u));
+  border-radius: calc(2 * var(--u));
+  background: inherit;
+  transform: translateX(-50%) rotate(45deg);
+}
+.dk-slider.drag .dk-bubble {
+  opacity: 1;
+  transition: opacity var(--dur-hover);
+}
+/* labelled marks under the track: anchored at 3 %…97 % of the width, pivot sliding with the value (ends inside) */
+.dk-marks {
+  position: relative;
+  height: calc(20 * var(--u));
+}
+.dk-marks span {
+  position: absolute;
+  top: 50%;
+  left: calc(3% + 94% * var(--m));
+  font-size: calc(var(--t-caption) * var(--u));
+  line-height: 1;
+  color: var(--c-steel);
+  white-space: nowrap;
+  transform: translate(calc(var(--m) * -100%), -50%);
+}
+
+/* ---- toggle ---------------------------------------------------------------------------------------------- */
+.dk-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(12 * var(--u));
+  height: calc(var(--hit) * var(--u));
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--c-white);
+  font: 400 calc(var(--t-small) * var(--u)) / 1.42 var(--body);
+  text-align: left;
+  cursor: pointer;
+}
+.dk-switch {
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  width: calc(54 * var(--u));
+  height: calc(30 * var(--u));
+  border: calc(1.6 * var(--u)) solid rgb(var(--c-slate-rgb) / 0.9);
+  border-radius: calc(15 * var(--u));
+  background: rgb(var(--c-bg-void-rgb) / 0.9);
+  transition: background var(--dur-hover), border-color var(--dur-hover), box-shadow var(--dur-hover);
+}
+.dk-switch i {
+  position: absolute;
+  top: 50%;
+  left: calc(4 * var(--u) - 1.6 * var(--u));
+  width: calc(22 * var(--u));
+  height: calc(22 * var(--u));
+  border-radius: 50%;
+  background: linear-gradient(to bottom, var(--c-white), var(--c-mist));
+  transform: translateY(-50%);
+  transition: transform 0.22s var(--ease-panel, ease-out), width var(--dur-hover), height var(--dur-hover);
+}
+.dk-toggle:hover .dk-switch {
+  border-color: var(--accent);
+  box-shadow: 0 0 calc(8 * var(--u)) rgb(var(--accent-rgb) / 0.3);
+}
+.dk-toggle[aria-checked='true'] .dk-switch {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 88%, black);
+  box-shadow: 0 0 calc(8 * var(--u)) rgb(var(--accent-rgb) / 0.55);
+}
+.dk-toggle[aria-checked='true'] .dk-switch i {
+  transform: translate(calc(24 * var(--u)), -50%);
+}
+.dk-toggle:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+/* ---- segmented control and the sheet's «Опис / Керування» tabs ------------------------------------------ */
+.dk-seg-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4 * var(--u));
+}
+.dk-seg,
+.dk-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  box-sizing: border-box;
+  min-height: calc(var(--hit) * var(--u));
+  padding: calc(3 * var(--u)); /* + the 1-unit border: the pills sit 4 units in, as the WebGL well's */
+  border: calc(1 * var(--u)) solid rgb(var(--c-slate-rgb) / 0.7);
+  border-radius: calc(22 * var(--u));
+  background: rgb(var(--c-bg-void-rgb) / 0.8);
+}
+.dk-seg.wrapped {
+  row-gap: calc(2 * var(--u));
+}
+.dk-seg-item,
+.dk-tab {
+  flex: 1 1 0;
+  min-width: max-content;
+  min-height: calc(36 * var(--u));
+  padding: calc(4 * var(--u)) calc(16 * var(--u));
+  border: calc(1 * var(--u)) solid transparent;
+  border-radius: calc(17 * var(--u));
+  background: transparent;
+  color: var(--c-mist);
+  font: 600 calc(var(--t-small) * var(--u)) / 1.1 var(--body);
+  white-space: nowrap; /* words are never broken: whole items wrap to a second row */
+  cursor: pointer;
+  transition: background var(--dur-hover), color var(--dur-hover), box-shadow var(--dur-hover), transform var(--dur-press);
+}
+.dk-seg.compact .dk-seg-item {
+  padding: calc(4 * var(--u)) calc(9 * var(--u));
+  font-size: calc(var(--t-caption) * var(--u));
+}
+.dk-seg-item:hover:not(:disabled, [aria-checked='true']),
+.dk-tab:hover:not([aria-selected='true']) {
+  background: rgb(var(--c-bg-violet-rgb) / 0.5);
+  color: var(--c-white);
+}
+.dk-seg-item[aria-checked='true'],
+.dk-tab[aria-selected='true'] {
+  border-color: var(--accent);
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--accent) 92%, white), color-mix(in srgb, var(--accent) 86%, black));
+  box-shadow: 0 0 calc(9 * var(--u)) rgb(var(--accent-rgb) / 0.45);
+  color: var(--c-bg-void);
+}
+.dk-seg-item:active:not(:disabled),
+.dk-tab:active {
+  transform: scale(0.96);
+}
+.dk-seg-item:disabled {
+  opacity: 0.38;
+  cursor: default;
+}

@@ -12,7 +12,7 @@ import { Vector3 } from 'three';
 import { TERRAIN_ALPHA, TURBINE_6MW, annualEnergy, gamma, shearMeanSpeed, syntheticYear, turbinePowerW, weibullPdf } from '@electricity/sim/plant-wind';
 import { PLANT_TYPE } from '@/style';
 import { Builder } from '@/kit';
-import type { Chart } from '@/ui3d';
+import type { ChartApi } from '@/ui3d';
 import { HOTSPOTS } from '../hotspots';
 import { hot } from './hot';
 import type { StepFactory } from './types';
@@ -64,7 +64,7 @@ export const capacityFactor: StepFactory = ({ ui, L, live, world, hero }) => {
     }
   };
   /** Redraw a chart only when the sample it shows is stale. */
-  const fresh = (): ((chart: Chart, draw: (chart: Chart) => void) => void) => {
+  const fresh = (): ((chart: ChartApi, draw: (chart: ChartApi) => void) => void) => {
     let drawn = '';
     return (chart, draw) => {
       sample();

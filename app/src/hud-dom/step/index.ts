@@ -1,47 +1,58 @@
 /**
  * Area `step` of the DOM interface (docs/HUD_DOM.md §16): header, step panel (sections, «Див. також»,
- * reading-level switch) and step navigator. D1 moved the D0 spike's three regions here on the new core
- * (direct rectangle insets); D2 completes them.
+ * reading-level switch) and step navigator. Data from the shared view models (`hud/model/`).
+ *
+ * The step panel lives in the DOM column of `hud-dom/dock` (D3), which places it, runs the height budget through
+ * the panel's sizing API; on touch shells the DOM sheet (`hud-dom/touch`) hosts it. Header and navigator are drawn on
+ * every shell; the touch shells restyle them (`touch/touch.css`: compact header, navigation row / pill).
  */
 import type { DomHud } from '../core/context';
-import { setClass, setStyle } from '../core/dom';
-import { findNode, nodeRect } from '../core/webgl';
+import { setClass } from '../core/dom';
+import { uiSounds } from '../chrome/sounds';
 import { createDomHeader } from './header';
 import { createDomNavigator } from './navigator';
-import { createDomStepPanel } from './step-panel';
+import { createDomStepPanel, type DomStepPanel } from './step-panel';
 import './step.css';
+
+let stepPanel: DomStepPanel | null = null;
+
+/** The DOM step panel (null before the mount): D3's column places `el` and calls its sizing API. */
+export function domStepPanel(): DomStepPanel | null {
+  return stepPanel;
+}
 
 export function mount(dom: DomHud): void {
   const { hud, webgl } = dom;
   const header = createDomHeader(hud);
-  const panel = createDomStepPanel(hud, webgl.column);
+  const panel = createDomStepPanel(hud);
+  stepPanel = panel;
   const navigator = createDomNavigator(hud);
+  for (const el of [header.el, panel.el, navigator.el]) uiSounds(el);
 
   dom.claim('header');
-  // D2: the WebGL header stays in the layout at opacity 0 — the column and the board are placed under it
+  // the WebGL header stays in the layout at opacity 0 on every shell: the WebGL column and board are placed under its box
   webgl.header.opacity = 0;
-  dom.region({ el: header.el, onChapter: (m) => header.onChapter(m) }, { inset: { side: 'top', extra: 8 }, region: 'header' });
+  dom.region(
+    {
+      el: header.el,
+      onChapter: (m) => header.onChapter(m),
+      onLayout: (m) => {
+        header.onLayout(m);
+        // layout classes of the desktop shell (`wide` is the core's): CSS of every area may key on them
+        for (const l of ['wide', 'narrow', 'portrait'] as const) setClass(dom.root, `kd-layout-${l}`, m.layout === l);
+      },
+    },
+    { inset: { side: 'top', extra: 8 }, region: 'header' },
+  );
 
+  // placed and sized by the DOM column (`hud-dom/dock`, `fit` / `chrome` / `want` / `setCompact`)
   dom.claim('step-panel');
   dom.region({
     el: panel.el,
     onContent: (c) => panel.onContent(c),
     onChapter: (m) => panel.onChapter(m),
     onStep: (id, instant) => panel.onStep(id, instant),
-    update: () => {
-      // D2: spike shortcut — the DOM panel takes the box of the transparent WebGL panel (the WebGL dock stays
-      // under it) and mirrors its honesty chips; D2 gives the column a CSS layout and a view model of its own
-      const gl = findNode(webgl.column, 'step-panel');
-      if (!gl) return;
-      gl.opacity = 0;
-      const r = nodeRect(hud, gl);
-      setStyle(panel.el, 'left', `${r.x.toFixed(1)}px`);
-      setStyle(panel.el, 'top', `${r.y.toFixed(1)}px`);
-      setStyle(panel.el, 'width', `${r.w.toFixed(1)}px`);
-      setStyle(panel.el, 'max-height', `${r.h.toFixed(1)}px`);
-      setClass(panel.el, 'off', !gl.visible);
-      panel.syncBadges(gl.children[2]);
-    },
+    update: () => panel.update(),
   });
 
   dom.claim('navigator');
@@ -52,10 +63,7 @@ export function mount(dom: DomHud): void {
       onChapter: (m) => navigator.onChapter(m),
       onStep: () => navigator.sync(),
       onLayout: (m) => {
-        // centred in the area the step column leaves free on wide screens (as hud/navigator.ts)
-        // D2: reads last layout's inset; the WebGL navigator computes it from the column node
-        const shift = m.layout === 'wide' ? -(hud.engine.hud.insetFractions().right * m.cssWidth) / 2 : 0;
-        setStyle(navigator.el, '--shift', `${shift.toFixed(1)}px`);
+        navigator.onLayout(m);
       },
     },
     { inset: { side: 'bottom', extra: 8 }, region: 'navigator' },

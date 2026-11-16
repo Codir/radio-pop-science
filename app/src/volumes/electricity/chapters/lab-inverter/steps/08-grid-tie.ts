@@ -10,7 +10,7 @@ import { Vector3 } from 'three';
 import { fmtSI, fmtUnit } from '@/content';
 import { damp } from '@/engine/api';
 import { createPhasors, createScope, createShortCircuit } from '@/fx';
-import { STATUS, type Chart } from '@/ui3d';
+import { STATUS, type ChartApi } from '@/ui3d';
 import { ISLANDING } from '@electricity/sim/lab-inverter';
 import type { StepFactory } from '../chapter';
 import { doc, splitPair } from '../labels';
@@ -45,7 +45,7 @@ export const gridTie: StepFactory = (lab) => {
   const set = group(`set:${ID}`, 0, 0, 0, [wall.group, phasors, scope, flash]);
   lab.stageRoot.add(set);
 
-  let chart: Chart | null = null;
+  let chart: ChartApi | null = null;
   let charted = -1;
   const session = createGridSession({
     tripped(tripS) {

@@ -8,7 +8,7 @@
  * volume brings another axis (frequency, time, level of abstraction) and its own spacing hints.
  * Depth (z) meanders so that the camera gets parallax when it travels along the path.
  */
-import type { JourneyAxis, JourneyLayout } from '@/engine/api';
+import type { AxisFloor, JourneyAxis, JourneyLayout } from '@/engine/api';
 import type { Journey, JourneyChapter } from '../journey';
 
 export interface MapNode {
@@ -35,8 +35,11 @@ export interface MapLayout {
   readonly axis: JourneyAxis;
   /** Height of an axis value in map units (0 at `axis.origin`). */
   height(value: number): number;
-  /** Ruler ticks from `axis.min` to `axis.max`: axis value and whether the tick is long (labelled). */
-  readonly ticks: readonly { readonly value: number; readonly major: boolean }[];
+  /**
+   * Ruler ticks from `axis.min` to `axis.max`: axis value, whether the tick is long, and the label of a long
+   * tick — the formatted value, or the floor's name when the volume names its floors (`axis.floors`).
+   */
+  readonly ticks: readonly MapTick[];
   /** Name of the generic emblem of a chapter group (`VolumeManifest.journey.groups[].emblem`). */
   emblemOf(group: string): string;
   /** Height of the ground plane (below the lowest node). */
@@ -45,12 +48,28 @@ export interface MapLayout {
   byId(id: string): MapNode | undefined;
 }
 
-/** Ruler ticks of an axis (pure): every `tick` from `min` to `max`, long every `majorEvery`-th. */
-export function axisTicks(axis: JourneyAxis): { value: number; major: boolean }[] {
-  const out: { value: number; major: boolean }[] = [];
+export interface MapTick {
+  readonly value: number;
+  readonly major: boolean;
+  readonly label: string;
+  /** The named floor of the tick (its label may still be the floor's `plain` name, see `floorLabel`). */
+  readonly floor?: AxisFloor;
+}
+
+/**
+ * Ruler ticks of an axis (pure): every `tick` from `min` to `max`, long every `majorEvery`-th — or, when the
+ * axis has named floors, one long tick per floor labelled with its name («стіл», «один атом»).
+ */
+export function axisTicks(axis: JourneyAxis): MapTick[] {
+  if (axis.floors.length > 0)
+    return axis.floors.map((f) => ({ value: f.value, major: true, label: f.plain ?? f.label, floor: f }));
+  const out: MapTick[] = [];
   const n = Math.round((axis.max - axis.min) / axis.tick);
-  for (let k = 0; k <= n; k++)
-    out.push({ value: axis.min + k * axis.tick, major: k % axis.majorEvery === 0 });
+  for (let k = 0; k <= n; k++) {
+    const value = axis.min + k * axis.tick;
+    const major = k % axis.majorEvery === 0;
+    out.push({ value, major, label: major ? axis.format(value) : '' });
+  }
   return out;
 }
 
@@ -117,6 +136,8 @@ export function layoutJourney(journey: Journey): MapLayout {
 /** Catmull-Rom-like smooth point on the main path at parameter `u` (0 … spine.length − 1). */
 export function pathPoint(layout: MapLayout, u: number): { x: number; y: number; z: number } {
   const s = layout.spine;
+  // a journey of one chapter is a point (and an empty one the origin)
+  if (s.length < 2) return { x: s[0]?.x ?? 0, y: s[0]?.y ?? 0, z: s[0]?.z ?? 0 };
   const k = Math.min(Math.max(u, 0), s.length - 1);
   const i = Math.min(Math.floor(k), s.length - 2);
   const t = k - i;

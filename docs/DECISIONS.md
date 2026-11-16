@@ -336,3 +336,102 @@ If a chapter document contradicts this file, this file wins and the document mus
        test** for the path of any volume: a step, term or scene is on the path only if the volume's finale cannot
        be explained without it; the rest goes to branches, «Докладніше» or other volumes. For `circuit`: nothing
        below the nucleus; no material is carried over from the built chapters merely because it exists.
+    g. **Owner's answers to the plan questions 1–2 (2026-11-16, verbatim):** «1. Назва неважлива, але так, лишай поки
+       таку. 2. Нехай ліхтариком ми почнемо, але його можемо анімовано розкласти на стенд.» So the working title
+       «Електричний струм · Від атома до лампочки» stays for now; the volume opens with the flashlight, which is
+       taken apart in an animation into a **stand** — a tidy demonstration layout of battery, lamp, switch and
+       wires (orchestrator's reading: the stand replaces «деталі лягають на стіл» of `prologue/open`;
+       `VISUAL.md` and the chapter scripts are to be written to this). Question 3 (incandescent lamp as the hero)
+       was met with a question about whether such flashlights existed; questions 4–8 are open.
+    h. **Stand on hold (owner, same day, verbatim):** «поки не перероблюй це під стенд. я спочатку хочу подивитись
+       що вже є». Nothing in the plan (`PATH.md`, `VISUAL.md`) is changed toward the stand until the owner has
+       looked at what exists and says how to proceed.
+    i. **Stand confirmed (owner, same day, verbatim; cancels h):** «Все ж таки відміни мою відміну і зроби так, як
+       було запропоновано: корпус розсувається, а батарейка, лампочка, вимикач і дроти стають охайним
+       демонстраційним стендом, на якому далі йде весь том». The plan documents are revised to this by
+       `V7-circuit-plan` (resumed).
+    j. **One battery (owner, same day, verbatim):** «про дві батарейки не потрібно. просто примітивний ланцюг із
+       однієї батарейки, вимикачем і лампочкою». The circuit of the volume always has exactly one battery, one
+       switch and one lamp; the practicum task with two and three cells is removed and `resistance/balance` is
+       reworked without a second battery (`V7-circuit-plan`).
+    k. **Extensions (owner, same day, verbatim):** «а як тобі ідея зробити просто розширення до тому, такий собі
+       додатковий матеріал, де ми і батарейок додамо (і розкажемо усі супутні нюванси), і лампочку на світлодіод
+       замінимо?» and «ми можемо розказувати про напругу не через зміну дроту, а так як ти і хотів, але це вже
+       буде як розширення». So the path keeps one battery and shows only what it can show; the two-battery
+       demonstration of voltage and current opens the extension «Більше батарейок»; «Світлодіод замість лампочки»
+       is a second extension. Extensions are parked in `PATH-NOTES.md`, not designed until the path is polished
+       (orchestrator's reading of the order).
+    l. **The whole battery cycle on the path (owner, same day, verbatim):** «так, давай проходити обов'язково увесь
+       цикл. в першому міні-томі (без доповнення) має бути і сценарій із розрядженою батарейкою і усіма
+       супутніми нювнсами». The path follows the battery from fresh to dead with one battery, one switch and one
+       lamp; the discharged battery and its nuances are part of the path, not an extension (`V7-circuit-plan`).
+    m. **Extensions postponed; execution starts (owner, same day, verbatim; narrows k):** «поки що забуваємо про
+       розширення з кількома батарейками і світлодіодом і концентруємось лише на основі міні-тому. приступай до
+       виконання». Orchestrator's reading: production of the base path starts after the plan revision; the plan
+       questions the owner left unanswered (4–8) are taken with the planner's recommendations until the owner says
+       otherwise — the reader is addressed as «ти»; the reference is the prologue plus chapter 1; `lamp/handover`
+       stays on the path; `circuit` is the shared foundation of the library.
+    n. **Address (owner, same day, verbatim):** «до читача на ви». The reader is addressed as «ви» (lower case)
+       in every text of the volume and of the interface; this replaces the «ти» of the orchestrator's reading in m.
+    o. **Public repository on hold (owner, same day, verbatim):** «поки нічого не пуш в репо tech, нехай усе буде в
+       electricity». No pushes to the public mirror until the owner says otherwise; everything goes to the private
+       repository only (ORCHESTRATOR §7 rule 8a).
+    p. **First live review of the prologue (owner, 2026-11-16 ≈16:05, verbatim):** «Зроби сцену без світла трошечки
+       світлішою, бо зараз дуже темно. перехід з 2 на 3 крок в пролозі дуже різкий, треба значно плавніше. прибери
+       слайдер "Розкласти" з кроку 2. по суті, прибери крок 2. А на кроці 1 спочатку тримай прихованою панель із
+       перемиканням кроків. А коли користувач натичне на вимикач і світло увімкнеться, тоді ця панель має плавно
+       з'явитись. На поточному кроці 3 слайдер має бути плавним, тобто щоб замість програвання анімації на кожному
+       з 3 кроків слайдера у нас "кадр" анімації відповідав положенню слайдера. але і якщо ми просто клікаємо на
+       слайдер в якомусь місці, то анімація все ще має бути плавною до того місця. ключова ідея - що ми можемо
+       посунути слайдер в будь-яку позицію і стан стенду буде заанімований/програний відповідно до положення
+       слайдеру.» Orchestrator's reading: (1) the unlit scenes get slightly more ambient light; (2) the step `open`
+       and its slider are removed — the flashlight unfolds into the stand by itself as one smooth transition from
+       `click` to the next step; (3) on `click` the step navigator is hidden until the reader has switched the
+       light on, then fades in; (4) the depth control of `dive` is a continuous slider: its position is the frame
+       of the dive (scrubbing), and a click anywhere travels there smoothly; the same rule for every slider that
+       drives an animation in the volume. The owner also asked for the orchestrator's opinion of the snail scene
+       (given in the conversation; no change to it without the owner's word).
+    q. **No questions to the reader (owner, 2026-11-16, verbatim):** «ніяких питань і квізів в звичайних режимах.
+       користувач має лише керувати і спостерігати, а не відповідати на питання. тому твоя ідея з «Хто швидший:
+       равлик чи іскорка?» - ні! Решту обговорень про равлика трохи згодом». Rule for every volume in the path
+       format: in ordinary modes the reader controls and observes; no multiple-choice questions, no «guess first»,
+       no quizzes. Applied at once: `VOLUME_STRUCTURE.md` §1; the practicum step `build/short` loses its «вгадати …
+       вибрати відповідь із трьох» (orchestrator's reading: the practicum is an ordinary mode). The rest of the
+       snail scene is to be discussed later; no change to it until then.
+    r. **The snail scene (owner, 2026-11-16 ≈16:45, verbatim):** first «а якщо ми взагалі приберемо равлика? які ще є
+       ідеї? це ж ти показуєш дрейф електронів?», then, after the orchestrator's options: «а як тобі ідея якщо у нас
+       буде слайдер і його кінець це равлик вже дійшов кінця? тобто концептуально те що і було, тільки тепер
+       користувач керує часом слайдером + так, щоб равлик повз уздовж дроту. що скажеш?» **This is an idea under discussion, NOT a decision** — the owner, minutes later: «ідея з позунком часу була
+       на обговорення з тобою!». The orchestrator had wrongly dispatched it as a task and stopped the agents
+       (C-circuit-1, W1-circuit-stage; their work is parked on their branches and must not be merged).
+       The orchestrator's first reading of the idea, kept for the discussion only: `prologue/riddle` has one slider of time that scrubs the scene (§60 p
+       rule); the snail crawls along the wire itself and the end of the slider is the snail reaching the end of
+       that wire; on the same wire a glowing dot shows where one marked spark has got to (a few millimetres);
+       the lamp shines throughout. No «Пустити» button, no separate ruler track, no pin, no lens, no clock, no
+       «прискорено ×N» chip — the slider is the clock. Direction and length follow the real stand (electrons go
+       from the battery's minus toward the lamp). `flow/snail` in chapter 4 is re-planned to the same device.
+    s. **The time-slider idea, the owner's answers in the discussion (2026-11-16 ≈17:00, verbatim):** «1. Так, світло за
+       рухом слайдера одразу вмикається. 2. покажи просто лупу на початку дроту і невелику шкалу в пару сантиметрів.
+       от там і показуй дрейф. 3. хай метушиться. 4. повзунок тільки для равлика. але в кінці повзунка іскорка має
+       все ж таки опинитись у крайньому положенні шкали (зроби її може не 2 см, а ту дистанцію, скільки воно реально
+       пройде за цей час). 5. Так, рух електронів показуй в справжньому напрямку. покажи превью, якісь рендери, щоб я
+       запевнився, що ти розумієш цю ідею». **Still not a decision to build the step:** the owner asked for a
+       preview first. Orchestrator's reading for the preview: one slider of time; at 0 the lamp is off and it is
+       on as soon as the slider leaves 0; the snail crawls along the wire in the electrons' true direction and
+       the end of the slider is the snail at the end of the wire; the magnifier lies on the start of that wire
+       with a short scale whose length is exactly what the spark really covers in that time (≈ 4.4 % of the
+       snail's run); in the lens the sparks dart about, and the marked spark's drift carries it to the far end of
+       the scale exactly at the end of the slider. A preview is built on a dev page only; the chapter stays as it is.
+    t. **The time-slider snail scene is approved (owner, 2026-11-16 ≈20:25, verbatim):** «Мені подобається превʼю з
+       равликом. Роби». The owner named no variant and did not answer the orchestrator's four questions, so the
+       orchestrator's reading, open to correction: **variant B** of the preview `_dev/_sandbox-circuit-crawl`
+       (the lens is a plain magnifier ≈ 3.5× over the wire's first centimetre with the 0 … 6 мм scale inside it)
+       with the preview's values — one slider «Час» 0 … 2 хв 16 с, lamp on as soon as the slider leaves 0, the
+       snail on its 13.64 cm lane beside the wire from the battery's minus toward the lamp, centimetre ticks and
+       trail as shown. Consequences: `prologue/riddle` is rewritten and rebuilt on it (no «Пустити», no race
+       track, no ×N clock, no question to the reader — §60 q); `flow/snail` in chapter 4 is re-planned to the
+       same device; variant A and the old race tools leave the stage library once nothing mounts them.
+    u. **Everyday units in `circuit` (orchestrator's reading, 2026-11-16, to be confirmed by the owner):** the
+       approved preview prints «5 см», «6 мм», «2 хв 16 с». In this volume, lengths and times of everyday scale are
+       written with Ukrainian unit signs (мм, см, м, с, хв, год) in captions and spelled out in running text;
+       electrical units stay international as §54 f says (V, A, Ω, W). Volume 1 is not changed.

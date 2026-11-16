@@ -357,4 +357,5 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(C.run_volumes(main))
+    import path_export as PX  # path-format volumes (docs/PATH_FORMAT.md)
+    sys.exit(C.run_volumes(main, path=PX.runtime_main))

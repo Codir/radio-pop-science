@@ -446,6 +446,45 @@ Additive; `?hud=gl` (the default) is pixel-identical to before. Chapters need no
   `app/scripts/charset.mjs` (charset + composed glyphs, shared with `pnpm fonts`); `pnpm fonts:check` also checks
   the WOFF2 font stacks; Fira Sans Italic added.
 
+## D2-dom-step — DOM header, step panel, navigator, spine, system row, tooltips, toasts (2026-11-14; docs/HUD_DOM.md §22)
+
+Additive; `?hud=gl` (the default) unchanged. Chapters need no change.
+- **View models** `app/src/hud/model/` (pure, unit-tested; both renderers read them): `header.ts` (`headerModel`,
+  `headerTitleMax`), `step.ts` (`stepModel` — counter, title, pages, copy at the level, `hasSimple`, `quiz`,
+  `pending`; `honestyModel`, `honestyFactor`, `QUIZ_TITLE`, `STEP_PENDING`), `links.ts` (`stepLinks`, `stepOf`,
+  `LINKS_CAPTION`), `sections.ts` (`stepSections`, `termModel`, `factModel`, `mythTitle`, `MYTH_KICKER`),
+  `spine.ts` (`spineRows`, `spineFamily`, `spinePick`). `hud/header.ts`, `step-panel.ts`, `step-sections.ts`,
+  `step-links.ts`, `spine.ts` and `dock-build.ts honestyChips` use them.
+- **Hybrid bridge** (until D3's DOM column): `stepPanelBridge` in `hud/step-panel.ts` — `sizer: DomPanelSizer`
+  (`ready`, `fit`, `chrome`, `want`, `height`, `setCompact`, units) makes the WebGL column budget size the DOM panel
+  (the WebGL panel becomes an invisible spacer of its height); `openQuiz()` opens the WebGL quiz card for the DOM entry.
+- **`@/hud-dom` step/chrome**: `createDomStepPanel(hud)` → `DomStepPanel { el, scroll, fit, setCompact, chrome,
+  want, stepTitle, … }` — the API D3's column calls; reading-level switch `createLevelSwitch` (`reading-level`,
+  `reading-level:simple|detailed`); tooltip of any `#kd-hud` element with `data-tip` (all areas may use it); toasts:
+  the DOM takes over `hud.toasts.push/flush` (every `hud.toast` / `ui.toast` reaches it); `uiSounds(el)` (hover /
+  tap / `data-sfx`); root classes `kd-layout-wide|narrow|portrait`.
+- **New `data-ui` names** (DOM only): `reading-level`, `reading-level:simple`, `reading-level:detailed`,
+  `term-card`, `tooltip`, `toast`, `toasts`, `loading`, `sys-fullscreen`, `spine`, `system`. The WebGL loading pill
+  is now named `loading` (no visual change).
+- **Step regions' CSS** (2026-11-16): chips in the step panel take their border off the padding, and the panel's
+  gaps follow the WebGL twins (HUD_DOM §22 «Sizes»). An open section button keeps its yellow rim under the
+  pointer. No API change.
+
+## D4-dom-charts — charts, custom widgets and `hudLayer` in the DOM interface (2026-11-14; HUD_DOM §21)
+
+All backward compatible for chapters; `?hud=gl` renders as before.
+- **`@/ui3d`**: interfaces `ChartApi`, `PhasorApi`, `RadarApi`, `HeatMapApi` (the WebGL classes implement them);
+  `HeatMap` / `RadarChart` expose `cfg` and a `twin` (`@internal`, used by the DOM twins); `RadarChart.snapshot()`.
+- **`@/hud`**: `ChartSpec.init / update` receive `ChartApi` (method syntax: `(c: Chart) => …` callbacks still
+  compile; a *helper* typed `(c: Chart)` that such a callback calls must take `ChartApi`). `CustomSpec.dom?: (host:
+  DomHost) => DomWidget`; types `DomHost`, `DomWidget`. New exports `hudLayer(ctx, name?)` (DOM overlay, null
+  under `gl`; successor of `hudSurface`) and `domKit` (`h`, `svg`, `setText`, `setStyle`, `setClass`, `observeUnits`,
+  `tone`, `color`, `rgbaColor`, `svgPainter`, type `ShapePainter`).
+- **`@/hud-dom`** (for D3): `charts/` → `chartWidget(spec)`, `DomChart` / `createChart(props)`, `DomPhasorScope`,
+  `DomRadarChart`, `DomHeatMap`, `legendEl`; `custom/` → `customWidget(spec, host)`, `domHost(dom)`, `hudLayer`.
+- **Chapters should**: give every `custom` control a `dom` widget (or use a kit chart node); replace `hudSurface`
+  by `hudLayer` with a WebGL fallback; type chart helpers with `ChartApi`.
+
 ## M6-library-focus — the pilot volume is the front door; volume 1 behind a button (2026-11-16; DECISIONS §60)
 
 - **Volumes.** New published default volume `circuit` (`app/src/volumes/circuit/`, alias `@circuit/*`), empty
@@ -475,3 +514,136 @@ Additive; `?hud=gl` (the default) is pixel-identical to before. Chapters need no
   `circuit` (they print "no documents yet" until its documents exist): add `--volume electricity` for volume 1.
   `regen.sh` and `doccheck.py` (all volumes by default) are unchanged; `chapter-check atom` still means
   `electricity/atom` (legacy-first), the full form `electricity/atom` always works.
+
+## M7-circuit-platform — the «path» chapter format, planned journeys, named floors (2026-11-16; brief M7)
+
+- **Documents and tools.** New format `docs/PATH_FORMAT.md` for volumes with `volume.json → format: "path"`.
+  `tools/content/path_format.py` (parser), `path_export.py` (export, runtime, INDEX, GLOSSARY), `path_check.py`
+  (doccheck group `path`), tests `test_path_format.py`. `chapters.run_volumes(fn, default_all, path=None)`: a
+  path volume runs `path()`; tools without one print «not applicable». `chapters.FORMAT`, `chapters.PLANNED`
+  (every journey id); in a path volume `CHAPTER_IDS` = planned chapters that have a document. `doccheck.main_path`.
+  `app/scripts/font-coverage.mjs` reads the path export fields too.
+- **Manifest** (`engine/volume.ts`): `VolumeIdentity.format?`, `groups[].layer?`, `journey[]: PlannedChapter`
+  (`title?`, `minutes?`, `floor?`), `axis.floors?: AxisFloor[]`; `VolumeManifest.format: 'classic' | 'path'`,
+  `JourneyGroup.layer: VolumeLayer`, `JourneyAxis.floors`, `floorValue(volume, id)`. Validated in `defineVolume`.
+- **Content** (`content/types.ts`): `StepContent.path?: PathStep` (`idea`, `action`, `takeaway`, `more[]`,
+  `marks[] {text, term}`, `recall?[] {target, title}`, `honesty?`, `hints?`), `ChapterContent.path?: PathChapter`
+  (`layer`, `hook`, `know`, `now[]`, `bridge`, `next`, `minutes`); `ChapterMeta` gains optional `axisValue`,
+  `minutes`, `format`, `layer`. `defineContent` passes `path` through. Volume 1 content is unchanged.
+- **HUD.** `journeyFromManifests` adds planned chapters (journey entries with a `title`) as `real: false`;
+  `JourneyChapter.layer`, `.minutes`; `Journey.built`; `journeyRemaining(visited, journey)`, `chapterWords(volume)`.
+  Map: `pathPoint` works for 0 / 1 nodes, no tube for one node, `MapTick.label` (floor names), planned nodes
+  slate without emblem (also in `?fixture` mode), «лишилося ≈ N хв». Home: `empty` = no built chapter; minutes chip.
+  `hud/recall.ts → RecallTrail` (model of «Згадайте…» + «Повернутися»), not yet wired to a panel (waits for D2).
+- **Volumes.** `circuit/volume.json`: format, layers, floors, the 9 planned chapters of PATH.md. New dev volume
+  `_path` (two built sandbox chapters `_sandbox-path`, `_sandbox-flow`; planned prologue, `glow`, practicum).
+
+## D3-dom-dock — DOM control dock, action row, board, column height budget (2026-11-16; HUD_DOM §23)
+
+Chapters need no change; every `ControlSpec`, `ctl-<id>` / `ctl-<id>:<item>` name and `stepUi` member keeps its
+meaning. `?hud=gl` renders as before (pixel-identical).
+- **View models** (pure, unit-tested; both docks use them): `hud/model/controls.ts` — `slotOf(spec)`,
+  `arrangeControls(items, 'dock' | 'board')` (dock: sliders, toggles row, blocks, readouts row, buttons to the
+  action row; board: declared order, consecutive readouts / toggles in a row, buttons last); `hud/model/column.ts`
+  — `columnBudget(sizes, compactChrome, { compactFirst })`, `TEXT_MIN`, `DOCK_MIN`, `COLUMN_GAP` (moved from
+  `hud/dock.ts`, which no longer exports them).
+- **Hybrid bridge**: `columnBridge` in `hud/dock.ts` (`domOwns()`, `rebuild()`): under `?hud=dom` on the desktop
+  shell the DOM column builds the controls and owns the binding's `push` / `repatch` / `flash`; the WebGL column
+  keeps the hint toast, honesty chips and annotations (`onSpec`). Touch shells: the WebGL sheet until D7.
+- **Removed**: `stepPanelBridge.sizer` and `DomPanelSizer` (`hud/step-panel.ts`) and D2's hybrid placement of the
+  DOM step panel; `stepPanelBridge.openQuiz` stays until D5.
+- **`@/hud-dom`**: `dock/` → `createDomColumn`, `buildDomControls(binding, specs, { where, reset, host, customs })`,
+  controls `domSlider`, `domToggle`, `domSegmented`, `domButton`, `domNote`, `domReadout`, `domStats`, `domGauge`,
+  `domTable`; `board/` → `createDomBoard(dom)`.
+- **New `data-ui` names** (DOM only): `dock`, `dock-scroll`, `dock-actions` (as the WebGL nodes), `ctl-<id>:tabs`
+  (the radio group of a captioned segmented control, as WebGL), `sheet-tabs`, `sheet-tabs:text`,
+  `sheet-tabs:controls`, `board`, `board-fold`. Region names `column`, `board` for `__ui.overlaps()`.
+- **Keyboard** (DOM): sliders ←/→/↑/↓ (Shift ×10), PgUp/PgDn, Home/End with the WebGL step (`nudge`); segmented
+  controls are radio groups (←/→ select); a visually hidden first Tab stop «До керування кроком» focuses the dock.
+
+### M7-circuit-platform, part 2 (after the D2 merge)
+- **Lint.** `shared/**` of a volume (its scene library) is importable by the volume's chapters; chapters of a dev
+  volume may import another volume's `shared/**` (showcase). `eslint-rules/chapter-boundary.js`, tests, VOLUMES §2.
+- **Manifest.** `AxisFloor.plain?` / `.namedAt?` and `floorLabel(volume, floor, visited)`: a floor named with a
+  word not yet introduced shows its plain name until the step `namedAt` is opened (map ruler, node labels, home
+  range). circuit: «ряди кульок» / «одна кулька» until `wire/atoms`.
+- **Format.** «Текст» may have two paragraphs (runtime `panel[]` = paragraphs of one page); «Чесно» →
+  `PathStep.note`; «Підписи» timed by the takeaway (`«A» → «B»`, `→ «B»`) → `PathStep.captions` (labels keep
+  their order); chips `сповільнено ×10¹⁴`, `×5·10¹⁴`.
+- **Step UI.** `StepUiSpec.goal?: When` (path chapters: the takeaway shows once it holds).
+- **DOM panel.** `hud/model/path-step.ts` (`pathStepModel`, `hintsDue`, `PATH_LABELS`), `hud-dom/step/path-body.ts`;
+  `DomStepPanel` fills it for path chapters (HUD_DOM §22.1). Builders of path chapters declare no `stepUi` honesty.
+
+### M7-circuit-platform, part 3 (punch list of `circuit/prologue`)
+- `@/hud-dom/journey`: `journeyInset(ctx, { id, onOpen })` (the volume's journey map as a board / dock widget,
+  DOM plot or list, WebGL / touch-sheet stop buttons) and `floorLadder(ctx, { floor })` (the «де ми» cue). UI_API §11a.
+- Path panel: no pager (button forward on the opening card, link «Питання з життя» back), one title size.
+- `circuit/prologue`: `map` uses `journeyInset` (the scene model of the path is gone); «де ми» ladder in `scene.ts`.
+
+### M7-circuit-platform, part 4
+- Board `size: 'fill'` (DOM): the free scene area between spine and step column, centred; `journeyInset` grows
+  with it. The inset's list form is a CSS container query (its ResizeObserver made a resize loop).
+- `StepUiSpec.acting?: When`; «Позначки» chips written `→ …` appear when it first holds (or at the takeaway).
+- `hud/where.ts` (`setWhere`, `onWhere`, `whereFloor`, `axisChipText`): `floorLadder` reports the floor; the header's
+  axis chip shows it (path volumes: the current floor, plain names until introduced); on phones the ladder is
+  hidden and a `header-floor` chip in the header row carries it.
+
+## D5-dom-overlays — DOM settings, help, glossary, quiz, home, library, journey-map chrome (2026-11-16; HUD_DOM §24)
+
+Chapters need no change. Overlay names, `__ui.open/close/overlay/mapNode`, the keys M, L, Esc and the QA names
+(`home-*`, `volume-*`, `glossary-scope:*`, `reading-level:*`, `map-close`, `map-overview`, `map-step-<id>`,
+`chapter-quiz`) keep their meaning. `?hud=gl` draws as before (one deliberate text change below).
+- **Shell.** `Hud.domTwin(name, twin)`: the view registered under `name` is shown through `twin(view)` (its DOM
+  twin; swapped in place when open). `hud/views.ts viewSources` (WeakMap view → `{ journey, stage }`), filled by the
+  HUD plugin. `OverlayName` gains `quiz` (DOM only; the WebGL quiz stays a card of the step panel).
+- **Removed:** `stepPanelBridge` (`hud/step-panel.ts`) — the DOM quiz entry opens the overlay `quiz`.
+- **Map hook points** (`hud/map/map.ts`): `MapChrome { refresh(summary), card(node, currentStep) }`,
+  `JourneyMap.attachChrome(chrome)` (the WebGL title bar, buttons, hint and card leave the view), `selection`,
+  `enter(node, stepId)` public. Fixed: the WebGL chapter card crashed on a planned chapter (no steps).
+- **View models** (pure, tested): `hud/model/home.ts` (`homeModel`, `homeStart`), `library.ts`
+  (`volumeCardModel`), `glossary.ts` (`loadVolumeGlossary`, `loadLibraryGlossary`, `glossaryTabs`,
+  `glossaryLetters`, `glossaryRow`, `glossaryTarget`), `glossary-search.ts` (`prepareGlossary`, `searchGlossary` —
+  the matches of `filterGlossary`, strings normalised once —, `focusRecord`), `quiz.ts` (`QuizRun`), `map.ts`
+  (`mapSummary`, `mapCard`, `stopName`, `stopFloor`), `help.ts` (`helpModel`). `hud/home-aside.ts` exports
+  `asideLinks`, `enterVolume`. The WebGL views use them.
+- **Text change (both renderers):** library cards count chapters with `chapterWords` («2 глави» in a path volume);
+  help names «глави» in a path volume and drops the electricity-only «типи станцій» line there.
+- **New `data-ui` names** (DOM): `overlay-<name>`, `<name>-close` (dialog close buttons), `glossary-search`,
+  `glossary-clear`, `glossary-tabs[:<id>]`, `glossary-letter:<ch>`, `glossary-list`, `settings-quality:*`,
+  `settings-frames:*`, `settings-text:*`, `settings-motion:*`, `ctl-settings-sound|dynamic|volume`, `settings-reset`,
+  `quiz-option:<i>`, `quiz-next`, `quiz-result`, `home`, `home-resume`, `home-start`, `home-map`, `library`,
+  `map-chrome`, `map-title`, `map-ring`, `map-card`, `map-card-ring`, `map-card-close`, `map-go`.
+
+## D7-dom-touch — the touch shells in the DOM interface (2026-11-16; HUD_DOM §25, MOBILE §3a)
+
+Chapters need no change. `?hud=gl` draws as before (the WebGL sheet, header, navigator, system row are untouched;
+pixel identity checked). Under `?hud=dom` phones and tablets get the DOM sheet instead of F5's WebGL sheet.
+- **Moved:** `hud/touch/geometry.ts` → `hud/model/sheet.ts` (`TOUCH`, `sheetGeometry`, `sideWidth`, `settleSnap`,
+  `touchTop`, `SheetSnap`), plus the shared types `SheetTab`, `SHEET_TAB_LABEL`, `SheetInsets`, `SheetCardText`
+  and `SheetControl` (`tab`, `snap`, `setTab`, `setSnap` — what `__ui.sheet()/setSheet()` and the step panel ask).
+  `hud/touch/sheet.ts` re-exports `SheetTab` / `SheetInsets`; `TouchSheet extends SheetControl`.
+- **`HudContext.touch`:** `sheet: SheetControl | null` (was `TouchSheet`); `card(node, onDismiss, opts)` takes
+  `opts.text: SheetCardText` — the copy of the card, so the DOM sheet can draw it (`hud/annotations.ts` passes it).
+- **`columnBridge.domOwns()`** = `?hud=dom` on every shell (was: desktop shell only); the WebGL dock builds no
+  touch sheet under `dom`. `columnBridge.rebuild` is removed (no caller left).
+- **DOM areas:** `hud-dom/dock` exports `domColumnParts()` (`ColumnParts`: panel, dock, board, `hasDock`,
+  `hasBoard`, `layoutControls`, `release`); `DomStepPanel.setTouch(titleHost | null)` (title into the sheet's head,
+  every page in one scroll, no page bar); header, navigator, system row and loading pill stay DOM on touch shells
+  (`.off` hand-back removed); the system row gains `sys-menu` (touch shells only); the header gets class `where`
+  while the chapter reports a floor; DOM tooltips show on a 480 ms long press on touch (no activation);
+  `overlays/index.ts` no longer writes `--safe-*` on the modal layer (the root has them).
+- **New overlay twin:** `menu` (DOM, `hud-dom/touch/menu.ts`; items `menu-library|map|glossary|sound|fullscreen|
+  settings|help|home` as in WebGL).
+- **Root classes / properties** (`#kd-hud`): `kd-touch`, `kd-pointer-coarse`; `--hit` 44 (phone) / 48 (tablet);
+  `--safe-top|right|bottom|left` (CSS px), `--kb` (keyboard, CSS px), `--tch-top|left|right|nav-left|nav-w|load`
+  (units).
+- **New `data-ui` names** (DOM): `sheet`, `sheet-grip`, `sheet-side-grip`, `sheet-tabs`, `sheet-tabs:text|controls|
+  board` (as F5), `sheet-card`, `sheet-card-back`, `sys-menu`, `overlay-menu`, `menu-close`.
+
+### M7-circuit-platform, part 5 (owner's first live review, DECISIONS §60 p)
+- `StepUiSpec.nav?: { hiddenUntil: When | 'goal' }` (`hud/nav-gate.ts`): the step navigator held back until the
+  predicate first holds; DOM: inert + engine-clock fade, layout kept; WebGL: the buttons step aside; forward keys
+  blocked; `__ui.navHidden()`; `tools/qa/mobile-flows.mjs` notes and skips «Далі» while held. UI_API §3.4.
+- Sliders that scrub an animation: `SliderSpec.onInput?(value, how: 'drag' | 'jump' | 'step')` (DOM) and
+  `ControlPatch.current` (the fill shows the animation's position, the thumb the target). UI_API §3.3.
+

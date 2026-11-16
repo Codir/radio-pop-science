@@ -8,7 +8,7 @@ import { Vector3 } from 'three';
 import { fmtPercent, fmtSI } from '@/content';
 import { damp } from '@/engine/api';
 import { applyHeat } from '@/fx';
-import { STATUS, type Chart } from '@/ui3d';
+import { STATUS, type ChartApi } from '@/ui3d';
 import { switchLosses, tapLosses, type LossResult } from '@electricity/sim/lab-inverter';
 import type { StepFactory } from '../chapter';
 import { doc, splitPair } from '../labels';
@@ -45,7 +45,7 @@ export const switches: StepFactory = (lab) => {
   let lossTap: LossResult = tapLosses(230, 10, UDC);
   let lossKey: LossResult = switchLosses(230, 10, 20000, UDC);
   const now = (): LossResult => (mode() === 'tap' ? lossTap : lossKey);
-  let chart: Chart | null = null;
+  let chart: ChartApi | null = null;
 
   function recompute(): void {
     lossTap = tapLosses(U(), I(), UDC);

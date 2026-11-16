@@ -7,7 +7,7 @@
  */
 import { Vector3 } from 'three';
 import { fmtPercent, fmtSI, fmtUnit } from '@/content';
-import { STATUS, type Chart } from '@/ui3d';
+import { STATUS, type ChartApi } from '@/ui3d';
 import { filterWarning, lcGainDb, loadResistanceOhm } from '@electricity/sim/lab-inverter';
 import type { StepFactory } from '../chapter';
 import { doc } from '../labels';
@@ -58,7 +58,7 @@ export const lcFilter: StepFactory = (lab) => {
   const warning = (): ReturnType<typeof filterWarning> => filterWarning(L(), C(), waves.settings.fcHz);
 
   let charted = -1;
-  function plot(c: Chart): void {
+  function plot(c: ChartApi): void {
     const xs: number[] = [];
     const ys: number[] = [];
     const r = loadResistanceOhm(P());

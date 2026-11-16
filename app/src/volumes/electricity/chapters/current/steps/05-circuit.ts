@@ -247,7 +247,7 @@ export const circuitStep: StepFactory = (bench) => {
       board: {
         title: OWN.diagram,
         size: 'sm',
-        children: [{ type: 'custom', id: 'diagram5', node: diagram }],
+        children: [{ type: 'custom', id: 'diagram5', node: diagram, dom: () => diagram.dom(OWN.diagram) }],
       },
       controls: [
         { type: 'toggle', id: 'sw5', label: DOC.switch, value: false },

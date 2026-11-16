@@ -10,7 +10,7 @@
 import { CylinderGeometry, Vector3 } from 'three';
 import { fmtNumber, fmtPercent, fmtSI, fmtUnit } from '@/content';
 import { applyHeat, createPulseRings } from '@/fx';
-import { STATUS, type Chart } from '@/ui3d';
+import { STATUS, type ChartApi } from '@/ui3d';
 import { EDDY_SHEET, eddyLossWPerKg, optimumLoad, transformerEfficiency, type TransformerGeneration } from '@electricity/sim/transformer';
 import type { StepFactory } from '../chapter';
 import { doc, hot, splitCaps } from '../labels';
@@ -61,7 +61,7 @@ export const lossesEfficiency: StepFactory = (tx) => {
     const out = new Vector3();
     return () => tx.stageRoot.localToWorld(out.set(x, y, z));
   };
-  const drawCurves = (c: Chart): void => {
+  const drawCurves = (c: ChartApi): void => {
     const key = `${gen()}|${Math.round(beta() * 100)}`;
     if (key === curveKey) return;
     if (!curveKey.startsWith(gen())) {

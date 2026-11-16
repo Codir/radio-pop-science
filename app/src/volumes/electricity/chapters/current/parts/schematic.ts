@@ -4,6 +4,7 @@
  * the HUD board and kept in sync with the 3D circuit: the same component order, switch state, blown fuse,
  * jumper position. A diagram shows connections, not the real placement.
  */
+import { domKit, type DomWidget } from '@/hud';
 import { UiNode, lit, rgba, type Painter } from '@/ui3d';
 
 export type SchematicPart = 'switch' | 'fuse' | 'lamp';
@@ -35,9 +36,12 @@ export class Schematic extends UiNode {
   };
   private key = '';
 
-  constructor(height = 170) {
-    super({ width: 'fill', height });
+  constructor(private readonly boxH = 170) {
+    super({ width: 'fill', height: boxH });
   }
+
+  /** The DOM twin (`?hud=dom`): an SVG drawn by the same `draw`, re-drawn on a state or width change. */
+  private svgView: { g: SVGGElement; root: SVGSVGElement; width: number } | null = null;
 
   set(next: SchematicState): void {
     const key = `${next.order.join()}|${next.closed}|${next.fuseInstalled}|${next.fuseBlown}|${Math.round(next.lamp * 10)}|${next.jumper}|${next.live}|${next.short}`;
@@ -45,12 +49,42 @@ export class Schematic extends UiNode {
     this.key = key;
     this.state = next;
     this.repaint();
+    this.drawSvg();
+  }
+
+  /** The same diagram for the DOM interface (`custom.dom`); `label` names it for screen readers. */
+  dom(label: string): DomWidget {
+    const { h, svg, observeUnits } = domKit;
+    const g = svg('g');
+    const root = svg('svg', { 'aria-hidden': 'true' }, g);
+    const el = h('div.kd-diagram', { role: 'img', 'aria-label': label }, root);
+    el.style.setProperty('--h', String(this.boxH));
+    this.svgView = { g, root, width: 0 };
+    const stop = observeUnits(el, (width) => {
+      if (this.svgView) this.svgView.width = width;
+      this.drawSvg();
+    });
+    return { el, dispose: stop };
+  }
+
+  private drawSvg(): void {
+    const v = this.svgView;
+    if (!v || v.width <= 0) return;
+    const H = this.boxH;
+    v.root.setAttribute('viewBox', `${-v.width / 2} ${-H / 2} ${v.width} ${H}`);
+    v.g.replaceChildren();
+    this.draw(domKit.svgPainter(v.g), v.width, H);
   }
 
   override paint(p: Painter): void {
+    this.draw(p, this.w, this.h);
+  }
+
+  /** The diagram in units, y up, origin at the centre of a `w` × `h` box. */
+  private draw(p: domKit.ShapePainter, w: number, h: number): void {
     const s = this.state;
-    const W = Math.min(this.w - 48, 440);
-    const H = this.h - 56;
+    const W = Math.min(w - 48, 440);
+    const H = h - 56;
     const x0 = -W / 2;
     const x1 = W / 2;
     const top = H / 2;

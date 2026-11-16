@@ -9,7 +9,7 @@ import { Button, Label, Panel, ScrollView, UI, UiNode, conceal, reveal } from '@
 import type { HudContext, HudModule } from './context';
 import type { BoardSpec } from './step-ui-types';
 
-const WIDTH = { sm: 380, md: 520, lg: 680 } as const;
+const WIDTH = { sm: 380, md: 520, lg: 680, fill: 680 } as const;
 
 export interface StepBoard extends HudModule {
   /** Show `spec` with the built body nodes (null: hide the board). */

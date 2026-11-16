@@ -1,0 +1,139 @@
+/* Step column and control dock of the DOM interface (D3; WebGL twins hud/dock.ts, hud/dock-build.ts and the
+   ui3d widgets). Lengths are units × --u; colours from tokens. Flat 2D; only state changes move anything. */
+
+/* ---- column: step panel + dock (column.ts places it; the budget sets max-heights) -------------------- */
+.kd-col {
+  display: flex;
+  flex-direction: column;
+  gap: calc(12 * var(--u));
+  pointer-events: none; /* the gap between the plates belongs to the scene */
+}
+.kd-col > * {
+  pointer-events: auto;
+}
+.kd-col.off {
+  display: none;
+}
+.kd-col > .kd {
+  position: relative; /* anchors the plates' swept border (::before) */
+  width: 100%;
+}
+.kd-col.sheet > .dk-tabs {
+  align-self: center;
+}
+
+/* ---- dock plate: scrolling controls + sticky action row ------------------------------------------- */
+.dk {
+  display: flex;
+  flex-direction: column;
+  gap: calc(12 * var(--u));
+  padding: calc(18 * var(--u)) calc(22 * var(--u));
+}
+.dk-body {
+  flex: 0 1 auto;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--accent-rgb) / 0.5) transparent;
+}
+.dk-body.more:not(.end) {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 22 * var(--u)), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 22 * var(--u)), transparent);
+}
+.dk-list,
+.bd-list {
+  display: flex;
+  flex-direction: column;
+  gap: calc(14 * var(--u));
+}
+.dk-actions,
+.bd-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(10 * var(--u));
+}
+/* the core .btn's CSS border adds to its box; the WebGL rim is drawn inside: take it off the padding */
+.dk-actions .btn,
+.bd-actions .btn {
+  padding: 0 calc(18.4 * var(--u));
+}
+.dk-btn.flash-a {
+  animation: dk-press-a 0.32s var(--ease-press, ease-out);
+}
+.dk-btn.flash-b {
+  animation: dk-press-b 0.32s var(--ease-press, ease-out);
+}
+@keyframes dk-press-a {
+  30% {
+    transform: scale(0.96);
+  }
+}
+@keyframes dk-press-b {
+  30% {
+    transform: scale(0.96);
+  }
+}
+
+/* rows of the model (hud/model/controls.ts): toggles, readouts; a row whose members are all hidden takes no room */
+.dk-group {
+  display: flex;
+  flex-wrap: wrap;
+}
+.dk-group:not(:has(> :not([hidden]))) {
+  display: none;
+}
+.dk-toggles {
+  gap: calc(18 * var(--u));
+}
+.dk-readouts {
+  gap: calc(22 * var(--u));
+  align-items: flex-end;
+}
+
+/* ---- shared type ------------------------------------------------------------------------------------ */
+.dk-label {
+  min-width: 0;
+  font-size: calc(var(--t-small) * var(--u));
+  line-height: 1.42; /* the SDF Label's default */
+  color: var(--c-mist);
+  white-space: nowrap;
+}
+.dk-cap {
+  font-size: calc(var(--t-caption) * var(--u));
+  line-height: 1.42;
+  color: var(--c-mist);
+  white-space: nowrap;
+}
+.dk-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(10 * var(--u));
+  min-height: calc(26 * var(--u));
+}
+.dk-fallback {
+  font-size: calc(var(--t-caption) * var(--u));
+  color: var(--c-steel);
+}
+/* visually hidden first Tab stop: straight to the step's controls (HUD_DOM §14) */
+.kd-skip {
+  left: var(--safe);
+  top: var(--safe);
+  z-index: 2;
+  clip-path: inset(50%);
+  padding: calc(8 * var(--u)) calc(16 * var(--u));
+  border: 0;
+  border-radius: calc(20 * var(--u));
+  background: var(--c-yellow);
+  color: var(--c-bg-void);
+  font: 800 calc(var(--t-small) * var(--u)) / 1 var(--display);
+}
+.kd-skip:focus-visible {
+  clip-path: none;
+}
+/* chart tick labels of D4's DOM charts sit at caption − 1 (the WebGL tick size); D8's text check fails interface
+   text under the caption size, so in the dock and the board they take the caption size (as D4 did for the atom
+   ruler). Belongs in charts/charts.css — requested (docs/requests/D3-dom-dock.md). */
+.dk .kd-tick,
+.bd .kd-tick {
+  font-size: calc(var(--t-caption) * var(--u));
+}

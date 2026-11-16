@@ -6,7 +6,6 @@
  * volume's home, exactly like a stand-alone course (`Library.showsLibrary`). It can still be opened in a debug
  * session (`L`, or `__ui.open('library')`), where the dev volumes are listed as well.
  */
-import { journeyProgress, plural } from '@/content';
 import type { VolumeManifest } from '@/engine/api';
 import {
   Button,
@@ -29,6 +28,7 @@ import {
   type Painter,
 } from '@/ui3d';
 import type { HomeStage } from './home';
+import { volumeCardModel } from './model/library';
 import type { Hud, Overlay } from './shell';
 
 /** Dark veil over the drifting journey map behind the cards, so they read without hiding it completely. */
@@ -113,27 +113,29 @@ export function createLibrary(hud: Hud, map: () => HomeStage | null): Overlay {
   };
 
   const card = (volume: VolumeManifest, index: number): UiNode => {
-    const chapters = library.registry(volume.id)?.chapters ?? [];
-    const steps = chapters.reduce((n, c) => n + c.steps.length, 0);
-    const progress = journeyProgress(store.get().progress.visited, chapters);
-    const current = store.get().volumeId === volume.id && hud.unseenStep === null;
-    const started = store.get().lastIn[volume.id] !== undefined;
+    const s = store.get();
+    const model = volumeCardModel(volume, index, library.registry(volume.id)?.chapters ?? [], {
+      visited: s.progress.visited,
+      volumeId: s.volumeId,
+      lastIn: s.lastIn,
+      unseen: hud.unseenStep !== null,
+    });
     const ring = new ProgressRing({
       name: `volume-progress-${volume.id}`,
       size: 54,
-      value: progress.fraction,
-      label: `${Math.round(progress.fraction * 100)}%`,
+      value: model.progress.fraction,
+      label: model.progress.label,
     });
-    ring.on({ tooltip: `Переглянуто ${progress.done} з ${progress.total} кроків` });
+    ring.on({ tooltip: model.progress.tooltip });
     const open = new Button({
       name: `volume-open-${volume.id}`,
-      label: current ? 'Повернутися' : started ? 'Продовжити' : 'Відкрити том',
-      icon: current ? 'prev' : 'play',
+      label: model.openLabel,
+      icon: model.openIcon,
       variant: 'primary',
       alignSelf: 'start',
-      onClick: () => (current ? hud.close() : enter(volume)),
+      onClick: () => (model.current ? hud.close() : enter(volume)),
     });
-    open.disabled = chapters.length === 0; // a volume without built chapters cannot be entered yet
+    open.disabled = model.disabled;
     const panel = new Panel({
       name: `volume-card-${volume.id}`,
       variant: 'card',
@@ -154,7 +156,7 @@ export function createLibrary(hud: Hud, map: () => HomeStage | null): Overlay {
               gap: 2,
               width: 'fill',
               children: [
-                new Label(`ТОМ ${index + 1}${volume.status === 'published' ? '' : ' · У РОЗРОБЦІ'}`, {
+                new Label(model.status, {
                   font: 'bodyBold',
                   size: UI.text.caption,
                   color: TEXT_COLOR.mute,
@@ -184,19 +186,15 @@ export function createLibrary(hud: Hud, map: () => HomeStage | null): Overlay {
           wrap: true,
           gap: 8,
           width: 'fill',
-          children: [
-            new Chip({
-              kind: 'plain',
-              icon: 'layers',
-              text: `${chapters.length} ${plural(chapters.length, ['розділ', 'розділи', 'розділів'])}`,
-            }),
-            new Chip({
-              kind: 'plain',
-              icon: 'target',
-              text: `${steps} ${plural(steps, ['крок', 'кроки', 'кроків'])}`,
-            }),
-            new Chip({ kind: 'scale', text: volume.journey.axis.range, tooltip: volume.journey.axis.label }),
-          ],
+          children: model.chips.map(
+            (c) =>
+              new Chip({
+                kind: c.kind,
+                text: c.text,
+                ...(c.icon ? { icon: c.icon } : {}),
+                ...(c.tooltip ? { tooltip: c.tooltip } : {}),
+              }),
+          ),
         }),
         // a phone's card is too narrow for the ring beside the title: it joins the button row
         cardWidth < 400

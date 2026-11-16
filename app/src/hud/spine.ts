@@ -3,24 +3,25 @@
  * Groups are separated, the current chapter is highlighted, plant types / labs fan out next to their parent
  * while you are inside that family. Names appear in the tooltip. Narrow screens: hidden (the map replaces it).
  */
-import { chapterProgress, contentKey } from '@/content';
+import { chapterProgress } from '@/content';
 import { Control, Panel, UiNode, lit, mixRgba, rgba, type Painter } from '@/ui3d';
 import type { HudContext, HudModule } from './context';
 import type { Journey, JourneyChapter } from './journey';
+import { spineFamily, spinePick, spineRows, type SpineEntry } from './model/spine';
 
 class SpineDot extends Control {
   /** 0…1: current-chapter emphasis (animated). */
   active = 0;
   fraction = 0;
-  constructor(
-    readonly chapter: JourneyChapter,
-    private readonly small: boolean,
-    onPick: (c: JourneyChapter) => void,
-  ) {
-    super({ name: `spine-${chapter.id}`, width: small ? 30 : 44, height: small ? 34 : 44 });
+  readonly chapter: JourneyChapter;
+  private readonly small: boolean;
+  constructor(entry: SpineEntry, onPick: (c: JourneyChapter) => void) {
+    super({ name: entry.name, width: entry.small ? 30 : 44, height: entry.small ? 34 : 44 });
+    this.chapter = entry.chapter;
+    this.small = entry.small;
     this.lift = 3;
-    this.activate = () => onPick(chapter);
-    this.on({ tooltip: `${chapter.title} · ${chapter.axisLabel}` });
+    this.activate = () => onPick(entry.chapter);
+    this.on({ tooltip: entry.tooltip });
   }
   setActive(on: boolean): void {
     this.tween({ active: on ? 1 : 0 }, { duration: 0.3, ease: 'back.out' });
@@ -53,18 +54,16 @@ export function createSpine(hud: HudContext, journey: Journey): HudModule {
   const dots = new Map<string, SpineDot>();
   const families = new Map<string, UiNode>();
   const pick = (c: JourneyChapter): void => {
-    if (c.real) hud.goto(contentKey(c));
-    else hud.toast(`«${c.title}» ще будується.`, { tone: 'warning', duration: 2.5 });
+    const to = spinePick(c);
+    if ('goto' in to) hud.goto(to.goto);
+    else hud.toast(to.toast, { tone: 'warning', duration: 2.5 });
   };
   const column = new UiNode({ dir: 'col', align: 'start', gap: 0 });
-  let group = '';
-  for (const root of journey.roots) {
-    if (group && root.group !== group) column.add(new UiNode({ height: 12, width: 44 }));
-    group = root.group;
-    const dot = new SpineDot(root, false, pick);
-    dots.set(root.id, dot);
-    const kids = journey.childrenOf(root.id);
-    if (kids.length === 0) {
+  for (const row of spineRows(journey)) {
+    if (row.gapBefore) column.add(new UiNode({ height: 12, width: 44 }));
+    const dot = new SpineDot(row.entry, pick);
+    dots.set(row.entry.chapter.id, dot);
+    if (row.kids.length === 0) {
       column.add(dot);
       continue;
     }
@@ -78,12 +77,12 @@ export function createSpine(hud: HudContext, journey: Journey): HudModule {
       opacity: 0,
       blocks: false,
     });
-    for (const k of kids) {
-      const kd = new SpineDot(k, true, pick);
-      dots.set(k.id, kd);
+    for (const k of row.kids) {
+      const kd = new SpineDot(k, pick);
+      dots.set(k.chapter.id, kd);
       fan.add(kd);
     }
-    families.set(root.id, fan);
+    families.set(row.entry.chapter.id, fan);
     column.add(new UiNode({ dir: 'row', align: 'center', gap: 2, children: [dot, fan] }));
   }
   const node = new UiNode({ dir: 'col', float: { ax: 0, ay: 0.5 }, children: [column] });
@@ -116,7 +115,7 @@ export function createSpine(hud: HudContext, journey: Journey): HudModule {
       dots.get(current)?.setActive(false);
       current = m.id;
       dots.get(current)?.setActive(true);
-      const family = journey.get(m.id)?.parent ?? m.id;
+      const family = spineFamily(journey, m.id);
       const tweens = hud.surface.host.tweens;
       for (const [id, fan] of families) {
         const open = id === family;

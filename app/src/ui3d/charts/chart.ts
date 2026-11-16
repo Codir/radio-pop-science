@@ -60,6 +60,23 @@ export interface ChartProps extends NodeProps {
   onScrub?: (x: number) => void;
 }
 
+/**
+ * What chapters may call on a chart, whichever renderer draws it: the WebGL `Chart` here or the DOM chart of
+ * `@/hud-dom` (Canvas2D marks, DOM text — docs/HUD_DOM.md §8). `ChartSpec.init / update` receive this type.
+ */
+export interface ChartApi {
+  /** Replace a series' points (NaN / ±Infinity break the curve). */
+  setData(id: string, xs: ArrayLike<number>, ys: ArrayLike<number>): void;
+  /** Append a sample (live plots); with `window` set, old samples scroll out on the left. */
+  push(id: string, x: number, y: number): void;
+  /** Drop the points of one series, or of all. */
+  clearData(id?: string): void;
+  /** Change an axis range / label at run time. */
+  setAxis(which: 'x' | 'y' | 'y2', spec: Partial<AxisSpec>): void;
+  /** Add, move or (with null) remove a marker. */
+  setMarker(id: string, marker: MarkerSpec | null): void;
+}
+
 interface SeriesData {
   spec: SeriesSpec;
   xs: number[];
@@ -69,7 +86,7 @@ interface SeriesData {
 /** @internal Plot margins inside the frame. */
 export const PAD = { left: 56, right: 14, top: 26, bottom: 28 };
 
-export class Chart extends UiNode {
+export class Chart extends UiNode implements ChartApi {
   readonly axes: { x: Axis; y: Axis; y2: Axis | null };
   /** @internal */
   readonly data = new Map<string, SeriesData>();

@@ -31,6 +31,11 @@ export interface ControlPatch {
   /** New value (clamped to the new range for sliders); does not call `onChange`. */
   value?: Value;
   disabled?: boolean;
+  /**
+   * Sliders that scrub an animation: where the animation is now, while it eases toward the slider's value — the
+   * fill of the track shows it, the thumb stays where the reader put it (DOM interface; UI_API §3.3).
+   */
+  current?: number;
 }
 
 /** The original four members (chapters that wrap the API implement this shape). */

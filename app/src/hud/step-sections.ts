@@ -3,16 +3,7 @@
  * «Цифри і факти», misconceptions. One section is open at a time, so the panel stays compact. At the simple reading
  * level (a `LeveledStep` from `./level`) the chips read «Слова» and «Цікаво»; the selector already left out formulas.
  */
-import {
-  LEVEL_LABELS,
-  termIntl,
-  termName,
-  type Fact,
-  type LevelLabels,
-  type ReadingLevel,
-  type StepContent,
-  type Term,
-} from '@/content';
+import type { ReadingLevel, StepContent } from '@/content';
 import {
   Button,
   Card,
@@ -28,6 +19,7 @@ import {
   type IconName,
 } from '@/ui3d';
 import type { HudContext } from './context';
+import { MYTH_KICKER, stepSections, type FactModel, type TermModel } from './model/sections';
 
 interface Section {
   id: string;
@@ -35,19 +27,17 @@ interface Section {
   body: UiNode;
 }
 
-function termCard(hud: HudContext, term: Term, labels: LevelLabels): UiNode {
-  const intl = termIntl(term);
-  const tail = [term.symbol, term.unit].filter((v): v is string => !!v && v !== '—').join(', ');
+function termCard(hud: HudContext, term: TermModel): UiNode {
   return new Card({
     width: 'fill',
-    kicker: labels.term,
-    title: termName(term),
-    body: `${tail ? `\`${tail}\` — ` : ''}${term.definition ?? ''}`,
+    kicker: term.kicker,
+    title: term.name,
+    body: term.body,
     extra: [
-      ...(intl
-        ? [new Label(intl, { size: UI.text.caption, color: TEXT_COLOR.mute, rich: false }, { width: 'fill' })]
+      ...(term.intl
+        ? [new Label(term.intl, { size: UI.text.caption, color: TEXT_COLOR.mute, rich: false }, { width: 'fill' })]
         : []),
-      ...(labels.glossary
+      ...(term.glossary
         ? [
             new Button({
               label: 'Відкрити глосарій',
@@ -55,7 +45,7 @@ function termCard(hud: HudContext, term: Term, labels: LevelLabels): UiNode {
               variant: 'ghost',
               size: 'sm',
               alignSelf: 'start',
-              onClick: () => hud.open('glossary', termName(term)),
+              onClick: () => hud.open('glossary', term.name),
             }),
           ]
         : []),
@@ -65,28 +55,22 @@ function termCard(hud: HudContext, term: Term, labels: LevelLabels): UiNode {
 
 /**
  * A fact chip, or a real table when the document wrote the fact as a Markdown table. Tables wider than four
- * columns do not fit the 420 px-eq panel: each row becomes a small key–value card instead.
+ * columns do not fit the 420 px-eq panel: each row becomes a small key–value card instead (`model/sections.ts`).
  */
-function factNode(f: Fact): UiNode {
-  if (!f.table) return new Chip({ kind: 'fact', text: f.text, maxWidth: 360, width: 'fill' });
-  const { head, rows } = f.table;
-  const note = f.table.note ?? f.source;
+function factNode(f: FactModel): UiNode {
+  if (f.kind === 'chip') return new Chip({ kind: 'fact', text: f.text, maxWidth: 360, width: 'fill' });
   const body: UiNode[] =
-    head.length <= 4
-      ? [new Table({ head, rows })]
-      : rows.map(
-          (r) =>
+    f.kind === 'table'
+      ? [new Table({ head: f.head, rows: f.rows })]
+      : f.cards.map(
+          (c) =>
             new UiNode({
               dir: 'col',
               gap: 2,
               width: 'fill',
               children: [
-                new Label(
-                  r[0] ?? '',
-                  { font: 'bodyBold', size: UI.text.small, color: 'yellow' },
-                  { width: 'fill' },
-                ),
-                new Table({ rows: head.slice(1).map((h, j) => [h, r[j + 1] ?? '']), size: UI.text.caption }),
+                new Label(c.title, { font: 'bodyBold', size: UI.text.small, color: 'yellow' }, { width: 'fill' }),
+                new Table({ rows: c.rows, size: UI.text.caption }),
               ],
             }),
         );
@@ -96,14 +80,13 @@ function factNode(f: Fact): UiNode {
     width: 'fill',
     children: [
       ...body,
-      note ? new Label(note, { size: UI.text.caption, color: TEXT_COLOR.mute }, { width: 'fill' }) : null,
+      f.note ? new Label(f.note, { size: UI.text.caption, color: TEXT_COLOR.mute }, { width: 'fill' }) : null,
     ],
   });
 }
 
 /** Build the accordion for a step. Returns null when the step has nothing to put in it. */
 export function buildSections(hud: HudContext, step: StepContent & { level?: ReadingLevel }): UiNode | null {
-  const labels = LEVEL_LABELS[step.level ?? 'detailed'];
   const sections: Section[] = [];
   const bar = new UiNode({ dir: 'row', wrap: true, gap: 8, width: 'fill' });
   const bodies = new UiNode({ dir: 'col', width: 'fill' });
@@ -134,89 +117,49 @@ export function buildSections(hud: HudContext, step: StepContent & { level?: Rea
     bodies.add(body);
   };
 
-  const terms = step.terms ?? [];
-  if (terms.length > 0) {
-    const slot = new UiNode({ dir: 'col', width: 'fill' });
-    const chips = new UiNode({ dir: 'row', wrap: true, gap: 8, width: 'fill' });
-    let shown: Term | null = null;
-    for (const t of terms) {
-      chips.add(
-        new Chip({
-          kind: 'term',
-          text: termName(t),
-          tooltip: 'Показати визначення',
-          onClick: () => {
-            slot.clear();
-            shown = shown === t ? null : t;
-            if (shown) slot.add(termCard(hud, t, labels));
-            hud.relayout();
-          },
-        }),
+  for (const sec of stepSections(step)) {
+    if (sec.id === 'terms') {
+      const slot = new UiNode({ dir: 'col', width: 'fill' });
+      const chips = new UiNode({ dir: 'row', wrap: true, gap: 8, width: 'fill' });
+      let shown: TermModel | null = null;
+      for (const t of sec.terms) {
+        chips.add(
+          new Chip({
+            kind: 'term',
+            text: t.name,
+            tooltip: 'Показати визначення',
+            onClick: () => {
+              slot.clear();
+              shown = shown === t ? null : t;
+              if (shown) slot.add(termCard(hud, t));
+              hud.relayout();
+            },
+          }),
+        );
+      }
+      add(sec.id, sec.label, sec.icon, new UiNode({ dir: 'col', gap: 10, width: 'fill', children: [chips, slot] }));
+    } else if (sec.id === 'formulas') {
+      const children = sec.formulas.map(
+        (f) => new FormulaBlock({ formula: f.text, size: f.long ? UI.text.small : UI.text.h3 }),
       );
+      add(sec.id, sec.label, sec.icon, new UiNode({ dir: 'col', gap: 8, width: 'fill', children }));
+    } else if (sec.id === 'facts') {
+      const children = sec.facts.map(factNode);
+      add(sec.id, sec.label, sec.icon, new UiNode({ dir: 'col', gap: 8, width: 'fill', children }));
+    } else {
+      const children = sec.myths.map(
+        (m) =>
+          new Card({
+            width: 'fill',
+            accent: 'amber',
+            kicker: MYTH_KICKER,
+            icon: 'warning',
+            title: m.title ?? undefined,
+            body: m.body,
+          }),
+      );
+      add(sec.id, sec.label, sec.icon, new UiNode({ dir: 'col', gap: 8, width: 'fill', children }));
     }
-    add(
-      'terms',
-      `${labels.terms} · ${terms.length}`,
-      'book',
-      new UiNode({ dir: 'col', gap: 10, width: 'fill', children: [chips, slot] }),
-    );
-  }
-
-  const formulas = step.formulas?.items ?? [];
-  if (formulas.length > 0) {
-    add(
-      'formulas',
-      `Формули · ${formulas.length}`,
-      'chart',
-      new UiNode({
-        dir: 'col',
-        gap: 8,
-        width: 'fill',
-        children: formulas.map(
-          (f) => new FormulaBlock({ formula: f, size: f.length > 34 ? UI.text.small : UI.text.h3 }),
-        ),
-      }),
-    );
-  }
-
-  const facts = step.facts?.items ?? [];
-  if (facts.length > 0) {
-    add(
-      'facts',
-      `${labels.facts} · ${facts.length}`,
-      'lightning',
-      new UiNode({
-        dir: 'col',
-        gap: 8,
-        width: 'fill',
-        children: facts.map(factNode),
-      }),
-    );
-  }
-
-  const myths = (step.misconceptions ?? []).filter((m) => m.correction);
-  if (myths.length > 0) {
-    add(
-      'myths',
-      myths.length > 1 ? `Хибні уявлення · ${myths.length}` : 'Хибне уявлення',
-      'warning',
-      new UiNode({
-        dir: 'col',
-        gap: 8,
-        width: 'fill',
-        children: myths.map(
-          (m) =>
-            new Card({
-              width: 'fill',
-              accent: 'amber',
-              kicker: 'Хибне уявлення',
-              icon: 'warning',
-              title: m.myth ? `«${m.myth.replace(/^[«"]|[»"]$/g, '')}»` : undefined,
-              body: m.correction,
-            }),
-        ),
-      }),
-    );
   }
 
   if (sections.length === 0) return null;

@@ -60,7 +60,10 @@ export async function longPress(page, t, { where, fail }) {
 export async function travel(page, t, { where, chapter, other, fail, note }) {
   const start = await position(page);
   const steps = chapter.steps.map((s) => s.id);
-  if (steps.length > 1) {
+  // a step may hold the navigator back until the reader has done its thing (stepUi `nav.hiddenUntil`)
+  const held = await page.evaluate(() => window.__ui.navHidden?.() ?? false);
+  if (held) note(`${where}: the step holds the navigator back (nav.hiddenUntil) — «Далі» by touch not tested`);
+  if (steps.length > 1 && !held) {
     const at = steps.indexOf(start.stepId);
     const forward = at < steps.length - 1;
     await t.tapNode(forward ? 'nav-next' : 'nav-prev');

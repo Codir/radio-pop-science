@@ -9,7 +9,7 @@ import { fmtNumber } from '@/content';
 import { createHalo } from '@/fx';
 import { LI6_MPPT_INPUT, analyseString, uniformString, type ArrayWarning } from '@electricity/sim/lab-pv';
 import { K, type ColorToken } from '@/style';
-import type { Chart } from '@/ui3d';
+import type { ChartApi } from '@/ui3d';
 import type { StepFactory } from '../chapter';
 import { cap, doc } from '../content';
 import { L, fill } from '../labels';
@@ -85,7 +85,7 @@ export const arrayStep: StepFactory = (lab) => {
   for (let i = 0; i < ARRAY.count; i++) ctx.qa.probe(`mod9-${i}`, () => array.group.localToWorld(array.centre(i, new Vector3())));
   ctx.qa.expose('array9', () => ({ a: report(0), b: report(1), assign: [...design.assign], parallel: parallel(), frost: frost.t, vocNow: frost.voc }));
 
-  const markers = (chart: Chart): void => {
+  const markers = (chart: ChartApi): void => {
     for (const s of [0, 1] as const) {
       const r = report(s);
       const y = 2 - s;

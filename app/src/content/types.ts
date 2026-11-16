@@ -105,6 +105,61 @@ export interface SimpleStep {
   misconception?: Misconception;
 }
 
+/** A link «Згадайте: …» to an earlier step (docs/PATH_FORMAT.md, field «Згадати»). */
+export interface PathRecall {
+  /** Full step address `volume/chapter/step`. */
+  target: string;
+  /** Title of the target step (empty when the target is in another volume). */
+  title: string;
+}
+
+/**
+ * A step of a path-format chapter (docs/PATH_FORMAT.md): one reader, no reading levels, no tabs. The main
+ * text is `StepContent.panel[0]`; terms it introduces are marked `**…**` there (or in `takeaway`), and
+ * `marks` maps each marked span to the name of its card in `StepContent.terms`.
+ */
+export interface PathStep {
+  /** The step's idea in one sentence (step lists, the map). */
+  idea: string;
+  /** The one action of the step («Торкніться …»). */
+  action: string;
+  /** Shown once the step's goal is reached. */
+  takeaway: string;
+  /** Paragraphs of the collapsed block «Докладніше» (may be empty). */
+  more: readonly string[];
+  marks: readonly { text: string; term: string }[];
+  recall?: readonly PathRecall[];
+  /** Honesty chips («спрощена модель», «не в масштабі», «сповільнено ×1000»). */
+  honesty?: readonly string[];
+  /** Chips marked `→` in «Позначки»: they appear with the reader's action (`StepUiSpec.acting`). */
+  honestyOnAction?: readonly string[];
+  /** Hints for a stuck reader: the first after 15 s, the second after 40 s. */
+  hints?: readonly string[];
+  /** «Чесно про картинку»: what exactly the picture simplifies (shown under the honesty chips). */
+  note?: string;
+  /**
+   * Timing of the step's captions (`StepContent.labels`, same order), present when some caption changes at the
+   * takeaway: `until` — shown until the takeaway, `at` — appears at the takeaway.
+   */
+  captions?: readonly { text: string; until?: string; at?: string }[];
+}
+
+/** Chapter-level parts of a path-format chapter: the opening and closing cards. */
+export interface PathChapter {
+  layer: string;
+  /** «Питання з життя». */
+  hook: string;
+  /** «Що ми вже знаємо» (empty in a prologue). */
+  know: string;
+  /** «Що ми тепер знаємо» — three lines (none in a prologue or practicum). */
+  now: readonly string[];
+  /** «Місток» — ends with the next chapter's question. */
+  bridge: string;
+  /** The chapter the bridge leads to (built or planned); null at the end of the journey. */
+  next: { id: string; title: string } | null;
+  minutes: number | null;
+}
+
 /** On-screen content of one step. Field names equal the export's `steps[]` entries. */
 export interface StepContent {
   id: string;
@@ -123,6 +178,8 @@ export interface StepContent {
   labels?: readonly string[];
   /** The simple reading level of the step, when the chapter has one. */
   simple?: SimpleStep;
+  /** Present in path-format chapters only (then there are no reading levels and no tabs). */
+  path?: PathStep;
 }
 
 export interface GlossaryEntry {
@@ -158,6 +215,11 @@ export interface ChapterMeta {
   parent: string | null;
   order: number | null;
   steps: readonly { id: string; title: string; blurb: string }[];
+  /** Path-format chapters: the axis value of the chapter's floor (`volume.json → axis.floors`) and its length. */
+  axisValue?: number | null;
+  minutes?: number | null;
+  format?: string;
+  layer?: string;
 }
 
 /** Everything a chapter shows as text. `defineContent()` accepts this or the raw export object. */
@@ -176,6 +238,8 @@ export interface ChapterContent {
   crossReferences?: readonly CrossReference[];
   /** Free-form scene labels of the chapter (callouts, button captions…), keyed by the builder. */
   labels?: Readonly<Record<string, string>>;
+  /** Present in path-format chapters only (docs/PATH_FORMAT.md). */
+  path?: PathChapter;
 }
 
 /** A glossary entry with its origin, as shown in the glossary overlay. */

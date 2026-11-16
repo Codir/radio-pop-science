@@ -18,9 +18,9 @@ import {
   type UiOverlap,
   type UiTextSize,
 } from './debug-types';
-import type { SheetSnap } from './touch/geometry';
-import type { SheetTab } from './touch/sheet';
+import type { SheetSnap, SheetTab } from './model/sheet';
 import type { JourneyMap } from './map/map';
+import { navHidden } from './nav-gate';
 import type { Hud } from './shell';
 import { bindingOf, notifyChange, specOf } from './step-ui';
 
@@ -73,6 +73,8 @@ export interface UiDebug {
    * view it lives in). Empty = every control is reachable. Boxes in CSS px (centre + size).
    */
   offscreen(opts?: { clipped?: boolean; partial?: boolean; margin?: number }): OffscreenNode[];
+  /** The step navigator is held back by the step (stepUi `nav.hiddenUntil`): QA does not expect it then. */
+  navHidden(): boolean;
   /** Press a step button of the chapter on screen by control id (same as `ui.press`). */
   press(id: string): void;
   /** Set a step control by id; `notify` runs its change handlers like a user gesture (same as `ui.set`). */
@@ -208,6 +210,7 @@ export function installUiDebug(hud: Hud, map: () => JourneyMap | null, chrome: C
       dom?.setVisible(on);
     },
     offscreen: (opts = {}) => both((b) => b.offscreen(opts)),
+    navHidden: () => navHidden(),
     press(id) {
       const b = binding();
       const spec = b ? specOf(b, id) : undefined;

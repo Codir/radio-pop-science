@@ -3,6 +3,7 @@
  * engine's step navigation sees them). The interface never follows the pointer (DECISIONS §59 p).
  */
 import { uiFocus } from '@/ui3d';
+import { navHidden } from './nav-gate';
 import type { Hud } from './shell';
 
 /** Lets the open full-screen view / overlay handle a key first; return true when consumed. */
@@ -22,6 +23,8 @@ export function installKeys(hud: Hud, overlayKey: KeyHandler): () => void {
       if (!used && !(e.code === 'Escape' && hud.overlay !== null)) used = uiFocus.handleKey(e);
       // while a view covers the scene, step keys must not move the chapter underneath
       if (!used && hud.overlay !== null && /^(Arrow|Page|Space|Home|End)/.test(e.code)) used = true;
+      // the navigator is held back (stepUi `nav.hiddenUntil`): no way forward by keys either; back stays
+      if (!used && navHidden() && /^(ArrowRight|PageDown|Space|End)$/.test(e.code)) used = true;
       return used;
     },
     { priority: 100 },
