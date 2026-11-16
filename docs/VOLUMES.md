@@ -21,14 +21,21 @@ named, and how to start a volume. Code-level API: `docs/ENGINE_API.md` §22, `do
   (`chapter-check atom`). A short chapter id is looked up in the current volume, then in the default volume,
   then in the others. A reference **into another volume** is always written in full
   (`` `electricity/atom/ions-photons` `` in a document, `ctx.nav.open('electricity/atom/ions-photons')` in code).
-- Old links `#/<chapter>/<step>` keep working: they resolve in the default volume and the address bar is
-  rewritten. Because a two-part address whose first part is a volume id means `volume/chapter`, **a volume id
-  must not equal a chapter id of the default volume** (checked at startup, logged as an error).
+- Old links `#/<chapter>/<step>` keep working, deterministically: a short id **without a current volume** (the
+  address bar, the first navigation, a QA command such as `chapter-check atom`) is looked up in the **legacy
+  volume** first (`library.json → legacyVolume` = `electricity`, the volume all links had before the library),
+  then in the default volume, then in the others; the address bar is rewritten to the full form. So when the
+  default volume `circuit` gets a chapter whose id volume 1 also has (say `atom`), `#/atom/<step>` still opens
+  `electricity/atom`; the pilot's chapter is reached by its full address `#/circuit/atom/<step>` (and by short
+  ids inside `circuit`, where the current volume comes first). Because a two-part address whose first part is
+  a volume id means `volume/chapter`, **a volume id must not equal a chapter id of the default or the legacy
+  volume** (checked at startup, logged as an error; `volumes.test.ts`).
 - The names a learner sees — volume title, subtitle, group names, axis words — live in the volume's
   `volume.json` and nowhere else. The umbrella name of the library is `app/src/volumes/library.json → title`;
   while it is `null` the default volume's headline is shown (splash, browser tab, library screen).
 - Progress, last positions, glossary records and cross-references use full ids. Saved data from before the
-  library (`electricity:v1`) is migrated into the default volume on first load.
+  library (`electricity:v1`) is migrated into the legacy volume on first load; the saved record
+  (`electricity:v2`, a key name, not a volume) does not depend on which volume is the default.
 
 ## 2. What is shared and what is per volume
 
@@ -51,10 +58,25 @@ journey.planned`, full ids everywhere) leaves room for it.
 
 ## 3. How the library behaves
 
-- **One published volume** (today): there is no library level. `#/` opens the volume's home screen over its
-  journey map, exactly as a stand-alone course. No volume name in the header, no «Бібліотека» button, the
-  glossary has no scope switch, the key `L` does nothing.
-- **More than one published volume**: `#/` still restores the last position; the header names the volume, the
+- **One published volume in the main flow** (today: `circuit`): there is no library level. `#/` opens the
+  default volume's home screen over its journey map, exactly as a stand-alone course. No volume name in the
+  header, no «Бібліотека» button, the glossary has no scope switch, the key `L` does nothing.
+- **Aside volumes** (`volume.json → aside: { "label": … }`, DECISIONS §60; today: `electricity`, label
+  «Попередній том: Електроенергія (чернетка)»): published and complete, but kept out of the main flow — they do
+  not count toward the library level and are not on the library shelf. The home screen of the default volume
+  shows one quiet button per aside volume at its foot (`home-aside-<id>`); it enters the volume where it was left
+  (a first visit lands on its home screen). The home screen of an aside volume has the way back at the same
+  place (`home-back`, «До тому «<default title>»»). Inside an aside volume everything works as before (same
+  home, map, chapters, header). `#/` restores the last position only when it lies outside aside volumes —
+  otherwise it opens the front door; progress and last positions of an aside volume are kept and resume
+  through its button or any of its full addresses (`#/electricity/…`).
+- **A volume without chapters — the lobby.** A published volume whose journey has no built chapter yet is shown
+  by its home screen alone: title, subtitle, the line `volume.json → emptyNote` («Том у роботі — …»), no start /
+  map / size facts, over the bare map backdrop (no empty map is drawn). No chapter is loaded for it; whatever
+  step was entered before stays loaded but hidden behind the home screen, and closing overlays returns to that
+  home screen, never to the scene (`Nav.lobby`, `Hud.close`). Address: `#/` for the default volume, `#/<id>`
+  for another. Once the first chapter is registered the volume behaves like any other — nothing to switch.
+- **More than one published volume in the main flow**: `#/` still restores the last position; the header names the volume, the
   system row and every home screen have «Бібліотека», the glossary can be widened to the whole library, and
   the library screen lists the volumes (emblem, title, subtitle, progress, size). Entering a volume resumes it
   where it was left; a first visit lands on its home screen.

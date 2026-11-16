@@ -28,7 +28,7 @@ import {
   type IconName,
   type Painter,
 } from '@/ui3d';
-import type { JourneyMap } from './map/map';
+import type { HomeStage } from './home';
 import type { Hud, Overlay } from './shell';
 
 /** Dark veil over the drifting journey map behind the cards, so they read without hiding it completely. */
@@ -65,7 +65,7 @@ const CARD_WIDTH = 430;
  * @param map the journey map of the volume on screen: like the home screen, the library is shown over it
  *   drifting in "attract" mode (which also stops rendering the chapter underneath).
  */
-export function createLibrary(hud: Hud, map: () => JourneyMap | null): Overlay {
+export function createLibrary(hud: Hud, map: () => HomeStage | null): Overlay {
   const { library, store, nav } = hud.engine;
   const title = new Label(library.title, {
     font: 'display',
@@ -200,7 +200,13 @@ export function createLibrary(hud: Hud, map: () => JourneyMap | null): Overlay {
         }),
         // a phone's card is too narrow for the ring beside the title: it joins the button row
         cardWidth < 400
-          ? new UiNode({ dir: 'row', align: 'center', justify: 'between', width: 'fill', children: [open, ring] })
+          ? new UiNode({
+              dir: 'row',
+              align: 'center',
+              justify: 'between',
+              width: 'fill',
+              children: [open, ring],
+            })
           : open,
       ],
     });

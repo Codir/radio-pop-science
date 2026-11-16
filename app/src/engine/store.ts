@@ -183,7 +183,8 @@ export class Store {
 
   /**
    * @param storage pass `null` to disable persistence (tests, private mode failures).
-   * @param legacyVolume volume that data saved before the library of volumes belongs to (the default volume).
+   * @param legacyVolume volume that data saved before the library of volumes belongs to
+   *   (`library.json → legacyVolume`; not the default volume, which may change).
    */
   constructor(
     private readonly storage: StorageLike | null = null,

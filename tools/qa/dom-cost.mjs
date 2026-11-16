@@ -20,7 +20,7 @@
 // a summary line; exit 1 when a budget is exceeded (--no-fail: report only).
 import { writeFileSync } from 'node:fs';
 import { domNodes, metricWindow, profileWindow, rafFrames } from './cost-parts.mjs';
-import { appUrl, baseUrl, ensureDir, fmt, launch, openApp, outRoot, parseArgs, parseSize } from './lib.mjs';
+import { appUrl, baseUrl, ensureDir, fmt, launch, openApp, outRoot, parseArgs, parseSize, pickChapter } from './lib.mjs';
 
 const args = parseArgs();
 if (!args.hud) process.env.QA_HUD = 'dom';
@@ -54,7 +54,7 @@ let gpu = null;
 try {
   gpu = await openApp(page, appUrl(base, { route: chapterArg, q: tier }));
   const chapters = await page.evaluate(() => window.__app.listChapters());
-  const chapter = chapters.find((c) => c.fullId === chapterArg) ?? chapters.find((c) => c.id === chapterArg);
+  const chapter = pickChapter(chapters, await page.evaluate(() => window.__app.listVolumes()), chapterArg);
   if (!chapter) throw new Error(`chapter '${chapterArg}' is not registered`);
   console.log(`[dom-cost] ${chapter.fullId} @${width}x${height} ${tier} · interface ${gpu.hud} · ${frames} frames`);
   // the page still lays out a few times during the first ~3 s after boot (measured at 4K): not a steady cost

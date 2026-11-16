@@ -11,7 +11,7 @@
 //   --touch            emulate a touch screen (coarse pointer)
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
-import { appErrors, appUrl, baseUrl, ensureDir, launch, openApp, parseArgs, parseSize } from './lib.mjs';
+import { appErrors, appUrl, baseUrl, ensureDir, launch, openApp, parseArgs, parseSize, pickChapter } from './lib.mjs';
 
 const args = parseArgs();
 
@@ -53,8 +53,9 @@ for (const [width, height] of sizes) {
   try {
     await openApp(page, appUrl(base, { q, freeze, extra }));
     const all = await page.evaluate(() => window.__app.listChapters());
+    const volumes = await page.evaluate(() => window.__app.listVolumes());
     for (const id of chapters) {
-      const ch = all.find((c) => c.fullId === id || c.id === id);
+      const ch = pickChapter(all, volumes, id);
       if (!ch) {
         failed = true;
         console.log(`unknown chapter ${id}`);

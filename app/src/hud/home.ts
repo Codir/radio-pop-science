@@ -18,7 +18,8 @@ import {
   rgba,
   type Painter,
 } from '@/ui3d';
-import type { JourneyMap } from './map/map';
+import { createAsideRow } from './home-aside';
+import type { Journey } from './journey';
 import type { Hud, Overlay } from './shell';
 
 /** Soft dark veil behind the title so it reads over the glowing map. */
@@ -34,10 +35,16 @@ class Veil extends UiNode {
   }
 }
 
-export function createHome(hud: Hud, map: JourneyMap): Overlay {
+/** What the home screen stands on: the volume's journey map in "attract" mode, or the bare backdrop. */
+export interface HomeStage {
+  setAttract(on: boolean): void;
+}
+
+export function createHome(hud: Hud, journey: Journey, map: HomeStage): Overlay {
   const { store, library } = hud.engine;
-  const journey = map.journey;
   const volume = journey.volume;
+  // a volume without chapters yet (the lobby): its names and `emptyNote`, nothing to start or to map
+  const empty = journey.chapters.length === 0;
   const kicker = new Label(volume.kicker.toLocaleUpperCase('uk'), {
     font: 'bodyBold',
     size: UI.text.small,
@@ -116,13 +123,37 @@ export function createHome(hud: Hud, map: JourneyMap): Overlay {
         ]
       : [resume, start, mapButton],
   });
+  // the subtitle under a title headline (a volume whose headline is its subtitle shows the lead only)
+  const tagline =
+    volume.headline === volume.title && volume.subtitle
+      ? new Label(volume.subtitle, {
+          font: 'display',
+          size: UI.text.h2,
+          color: TEXT_COLOR.dim,
+          align: 'center',
+        })
+      : null;
+  const note =
+    empty && volume.emptyNote
+      ? new Chip({ name: 'home-empty', kind: 'plain', icon: 'clock', text: volume.emptyNote })
+      : null;
   const column = new UiNode({
     dir: 'col',
     align: 'center',
     gap: 18,
     float: { ax: 0.5, ay: 0 },
-    children: [kicker, title, subtitle, new UiNode({ height: 6 }), actions, facts],
+    children: empty
+      ? [
+          volume.kicker ? kicker : null,
+          title,
+          tagline,
+          volume.lead ? subtitle : null,
+          new UiNode({ height: 10 }),
+          note,
+        ]
+      : [volume.kicker ? kicker : null, title, tagline, subtitle, new UiNode({ height: 6 }), actions, facts],
   });
+  const aside = createAsideRow(hud, volume);
   const veil = new Veil({ float: { ax: 0.5, ay: 0 }, width: 1100, height: 520 });
   const root = new UiNode({
     dir: 'stack',
@@ -130,13 +161,19 @@ export function createHome(hud: Hud, map: JourneyMap): Overlay {
     height: 'fill',
     visible: false,
     opacity: 0,
-    children: [veil, column],
+    children: [veil, column, aside?.node ?? null],
   });
   hud.modal.add(root);
 
   const place = (): void => {
     const m = hud.metrics;
     const narrow = m.layout !== 'wide';
+    if (aside) {
+      // set apart from the main flow: at the foot of the screen, clear of the home indicator on phones
+      const foot = m.shell === 'desk' ? Math.max(m.height * 0.05, 28) : m.safeArea.bottom + 18;
+      aside.node.float = { ax: 0.5, ay: 1, dy: -foot };
+      aside.fit(m.width - Math.max(m.safeArea.left, m.safeArea.right) * 2 - 32);
+    }
     title.setStyle({
       size: narrow ? Math.min(UI.text.hero, m.width / 15) : UI.text.hero,
       maxWidth: m.width - m.safeMargin * 4,
@@ -150,7 +187,10 @@ export function createHome(hud: Hud, map: JourneyMap): Overlay {
       column.gap = m.formFactor === 'phone' ? 12 : 18;
       const room = m.width - Math.max(m.safeArea.left, m.safeArea.right) * 2 - 32;
       title.setStyle({ size: Math.min(UI.text.hero, Math.max(room / 13, 28)), maxWidth: room });
-      subtitle.setStyle({ size: m.formFactor === 'phone' ? UI.text.small : UI.text.h3, maxWidth: Math.min(760, room) });
+      subtitle.setStyle({
+        size: m.formFactor === 'phone' ? UI.text.small : UI.text.h3,
+        maxWidth: Math.min(760, room),
+      });
       // a phone held upright stacks the buttons (a wrapped row would hug the left edge)
       const stack = room < 520;
       actions.dir = stack ? 'col' : 'row';
@@ -166,6 +206,12 @@ export function createHome(hud: Hud, map: JourneyMap): Overlay {
     }
     veil.float = { ax: 0.5, ay: 0, dy: m.height * 0.02 };
     veil.width = Math.min(1200, m.width);
+    if (empty) {
+      // nothing below the names: they stand a little above the middle of the screen, the veil behind them
+      column.float = { ax: 0.5, ay: 0.5, dy: -m.height * 0.06 };
+      veil.float = { ax: 0.5, ay: 0.5, dy: -m.height * 0.06 };
+      veil.height = 420;
+    }
   };
   hud.engine.hud.onResize(place);
   place();
@@ -184,6 +230,7 @@ export function createHome(hud: Hud, map: JourneyMap): Overlay {
       map.setAttract(true);
       reveal(root, { dy: 0, scale: 1, duration: 0.5 });
       revealAll(column.children, { dy: -22 }, 0.07);
+      if (aside) revealAll(aside.node.children, { dy: 12 }, 0.07);
     },
     close() {
       map.setAttract(false);

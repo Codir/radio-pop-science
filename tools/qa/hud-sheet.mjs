@@ -15,7 +15,7 @@
 // the last line lists the sheets. A shot that fails to load is reported and the sheet is still written.
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { appUrl, baseUrl, ensureDir, launch, openApp, outRoot, parseArgs, parseSize, screenshot } from './lib.mjs';
+import { appUrl, baseUrl, ensureDir, launch, openApp, outRoot, parseArgs, parseSize, pickChapter, screenshot } from './lib.mjs';
 import { PROFILES, PROFILE_ALIASES } from './mobile-parts.mjs';
 
 const args = parseArgs();
@@ -55,7 +55,7 @@ async function shootSet(tag, ctx, { q, extra = {}, tile, cols }) {
   try {
     await openApp(page, appUrl(columns[0].base, { route: chapterArg, q, freeze, extra: { hud: columns[0].hud, ...extra } }));
     const list = await page.evaluate(() => window.__app.listChapters());
-    const chapter = list.find((c) => c.fullId === chapterArg) ?? list.find((c) => c.id === chapterArg);
+    const chapter = pickChapter(list, await page.evaluate(() => window.__app.listVolumes()), chapterArg);
     if (!chapter) throw new Error(`chapter '${chapterArg}' is not registered`);
     for (const [i, step] of chapter.steps.entries()) {
       for (const col of columns) {

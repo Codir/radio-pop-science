@@ -32,7 +32,7 @@ import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { measurePerf } from './check-parts.mjs';
-import { appErrors, appUrl, baseUrl, ensureDir, fmt, launch, openApp, outRoot, parseArgs, screenshot } from './lib.mjs';
+import { appErrors, appUrl, baseUrl, ensureDir, fmt, launch, openApp, outRoot, parseArgs, pickChapter, screenshot } from './lib.mjs';
 import { PROFILES, PROFILE_ALIASES, operateControls, sceneGestures, settle, touchLayout, walkTabs } from './mobile-parts.mjs';
 import { libraryLevel, longPress, rotation, sheetGestures, travel } from './mobile-flows.mjs';
 import { touch } from './touch.mjs';
@@ -84,7 +84,7 @@ for (const name of names) {
   try {
     const gpu = await openApp(page, url(''));
     const all = await page.evaluate(() => window.__app.listChapters());
-    const chapter = all.find((c) => c.fullId === chapterId || c.id === chapterId);
+    const chapter = pickChapter(all, await page.evaluate(() => window.__app.listVolumes()), chapterId);
     if (!chapter) throw new Error(`unknown chapter '${chapterId}'`);
     chapterId = chapter.fullId;
     out = ensureDir(`${outRoot(args)}/${chapter.id}`);

@@ -214,7 +214,7 @@ export class Engine {
     readonly flags: UrlFlags,
     library: Library,
   ) {
-    this.store = new Store(safeStorage(), library.defaultVolume.id);
+    this.store = new Store(safeStorage(), library.legacyVolume.id);
     // device model first: the quality tier, the pixel budget and the HUD metrics depend on it
     this.deviceMonitor = new DeviceMonitor(
       window,
@@ -299,6 +299,10 @@ export class Engine {
     );
     this.runtime.on('step', () => {
       if (this.flags.freeze !== null) this.freezePending = this.flags.freeze;
+    });
+    // the lobby (a volume's home screen with no step behind it) is a navigation of its own
+    this.nav.onLobby((volume) => {
+      if (volume && this.flags.freeze !== null) this.freezePending = this.flags.freeze;
     });
     this.input.on('action', (action) => {
       const pos = this.nav.position;

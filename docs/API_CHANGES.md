@@ -445,3 +445,33 @@ Additive; `?hud=gl` (the default) is pixel-identical to before. Chapters need no
 - **Fonts**: `pnpm webfonts` (`app/scripts/build-webfonts.mjs` + `.py`, Python fontTools build dependency);
   `app/scripts/charset.mjs` (charset + composed glyphs, shared with `pnpm fonts`); `pnpm fonts:check` also checks
   the WOFF2 font stacks; Fira Sans Italic added.
+
+## M6-library-focus — the pilot volume is the front door; volume 1 behind a button (2026-11-16; DECISIONS §60)
+
+- **Volumes.** New published default volume `circuit` (`app/src/volumes/circuit/`, alias `@circuit/*`), empty
+  journey. `library.json`: `defaultVolume: "circuit"`, new `legacyVolume: "electricity"` (owner of pre-library
+  links and saved data). `electricity/volume.json`: `order: 2`, new `aside: { label }`.
+- **Manifest** (`VolumeIdentity` → `VolumeManifest`): `aside?: { label }` → `aside: string | null` (a published
+  volume kept aside: not counted for the library level, `listed: false`, reached by its button on the default
+  volume's home); `emptyNote?` → `emptyNote: string` (home-screen line while the volume has no chapters). A
+  volume with an empty journey may have no groups.
+- **Library**: `legacyVolume`, `aside` (published aside volumes); `multi` ignores aside volumes; a short chapter
+  id with no caller (address bar, first navigation) is looked up in the legacy volume first, then the default.
+  `Store` migrates a v1 record into `library.legacyVolume` (was: the default volume).
+- **Nav**: the **lobby** — `nav.lobby` (volume shown by its home screen alone), `nav.onLobby(fn(volume, entered))`.
+  `start()`: `#/` restores the last position only outside aside volumes; an empty volume named by the address
+  (`#/` = default, `#/<volume>`) becomes the lobby instead of throwing. `gotoVolume()` of an empty volume enters
+  its lobby (address `#/` for the default volume, else `#/<volume>`); back/forward between lobby and steps work.
+- **HUD**: `createHome(hud, journey, stage)` (was `createHome(hud, map)`; `HomeStage = { setAttract }`);
+  `createLibrary(hud, () => HomeStage | null)`. Empty home: names + `emptyNote`, no start / map / facts, drawn over
+  `BackdropStage` (`hud/home-stage.ts`; the journey map is not built for a volume without chapters). Aside row at
+  the foot of the home screen (`hud/home-aside.ts`): `home-aside-<volume>` buttons / `home-back`. `Hud.register`
+  hands an open overlay over in place; `Hud.close()` in the lobby never reveals the empty scene; `M` does nothing
+  in the lobby. Map backdrop: sine-free hash for the nebula noise (it showed hard-edged rectangles).
+- **QA hooks**: `__app.lobby()`; `__app.listVolumes()[]` gains `role` (`default` | `aside` | null) and `legacy`.
+  `tools/qa/lib.mjs → pickChapter / findChapter`: a short chapter id in a QA command resolves like the address
+  bar (legacy volume first). Content tools skip a volume that has no `docs/volumes/<id>/chapters/` yet.
+- **Command spellings**: without `--volume`, `build_index / build_glossary / export_* / typography / …` now mean
+  `circuit` (they print "no documents yet" until its documents exist): add `--volume electricity` for volume 1.
+  `regen.sh` and `doccheck.py` (all volumes by default) are unchanged; `chapter-check atom` still means
+  `electricity/atom` (legacy-first), the full form `electricity/atom` always works.

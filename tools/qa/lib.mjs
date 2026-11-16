@@ -92,7 +92,7 @@ export function ensureParent(file) {
 
 /**
  * Build an app URL. `route` is a step address: the full `volume/chapter/step`, or the short `chapter/step`
- * (the app looks the chapter up in the default volume first, then in the others — `atom/quarks`,
+ * (the app looks the chapter up in the legacy volume, then the default one, then the others — `atom/quarks`,
  * `_sandbox-ui/controls`); `volume/chapter`, `chapter` and the empty route work too. Dev volumes and dev
  * chapters are included (`debug`) but the HTML overlay is hidden so screenshots show only the product.
  */
@@ -104,6 +104,27 @@ export function appUrl(base, { route = '', q = 'high', freeze = null, extra = {}
   if (freeze !== null && freeze !== undefined) params.set('freeze', String(freeze));
   const hash = route ? `#/${route.replace(/^\/+/, '')}` : '';
   return `${base}?${params.toString().replace(/=(&|$)/g, '$1')}${hash}`;
+}
+
+/**
+ * The chapter a QA command names: a full id `volume/chapter`, or a short `chapter` read the way the address bar
+ * reads it — in the legacy volume first (`library.json → legacyVolume`), then the default volume, then the others
+ * in library order (docs/VOLUMES.md §1). `chapters`, `volumes`: `__app.listChapters()`, `__app.listVolumes()`.
+ */
+export function pickChapter(chapters, volumes, ref) {
+  const exact = chapters.find((c) => c.fullId === ref);
+  if (exact) return exact;
+  const rank = (c) => {
+    const v = volumes.find((x) => x.id === c.volume);
+    return v?.legacy ? 0 : v?.role === 'default' ? 1 : 2;
+  };
+  return chapters.filter((c) => c.id === ref).sort((a, b) => rank(a) - rank(b))[0];
+}
+
+/** `pickChapter` against the running app. */
+export async function findChapter(page, ref) {
+  const [chapters, volumes] = await page.evaluate(() => [window.__app.listChapters(), window.__app.listVolumes()]);
+  return pickChapter(chapters, volumes, ref);
 }
 
 /** Launch Chrome on the GPU and open a page with the given viewport. */

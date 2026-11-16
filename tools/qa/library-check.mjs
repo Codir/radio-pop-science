@@ -2,7 +2,9 @@
 // Library-of-volumes check (DECISIONS §58, docs/VOLUMES.md): drives the real pointer / keyboard against the
 // dev-only demo volume `_demo` next to volume 1 and asserts what makes the project a library:
 //
-//   1. landing        one published volume → no library level: `#/` opens the default volume's home
+//   1. landing        one published volume in the main flow → no library level: `#/` opens the default volume's
+//                     home (its lobby while it has no chapters), with one button per aside volume (DECISIONS §60)
+//   1b. aside         each aside button opens that volume on its home screen; its way back returns to `#/`
 //   2. library        the library screen lists the listed volumes (not the sandbox pseudo-volume)
 //   3. enter          a volume card opens that volume (first visit: its home); its map uses its own axis
 //   4. chrome         inside the demo volume the header names the volume and the library button is there;
@@ -11,7 +13,7 @@
 //   6. progress       progress is counted per volume (full chapter ids), each volume remembers its last step
 //   7. glossary       volume scope vs. whole library
 //   8. legacy links   `#/atom/quarks`, `#/_sandbox-ui/controls`, `#/electricity`, `#/electricity/atom`
-//   9. migration      a v1 localStorage record becomes v2 progress of the default volume
+//   9. migration      a v1 localStorage record becomes v2 progress of the legacy volume (library.json)
 //  10. production     without `?debug` the dev volumes do not exist and none of their code is requested
 //                     (asserted only against a production build: pass --base of a `vite preview` / static server)
 //
@@ -51,6 +53,11 @@ const shot = async (name) => {
   shots.push(await screenshot(page, `${out}/${String(++n).padStart(2, '0')}-${name}.jpg`));
 };
 const names = () => ev(() => window.__ui.names());
+/** Where the app is: `lobby:<volume>` while a volume is shown by its home screen alone, else the step address. */
+const where = async () => {
+  const lobby = await ev(() => window.__app.lobby());
+  return lobby ? `lobby:${lobby}` : address();
+};
 const click = async (name) => {
   const r = await ev((x) => window.__ui.locate(x), name);
   if (!r) throw new Error(`no visible HUD node '${name}'`);
@@ -71,11 +78,33 @@ try {
   await open('');
   await waitOverlay('home');
   const volumes = await ev(() => window.__app.listVolumes());
-  const def = (await pos()).volumeId;
-  check(volumes.filter((v) => v.status === 'published').length === 1, 'exactly one published volume', volumes.map((v) => `${v.id}:${v.status}`).join(' '));
-  check((await ev(() => window.__ui.overlay())) === 'home', 'landing: the default volume opens on its home screen (library level skipped)', await address());
-  check(!(await names()).includes('home-library'), 'landing: no library button on the home screen of the only published volume');
+  const def = volumes.find((v) => v.role === 'default').id;
+  // the owner of pre-library links and data: volume 1 (`electricity`), wherever the front door is
+  const legacy = volumes.find((v) => v.legacy).id;
+  const aside = volumes.filter((v) => v.role === 'aside' && v.status === 'published').map((v) => v.id);
+  const roles = volumes.map((v) => `${v.id}:${v.status}${v.role ? `:${v.role}` : ''}`).join(' ');
+  check(volumes.filter((v) => v.status === 'published' && v.role !== 'aside').length === 1, 'exactly one published volume in the main flow', roles);
+  check((await ev(() => window.__ui.overlay())) === 'home', 'landing: `#/` opens the default volume on its home screen (library level skipped)', await where());
+  const landed = (await ev(() => window.__app.lobby())) ?? (await pos()).volumeId;
+  check(landed === def, 'landing: the front door is the default volume', await where());
+  check(!(await names()).includes('home-library'), 'landing: no library button on the home screen of the only main-flow volume');
+  for (const id of aside) check((await names()).includes(`home-aside-${id}`), `landing: the secondary button to the aside volume ${id}`);
   await shot('landing-home');
+
+  // 1b. aside volumes: in through their button, back to the front door ---------------------------------
+  for (const id of aside) {
+    await click(`home-aside-${id}`);
+    await page.waitForFunction((v) => window.__app.position().volumeId === v && window.__app.lobby() === null && window.__ui.overlay() === 'home', id, { timeout: 30000 });
+    await settle();
+    check((await names()).includes('home-back'), `aside: ${id} opens on its home screen, with the way back`, await where());
+    check((await hash()).startsWith(`#/${id}/`), `aside: the address is a full route of ${id}`, await hash());
+    check(!(await names()).includes('home-library'), `aside: no library button inside ${id}`);
+    await shot(`aside-${id}-home`);
+    await click('home-back');
+    await page.waitForFunction((v) => (window.__app.lobby() ?? window.__app.position().volumeId) === v && window.__ui.overlay() === 'home', def, { timeout: 30000 });
+    await settle();
+    check((await names()).includes(`home-aside-${id}`), 'aside: the way back returns to the home screen of the default volume', `${await where()} ${await hash()}`);
+  }
   const demo = volumes.find((v) => v.id === '_demo');
   if (!demo) throw new Error('the demo volume `_demo` is not registered — run against a ?debug-capable build');
 
@@ -84,7 +113,8 @@ try {
   await waitOverlay('library');
   await settle();
   const cards = (await names()).filter((x) => x.startsWith('volume-card-'));
-  check(cards.includes(`volume-card-${def}`) && cards.includes('volume-card-_demo'), 'library: lists volume 1 and the demo volume', cards.join(' '));
+  check(cards.includes(`volume-card-${def}`) && cards.includes('volume-card-_demo'), 'library: lists the default and the demo volume', cards.join(' '));
+  check(aside.every((id) => !cards.includes(`volume-card-${id}`)), 'library: aside volumes are not on the shelf', cards.join(' '));
   check(!cards.includes('volume-card-_dev'), 'library: the sandbox pseudo-volume is not listed');
   await shot('library');
 
@@ -132,13 +162,13 @@ try {
   await click(xref);
   await page.waitForFunction(() => window.__app.position().volumeId !== '_demo', null, { timeout: 60000 });
   await settle();
-  check((await address()) === `${def}/atom/ions-photons`, 'cross-volume: the link lands on the step of volume 1', await address());
+  check((await address()) === `${legacy}/atom/ions-photons`, 'cross-volume: the link lands on the step of volume 1', await address());
   const chrome = await names();
   check(!chrome.includes('sys-library'), 'chrome: inside volume 1 there is no library button');
   await shot('landed-in-volume-1');
   await ev(() => window.__ui.open('glossary'));
   await settle(120);
-  check(!(await names()).includes('glossary-scope:library'), 'glossary: no scope switch inside the only published volume');
+  check(!(await names()).includes('glossary-scope:library'), 'glossary: no scope switch inside volume 1 (no library level)');
   await ev(() => window.__ui.close());
 
   // 6. progress -----------------------------------------------------------------------------------------
@@ -148,7 +178,7 @@ try {
   });
   check(Object.keys(state.visited).every((k) => k.split('/').length === 2), 'progress: keyed by full chapter id', Object.keys(state.visited).join(' '));
   check(state.visited['_demo/wave']?.length === 2 && state.visited['_demo/antenna']?.length === 1, 'progress: the demo volume has its own record', JSON.stringify(state.visited));
-  check(state.lastIn._demo?.chapterId === 'antenna' && state.lastIn[def]?.chapterId === 'atom', 'progress: each volume remembers its last step', JSON.stringify(state.lastIn));
+  check(state.lastIn._demo?.chapterId === 'antenna' && state.lastIn[legacy]?.chapterId === 'atom', 'progress: each volume remembers its last step', JSON.stringify(state.lastIn));
   await page.keyboard.press('l');
   await waitOverlay('library');
   await settle();
@@ -160,10 +190,10 @@ try {
 
   // 8. legacy and partial links -------------------------------------------------------------------------
   for (const [route, want, wantHash] of [
-    ['atom/quarks', `${def}/atom/quarks`, `#/${def}/atom/quarks`], // a link from before the library of volumes
-    ['atom', `${def}/atom/dive-in`, `#/${def}/atom/dive-in`],
+    ['atom/quarks', `${legacy}/atom/quarks`, `#/${legacy}/atom/quarks`], // a link from before the library of volumes
+    ['atom', `${legacy}/atom/dive-in`, `#/${legacy}/atom/dive-in`],
     ['_sandbox-ui/controls', '_dev/_sandbox-ui/controls', '#/_dev/_sandbox-ui/controls'],
-    [`${def}/atom`, `${def}/atom/dive-in`, `#/${def}/atom/dive-in`],
+    [`${legacy}/atom`, `${legacy}/atom/dive-in`, `#/${legacy}/atom/dive-in`],
     ['_demo/antenna/dipole', '_demo/antenna/dipole', '#/_demo/antenna/dipole'],
   ]) {
     // a fresh context per link: no stored position may help the app find the target
@@ -173,9 +203,13 @@ try {
     check((await address()) === want && (await hash()) === wantHash, `link #/${route} → ${wantHash}`, `${await address()} ${await hash()}`);
   }
   await ev(() => window.localStorage.clear());
+  await open(legacy);
+  await waitOverlay('home');
+  check((await pos()).volumeId === legacy, `link #/${legacy} opens the volume on its home screen`, await address());
+  await ev(() => window.localStorage.clear());
   await open(def);
   await waitOverlay('home');
-  check((await pos()).volumeId === def, `link #/${def} opens the volume on its home screen`, await address());
+  check(((await ev(() => window.__app.lobby())) ?? (await pos()).volumeId) === def, `link #/${def} opens the volume on its home screen`, `${await where()} ${await hash()}`);
   check(!(await names()).includes('sys-library') && !(await names()).includes('volume-card-_dev'), 'the sandbox pseudo-volume has no library chrome');
 
   // 9. migration of a v1 record -------------------------------------------------------------------------
@@ -196,24 +230,31 @@ try {
     const s = window.__app.engine.store.get();
     return { visited: s.progress.visited, last: s.last, volume: s.settings.volume, v2: window.localStorage.getItem('electricity:v2') !== null };
   });
-  check((await address()) === `${def}/plant-wind/betz`, 'migration: the app resumes at the old last position', await address());
   check(
-    migrated.visited[`${def}/atom`]?.length === 3 && migrated.visited[`${def}/plant-wind`]?.includes('overview') && migrated.volume === 0.35 && migrated.v2,
-    'migration: v1 progress and settings are taken over into the default volume',
+    migrated.visited[`${legacy}/atom`]?.length === 3 && migrated.visited[`${legacy}/plant-wind`]?.includes('overview') && migrated.volume === 0.35 && migrated.v2,
+    'migration: v1 progress and settings are taken over into the legacy volume',
     JSON.stringify(migrated),
   );
+  // `#/` resumes the old position only while volume 1 is in the main flow; an aside volume resumes when entered
+  if (!aside.includes(legacy)) check((await address()) === `${legacy}/plant-wind/betz`, 'migration: the app resumes at the old last position', await address());
+  else {
+    check((await where()) === `lobby:${def}` || (await pos()).volumeId === def, 'migration: `#/` still opens the front door', await where());
+    await open(legacy);
+    check((await address()) === `${legacy}/plant-wind/betz`, 'migration: entering volume 1 resumes at the old last position', await address());
+  }
   await ev(() => window.localStorage.clear());
 
   // 10. production: no dev volumes without ?debug ----------------------------------------------------------
   const before = requests.length;
   await openApp(page, `${base}?noaudio&q=high&freeze=2&n=prod#/_demo/wave/oscillation`);
   await settle(10);
-  const prod = await ev(() => ({ volumes: window.__app.listVolumes().map((v) => v.id), pos: window.__app.position() }));
-  check(prod.volumes.length === 1 && prod.volumes[0] === def, 'production: only the published volume is registered', prod.volumes.join(' '));
-  check(prod.pos.volumeId === def, 'production: a link into a dev volume falls back to the default volume', JSON.stringify(prod.pos));
+  const prod = await ev(() => ({ volumes: window.__app.listVolumes(), pos: window.__app.position(), lobby: window.__app.lobby() }));
+  const published = volumes.filter((v) => v.status === 'published').map((v) => v.id);
+  check(prod.volumes.map((v) => v.id).join(' ') === published.join(' '), 'production: only the published volumes are registered', prod.volumes.map((v) => v.id).join(' '));
+  check((prod.lobby ?? prod.pos.volumeId) === def, 'production: a link into a dev volume falls back to the default volume', JSON.stringify(prod));
   await page.keyboard.press('l');
   await settle(30);
-  check((await ev(() => window.__ui.overlay())) !== 'library', 'production: the library key does nothing while there is one volume');
+  check((await ev(() => window.__ui.overlay())) !== 'library', 'production: the library key does nothing while the main flow is one volume');
   const builtAssets = requests.some((u) => /\/assets\/index-[\w-]+\.js$/.test(u));
   if (builtAssets) {
     const dev = requests.slice(before).filter((u) => /_demo|_dev|_sandbox|\/volume-[\w-]{8}\.js/.test(u));

@@ -39,6 +39,14 @@ export interface VolumeIdentity {
   readonly status: string;
   /** False keeps a registered volume off the library screen (the sandbox pseudo-volume). Default true. */
   readonly listed?: boolean;
+  /**
+   * A published volume kept aside from the main flow (an earlier draft): it does not count toward the library
+   * level and is not on the library shelf; the default volume's home screen leads to it through one secondary
+   * button with this `label`, and its own home screen leads back (docs/VOLUMES.md §3).
+   */
+  readonly aside?: { readonly label: string };
+  /** Line of the home screen while the volume has no chapters yet («Том у роботі — …»). */
+  readonly emptyNote?: string;
   readonly axis: {
     readonly label: string;
     readonly unit: string;
@@ -156,8 +164,12 @@ export interface VolumeManifest {
   /** Icon name of the volume's emblem on the library screen. */
   readonly emblem: string;
   readonly status: VolumeStatus;
-  /** Shown on the library screen (when registered). */
+  /** Shown on the library screen (when registered); false for an aside volume. */
   readonly listed: boolean;
+  /** Label of the secondary button that leads to this volume, if it is kept aside (`VolumeIdentity.aside`). */
+  readonly aside: string | null;
+  /** Home-screen line while the volume has no chapters (empty: none). */
+  readonly emptyNote: string;
   readonly journey: {
     readonly axis: JourneyAxis;
     readonly groups: readonly JourneyGroup[];
@@ -207,7 +219,11 @@ export function defineVolume(identity: VolumeIdentity, spec: VolumeSpec): Volume
     fail(`a dev volume has status 'dev' and a directory name starting with '_' (and only a dev volume)`);
   if (!(identity.accent in ACCENT)) fail(`unknown accent '${identity.accent}'`);
   const accent = identity.accent as AccentName;
-  if (identity.groups.length === 0) fail('a volume needs at least one group');
+  // a volume that is only a skeleton (no planned chapters yet) may have no groups either
+  if (identity.groups.length === 0 && identity.journey.length > 0)
+    fail('a volume with chapters needs a group');
+  if (identity.aside !== undefined && (status !== 'published' || !identity.aside.label))
+    fail(`an aside volume is published and has a button label`);
   const groupIds = new Set(identity.groups.map((g) => g.id));
   if (groupIds.size !== identity.groups.length) fail('duplicate group id');
   const planned = new Set<string>();
@@ -236,7 +252,9 @@ export function defineVolume(identity: VolumeIdentity, spec: VolumeSpec): Volume
     accent,
     emblem: identity.emblem ?? 'book',
     status,
-    listed: identity.listed ?? true,
+    listed: (identity.listed ?? true) && identity.aside === undefined,
+    aside: identity.aside?.label ?? null,
+    emptyNote: identity.emptyNote ?? '',
     journey: {
       axis: {
         ...axis,

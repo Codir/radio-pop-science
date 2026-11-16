@@ -19,6 +19,12 @@ export interface LibraryConfig {
   /** Umbrella name of the library; null = the default volume's headline (while the library is one volume). */
   readonly title: string | null;
   readonly defaultVolume: string;
+  /**
+   * The volume that owned the app before the library existed (`electricity`): saved data from before the
+   * library is migrated into it, and a short address-bar link `#/<chapter>/<step>` is looked up in it first.
+   * Default: the default volume.
+   */
+  readonly legacyVolume?: string;
 }
 
 /** A chapter reference as callers write it: `chapter` or `volume/chapter`. */
@@ -38,9 +44,11 @@ export class Library {
   /** Registered volumes in library order. */
   readonly volumes: readonly VolumeManifest[];
   readonly defaultVolume: VolumeManifest;
+  /** Owner of pre-library links and data (`LibraryConfig.legacyVolume`). */
+  readonly legacyVolume: VolumeManifest;
   /** Umbrella title (config, or the default volume's headline). */
   readonly title: string;
-  /** More than one published volume: the library level is part of normal navigation. */
+  /** More than one published volume in the main flow (aside volumes do not count): the library level is shown. */
   readonly multi: boolean;
   private readonly sources = new Map<string, VolumeSource>();
   private readonly registries = new Map<string, Registry>();
@@ -61,8 +69,11 @@ export class Library {
     const def = this.sources.get(config.defaultVolume)?.manifest;
     if (!def) throw new Error(`Library: default volume '${config.defaultVolume}' is not registered`);
     this.defaultVolume = def;
+    const legacy = this.sources.get(config.legacyVolume ?? def.id)?.manifest;
+    if (!legacy) throw new Error(`Library: legacy volume '${config.legacyVolume}' is not registered`);
+    this.legacyVolume = legacy;
     this.title = config.title ?? def.headline;
-    this.multi = this.volumes.filter((v) => v.status === 'published').length > 1;
+    this.multi = this.volumes.filter((v) => v.status === 'published' && v.aside === null).length > 1;
   }
 
   get(id: string): VolumeManifest | undefined {
@@ -90,6 +101,11 @@ export class Library {
     return this.multi || (volume !== undefined && volume.status !== 'published' && volume.listed);
   }
 
+  /** Published volumes kept aside from the main flow, each reached by its own secondary button. */
+  get aside(): readonly VolumeManifest[] {
+    return this.volumes.filter((v) => v.aside !== null && v.status === 'published');
+  }
+
   /** Chapter registry of a volume, if it has been loaded. */
   registry(volumeId: string): Registry | undefined {
     return this.registries.get(volumeId);
@@ -104,7 +120,8 @@ export class Library {
       hit = source.chapters().then((chapters) => {
         const registry = new Registry(source.manifest, chapters, this.opts);
         this.registries.set(volumeId, registry);
-        if (volumeId === this.defaultVolume.id) this.checkLegacyLinks(registry);
+        if (volumeId === this.defaultVolume.id || volumeId === this.legacyVolume.id)
+          this.checkLegacyLinks(registry);
         return registry;
       });
       this.loading.set(volumeId, hit);
@@ -128,9 +145,13 @@ export class Library {
         );
   }
 
-  /** Volumes to search for a short chapter id: the caller's volume, the default one, then the others. */
+  /**
+   * Volumes to search for a short chapter id: the caller's volume, the default one, then the others. Without a
+   * caller (an address-bar link, the first navigation) the legacy volume comes first: links from before the
+   * library keep meaning what they meant, whatever the default volume and its chapter ids become.
+   */
   private searchOrder(from: string | null | undefined): string[] {
-    const order = [from, this.defaultVolume.id, ...this.volumes.map((v) => v.id)];
+    const order = [from ?? this.legacyVolume.id, this.defaultVolume.id, ...this.volumes.map((v) => v.id)];
     return [...new Set(order.filter((id): id is string => !!id && this.has(id)))];
   }
 

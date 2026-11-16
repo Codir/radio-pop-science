@@ -126,6 +126,10 @@ def run_volumes(fn, default_all=False):
         use_volume(vid)
         if len(volumes) > 1:
             print('── volume %s' % vid)
+        # a volume that is only a skeleton (the default volume before its first document) has nothing to do
+        if not os.path.isdir(CHAPTER_DIR):
+            print('volume %s has no documents yet (%s): nothing to do' % (vid, rel(CHAPTER_DIR)))
+            continue
         code = max(code, fn() or 0)
     use_volume(DEFAULT_VOLUME)
     return code

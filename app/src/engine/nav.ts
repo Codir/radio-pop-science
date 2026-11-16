@@ -29,10 +29,19 @@ export type NavRouter = Pick<Router, 'route' | 'push' | 'replace' | 'onChange'>;
 
 type Address = { volumeId: string | null; chapterId: string | null; stepId: string | null };
 
+/**
+ * The lobby changed: `volume` is the volume now shown by its home screen alone, or null when navigation left
+ * the lobby — `entered` is true when it left by entering a volume (`gotoVolume`: its home screen is expected),
+ * false when it went to a step.
+ */
+export type LobbyListener = (volume: VolumeManifest | null, entered: boolean) => void;
+
 export class Nav {
   private target: Position | null = null;
   /** Bumped by every navigation request, so a slow (volume-loading) request cannot overtake a newer one. */
   private seq = 0;
+  private lobbyVolume: VolumeManifest | null = null;
+  private readonly lobbyListeners: LobbyListener[] = [];
 
   constructor(
     readonly library: Library,
@@ -46,6 +55,54 @@ export class Nav {
   /** Volume of the current position (null before the first navigation). */
   get volume(): VolumeManifest | null {
     return this.target ? (this.library.get(this.target.volumeId) ?? null) : null;
+  }
+
+  /**
+   * The **lobby**: a volume that has no chapters yet, shown by its home screen alone (docs/VOLUMES.md §3).
+   * While it is set no step of it can be on screen: `position` keeps the step entered before (if any), which
+   * stays loaded behind the home screen. Its address is `#/` for the default volume, else `#/<volume>`.
+   */
+  get lobby(): VolumeManifest | null {
+    return this.lobbyVolume;
+  }
+
+  /** Listen to lobby changes (see `LobbyListener`). */
+  onLobby(fn: LobbyListener): () => void {
+    this.lobbyListeners.push(fn);
+    return () => this.lobbyListeners.splice(this.lobbyListeners.indexOf(fn), 1);
+  }
+
+  private setLobby(volume: VolumeManifest | null, entered = false): void {
+    if (volume === this.lobbyVolume) return;
+    this.lobbyVolume = volume;
+    for (const fn of [...this.lobbyListeners]) fn(volume, entered);
+  }
+
+  /** The volume `id` exists and has no visible chapters (loads its chapter list). */
+  private async isEmpty(id: string): Promise<boolean> {
+    if (!this.library.has(id)) return false;
+    const registry = await this.library.load(id).catch(() => null);
+    return registry !== null && registry.chapters.length === 0;
+  }
+
+  /** Show an empty volume by its home screen alone. */
+  private toLobby(volume: VolumeManifest, opts: GotoOptions): boolean {
+    const route = {
+      volumeId: volume.id === this.library.defaultVolume.id ? null : volume.id,
+      chapterId: null,
+      stepId: null,
+    };
+    if (opts.replace) this.router.replace(route);
+    else this.router.push(route);
+    this.setLobby(volume);
+    return true;
+  }
+
+  /** The empty volume a chapter-less route names (`#/` = the default volume), if it is one. */
+  private async lobbyOf(route: Route): Promise<VolumeManifest | null> {
+    if (route.chapterId) return null;
+    const id = route.volumeId ?? this.library.defaultVolume.id;
+    return (await this.isEmpty(id)) ? (this.library.get(id) ?? null) : null;
   }
 
   /** Registered volumes in library order. */
@@ -132,12 +189,18 @@ export class Nav {
         : Promise.resolve(false);
   }
 
-  /** Enter a volume: where the user last was in it, else its first step. False for an unknown or empty volume. */
+  /**
+   * Enter a volume: where the user last was in it, else its first step; a volume without chapters becomes the
+   * lobby. False for an unknown volume (or when a newer request superseded this one).
+   */
   async gotoVolume(volumeId: string, opts: GotoOptions = {}): Promise<boolean> {
     const seq = ++this.seq;
     const pos = await this.volumeEntry(volumeId);
-    if (!pos || seq !== this.seq) return false;
-    return this.apply(pos, opts);
+    if (seq !== this.seq) return false;
+    if (pos) return this.apply(pos, opts, true);
+    const volume = this.library.get(volumeId);
+    if (!volume || !(await this.isEmpty(volumeId)) || seq !== this.seq) return false;
+    return this.toLobby(volume, opts);
   }
 
   private async volumeEntry(volumeId: string): Promise<Position | null> {
@@ -164,12 +227,14 @@ export class Nav {
     });
   }
 
-  private apply(pos: Position, opts: GotoOptions): Promise<boolean> {
-    const same = samePosition(this.target, pos);
+  private apply(pos: Position, opts: GotoOptions, entered = false): Promise<boolean> {
+    // leaving the lobby for the step that waited behind it is still a move (a new history entry)
+    const same = samePosition(this.target, pos) && !this.lobbyVolume;
     this.target = pos;
     this.store.set({ target: pos });
     if (opts.replace || same) this.router.replace(pos);
     else this.router.push(pos);
+    this.setLobby(null, entered);
     return this.runtime.request(pos, { instant: opts.instant ?? false }).then(() => true);
   }
 
@@ -194,21 +259,27 @@ export class Nav {
   }
 
   /**
-   * Initial navigation: deep link from the address bar (a legacy two-part link lands in the default volume;
-   * a volume-only link enters that volume), else the last persisted position, else the first chapter of the
-   * default volume. The address bar is normalised without adding a history entry.
+   * Initial navigation: deep link from the address bar (a legacy two-part link lands in the legacy volume
+   * first; a volume-only link enters that volume), else the last persisted position — unless it lies in an
+   * aside volume: those are entered only through their button —, else the entry of the default volume. A
+   * volume without chapters named by the address (`#/` = the default volume) becomes the lobby. The address
+   * bar is normalised without adding a history entry.
    */
   async start(opts: { instant?: boolean } = {}): Promise<boolean> {
     const route = this.router.route;
     const last = this.store.get().last;
+    const resumable = last !== null && this.library.get(last.volumeId)?.aside === null;
+    const volumeLink = route.chapterId === null ? route.volumeId : null;
     const pos =
       (await this.library.resolve(route)) ??
-      (route.volumeId && !route.chapterId ? await this.volumeEntry(route.volumeId) : null) ??
-      (last ? await this.library.resolve(last) : null) ??
-      (await this.volumeEntry(this.library.defaultVolume.id));
-    if (!pos) throw new Error('Nav: no chapters registered');
+      (volumeLink ? await this.volumeEntry(volumeLink) : null) ??
+      (resumable && !volumeLink ? await this.library.resolve(last) : null) ??
+      (volumeLink ? null : await this.volumeEntry(this.library.defaultVolume.id));
     ++this.seq;
-    return this.apply(pos, { replace: true, instant: opts.instant ?? true });
+    if (pos) return this.apply(pos, { replace: true, instant: opts.instant ?? true });
+    const lobby = await this.lobbyOf(route.chapterId ? { ...route, volumeId: null, chapterId: null } : route);
+    if (!lobby) throw new Error('Nav: no chapters registered');
+    return this.toLobby(lobby, { replace: true });
   }
 
   /** Address bar changed by the user (back/forward, typed hash). */
@@ -219,14 +290,20 @@ export class Nav {
       (route.volumeId && !route.chapterId ? await this.volumeEntry(route.volumeId) : null);
     if (seq !== this.seq) return;
     if (!pos) {
+      // `#/` or `#/<volume>` of a volume without chapters: its home screen alone
+      const lobby = await this.lobbyOf(route);
+      if (seq !== this.seq) return;
+      if (lobby) this.toLobby(lobby, { replace: true });
       // unknown target: restore the address of where we actually are
-      if (this.target) this.router.replace(this.target);
+      else if (this.lobbyVolume) this.toLobby(this.lobbyVolume, { replace: true });
+      else if (this.target) this.router.replace(this.target);
       return;
     }
     // legacy two-part links, volume-only links and unknown steps are rewritten to the full address
     if (formatHash(pos) !== formatHash(route)) this.router.replace(pos);
     this.target = pos;
     this.store.set({ target: pos });
+    this.setLobby(null);
     void this.runtime.request(pos, { instant: false });
   }
 }

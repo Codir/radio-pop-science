@@ -3,7 +3,7 @@
 //
 //   node tools/qa/chapter-check.mjs <chapter> [options]
 //
-//   <chapter> is a chapter id (`atom`: looked up in the default volume first, then in the others — so
+//   <chapter> is a chapter id (`atom`: looked up in the legacy volume `electricity`, then the default volume, then the others — so
 //   `_sandbox-ui` still works) or a full id `<volume>/<chapter>` (`electricity/atom`, `_demo/signal`).
 //
 // What it does:
@@ -66,6 +66,7 @@ import {
   parseSize,
   screenshot,
   thirdPartyRequests,
+  pickChapter,
 } from './lib.mjs';
 
 const args = parseArgs();
@@ -160,8 +161,8 @@ try {
   console.log(`[1/5] deep links — ${chapterId} @ ${sizes.map(([w, h]) => `${w}x${h}`).join(', ')} ${q}${zoom > 1 ? ` · zoom ${zoom * 100} % (DPR ${zoom})` : ''}`);
   report.gpu = await openApp(page, appUrl(base, { route: chapterId, q, freeze }));
   const chapters = await page.evaluate(() => window.__app.listChapters());
-  // chapters come in library order (default volume first), so a short id prefers the default volume
-  const chapter = chapters.find((c) => c.fullId === chapterId) ?? chapters.find((c) => c.id === chapterId);
+  // a short id means what it means in the address bar (legacy volume, then the default one, then the others)
+  const chapter = pickChapter(chapters, await page.evaluate(() => window.__app.listVolumes()), chapterId);
   if (!chapter) throw new Error(`chapter '${chapterId}' is not registered (known: ${chapters.map((c) => c.fullId).join(', ')})`);
   chapterId = chapter.fullId;
   report.chapterId = chapterId;

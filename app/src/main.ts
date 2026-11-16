@@ -68,6 +68,12 @@ async function start(): Promise<Engine> {
   if (flags.debug && flags.overlay)
     void import('@/engine/debug/overlay').then((m) => m.mountDebugOverlay(engine));
   await engine.nav.start();
+  if (engine.nav.lobby) {
+    // a volume without chapters opens on its home screen alone: no chapter transition will end the splash
+    offLoading();
+    offStart();
+    boot.hide(flags.freeze !== null);
+  }
   offError();
   canvas.focus({ preventScroll: true });
   return engine;

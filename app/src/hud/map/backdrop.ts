@@ -31,9 +31,17 @@ uniform vec3 uGrid;
 varying vec2 vUv;
 varying vec3 vScene;
 float hash( vec2 p ) { return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453 ); }
+// sine-free hash for the nebula: with sin() of a large argument, the same lattice corner hashed from two
+// neighbouring cells can round differently, and the noise showed hard-edged rectangles (visible on a bare
+// backdrop). This one amplifies rounding error far less, so shared corners agree and the noise stays continuous.
+float hashSmooth( vec2 p ) {
+  vec3 q = fract( vec3( p.xyx ) * 0.1031 );
+  q += dot( q, q.yzx + 33.33 );
+  return fract( ( q.x + q.y ) * q.z );
+}
 float noise( vec2 p ) {
   vec2 i = floor( p ); vec2 f = fract( p ); f = f * f * ( 3.0 - 2.0 * f );
-  return mix( mix( hash( i ), hash( i + vec2( 1.0, 0.0 ) ), f.x ), mix( hash( i + vec2( 0.0, 1.0 ) ), hash( i + vec2( 1.0, 1.0 ) ), f.x ), f.y );
+  return mix( mix( hashSmooth( i ), hashSmooth( i + vec2( 1.0, 0.0 ) ), f.x ), mix( hashSmooth( i + vec2( 0.0, 1.0 ) ), hashSmooth( i + vec2( 1.0, 1.0 ) ), f.x ), f.y );
 }
 void main() {
   vec2 p = vec2( ( vUv.x - 0.5 ) * uAspect, vUv.y - 0.5 );

@@ -9,7 +9,8 @@ import { createStepColumn } from './dock';
 import { createHeader } from './header';
 import { createLoading, installOnboarding } from './hints';
 import type { HudModule } from './context';
-import { createHome } from './home';
+import { createHome, type HomeStage } from './home';
+import { BackdropStage } from './home-stage';
 import { journeyFromManifests, loadJourney, wantsFixture, type Journey } from './journey';
 import { installKeys } from './keys';
 import { createLibrary } from './library';
@@ -51,15 +52,21 @@ export const plugin: EnginePlugin = {
     mountTooltips(h, h.surface.root);
     installKeys(h, (e) => h.overlayKey(e));
     let journeyMap: JourneyMap | null = null;
-    installUiDebug(h, () => journeyMap, () => ({
-      header: header.node,
-      spine: views.get(current)?.spine.node,
-      system: system.node,
-      column: column.node,
-      board: column.board.node,
-      navigator: navigator.node,
-      sheet: h.touch.sheet?.node,
-    }));
+    /** What the full-screen views of the volume on screen stand on: its journey map, or the lobby's backdrop. */
+    let stage: HomeStage | null = null;
+    installUiDebug(
+      h,
+      () => journeyMap,
+      () => ({
+        header: header.node,
+        spine: views.get(current)?.spine?.node,
+        system: system.node,
+        column: column.node,
+        board: column.board.node,
+        navigator: navigator.node,
+        sheet: h.touch.sheet?.node,
+      }),
+    );
     h.mount(createLoading(h));
     installOnboarding(h);
     h.register('settings', createSettings(h));
@@ -67,14 +74,16 @@ export const plugin: EnginePlugin = {
     h.register('menu', createMenu(h));
     h.register(
       'library',
-      createLibrary(h, () => journeyMap),
+      createLibrary(h, () => stage),
     );
 
     // Spine, journey map, home and glossary belong to a volume: one set per volume, built when the volume is
     // first entered and swapped in whenever the chapter on screen belongs to another volume.
     interface VolumeViews {
-      readonly spine: HudModule;
-      readonly map: JourneyMap;
+      /** Null for a volume without chapters (the lobby): no path to draw, its home stands on the bare backdrop. */
+      readonly spine: HudModule | null;
+      readonly map: JourneyMap | null;
+      readonly stage: HomeStage;
       readonly home: Overlay;
       readonly glossary: Overlay;
     }
@@ -82,6 +91,18 @@ export const plugin: EnginePlugin = {
     const pending = new Set<string>();
     let current = '';
     const build = (volume: VolumeManifest, journey: Journey): VolumeViews => {
+      if (journey.chapters.length === 0) {
+        const bare = new BackdropStage(h);
+        const v = {
+          spine: null,
+          map: null,
+          stage: bare,
+          home: createHome(h, journey, bare),
+          glossary: createGlossary(h, journey),
+        };
+        views.set(volume.id, v);
+        return v;
+      }
       const spine = createSpine(h, journey);
       const map = new JourneyMap(h, journey);
       // mounted once; while another volume is on screen the spine stays hidden and hears nothing
@@ -96,7 +117,13 @@ export const plugin: EnginePlugin = {
         },
         { side: 'left', extra: 6 },
       );
-      const v = { spine, map, home: createHome(h, map), glossary: createGlossary(h, journey) };
+      const v = {
+        spine,
+        map,
+        stage: map,
+        home: createHome(h, journey, map),
+        glossary: createGlossary(h, journey),
+      };
       views.set(volume.id, v);
       return v;
     };
@@ -108,7 +135,8 @@ export const plugin: EnginePlugin = {
     const show = (volume: VolumeManifest, v: VolumeViews): void => {
       shownFor = volume.id;
       journeyMap = v.map;
-      h.register('map', v.map);
+      stage = v.stage;
+      if (v.map) h.register('map', v.map);
       h.register('home', v.home);
       h.register('glossary', v.glossary);
       h.relayout();
@@ -148,6 +176,21 @@ export const plugin: EnginePlugin = {
       if (volume) prepare(volume);
     });
     h.onVolume(activate);
+    // the lobby (docs/VOLUMES.md §3): a volume without chapters is shown by its home screen alone, over its
+    // bare backdrop; leaving it hands the overlay names back to the volume of the chapter on screen
+    engine.nav.onLobby((volume, entered) => {
+      if (volume) {
+        current = volume.id;
+        const chapters = engine.library.registry(volume.id)?.chapters ?? [];
+        show(volume, views.get(volume.id) ?? build(volume, journeyFromManifests(volume, chapters)));
+        if (h.overlay !== 'home') h.open('home');
+        return;
+      }
+      // left for a step: the scene comes back; entered a volume: its home screen takes over in place
+      if (!entered) h.close();
+      // (a step of another volume brings its own views when its chapter arrives)
+      if (h.volume && engine.nav.position?.volumeId === h.volume.id) activate(h.volume);
+    });
     // `?hud=dom` (docs/HUD_DOM.md §16): every region with a registered DOM view is drawn by `@/hud-dom`; the
     // WebGL parts it takes over are handed to it (hybrid until the cut-over)
     if (engine.flags.hud === 'dom')
@@ -158,7 +201,7 @@ export const plugin: EnginePlugin = {
           navigator: navigator.node,
           column: column.node,
           board: column.board.node,
-          spine: () => views.get(current)?.spine.node ?? null,
+          spine: () => views.get(current)?.spine?.node ?? null,
         }),
       );
   },

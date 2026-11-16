@@ -1,0 +1,13 @@
+{
+  "id": "circuit",
+  "title": "Електричний струм",
+  "subtitle": "Від атома до лампочки",
+  "emptyNote": "Том у роботі — перші глави з’являться тут",
+  "order": 1,
+  "accent": "amber",
+  "emblem": "lightning",
+  "status": "published",
+  "axis": { "label": "Масштаб", "unit": "m", "hint": "Характерний масштаб розділу" },
+  "groups": [],
+  "journey": []
+}

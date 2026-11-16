@@ -149,6 +149,8 @@ export class Hud implements HudContext {
     engine.runtime.on('transitionStart', ({ duration }) => this.transition(duration));
     engine.input.on('action', (action) => {
       if (action === 'map') {
+        // the lobby's volume has no journey to show yet
+        if (engine.nav.lobby) return;
         if (this.overlay === 'map') this.close();
         else this.open('map');
       } else if (action === 'library') {
@@ -167,7 +169,8 @@ export class Hud implements HudContext {
   mount(mod: HudModule, inset?: InsetSpec, parent: UiNode = this.chrome): void {
     parent.add(mod.node);
     const n = mod.node;
-    const box = (): InsetBox | null => (n.visible && n.slot >= 0 ? { x: n.bx, y: n.by, w: n.bw, h: n.bh } : null);
+    const box = (): InsetBox | null =>
+      n.visible && n.slot >= 0 ? { x: n.bx, y: n.by, w: n.bw, h: n.bh } : null;
     this.add(mod, inset && { side: inset.side, box, extra: inset.extra ?? 0 });
   }
 
@@ -186,7 +189,11 @@ export class Hud implements HudContext {
       let x = el.offsetLeft;
       let y = el.offsetTop;
       // offsets are relative to the positioned ancestor (a layer at the viewport's origin, or a plate)
-      for (let p = el.offsetParent as HTMLElement | null; p && p.id !== 'kd-hud'; p = p.offsetParent as HTMLElement | null) {
+      for (
+        let p = el.offsetParent as HTMLElement | null;
+        p && p.id !== 'kd-hud';
+        p = p.offsetParent as HTMLElement | null
+      ) {
         x += p.offsetLeft;
         y += p.offsetTop;
       }
@@ -222,9 +229,17 @@ export class Hud implements HudContext {
     if (this.volume) fn(this.volume);
   }
 
-  /** Register (or replace) the view behind an overlay name; volume-bound views are swapped per volume. */
+  /**
+   * Register (or replace) the view behind an overlay name; volume-bound views are swapped per volume. A view
+   * replaced while it is open hands over in place (the home screen of one volume becomes the other's).
+   */
   register(name: OverlayName, overlay: Overlay): void {
+    const old = this.overlays.get(name);
     this.overlays.set(name, overlay);
+    if (old && old !== overlay && this.overlay === name) {
+      old.close();
+      overlay.open();
+    }
   }
 
   relayout(): void {
@@ -237,7 +252,10 @@ export class Hud implements HudContext {
     // touch shells: a message is never wider than the scene it sits over (it wraps instead)
     const sides = this.touch.insets?.(m) ?? { left: 0, right: 0 };
     const room = m.width - sides.left - sides.right - 16 - 68; // margins, icon and paddings of the pill
-    return this.toasts.push(text, { ...opts, maxWidth: Math.max(Math.min(opts?.maxWidth ?? 520, room), 160) });
+    return this.toasts.push(text, {
+      ...opts,
+      maxWidth: Math.max(Math.min(opts?.maxWidth ?? 520, room), 160),
+    });
   }
 
   open(name: OverlayName, arg?: unknown): void {
@@ -256,6 +274,12 @@ export class Hud implements HudContext {
   close(): boolean {
     const name = this.overlay;
     if (!name) return false;
+    // in the lobby no step of its volume is on screen: its home screen is the floor, never the scene behind
+    if (this.engine.nav.lobby) {
+      if (name === 'home') return false;
+      this.open('home');
+      return true;
+    }
     this.overlay = null;
     this.overlays.get(name)?.close();
     this.showChrome(true);
@@ -302,7 +326,16 @@ export class Hud implements HudContext {
   showChrome(on: boolean, instant = false): void {
     if (on === this.chromeShown && !instant) return;
     this.chromeShown = on;
-    // chapter-owned HUD objects (a chapter's own `hudSurface`, legacy sandbox panels) step aside as well
+    this.chapterHud(on);
+    for (const node of [this.chrome, this.world]) {
+      if (on) reveal(node, { dy: 0, scale: 1.015, instant });
+      else conceal(node, { dy: 0, scale: 1.015, instant });
+    }
+    this.relayout();
+  }
+
+  /** Chapter-owned HUD objects (a chapter's own `hudSurface`, legacy sandbox panels) step aside with the chrome. */
+  private chapterHud(on: boolean): void {
     for (const child of this.engine.hud.root.children) {
       if (child === this.surface || child.userData.hudView === true) continue;
       if (!on && child.visible) {
@@ -313,11 +346,6 @@ export class Hud implements HudContext {
         child.visible = true;
       }
     }
-    for (const node of [this.chrome, this.world]) {
-      if (on) reveal(node, { dy: 0, scale: 1.015, instant });
-      else conceal(node, { dy: 0, scale: 1.015, instant });
-    }
-    this.relayout();
   }
 
   /* ---------------------------------------------------------------------------------------------- */
@@ -378,6 +406,9 @@ export class Hud implements HudContext {
 
   private update(dt: number): void {
     if (this.layoutPending) this.layout();
+    // a chapter that loads behind a full-screen view (a volume entered from the lobby or the library) adds its
+    // own HUD objects after the chrome was hidden: they step aside as well
+    if (!this.chromeShown && this.overlay) this.chapterHud(false);
     for (const mod of this.modules) mod.update?.(dt);
   }
 
@@ -394,8 +425,7 @@ export class Hud implements HudContext {
       // centred over the scene: beside the side sheet in landscape, never over its tabs
       const sides = this.touch.insets?.(m) ?? { left: 0, right: 0 };
       this.toasts.float = { ax: 0.5, ay: 0, dx: (sides.left - sides.right) / 2, dy: touchTop(m) + 10 };
-    }
-    else if (this.toasts.float?.dy !== 96) this.toasts.float = { ax: 0.5, ay: 0, dy: 96 };
+    } else if (this.toasts.float?.dy !== 96) this.toasts.float = { ax: 0.5, ay: 0, dy: 96 };
     for (const mod of this.modules) mod.onLayout?.(m);
     this.surface.flush();
     // free area for the camera director: what the regions leave uncovered

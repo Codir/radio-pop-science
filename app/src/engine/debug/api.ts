@@ -55,7 +55,21 @@ export interface DebugApi {
   /** GPU-inclusive frame timing over `frames` frames. */
   measure(frames?: number): Promise<MeasureResult>;
   /** Registered volumes (dev volumes only with `?debug`). */
-  listVolumes(): { id: string; title: string; status: string; listed: boolean; loaded: boolean }[];
+  /**
+   * Registered volumes in library order; `role`: `default` (the front door), `aside` (behind its own button),
+   * `legacy` marks the owner of pre-library links and data (also set on the default when they are the same).
+   */
+  listVolumes(): {
+    id: string;
+    title: string;
+    status: string;
+    listed: boolean;
+    loaded: boolean;
+    role: 'default' | 'aside' | null;
+    legacy: boolean;
+  }[];
+  /** Id of the volume shown by its home screen alone (a volume without chapters, docs/VOLUMES.md §3), or null. */
+  lobby(): string | null;
   /** Chapters of the loaded volumes in library / journey order (with `?debug` every volume is loaded at boot). */
   listChapters(volumeId?: string): ChapterListing[];
   position(): { volumeId: string | null; chapterId: string | null; stepId: string | null };
@@ -203,7 +217,10 @@ export function installDebugApi(ready: Promise<Engine>): void {
         status: v.status,
         listed: v.listed,
         loaded: need().library.registry(v.id) !== undefined,
+        role: v.id === need().library.defaultVolume.id ? 'default' : v.aside !== null ? 'aside' : null,
+        legacy: v.id === need().library.legacyVolume.id,
       })),
+    lobby: () => need().nav.lobby?.id ?? null,
     listChapters: (volumeId) =>
       need()
         .library.volumes.filter((v) => volumeId === undefined || v.id === volumeId)

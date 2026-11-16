@@ -307,3 +307,32 @@ If a chapter document contradicts this file, this file wins and the document mus
        no fake depth; it moves only when it changes state (reveal, conceal, transitions). This settles Q3 (no tilt
        and no parallax) and applies to the current WebGL HUD as well (its pointer parallax is removed). 3D effects
        stay where things are really 3D: the scenes and the journey map's world.
+
+60. **Product vision, the pilot mini-volume and the model rule (owner, 2026-11-16).** Verbatim, in order:
+    a. **Reader and form:** «якщо робити з цього прям повноцінну інтерактивну енциклопедію, нам потрібна чітка і
+       зрозуміла структура. сервіс має бути розрахований в першу чергу на дорослу людину, котра хоче дізнатись як
+       працюють ті чи інші речі, як влаштований всесвіт і усе що нас оточує. тому матеріал має бути дуже
+       поступовим, плавним і структурованим.»
+    b. **A new volume, polished:** «давай побудуємо новий том і будемо його дуже ретельно полірувати.»
+    c. **The mini-volume:** «а як тобі ідея міні-тому про електричний струм? базово шлях від атому і електрона до
+       працюючого ланцюжка з батарейкою і лампочкою», then: «поки що давай зосередимось тільки на цьому міні томі.
+       … приступай. поки що зроби щоб готовий матеріал по тому з електроенергії був доступний по окремій кнопці
+       десь окремо, а основний фокус зараз на пілотному міні-томі з батарейкою і лампочкою, котрий ми відполіруємо
+       і візьмемо за еталон».
+    d. **Models (supersedes §59 f and every earlier model rule):** «для планування і генерації моделей і візуалу ти
+       можеш використовувати fable 5.2 high effort. А для реалізації усього іншого opus 5.5 high. Мені дуже
+       важлива якість матеріалу і картинки.»
+    e. **Orchestrator's reading (not the owner's words):** the mini-volume has the id `circuit` and the working
+       title «Електричний струм · Від атома до лампочки»; direct current only (no magnetism, alternating current
+       or semiconductors on its path); it is the reference («еталон») for the structure standard
+       `docs/VOLUME_STRUCTURE.md` (path, branches, practicums, reference; proposal in
+       `docs/ideas/encyclopedia-structure.md`), which stays a draft until the owner has seen it applied. All work
+       on the chapters of `electricity` and on the plan of `computing` is paused; the built `electricity` volume
+       stays reachable through a separate, clearly secondary button. One chapter is polished to the reference
+       level before the next is built.
+    f. **Fit the mini-volume to its real task (owner, same day, verbatim):** «тільки ж адаптуй цей міні-том під
+       реальну задачу. я гадаю, що для пояснення базових принципів саме на прикладі батарейки і лампочки нам не
+       потрібна деталізація про кварки і піони. чи потрібна?» Orchestrator's answer: not needed. **Necessity
+       test** for the path of any volume: a step, term or scene is on the path only if the volume's finale cannot
+       be explained without it; the rest goes to branches, «Докладніше» or other volumes. For `circuit`: nothing
+       below the nucleus; no material is carried over from the built chapters merely because it exists.

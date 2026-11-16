@@ -18,7 +18,7 @@ const volumeAliases = Object.fromEntries(
 );
 
 /**
- * The name on the splash screen and the browser tab (`%LIBRARY_TITLE%` in index.html): the umbrella title of
+ * The name on the splash screen and the browser tab (`%LIBRARY_TITLE%` in index.html; also `%LIBRARY_SUBTITLE%`, `%LIBRARY_DESCRIPTION%`): the umbrella title of
  * `src/volumes/library.json`, or — while it is null — the headline of the default volume (`volume.json`).
  * The names live in those two files only.
  */
@@ -27,8 +27,19 @@ function libraryTitle(): Plugin {
   const library = json('volumes/library.json');
   const volume = json(`volumes/${String(library.defaultVolume)}/volume.json`);
   const title = String(library.title ?? (volume.headline === 'subtitle' ? volume.subtitle : volume.title));
-  const escaped = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return { name: 'library-title', transformIndexHtml: (html) => html.replaceAll('%LIBRARY_TITLE%', escaped) };
+  // the splash's second line is the default volume's other name; the page description names both
+  const subtitle = String(volume.headline === 'subtitle' ? volume.title : volume.subtitle);
+  const description = `${String(volume.title)}. ${String(volume.subtitle)}.`;
+  const esc = (t: string): string =>
+    t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return {
+    name: 'library-title',
+    transformIndexHtml: (html) =>
+      html
+        .replaceAll('%LIBRARY_TITLE%', esc(title))
+        .replaceAll('%LIBRARY_DESCRIPTION%', esc(description))
+        .replaceAll('%LIBRARY_SUBTITLE%', esc(subtitle)),
+  };
 }
 
 export default defineConfig({

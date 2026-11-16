@@ -1,4 +1,5 @@
 {
   "title": null,
-  "defaultVolume": "electricity"
+  "defaultVolume": "circuit",
+  "legacyVolume": "electricity"
 }

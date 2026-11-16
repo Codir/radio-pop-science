@@ -27,7 +27,7 @@ const chaptersOf = (volume: string): ChapterManifest[] =>
 
 describe('volumes in the repository', () => {
   it('has the volumes this test knows about', () => {
-    expect(volumes.map((v) => v.dir).sort()).toEqual(['_demo', '_dev', 'electricity']);
+    expect(volumes.map((v) => v.dir).sort()).toEqual(['_demo', '_dev', 'circuit', 'electricity']);
     expect(Object.keys(IDENTITIES)).toHaveLength(volumes.length);
   });
 
@@ -73,13 +73,32 @@ describe('volumes in the repository', () => {
   });
 
   it('library.json names a published default volume whose chapters do not shadow a volume id', () => {
-    const config = json<{ title: string | null; defaultVolume: string }>('src/volumes/library.json');
+    const config = json<{ title: string | null; defaultVolume: string; legacyVolume?: string }>(
+      'src/volumes/library.json',
+    );
     const def = volumes.find((v) => v.dir === config.defaultVolume);
     expect(def?.manifest.status).toBe('published');
-    // `#/a/b` reads as volume/chapter when `a` is a volume: a default-volume chapter must not have such an id
+    // the front door is a volume of the main flow, never one kept aside
+    expect(def?.manifest.aside).toBeNull();
+    const legacy = volumes.find((v) => v.dir === (config.legacyVolume ?? config.defaultVolume));
+    expect(legacy?.manifest.status).toBe('published');
+    // `#/a/b` reads as volume/chapter when `a` is a volume: a chapter of the default or the legacy volume (the
+    // two that short links reach first) must not have such an id
     const ids = new Set(volumes.map((v) => v.dir));
-    const planned = def!.manifest.journey.planned.map((c) => c.id);
-    expect(planned.filter((id) => ids.has(id))).toEqual([]);
+    for (const v of [def!, legacy!]) {
+      const planned = v.manifest.journey.planned.map((c) => c.id);
+      expect(planned.filter((id) => ids.has(id))).toEqual([]);
+    }
+  });
+
+  it('the pilot volume is the front door; volume 1 is kept aside behind its button (DECISIONS §60)', () => {
+    const config = json<{ defaultVolume: string; legacyVolume?: string }>('src/volumes/library.json');
+    expect(config).toMatchObject({ defaultVolume: 'circuit', legacyVolume: 'electricity' });
+    const el = volumes.find((v) => v.dir === 'electricity')!.manifest;
+    expect(el.aside).toBe('Попередній том: Електроенергія (чернетка)');
+    expect(el.listed).toBe(false);
+    const circuit = volumes.find((v) => v.dir === 'circuit')!.manifest;
+    expect(circuit.emptyNote.length).toBeGreaterThan(0);
   });
 
   it('volume 1 keeps its names in volume.json only: the home headline is the subtitle', () => {
@@ -123,6 +142,8 @@ describe('defineVolume', () => {
     const v = defineVolume(identity, spec);
     expect(v.headline).toBe('Радіо');
     expect(v.listed).toBe(true);
+    expect(v.aside).toBeNull();
+    expect(v.emptyNote).toBe('');
     expect(v.emblem).toBe('book');
     expect(v.theme.accent).toBe('violet');
     expect(v.glossary.scope).toBe('volume');
@@ -147,7 +168,11 @@ describe('defineVolume', () => {
     expect(bad({ status: 'dev' })).toThrow(/dev volume/);
     expect(bad({ id: '_radio' })).toThrow(/dev volume/);
     expect(bad({ accent: 'mauve' })).toThrow(/accent/);
-    expect(bad({ groups: [] })).toThrow(/at least one group/);
+    expect(bad({ groups: [] })).toThrow(/needs a group/);
+    // a skeleton volume (nothing planned yet) may have no groups
+    expect(bad({ groups: [], journey: [] })).not.toThrow();
+    expect(bad({ aside: { label: '' }, status: 'published' })).toThrow(/aside/);
+    expect(bad({ aside: { label: 'Чернетка' } })).toThrow(/aside/); // a draft cannot be an aside volume
     expect(bad({ journey: [{ id: 'wave', group: 'nope' }] })).toThrow(/unknown group/);
     expect(bad({ journey: [{ id: 'wave', group: 'basics', parent: 'nope' }] })).toThrow(/unknown parent/);
     expect(bad({ headline: 'tagline' })).toThrow(/headline/);
