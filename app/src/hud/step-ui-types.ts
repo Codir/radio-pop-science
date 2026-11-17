@@ -283,5 +283,13 @@ export interface StepUiSpec {
    * no text to read mid-motion): the plate stays as a calm empty plate, then title and text fade in on the engine
    * clock; hint timers start then. Per visit; reduced motion shows the content at once (DOM interface).
    */
-  panel?: { hiddenUntil: When };
+  panel?: {
+    hiddenUntil?: When;
+    /**
+     * Path format, the chapter's last step: the closing card («Що ми тепер знаємо») takes the panel's place, with a
+     * calm cross-fade, each time this starts to hold (e.g. the step's final motion has come to rest). The card has
+     * a way back to the step; it comes again only after this has stopped holding and holds anew (DOM interface).
+     */
+    closingWhen?: When;
+  };
 }

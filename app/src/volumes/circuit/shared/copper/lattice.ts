@@ -4,12 +4,22 @@
  * makes them tremble more — chapters 5 and 6), pop in one by one (`wire/shared`) and answer a touch
  * (`wire/atoms`). The atom at the origin is drawn apart from the swarm: the dive continues into it.
  */
-import { Group, type Vector3 } from 'three';
+import { Group, type Color, type Vector3 } from 'three';
 import { damp } from '@/engine/api';
 import { createOrbs, ORB_STYLES, type Orbs, type OrbStyle } from '@/fx';
 import { col } from '@/style';
 import { createHaze, type Haze } from './haze';
-import { ATOM_R, NUCLEUS_R, clamp01, latticeSites, mix, smooth, type Site } from './layout';
+import {
+  ATOM_R,
+  COPPER_TOP,
+  NUCLEUS_R,
+  PITCH,
+  clamp01,
+  latticeSites,
+  mix,
+  smooth,
+  type Site,
+} from './layout';
 
 /** Matte toy sphere: no gloss, a soft rim, no sign (signs arrive with `charge/signs`). */
 const ATOM_STYLE: OrbStyle = {
@@ -35,6 +45,16 @@ export interface Lattice {
   tremble: number;
   /** 0…1: heat — stronger trembling and an orange rim (chapters 5, 6). */
   heat: number;
+  /**
+   * 0…1, default 0: the atoms of the top row (under `COPPER_TOP`) glow a little `coral` — their charge is not
+   * balanced by electrons around them (`battery/poles`, the plus seen in the lens).
+   */
+  edge: number;
+  /**
+   * The atoms' own colour (default `coral`: copper). Change it in place for another metal — `lamp/story` gives the
+   * filament's tungsten a cooler shade; set it back with `.copy(col('coral'))`.
+   */
+  color: Color;
   /** 0…1 presence of the whole lattice (dithered; the dive from the wire core switches it). */
   fade: number;
   /** 0…1: the hero's solid ball shrinks to the size of its nucleus (the dive into the atom: what looked like a
@@ -56,6 +76,11 @@ export interface Lattice {
   siteAt(point: Vector3): number;
   /** A touch: the atom swells and lights up for a moment. */
   touch(site: number): void;
+  /**
+   * A hit (`resistance/*`, VISUAL §6 «Удар»): the atom flashes `orange` for a moment (`flash` 0…1) and trembles
+   * harder for a while (`shake`: extra amplitude, units). Both fade by themselves; nothing happens until called.
+   */
+  kick(site: number, flash: number, shake: number): void;
   /** Position of atom `site` this frame (trembling included), local units. */
   positionOf(site: number, out: Vector3): Vector3;
   /** Presence 0…1 of atom `site` (revealed and popped in). */
@@ -85,10 +110,14 @@ export function createLattice(): Lattice {
 
   const pop = new Float32Array(n); // 0…1 eased presence
   const pulse = new Float32Array(n); // touch feedback, decays
+  const flash = new Float32Array(n); // a hit's orange flash, decays fast
+  const shake = new Float32Array(n); // a hit's extra trembling (units), decays slower
+  let kicked = false;
   const now = sites.map((s) => s.p.clone());
   const base = col('coral');
   const far = col('bg.indigo').lerp(col('coral.dark'), 0.45);
   const hot = col('orange');
+  const glowTint = col('coral').lerp(col('white'), 0.35);
   const tint = base.clone();
   const lattice: Lattice = {
     group,
@@ -99,6 +128,8 @@ export function createLattice(): Lattice {
     reveal: n,
     tremble: 0.05,
     heat: 0,
+    edge: 0,
+    color: base,
     fade: 1,
     heroShrink: 0,
     others: 1,
@@ -107,6 +138,12 @@ export function createLattice(): Lattice {
     selected: -1,
     heroSite: 0,
     touch: (site) => (pulse[site] = 1),
+    kick(site, f, k) {
+      if (site < 0 || site >= n) return;
+      flash[site] = Math.max(flash[site]!, f);
+      shake[site] = Math.max(shake[site]!, k);
+      kicked = true;
+    },
     siteAt(point) {
       let best = -1;
       let d = ATOM_R * 1.25;
@@ -137,9 +174,18 @@ export function createLattice(): Lattice {
           backOut(pop[i]!) * (1 + 0.1 * glowing + 0.08 * Math.sin(Math.PI * Math.min(glowing * 1.4, 1)));
         // three incommensurate sines per atom: a tremble that never repeats visibly and needs no state
         const f = 5.3 + (i % 7) * 0.37;
+        let jolt = 0;
+        let hit = 0;
+        if (kicked) {
+          // a hit: a quick orange flash (≈ 0.5 s) and a harder, faster trembling that settles in about a second
+          flash[i] = flash[i]! * Math.exp(-dt / 0.24);
+          shake[i] = shake[i]! * Math.exp(-dt / 0.45);
+          jolt = shake[i]!;
+          hit = flash[i]!;
+        }
         const p = now[i]!.set(
-          s.p.x + amp * Math.sin(t * f + i * 1.7),
-          s.p.y + amp * Math.sin(t * f * 1.13 + i * 2.3),
+          s.p.x + amp * Math.sin(t * f + i * 1.7) + jolt * Math.sin(t * 23 + i * 1.3),
+          s.p.y + amp * Math.sin(t * f * 1.13 + i * 2.3) + jolt * Math.sin(t * 19.7 + i * 2.9),
           s.p.z + amp * Math.sin(t * f * 0.91 + i * 0.9),
         );
         // depth cue that does not depend on the host chapter's fog: planes behind lose light and saturation
@@ -148,7 +194,12 @@ export function createLattice(): Lattice {
           .copy(base)
           .lerp(far, sink)
           .lerp(hot, 0.35 * lattice.heat * (1 - sink));
-        const light = mix(1, 0.56, sink) + 0.5 * pulse[i]!;
+        // the top row of a plane lights up with `edge`, breathing slowly, each atom in its own phase
+        const rim =
+          s.p.y > COPPER_TOP - PITCH * 0.6 ? lattice.edge * (0.82 + 0.18 * Math.sin(t * 1.9 + i * 1.3)) : 0;
+        if (rim > 0) tint.lerp(glowTint, 0.45 * rim);
+        if (hit > 0.002) tint.lerp(hot, Math.min(1.15 * hit, 1));
+        const light = mix(1, 0.56, sink) + 0.5 * pulse[i]! + 1.0 * rim * (1 - sink) + 0.22 * hit;
         if (i === heroSite) {
           // the hero does not vanish: its ball shrinks into its own nucleus (atom.ts takes over at that size)
           const shrink = mix(1, NUCLEUS_R / ATOM_R, smooth(0, 1, lattice.heroShrink));

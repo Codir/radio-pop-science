@@ -1,0 +1,46 @@
+/**
+ * The contract between `scene.ts` and the step modules (`steps/NN-<id>.ts`).
+ *
+ * A step factory gets the chapter, registers what it needs (input handlers, probes) and returns its stage state
+ * (`spec`), its step UI and its per-frame hook. Steps share the stand (`stand.ts`: the world and the chapter's own
+ * props, each of which travels between its states instead of jumping) and the session memory of reached goals.
+ */
+import type { ChapterContext, StepInfo, StepSpec } from '@/engine/api';
+import type { StepUiApi, StepUiSpec } from '@/hud';
+import type { FlowStand } from './stand';
+
+/** Step ids in script order; `__tests__/manifest.test.ts` keeps them equal to the generated manifest. */
+export const STEP_IDS = ['connect', 'count', 'same', 'loop', 'pump', 'snail', 'together', 'push'] as const;
+export type StepId = (typeof STEP_IDS)[number];
+
+export interface Chapter {
+  ctx: ChapterContext;
+  ui: StepUiApi<StepId>;
+  stand: FlowStand;
+  /** The goal of the step is reached (this session): the panel shows the takeaway; captions «→ X» appear. */
+  reached(step: StepId): boolean;
+  reach(step: StepId): void;
+  /** The step on screen now is `step`. */
+  here(step: StepId): boolean;
+}
+
+export interface StepModule {
+  /** The declarative stage state of the step (camera, world params). */
+  spec: StepSpec;
+  /** Controls, callouts and the goal of the step. */
+  ui: StepUiSpec;
+  /** After the stage applied the step (also on deep links: honour `info.instant`). */
+  enter?(info: StepInfo): void;
+  leave?(): void;
+  /** Every frame while the step is on screen, before the world updates. */
+  update?(dt: number, t: number): void;
+}
+
+export type StepFactory = (chapter: Chapter) => StepModule;
+
+/** Goals reached in this session (module state survives a rebuild of the scene). */
+const REACHED = new Set<StepId>();
+export const sessionGoals = {
+  has: (s: StepId): boolean => REACHED.has(s),
+  add: (s: StepId): void => void REACHED.add(s),
+};

@@ -30,9 +30,11 @@ import {
   press,
   read,
   scrub,
+  sceneY,
   shown,
   thumbAt,
 } from './helpers.mjs';
+import { nextChapter } from '../../../../../../../tools/qa/next-chapter.mjs';
 
 const args = parseArgs();
 const [width, height] = parseSize(args.size, [1280, 720]);
@@ -199,9 +201,14 @@ const steps = {
     await snap('restless');
   },
   async plastic() {
-    const c = { x: width * 0.38, y: height * 0.6 };
-    let release = await dragFrom(page, c, 0, -0.5);
-    await release(2.6);
+    // half a screen up — in strokes that start on the scene: in a narrow window the step sheet covers its lower part
+    const c = { x: width * 0.38, y: await sceneY(page, width * 0.38, height * 0.6) };
+    const strokes = Math.ceil((0.5 * height) / Math.max(c.y - 0.08 * height, 1));
+    let release;
+    for (let i = 0; i < strokes; i++) {
+      release = await dragFrom(page, c, 0, -0.5 / strokes);
+      await release(i === strokes - 1 ? 2.6 : 0.3);
+    }
     check('the lens is over the plastic', (await read(page, 'plastic')).onPlastic);
     release = await dragFrom(page, { x: c.x, y: height * 0.25 }, 0, 0.55);
     await release(0.6);
@@ -214,8 +221,18 @@ const steps = {
       (await read(page, 'wire')).deep < 0.01,
       (await read(page, 'wire')).deep,
     );
-    await press(page, '.sp .pager button:last-child');
-    check('closing card after the last step', await shown(page, '[data-ui="path-closing"]'));
+    // the chapter's end (tools/qa/next-chapter.mjs): «Далі» brings the closing card, «Далі» again the next chapter
+    const border = await nextChapter(page, (s) => advance(page, s));
+    check(
+      'closing card after the last step: its three lines and the bridge',
+      border.card.shown && border.card.lines === 3 && border.card.bridge.length > 0,
+      `${border.card.lines} lines`,
+    );
+    check(
+      '«Далі» on the card: the next chapter',
+      border.landed.chapterId === 'charge',
+      `${border.landed.chapterId}/${border.landed.stepId}`,
+    );
   },
 };
 

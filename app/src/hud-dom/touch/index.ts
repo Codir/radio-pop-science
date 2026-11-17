@@ -13,6 +13,7 @@
  */
 import type { HudMetrics } from '@/engine/api';
 import { TOUCH, sideWidth } from '@/hud/model/sheet';
+import { pathEnd } from '@/hud/path-end';
 import { UI } from '@/ui3d';
 import type { DomHud } from '../core/context';
 import { setClass, setStyle } from '../core/dom';
@@ -27,8 +28,10 @@ function scrolls(target: EventTarget | null, root: Element): boolean {
   for (let p = target instanceof Element ? target : null; p && p !== root; p = p.parentElement) {
     if (!(p instanceof HTMLElement)) continue;
     const cs = getComputedStyle(p);
-    if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && p.scrollHeight > p.clientHeight + 1) return true;
-    if ((cs.overflowX === 'auto' || cs.overflowX === 'scroll') && p.scrollWidth > p.clientWidth + 1) return true;
+    if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && p.scrollHeight > p.clientHeight + 1)
+      return true;
+    if ((cs.overflowX === 'auto' || cs.overflowX === 'scroll') && p.scrollWidth > p.clientWidth + 1)
+      return true;
   }
   return false;
 }
@@ -67,7 +70,8 @@ export function mount(dom: DomHud): void {
     const d = hud.engine.device;
     // «Версія для комп'ютера»: the desktop shell on a device that would get a touch shell (`Settings.deskShell`)
     setClass(root, 'kd-desk-forced', !touch && d.formFactor !== 'desktop');
-    for (const side of ['top', 'right', 'bottom', 'left'] as const) setStyle(root, `--safe-${side}`, `${d.safeArea[side]}px`);
+    for (const side of ['top', 'right', 'bottom', 'left'] as const)
+      setStyle(root, `--safe-${side}`, `${d.safeArea[side]}px`);
     setStyle(root, '--kb', `${d.keyboard}px`);
     if (!touch) return;
     const inset = sheet.insets(m);
@@ -79,16 +83,33 @@ export function mount(dom: DomHud): void {
     setStyle(root, '--tch-load', (inset.bottom + 14).toFixed(2));
     // the navigation: a row under the bottom sheet (its width), or a pill centred in the scene beside the side sheet
     const sheetW = Math.min(m.width, TOUCH.sheetMaxW);
-    setStyle(root, '--tch-nav-left', (m.shell === 'side' ? (m.width - inset.right) / 2 : (m.width - sheetW) / 2).toFixed(2));
-    setStyle(root, '--tch-nav-w', (m.shell === 'side' ? Math.min(sideWidth(m), m.width - inset.right - 32) : sheetW).toFixed(2));
+    setStyle(
+      root,
+      '--tch-nav-left',
+      (m.shell === 'side' ? (m.width - inset.right) / 2 : (m.width - sheetW) / 2).toFixed(2),
+    );
+    setStyle(
+      root,
+      '--tch-nav-w',
+      (m.shell === 'side' ? Math.min(sideWidth(m), m.width - inset.right - 32) : sheetW).toFixed(2),
+    );
   };
 
+  let endShown = false;
   dom.claim('sheet');
   dom.region(
     {
       el: sheet.el,
       onStep: (_id, instant) => {
         if (hud.metrics.shell !== 'desk') sheet.enterStep(instant);
+      },
+      update: () => {
+        // a chapter's closing card is for reading: the sheet rises to show it, and comes back with the step
+        if (pathEnd.shown === endShown) return;
+        endShown = pathEnd.shown;
+        if (hud.metrics.shell === 'desk') return;
+        sheet.setTab('text');
+        sheet.setSnap(endShown ? 'full' : 'half');
       },
       onLayout: (m) => {
         // the column (`hud-dom/dock`, earlier in the pass) took its parts back on the desktop shell
@@ -97,7 +118,8 @@ export function mount(dom: DomHud): void {
           hud.touch.insets = (metrics) => sheet.insets(metrics);
           hud.touch.sheet = sheet;
           // a hotspot's card (hud/annotations.ts): the DOM sheet draws it from its copy
-          hud.touch.card = (_node, onDismiss, opts) => (opts?.text ? sheet.showCard(opts.text, onDismiss) : onDismiss);
+          hud.touch.card = (_node, onDismiss, opts) =>
+            opts?.text ? sheet.showCard(opts.text, onDismiss) : onDismiss;
         }
         shellVars(m);
       },

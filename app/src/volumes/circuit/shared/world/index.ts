@@ -69,6 +69,11 @@ export interface CircuitWorld {
   lensPose: LensPose | null;
   /** Share of the speed of the electrons' common shift at full glow (default 0.05; 0 hides it). */
   drift: number;
+  /**
+   * Called every frame right after the stand has laid the lens (and `lensPose`), before the lens window is placed:
+   * a chapter that carries the lens itself lays it here, so the window opens where the lens is. Default none.
+   */
+  afterLens: ((dt: number) => void) | null;
   /** A registered param's live value (`deep`, `lens`, `closed`, …). */
   value(name: WorldParam): number;
   /** True while a flight between floors is under way (input that changes the floor should wait). */
@@ -161,6 +166,7 @@ export function mountWorld(ctx: ChapterContext, opts: WorldOptions = {}): Circui
     window: win,
     lensPose: null,
     drift: opts.drift ?? 0.05,
+    afterLens: null,
     get deep() {
       return params.deep.value;
     },
@@ -255,6 +261,7 @@ export function mountWorld(ctx: ChapterContext, opts: WorldOptions = {}): Circui
         const k = poseWeight * poseWeight * (3 - 2 * poseWeight);
         stand.tools.lens.setPose(stand.tools.poses.overWire, lastPose!, k);
       }
+      world.afterLens?.(dt);
       apply();
       copper.lamp = stand.glow;
       copper.sim.drift = -world.drift * stand.glow;
@@ -273,7 +280,12 @@ export function mountWorld(ctx: ChapterContext, opts: WorldOptions = {}): Circui
     // the window shows «ряди» inside the resting lens, only on the stand and never during the dissolve
     // and only once the camera is out of the ring (at the lens shot or beyond): it opens like an iris from there
     const want = params.deep.value < 0.005 && !mix.copperShown ? params.window.value : 0;
-    iris = want > iris ? Math.min(want, iris + frameDt * 1.6) : want;
+    iris =
+      want > iris
+        ? Math.min(want, iris + frameDt * 1.6)
+        : win.closeSeconds > 0
+          ? Math.max(want, iris - frameDt / win.closeSeconds)
+          : want;
     const open = iris;
     const inWindow = open > 0.002;
     if (inWindow !== windowMode) {

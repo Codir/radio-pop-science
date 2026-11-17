@@ -277,6 +277,22 @@
   padding: calc(8 * var(--u)) calc(12 * var(--u));
   border-radius: calc(34 * var(--u));
 }
+/* a desktop bar never leaves its room (F-narrow-nav): the dots are fitted first (nav-fit.ts); past their minimum
+   the «Далі» label is cut with «…». The room shrinks with the glide's shift, so the bar stays inside meanwhile. */
+.kd-shell-desk .nav {
+  width: max-content;
+  max-width: calc(100% - 2 * var(--safe) + 2 * var(--shift, 0px));
+}
+.kd-shell-desk .nav > .btn.primary {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.kd-shell-desk .nav > .btn.primary > span {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* «Далі» label: its width eases when the text changes (nav-glide.ts); the text is clipped sideways meanwhile */
 .nav .btn.primary > span {
   flex: none;
@@ -527,14 +543,17 @@
 .path-card > .btn {
   align-self: flex-start;
 }
-.path-now {
-  display: flex;
-  flex-direction: column;
-  gap: calc(8 * var(--u));
+.kd-root .path-now {
+  /* a numbered list: the root's reset takes list styles away (and flex items would lose their numbers) */
+  display: block;
+  list-style: decimal outside;
   margin: 0;
   padding-left: 1.4em;
   font-size: calc(var(--t-body) * var(--u));
   line-height: 1.5;
+}
+.path-now li + li {
+  margin-top: calc(8 * var(--u));
 }
 .path-now li::marker {
   color: var(--accent);
@@ -546,4 +565,11 @@
 .path-end {
   margin: 0;
   color: var(--c-steel);
+}
+
+/* the volume's last card: the journey map and «start over», side by side (wrapping on a narrow panel) */
+.path-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(8 * var(--u));
 }

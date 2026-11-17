@@ -96,10 +96,13 @@ export function keepNear(
   bounce(dir, e, nx, ny, nz);
 }
 
-/** The copper ends at its top surface: electrons turn back there and never enter the plastic. */
-export function keepInCopper(pos: Float32Array, dir: Float32Array, e: number): void {
+/**
+ * The copper ends at its top surface: electrons turn back there and never enter the plastic. `below` lowers that
+ * ceiling (units; default 0): a band under the surface the electron does not enter (a pole that lacks electrons).
+ */
+export function keepInCopper(pos: Float32Array, dir: Float32Array, e: number, below = 0): void {
   const o = 3 * e;
-  const top = COPPER_TOP - ATOM_R * 0.2;
+  const top = COPPER_TOP - ATOM_R * 0.2 - below;
   if (pos[o + 1]! <= top) return;
   pos[o + 1] = top;
   bounce(dir, e, 0, -1, 0);

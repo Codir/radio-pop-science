@@ -77,7 +77,18 @@ export function domSlider(c: SliderSpec, value: number, label: string, onChange:
     setClass(strip, 'laid', true);
     setClass(strip, 'two', places.some((p) => p.row === 1));
   };
-  const sizes = strip && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fitMarks) : null;
+  // laid out on the next frame, not inside the observer's callback: a second row of names changes the strip's own
+  // size, which inside the callback is the browser's «ResizeObserver loop» error; one pending fit at a time
+  let fitPending = false;
+  const queueFit = (): void => {
+    if (fitPending) return;
+    fitPending = true;
+    requestAnimationFrame(() => {
+      fitPending = false;
+      fitMarks();
+    });
+  };
+  const sizes = strip && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(queueFit) : null;
 
   /** Tick marks and mark captions follow the range (`ui.patch` may change it). */
   const placeMarks = (): void => {

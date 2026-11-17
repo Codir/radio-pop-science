@@ -13,17 +13,21 @@ import {
   Color,
   FrontSide,
   type Group,
+  type Material,
   Mesh,
   MeshBasicMaterial,
   Object3D,
   PlaneGeometry,
   ShaderMaterial,
   TubeGeometry,
+  type Vector2,
   Vector3,
 } from 'three';
 import { Builder, G } from '@/kit';
 import { K, col, type KGlassMaterial, type KGlowMaterial } from '@/style';
+import { supportPath } from './bulb-close';
 import { LAMP } from './layout';
+import { createLampCloseUp, type LampCloseUp } from './lamp-view';
 import { sheath } from './materials';
 
 /** Local heights: top of the thread, centre of the globe, the filament. */
@@ -59,6 +63,8 @@ export interface BulbModel {
   /** The coil mesh (close-ups, hotspots). */
   coil: Mesh;
   glass: Mesh;
+  /** The close-up level: fine coil, leads to the contact and the thread, the cut, the path, anchors. */
+  close: LampCloseUp;
 }
 
 function coilGeometry(turns: number, radius: number, wire: number): TubeGeometry {
@@ -191,15 +197,7 @@ export function createBulb(B: BulbDims = BULB): BulbModel {
     { seg: 32, c: 'ink' },
   );
   // the two support wires rising from the glass stem bead (the bead itself is lit glass, added below)
-  for (const s of [-1, 1] as const) {
-    const path = [
-      new Vector3(s * 0.035, 0.6, 0),
-      new Vector3(s * 0.05, 0.8, 0),
-      new Vector3(s * (B.span + 0.012), B.filamentY - 0.06, 0),
-      new Vector3(s * (B.span + 0.004), B.filamentY + 0.02, 0),
-    ];
-    b.tube(G.roundPath(path, 0.08, 5), 0.011, { seg: 8, slot: 'metal', c: 'steel' });
-  }
+  for (const s of [-1, 1] as const) b.tube(supportPath(B, s), 0.011, { seg: 8, slot: 'metal', c: 'steel' });
   // globe: neck out of the base, sphere above
   const R = B.globe;
   // the neck starts inside the collar, under its rolled edge, and flares out above it
@@ -286,7 +284,23 @@ export function createBulb(B: BulbDims = BULB): BulbModel {
   glare.name = 'bulb:glare';
   model.group.add(coil, filament, halo, glare);
   const haloMaterial = halo.material as KGlowMaterial;
+  const close = createLampCloseUp(B, {
+    group: model.group,
+    coarse: coil,
+    cutMaterials: [
+      model.mats.get('metal'),
+      model.mats.get('toon'),
+      glassMaterial,
+      bead.material as Material,
+      (glass.getObjectByName('bulb:glass-depth') as Mesh).material as Material,
+    ],
+    shells: [model.mats.get('metal'), model.mats.get('toon')],
+  });
+  const fineMaterial = close.fineMaterial;
+  const fineTint = new Color();
+  const fineWarm = col('yellow.light');
   return {
+    close,
     group: model.group,
     filament,
     coil,
@@ -296,10 +310,20 @@ export function createBulb(B: BulbDims = BULB): BulbModel {
       filamentMaterial.intensity = Math.max(emission, 0.55);
       // cold coil: the vertex colours' cooling must not darken an unlit wire
       filamentMaterial.whiten = 0.15 + 0.5 * glow;
+      // close up the coil keeps its colour and its turns: less whitening, a tighter bloom
+      // at the coil's own distance (`close.near` → 1) the hot coil must keep its turns: less light into the bloom,
+      // less whitening, and a darker limb on each turn (the gaps between turns stay a shade darker than the wire)
+      const near = close.near;
+      // close up the white-hot coil keeps a touch of yellow (VISUAL §5.3: «біла з yellow-ореолом»)
+      fineMaterial.setColor(fineTint.copy(color).lerp(fineWarm, 0.28 * near * glow));
+      fineMaterial.intensity = Math.max(emission * 0.45 * (1 - 0.22 * near), 0.55);
+      fineMaterial.whiten = (0.1 + 0.3 * glow) * (1 - 0.35 * near);
+      (fineMaterial.uniforms.uFalloff!.value as Vector2).set(0.5 + 1.3 * near * glow, 0.8 - 0.38 * near * glow);
       haloMaterial.color.copy(color);
       haloMaterial.intensity = 0.05 * glow ** 2;
       (glareMaterial.uniforms.uColor!.value as Color).copy(color).lerp(glareWarm, 0.45);
-      glareMaterial.uniforms.uPower!.value = 0.62 * glow ** 1.9;
+      // close up the glare steps back: the coil itself is the light (the close-up level fades it)
+      glareMaterial.uniforms.uPower!.value = 0.62 * glow ** 1.9 * (1 - 0.85 * close.near);
       glare.visible = glow > 0.05;
       // K.glass is unlit: in a dark room its rim must not shine by itself
       (glassMaterial.uniforms.uEdgeColor!.value as Color)

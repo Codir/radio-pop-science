@@ -6,11 +6,12 @@
  * `charge` 1 … 0 is what the OUTSIDE shows of the battery's life (VISUAL.md §5.8): the amber band pales to a
  * dull `mist` and the jacket loses its gloss tone — a dead battery must be told from a fresh one without a label.
  */
-import { type Group, Mesh, type Object3D, Vector3 } from 'three';
+import { type BufferGeometry, type Group, Mesh, type Object3D, Plane, ShaderMaterial, Vector3 } from 'three';
 import { Builder, G } from '@/kit';
-import { K, col } from '@/style';
+import { K, type KToonMaterial, col } from '@/style';
 import { Text3D } from '@/text';
 import { BATTERY } from './layout';
+import { type BatteryInside, createBatteryInside } from './battery-inside';
 
 export interface BatteryModel {
   group: Group;
@@ -25,6 +26,8 @@ export interface BatteryModel {
   /** Tips of the poles in the battery's local space (where the clamp's contact and the spring touch). */
   plusTip: Vector3;
   minusTip: Vector3;
+  /** The inside: cutaway, life, reaction, pole charges (README «Battery inside»). Ticked by the stage. */
+  inside: BatteryInside;
 }
 
 /**
@@ -64,9 +67,18 @@ function plus(b: Builder, x: number, phi: number, c: string): void {
   strip(b, x, thick, arm, phi - off, c);
 }
 
-export function createBattery(): BatteryModel {
+/**
+ * The outside of the can: jacket, steel shoulder, band ring, pole marks and the amber band — built twice from
+ * this one recipe: the battery itself (with the «+» nub and the «−» plate) and the near-half sleeve that slides
+ * off when the battery is cut open (`battery-inside.ts`). `clip` = the clipping planes of that build.
+ */
+function buildOutside(
+  name: string,
+  clip: Plane[],
+  caps: boolean,
+): { group: Group; band: Mesh<BufferGeometry, KToonMaterial> } {
   const { length: L, radius: R } = BATTERY;
-  const b = new Builder('battery');
+  const b = new Builder(name, { clippingPlanes: clip });
   const jacket = L * 0.64;
   b.cyl(R, jacket, {
     at: [-L / 2, 0, 0],
@@ -85,22 +97,24 @@ export function createBattery(): BatteryModel {
     c: 'mist',
     bevel: 0.02,
   });
-  b.cyl(0.105, 0.105, {
-    at: [L / 2 - 0.01, 0, 0],
-    axis: 'x',
-    seg: 24,
-    slot: 'metal',
-    c: 'mist',
-    bevel: 0.025,
-  });
-  b.cyl(R * 0.8, 0.03, {
-    at: [-L / 2 - 0.02, 0, 0],
-    axis: 'x',
-    seg: 32,
-    slot: 'metal',
-    c: 'mist',
-    bevel: 0.01,
-  });
+  if (caps) {
+    b.cyl(0.105, 0.105, {
+      at: [L / 2 - 0.01, 0, 0],
+      axis: 'x',
+      seg: 24,
+      slot: 'metal',
+      c: 'mist',
+      bevel: 0.025,
+    });
+    b.cyl(R * 0.8, 0.03, {
+      at: [-L / 2 - 0.02, 0, 0],
+      axis: 'x',
+      seg: 32,
+      slot: 'metal',
+      c: 'mist',
+      bevel: 0.01,
+    });
+  }
   b.cyl(R + 0.007, 0.045, {
     at: [-L / 2 + jacket - 0.02, 0, 0],
     axis: 'x',
@@ -119,12 +133,41 @@ export function createBattery(): BatteryModel {
   const model = b.build();
   const band = new Mesh(
     G.cyl(R + 0.004, L - jacket - 0.07, { seg: 48, bevel: 0.03 }).rotateZ(-Math.PI / 2),
-    K.toon({ color: 'amber', gloss: 0.75, highlight: 0.6 }),
+    K.toon({ color: 'amber', gloss: 0.75, highlight: 0.6, clippingPlanes: clip }),
   );
   band.position.x = -L / 2 + jacket + 0.02;
   band.castShadow = band.receiveShadow = true;
-  band.name = 'battery:band';
+  band.name = `${name}:band`;
   model.group.add(band);
+  return { group: model.group, band };
+}
+
+export function createBattery(): BatteryModel {
+  const { length: L, radius: R } = BATTERY;
+  // the battery keeps its far half while it is cut open; at cut = 0 this plane clips nothing
+  const keepFar = new Plane(new Vector3(0, 1, 0), 1e6);
+  const keepNear = new Plane();
+  const pastMinus = new Plane();
+  const outside = buildOutside('battery', [keepFar], true);
+  const band = outside.band;
+  const sleeve = buildOutside('battery-sleeve', [keepNear, pastMinus], false);
+  sleeve.group.visible = false;
+  sleeve.group.traverse((o) => (o.castShadow = false));
+  // the sleeve's own materials (one build, its own clipping planes): it dissolves as it slides away
+  // The sleeve's own materials (one build, its own clipping planes): it fades out by alpha as it slides away. They
+  // are blended from the start (opacity 1 looks the same), so fading never switches a material mid-scrub; a
+  // dithered `fade` left a visible stipple at mid-cut.
+  const sleeveMats = new Set<ShaderMaterial>();
+  sleeve.group.traverse((o) => {
+    const m = (o as Mesh).material;
+    for (const x of Array.isArray(m) ? m : m ? [m] : []) {
+      if (!(x instanceof ShaderMaterial) || !x.uniforms.opacity) continue;
+      x.transparent = true;
+      sleeveMats.add(x);
+    }
+  });
+  const model = { group: outside.group };
+  model.group.add(sleeve.group);
 
   // «1,5 V» printed on the jacket, on the same line as the pole marks
   const print = new Text3D('1,5 V', {
@@ -142,7 +185,29 @@ export function createBattery(): BatteryModel {
   print.name = 'battery:print';
   model.group.add(print);
   const ink = col('mist');
+  const printX = print.position.x;
   let light = 1;
+  let printFade = 1;
+  let printShown = true;
+  const paintPrint = (): void => {
+    print.color = ink.clone().multiplyScalar((0.12 + 0.6 * light) * printFade);
+  };
+  const inside = createBatteryInside({
+    group: model.group,
+    keepFar,
+    keepNear,
+    pastMinus,
+    sleeve: sleeve.group,
+    setSleeveFade(k) {
+      for (const m of sleeveMats) m.uniforms.opacity!.value = k;
+    },
+    setPrint(k, shift) {
+      printFade = k;
+      print.position.x = printX + shift;
+      print.visible = printShown && k > 0.01;
+      paintPrint();
+    },
+  });
 
   const fresh = col('amber');
   const dead = col('mist').lerp(col('slate'), 0.45);
@@ -152,18 +217,20 @@ export function createBattery(): BatteryModel {
     plusTip: new Vector3(L / 2 + 0.095, 0, 0),
     minusTip: new Vector3(-L / 2 - 0.02, 0, 0),
     printAnchor: print,
+    inside,
     get printShown() {
-      return print.visible;
+      return printShown;
     },
     set printShown(v: boolean) {
-      print.visible = v;
+      printShown = v;
+      print.visible = v && printFade > 0.01;
     },
     get light() {
       return light;
     },
     set light(v: number) {
       light = Math.min(Math.max(v, 0), 1);
-      print.color = ink.clone().multiplyScalar(0.12 + 0.6 * light);
+      paintPrint();
     },
     get charge() {
       return charge;
@@ -172,6 +239,7 @@ export function createBattery(): BatteryModel {
       charge = Math.min(Math.max(v, 0), 1);
       // the band keeps its colour for most of the life and pales in the last third
       band.material.color.copy(dead).lerp(fresh, Math.min(charge / 0.35, 1) ** 0.8);
+      sleeve.band.material.color.copy(band.material.color);
     },
   };
 }

@@ -219,6 +219,7 @@ export const plugin: EnginePlugin = {
 export type { HudContext, HudModule, OverlayName } from './context';
 export { stepUi, type StepUi, type StepUiApi, type ControlPatch } from './step-ui';
 export type * from './step-ui-types';
+export { pathEnd } from './path-end';
 /** Chapter overlays of the DOM interface (`?hud=dom`; null under `gl`) — replaces `hudSurface` (HUD_DOM §13). */
 export { hudLayer } from '@/hud-dom/custom/layer';
 /** Element helpers for `custom.dom` widgets and `hudLayer` content (docs/UI_API.md §8). */

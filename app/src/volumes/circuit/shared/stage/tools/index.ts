@@ -17,6 +17,8 @@ import { createLoupe, type LoupeModel } from './loupe';
 import { createSnail, type SnailModel } from './snail';
 
 export type { FrameModel, GaugeModel, LensModel, LensPose, SnailModel };
+export type { ProbeId } from './gauge';
+export { GAUGE_HOME } from './gauge';
 export { holderPose } from './lens';
 export { loopPath } from './frame';
 export { CRAWL_BEATS, CRAWL_SPEED, crawlPath };

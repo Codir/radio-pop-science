@@ -4,6 +4,7 @@
  */
 import { uiFocus } from '@/ui3d';
 import { navHidden } from './nav-gate';
+import { pathEnd } from './path-end';
 import type { Hud } from './shell';
 
 /** Lets the open full-screen view / overlay handle a key first; return true when consumed. */
@@ -25,6 +26,16 @@ export function installKeys(hud: Hud, overlayKey: KeyHandler): () => void {
       if (!used && hud.overlay !== null && /^(Arrow|Page|Space|Home|End)/.test(e.code)) used = true;
       // the navigator is held back (stepUi `nav.hiddenUntil`): no way forward by keys either; back stays
       if (!used && navHidden() && /^(ArrowRight|PageDown|Space|End)$/.test(e.code)) used = true;
+      // a closing card over the last step: «back» returns to the step first
+      if (!used && pathEnd.back && /^(ArrowLeft|PageUp)$/.test(e.code)) {
+        pathEnd.back();
+        used = true;
+      }
+      // … and «forward» on a chapter's last step brings its closing card before the next chapter
+      if (!used && pathEnd.forward && /^(ArrowRight|PageDown)$/.test(e.code)) {
+        pathEnd.forward();
+        used = true;
+      }
       return used;
     },
     { priority: 100 },

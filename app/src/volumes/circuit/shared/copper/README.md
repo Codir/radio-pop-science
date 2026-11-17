@@ -188,3 +188,26 @@ area evenly (1.06 – 1.68, radius ∝ √), the warm-up of the core goes 55 % o
 `qa/W2-circuit-copper/sweep.mjs` (showcase steps `sweep`, `sweep-off`) runs 0 → 2 → 0 and prints the largest
 step of the mean frame luminance and colour between neighbouring samples; with 240 samples each way the largest
 is 1.4 / 255 of luminance (a discontinuity would not shrink with finer sampling; these do).
+
+## Additions of chapter 4 (`B-circuit-flow`, 2026-11-17) — the common drift made visible
+
+| Addition | Default | What for |
+|---|---|---|
+| `sim.leash` (units) | 0 (off: free roaming, as before) | Every electron darts about a home of its own, never farther than `leash` from it; the homes are carried along X by `sim.drift` together, so the crowd keeps its pattern and the whole of it slides while each electron still darts. Without it a drift of 3–6 % is lost in the darting. Homes are taken where the electrons are when it engages (nothing moves). Collisions apply as before. `flow/connect` uses 1.7 with the world's drift 6 % (`mountWorld(ctx, { drift: 0.06 })`). Unit-tested (`__tests__/leash.test.ts`). For chapter 5: collisions with the leash on simply bounce the electron, which then turns back toward its sliding home. |
+| `sim.box` `{ x, y }` | 15.5 × 8.6 | Half-size of the focus electrons' periodic box. Seen through the lens window (8.5 units across) `flow` shrinks it to window radius + leash + 0.3 (6.25 × 6.25), so the same 32 electrons crowd the glass (≈ 12 visible). Wrapping is now a modulo (an electron outside a new box is folded in at once). |
+
+## Additions of chapter 5 (`B-circuit-resistance`, 2026-11-17) — the hit, the run, the heat
+
+Every addition is a new file or a parameter whose default reproduces the earlier behaviour (chapters 1 and 4 unchanged).
+
+| Addition | Default | What for |
+|---|---|---|
+| `sim.field` (units/s²), `sim.restart` (units/s), `sim.runSpeed` (read) — `run.ts` | 0 (off), 7 | The marked electron's run (`resistance/bumps`): with `field` > 0 the followed electron (`copper.marked`) no longer turns at random; the field speeds it up toward −X (the plus) between atoms, so its path bends; at every atom it hits it bounces off and starts again at `restart` — it loses its run; near the edge of the frame the bounce is turned back toward the middle (never a hit that is not one). The leash does not hold it. Top speed 2.4 × `restart`. `bumps` uses field 9, restart 6.5: ≈ 2 hits a second. Unit-tested (`__tests__/run.test.ts`). |
+| `sim.onHit(electron, site)` | null | Called for every contact of a focus electron with an atom (the same contact may report on two frames: debounce). `hits.ts` owns it. |
+| `electrons.bend` (radians) | 0 (off) | The marked electron's path keeps a point every `bend` of a gentle turn, so a run curved by the field is drawn curved (only sharp turns were kept). `bumps`: 3°. |
+| `lattice.kick(site, flash, shake)` | — | A hit: the atom flashes `orange` (`flash` 0…1, decays in ≈ 0.5 s) and trembles harder and faster (`shake`, units of extra amplitude, settles in ≈ 1 s). Nothing changes until called. |
+| **`createHits(copper)`** (`hits.ts`) — the hit counter | — | Counts hits: `marked` (the marked electron's, since `reset()`), `total`, `rate` (hits/s, smoothed), `last` (`{ site, at, time }` of the marked electron's latest hit), `time`. Shows them: every hit of the marked electron flashes its atom and the trembling runs on to the two neighbours it pushed toward 0.11 s later (VISUAL §6 «Удар»); `flashRate` (default 0) lets that many hits of the other electrons flash per second (`heat`: 2.2 × (I / 0.3 A)²; `balance` 1.2); `show` 0…1 scales the flashes (0 = counted only). Call `update(dt)` after `copper.update`. **For `drain/inner`:** mount it once; its `rate` is the live hit rate of the window's crowd, its flashes need nothing else. |
+| **`createHitLens()`** (`hit-lens.ts`) — «Лупа з лічильником ударів» (VISUAL §5.7) | — | Add `group` to `stand.tools.lens.group`. `fill` 0…1: a thin strip over the top of the ring, filling from the left (above 0.9 it breathes `orange` with a soft additive glow); `shown` 0…1; `frost` 0…1: ground glass over the glass and over anything in the lens window (render order 950, after the window's copper); `light` = the room's light (unlit materials); `update(dt, t)`. `balance` fills it by place: wires and switch 0.02, battery 0.04, lamp 1 (script). **For `drain/inner`:** the same strip over the battery (full when the battery is dead): set `fill` from the battery's internal resistance, or from `hits.rate` scaled to the lamp's rate. |
+| `trembleHeat(amps, at = 0.3, top = WORKING_HEAT)` (`joule.ts`) | — | `lattice.heat` for a current: ∝ I² (Joule – Lenz), `WORKING_HEAT` 0.58 at 0.3 A = trembling 8 % of the diameter (VISUAL §6). `heat` drives it from the lamp's glow (`currentOfHeat`). |
+
+`lattice.heat` itself is unchanged (trembling × (1 + 3.8 heat), orange rim through the haze).

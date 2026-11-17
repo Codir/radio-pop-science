@@ -16,6 +16,9 @@ import { createStand, type Stand } from './stand';
 import { createTools, type Tools } from './tools';
 import { createTorch, torchDims, type Torch } from './torch';
 import { bulbDims } from './bulb';
+import { temperatureOfHeat } from './bulb-heat';
+import { createLampView, type LampView } from './lamp-view';
+import { createThermal } from './bulb-thermal';
 import { UNFOLD_PLAY, createUnfold, type Unfold } from './unfold';
 
 export * from './layout';
@@ -25,6 +28,16 @@ export { filamentColor } from './light';
 export { BEATS, UNFOLD_PLAY, UNFOLD_SECONDS } from './unfold';
 export * from './tools';
 export { CRAWL_SECONDS } from './crawl-scene';
+export * from './bulb-heat';
+export { LAMP_SHOTS, lampLensPose } from './lamp-shots';
+export { DETAIL_FAR, DETAIL_NEAR } from './lamp-view';
+export type { LampAnchor, LampPath, LampView } from './lamp-view';
+export type { LampMarks } from './bulb-close';
+export * from './battery-cell';
+export { BATTERY_LAYERS, type BatteryLayer } from './battery-section';
+export { BATTERY_SHOTS, CUT_NORMAL, type BatteryInside } from './battery-inside';
+export { POLE_DOTS, POLE_MARK, type Clump } from './battery-poles';
+export { createLoopGlow, loopShare, type LoopGlow } from './loop-glow';
 export type { CrawlAnchors, CrawlScene } from './crawl-scene';
 
 export interface CircuitStage {
@@ -92,6 +105,12 @@ export interface CircuitStage {
   poles: number;
   /** Battery: 1 fresh … 0 dead (limits the lamp's glow and shows on the battery's band). */
   charge: number;
+  /**
+   * The lamp's heat 0…1 for a `charge` with the circuit closed (default `glowOfCharge`). `drain` puts the
+   * battery model's chain here (`heatOfCurrent(loadCurrent(life))`), so light, meter and counter tell one story;
+   * the switch and the filament's inertia still apply.
+   */
+  glowOf: (charge: number) => number;
   /** Strength of the cold moon 0…1 (0 in `prologue/click`: the lamp is the only light in the frame). */
   moon: number;
   /**
@@ -101,6 +120,11 @@ export interface CircuitStage {
   readonly glow: number;
   /** Take the filament's glow under manual control (a number) or give it back to the circuit (`null`). */
   setGlow(value: number | null): void;
+  /**
+   * The lamp close up (README «The lamp close up»): `heat` (= `glow`) and `celsius`, the close-up `detail`, the
+   * opening of the base `cut`, the heat view `thermal`, the current's `path` and `anchors`.
+   */
+  lamp: LampView;
   /** Jump to the state without the heating / cooling ramp (deep links). */
   snap(): void;
   /**
@@ -181,13 +205,28 @@ export function mountStage(ctx: ChapterContext, options: StageOptions = {}): Cir
   let play: { from: number; to: number; elapsed: number; total: number; last: number } | null = null;
   let time = 0;
   const lampWorld = new Vector3();
+  const lampView = createLampView(
+    stand.bulb.close,
+    stand.bulb.filament,
+    () => glow,
+    temperatureOfHeat,
+    createThermal({
+      root: stand.group,
+      glass: tools.lens.glass,
+      bulb: stand.bulb.group,
+      stemY: 0.6,
+      filamentY: bulb.filamentY,
+    }),
+  );
+  const cameraAt = new Vector3();
+  stand.bulb.close.cutAlso(stand.mounts.lampPost!); // the socket opens with the lamp's base
   const axisWorld = new Vector3();
   const frameQ = new Quaternion();
   const bounceOffset = new Vector3();
   const scene = createCrawlScene(tools);
   // while the crawl is shown the switch follows its time (on above 0); otherwise the chapter's `closed`
   const closedNow = (): number => scene.closed() ?? stage.closed;
-  const target = (): number => manual ?? closedNow() * glowOfCharge(stage.charge);
+  const target = (): number => manual ?? closedNow() * stage.glowOf(stage.charge);
   const apply = (): void => {
     const key = `${stage.unfold.toFixed(5)}|${slider.toFixed(4)}`;
     if (key !== shown) {
@@ -233,6 +272,7 @@ export function mountStage(ctx: ChapterContext, options: StageOptions = {}): Cir
     );
     stand.wires.setPoles(stage.poles);
     stand.wires.setDive(stage.dive);
+    lampView.update(ctx.camera.camera.getWorldPosition(cameraAt));
     air.set(lampWorld, light.lamp.color, light.output ** 1.5, beam > 0.02 ? axisWorld : null, beam);
   };
   const stage: CircuitStage = {
@@ -244,6 +284,7 @@ export function mountStage(ctx: ChapterContext, options: StageOptions = {}): Cir
     tools,
     light,
     crawlScene: scene,
+    lamp: lampView,
     lens: 0,
     lensCall: 0,
     dive: 0,
@@ -260,6 +301,7 @@ export function mountStage(ctx: ChapterContext, options: StageOptions = {}): Cir
     unfolding,
     closed: 0,
     charge: 1,
+    glowOf: glowOfCharge,
     moon: 1,
     get glow() {
       return glow;
@@ -300,6 +342,8 @@ export function mountStage(ctx: ChapterContext, options: StageOptions = {}): Cir
       }
       scene.update(dt, stage);
       tools.update(dt, t);
+      stand.battery.inside.lamp = glow;
+      stand.battery.inside.update(dt, t);
       // a small filament heats in a few hundredths of a second and cools a little slower; stretched just
       // enough to be seen as a ramp through red and orange, never as a delay
       const to = target();

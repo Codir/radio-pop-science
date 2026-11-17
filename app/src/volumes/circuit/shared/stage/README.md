@@ -31,7 +31,7 @@ A chapter of `circuit` needs `shared` in the lint rule's `SHARED_IN_VOLUME` (`do
 | Field                | Range | Meaning                                                                                                                                                                                                         |
 | -------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `closed`             | 0 / 1 | the switch: 0 open (the air gap shows, cold light), 1 closed. The slider and the filament follow with their own short inertia; the whole frame changes, not a halo                                              |
-| `charge`             | 1 … 0 | the battery's life as the outside shows it: the lamp's glow (`glowOfCharge`), the pool on the board, the amber band paling to grey in the last third                                                            |
+| `charge`             | 1 … 0 | the battery's life as the outside shows it: the lamp's glow (`glowOf(charge)`, default `glowOfCharge`; `drain` sets `glowOf` to the battery model's current → `heatOfCurrent`), the pool on the board, the amber band paling to grey in the last third |
 | `moon`               | 0 … 1 | the cold key light from the upper left. 0 in `prologue/click` (the lamp is the only light)                                                                                                                      |
 | `unfold`             | 0 … 1 | 0 = the flashlight lying on the board, 1 = the stand. One pure function of the number: drag it, stop it, play it backwards. `unfold × UNFOLD_SECONDS` (6 s) is the time on the six-beat timeline `BEATS`        |
 | `lens`               | 0 … 1 | the magnifier: 0 in its holder, 1 in use over the near wire (`LENS.wireSpot`)                                                                                                                                   |
@@ -134,6 +134,64 @@ crawl.time = shownSeconds; // the ONLY input: lamp, switch, snail, lens picture,
   of the preview. `stand.snail`, `.ruler`, `.spark`, `.race` remain as inert deprecated numbers only until
   `shared/world/params.ts` drops its params of those names (requests §7).
 
+## Battery inside — the cutaway, its life, the poles, the meter (`battery-*.ts`, `tools/gauge.ts`; VISUAL §5.2, §5.7, §5.8)
+
+The same battery in its cradle (`stand.stand.battery`), never taken out. Everything is on
+`stand.stand.battery.inside`; the stage ticks it. Every default reproduces the closed battery of the prologue
+(checked: `circuit/prologue` pixel-identical, `circuit/wire` within the run-to-run noise).
+
+```ts
+import { BATTERY_LAYERS, BATTERY_SHOTS, followVoltage, meterVoltage } from '@circuit/shared/stage';
+
+const cell = stand.stand.battery.inside;
+ctx.camera.shots({ ...STAGE_SHOTS, ...BATTERY_SHOTS }); // battery · batteryMinus · batteryPlus · voltage
+// the «Розріз» slider (UI_API §3.3): cell.cut = shown;  life: cell.life = …; stand.charge = 1 - cell.life
+cell.hold = true; // battery/inside «first moment»: cell.surplus = cell.lack = 0 first, then the battery fills them
+cell.current = stand.closed; // lamp/energy: the reaction runs while the circuit is closed
+```
+
+| Member | Range | Meaning |
+|---|---|---|
+| `cut` | 0 … 1 | the near half of the can lifts toward the viewer (clear of the minus clamp), slides along the axis past the minus end and dissolves (dithered `fade`, no clipping plane) — `B-circuit-battery`; under it the lengthwise section, facing the camera. A pure function of the number, both ways |
+| `life` | 0 … 1 | 0 fresh → `LIFE_STATES` working 0.4 · tired 0.75 · dead 1. Zinc grains melt into a pale deposit from the separator toward the axis; the manganese oxide lightens `ink` → `slate` from the separator toward the can; the dead core is pale and matte. The outside is the stage's: set `stand.charge = 1 − life` |
+| `reaction` | 0 … 1 | events at the zinc front (flash, two `cyan` electrons to the pin and along it to the minus cap, the zinc atom drifting into the paste, a `coral` spark on the can) and `sky` ions creeping through the separator. 0 = still. Fewer as `life` ends, none when dead. Only with the section open (`cut > 0.3`) |
+| `surplus` · `lack` | 0 … 1 | pole LEVELS (0 = «порівну»): `cyan` electrons on the minus cap's rim, `coral` rings of lack on the nub and the shoulder; in the cut they sit on the cap and the start of the pin / on the steel of the plus end. Drive the scale «бракує · порівну · забагато» from them (`surplusCount` · `lackCount` = dots drawn, at most `POLE_DOTS` 16) |
+| `mark` | 0 … 1 | the level the battery holds (default `POLE_MARK` 0.75) |
+| `hold` | bool | the battery keeps its poles itself: levels climb to `mark` (from 0 within 5 % in ≈ 4.6 s), the reaction hard at first and thinning out, still at the mark. `activity` (read) is what runs = max(`reaction`, the battery's own drive) |
+| `current` | 0 … 1 | with `hold`: a current flows, the reaction keeps running at this rate although the poles are full |
+| `clump` | — | `battery/balance`: `clump.handle` (invisible sphere on the heap — register it with `ctx.input`), `grab(share = ½)` (the level drops at once), `moveTo(world)` (dots follow with a little lag each), `release()` → true = let go far (> 0.45): it melts away; false = it flows back. With `hold` the battery restores the level in ≈ 3 s |
+| `island` | 0 … 1, **0** | the open cut's own soft key light (VISUAL §2 «освітлений острів»): a shadowless point light above the cut (reach 1.4, decay 2 — the clamps and the cradle stay as they are), eased in ≈ 0.35 s, only while `cut` > 0.5. With the lamp lit it is scaled down by the glow (`× (1 − 0.7·glow)`, the stage writes `lamp`): it lifts the cut's shadows, it does not double the exposure. Always in the scene (intensity 0 = no recompiles); every chapter's stage starts at 0 — set it in the steps that look into the cut and back to 0 elsewhere. `battery/inside`, `battery/balance` use 1; showcase step `battery-cut` (slider «Світло розрізу») |
+| `highlight` | `BatteryLayer \| null` | one layer lifts, the others step back (eased) |
+| `layers[id]` | — | `{ anchor, pick }` per layer: callout anchor on its cut face; invisible pick boxes (register `pick` with `ctx.input`, or `cell.pick(raycaster)` → layer or `null`, only while `cut > 0.5`) |
+| `anchors` | — | `minusCap`, `plusCap` (outside: lens, the scale), `section` (centre of the cut face) |
+
+Layers (`BATTERY_LAYERS`, plain names for labels): `can` сталевий корпус · `cathode` оксид мангану ·
+`separator` перегородка з пастою · `zinc` цинк у гелі · `pin` латунний стрижень · `seal` ущільнювач ·
+`minusCap` кришка мінуса. The script's three touchable layers are `zinc`, `separator`, `cathode`.
+
+**Shots** (`BATTERY_SHOTS`, world, `fit` for portrait): `battery` the cut from 42° above (a sliver of the far
+half's jacket shows above the cut: it reads as a cylinder) · `batteryMinus` / `batteryPlus` a pole close up ·
+`voltage` battery + meter. Use `STAGE_POST.lamp` as the post of the first three.
+
+**The numbers** (`battery-cell.ts`, pure, unit-tested): `openVoltage(life)` 1.60 → 1.20 V · `internalOhms(life)`
+0.2 → 6.4 Ω · `loadCurrent(life, load = LAMP_OHMS 5 Ω)` 0.31 → 0.105 A · `loadVoltage(life)` 1.54 → 0.53 V
+(tired ≈ 1.12) · `meterVoltage(life, closed)` · `lampPower(life)` · `hoursAt(life)` / `lifeAtHours(h)` /
+`lifeHours()` (≈ 8.0 h at `CAPACITY_AH` 1.86; the steep end of `internalOhms` puts the dead lamp at ≈ 0.1 A — a dull red glow, `B-circuit-drain`) · `lifeState(life)` · `followVoltage(shown, target, dt)` — the
+needle as the battery answers: falls in ≈ 0.5 s under load, creeps back in 2–3 s (`drain/ghost`). Meter shows
+«1,6 V» fresh and open, «1,5 V» under the lamp. The lamp's heat for a current is the lamp's (`K-lamp-filament`).
+
+**The meter** (`stand.tools.gauge`): a desk instrument on the table in front of the battery (`GAUGE_HOME`),
+leaning back toward the reader; printed scale 0 · 0,5 · 1 · 1,5 · 2, needle, number (one decimal). `value`
+(volts; feed it `followVoltage(…, meterVoltage(life, closed), dt)`), `shown` 0 … 1 (slides in), `light`.
+Probes on leads: `probes.minus` (`blue`) / `probes.plus` (`coral`): `on` 0 resting beside the meter … 1 tip on
+its clamp's leaf; `hold(world | null)` follows the hand; `pole` (world) where its tip belongs — snap when the hand
+is near it, so each probe sticks only to its own clamp; `tip`; `handle` (register it). `touching` = both on.
+`GAUGE_HOME` is on the table left of the battery (below the minus clamp), clear of the interface's bottom bar on a
+lowered stand plan (`battery/voltage` uses its own shot `meter`). `anchor` (at the number, for callouts), `probes.*.rest`
+(the tip at rest, world); a held probe turns from its resting lie as it leaves the table (no snap at the grab).
+Pole dots grow in and shrink away one after another as a level changes (no pop).
+Frames: `/srv/electricity/qa/K-battery-inside/` (`final/*.jpg`).
+
 ## The frame of reference
 
 `layout.ts` holds every permanent place in the **board frame** (origin = centre of the face, +x right, +y out
@@ -179,6 +237,44 @@ flight"). `tools.lens.glass` is the disc to put it on (render target or stencil 
   follow the room's light by hand, as `battery.light`, `gauge.light`, `frame.light` do.
 - Nothing runs along the wires on this floor, by design.
 
+## The lamp close up — `stand.lamp` (VISUAL §5.3; `lamp/*`, `resistance/heat`, `drain/*`)
+
+One lamp, one number. **`heat` 0…1 is the stand's `glow`** — the coil's place on the incandescence scale; the
+filament's colour, the glare, the glass, the lamp's `PointLight`, the pool and the room all follow it (one source of
+truth: `light.set`). Scrub it with `stand.setGlow(h)` (`null` gives it back to `closed × charge`); a dying cell is
+just a lower heat — yellower, then orange, dimmer (`charge`, or `setGlow(heatOfCurrent(I))`), no other path.
+
+| `stand.lamp.…`   | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `heat` (read)    | = `stand.glow`                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `celsius` (read) | the coil's temperature now, °C; the read-out: `formatTemperature(lamp.celsius)` → «≈ 2 300 °C»                                                                                                                                                                                                                                                                                                                                     |
+| `detail`         | `null` (default) = by the camera's distance to the coil: the close-up level (fine coil of 22 tight turns, crimped legs, both leads continued below the stem — one into the bottom contact, one over the collar's rim to a solder drop) fades in between `DETAIL_FAR` 4.1 and `DETAIL_NEAR` 3.5 units. Every shot of `prologue`/`wire` and `STAGE_SHOTS.lamp` (4.6) keep today's lamp. A number 0…1 forces it. `detailShown` (read) |
+| `cut`            | 0…1: a wedge toward the reader opens through the lamp's base **and the socket** (≤ 100°, from the collar down to the socket's floor, 0.32 deep): the bottom contact on the socket's floor and both leads inside the base show. Default 0 (no clipping in any shader until then)                                                                                                                                                    |
+| `thermal`        | 0…1: heat view **inside the magnifier's ring**, wherever the ring is: the ground under it sinks into cold dark, things at room temperature (wires, socket, base, battery) turn cold `blue`, the supports run warm toward the coil (magenta → orange), the coil is white at heat 1 (its shade follows `heat`). Outside the ring nothing changes. No render target; ≈ 50 extra draw calls while > 0                                  |
+| `path`           | the current's way `contact → lead → coil → lead → thread` (world, follows the lamp): `path.at(s, out, tangent?)` for s 0…1 by length, `path.points()`, `path.marks` = `{ contact: 0, leadIn, coilStart, coilEnd, leadOut, thread: 1 }` (shares of the way; `leadIn`/`leadOut` = the middle of each support in the glass), `path.helix` (default true: the coil part runs along the wire's spiral; false = along the coil's axis)   |
+| `anchors`        | `Object3D`s for captions: `contact`, `leadIn`, `bead`, `coil`, `leadOut`, `thread` (the solder drop), `glass`                                                                                                                                                                                                                                                                                                                      |
+
+Shots `LAMP_SHOTS` (merge into `ctx.camera.shots`, use `STAGE_POST.lamp` as their `post`): `lampInside` (the whole
+lamp from the socket to the crown — `lamp/inside`, `lamp/hot-spot`), `lampCoil` (the coil fills the frame, from
+just outside the glass — `lamp/glow`). The magnifier over the lamp: `world.lensPose = lampLensPose(scale = 1.75,
+from = STAGE_SHOTS.stand.position, height = 0.95)` with `lens: 1`, then `lamp.thermal = 1`; its ring holds the coil
+and the wires at the lamp's terminals (showcase: `lampLensPose(1.45, STAGE_SHOTS.lamp.position, 1.15)` on the `lamp` shot).
+
+Pure functions (`bulb-heat.ts`, unit-tested; exported from the stage):
+
+- `temperatureOfHeat(h)` / `heatOfTemperature(°C)` — stops: 0 → 20 °C, 0.1 → 600 (first dull red), 0.26 → 800,
+  0.46 → 1 050 (orange), 0.66 → 1 400, 0.84 → 1 850, 1 → 2 300 °C; `FIRST_GLOW` ≈ 0.076 (≈ 460 °C: the first, barely visible dull
+  red; a chapter that names «світиться» can test against it).
+- `heatOfCurrent(A)` / `currentOfHeat(h)` / `temperatureOfCurrent(A)` — the coil's steady energy balance
+  (I²R(T) = radiation + conduction): 0.3 A → 1, 0.25 A → 0.88, 0.2 A → 0.73, 0.15 A → 0.51, 0.1 A → 0.09.
+  `resistanceAt(°C)`: 5 Ω hot, 0.37 Ω cold. `LAMP_WORK = { amps: 0.3, ohms: 5, watts: 0.45 }`.
+- `filamentAfterClick(s, { volts, ohms }?)` / `filamentAfterRelease(s, fromHeat?)` → `{ heat, celsius, amps }`: the
+  first hundredths of a second from the same balance (inrush ≈ 2.7 A; heat 0.45 at 10 ms, 0.84 at 30 ms, 0.97 at
+  60 ms; cooling: 0.7 at 50 ms, dark after ≈ 0.5 s). `lamp/glow`: `stand.setGlow(filamentAfterClick(t).heat)`.
+
+Showcase steps `lamp-inside` (sliders: cut, heat; read-out), `lamp-cut`, `lamp-coil`, `lamp-coil-off`, `lamp-glow`
+(slider: ms after the click), `lamp-dim` (slider: current), `lamp-thermal` (sliders: heat view, heat).
+
 ## Performance (RTX 5060, `high`, chapter-check)
 
 1920×1080: frame 3.0–4.7 ms (budget 8), 171–317 draw calls (budget 350), ≤ 281k triangles; 3840×2160:
@@ -191,6 +287,24 @@ six. Merge static props (`Builder`) and set `castShadow = false` on small things
 - `flow/loop`: the slider moving to the second seat (the seat and its jumper are modelled; no motion).
 - `resistance/shape`: the far wire as a snake — `wires.setShape('m2', { path, round: 1, cover: 1, copper: 1 })`
   takes any path, but the radius is fixed (thinning is not parameterised).
-- `build/*`: disconnected wires with cyan handles; the reverse unfolding itself works (`unfold` 1 → 0).
+- `build/*` (built, chapter-side): loose wires with cyan handles are the chapter's (`chapters/build/parts/wiring.ts`);
+  `wires.setShape` takes `bare: [start, end]` (stripped copper, default `BARE` 0.11 both) and `gap: { at, width }`
+  (a break in the core under the sheath) — both default to today's wire.
 - `drain/life`: the dead battery leaving for the shelf and a new one arriving (one `BatteryModel` exists).
 - Cutaways of the battery and the lamp (§5.2, §5.3 close-ups) are other floors.
+
+## Additions of chapter 4 (`B-circuit-flow`, 2026-11-17)
+
+- **`createLoopGlow()`** (`loop-glow.ts`): a soft additive sleeve of light round the wire of the whole loop, outside
+  the copper. `origin` / `meet` (shares of `loopPath()`), `front` 0…1 (two fronts, one each way, meeting at `meet`),
+  `intensity`, `wake` (light left behind), `peak` (the fronts' band), `edge`, `flow` (stripes running the path's
+  way — for the energy of `lamp/handover`), `color`, `hide` (up to 4 stretches `[from, to]` of shares where the
+  sleeve passes unseen; default none — `flow/push` hides it through the battery's body and the switch block). `loopShare(x, z)` gives the share of a board point (projected
+  on the path's segments — the straight sides are single segments). `flow/push`: origin at the switch, amber, meet
+  = origin + ½. For `lamp/handover`: origin at the battery, `meet` at the lamp, yellow, `flow` > 0. Note for any
+  shader here: no `pow`/`sqrt` of a value that can be 0 — on this GPU they give NaN, which the bloom spreads into
+  black blots (the tube has rings with zero normals).
+- **`seatJumper`** is now a mount part of its own (it was merged into `seat`), so a chapter can lift it
+  (`flow/loop`: `stand.stand.mounts.seatJumper`). It grows in the unfolding with the seat (one more part in the
+  wave: the mounts right of x = −0.6 start 55 ms later, not visible).
+- The lens window (`shared/world/window.ts`) is used by `flow/connect` (span 8.5 with a 1.3× lens pose).

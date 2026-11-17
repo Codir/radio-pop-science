@@ -119,7 +119,8 @@ def export_chapter(ch, reg, jn, docs):
     return dict(schemaVersion=SCHEMA, format='path', volume=C.VOLUME, id=cid, title=ch['title'], layer=j['layer'],
                 group=j['group'], order=j['order'], parent=j['parent'], floor=j['floor'], axisValue=j['axisValue'],
                 minutes=j['minutes'], hook=ch['hook'], know=ch['know'], thread=ch['thread'], now=ch['now'],
-                bridge=ch['bridge'], next=next_chapter(cid, jn, docs), steps=steps, glossary=glossary)
+                bridge=ch['bridge'], labels=ch.get('labels', []), next=next_chapter(cid, jn, docs), steps=steps,
+                glossary=glossary)
 
 
 def runtime(ex, reg):
@@ -147,6 +148,8 @@ def runtime(ex, reg):
         steps.append(step)
     chapter = dict(layer=ex['layer'], hook=ex['hook'], know=ex['know'], now=ex['now'], bridge=ex['bridge'],
                    next=ex['next'], minutes=ex['minutes'])
+    if ex.get('labels'):
+        chapter['labels'] = ex['labels']
     content = dict(volume=ex['volume'], id=ex['id'], title=ex['title'], group=ex['group'], path=chapter,
                    steps=steps, glossary=[term(g['name'], g['card']) for g in ex['glossary']])
     manifest = dict(volume=ex['volume'], id=ex['id'], title=ex['title'], subtitle=ex['steps'][0]['title'] if ex['steps'] else '',

@@ -149,6 +149,8 @@ export interface PathChapter {
   now: readonly string[];
   /** «Місток» — ends with the next chapter's question. */
   bridge: string;
+  /** Chapter-level captions («Підписи глави»): at the volume's end, [0] is the closing card's «start over». */
+  labels?: readonly string[];
   /** The chapter the bridge leads to (built or planned); null at the end of the journey. */
   next: { id: string; title: string } | null;
   minutes: number | null;

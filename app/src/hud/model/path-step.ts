@@ -36,6 +36,8 @@ export interface PathStepModel {
     readonly now: readonly string[];
     readonly bridge: string;
     readonly next: { readonly id: string; readonly title: string } | null;
+    /** The volume's end: the caption of «start over» (script, «Підписи глави»), or none. */
+    readonly restart: string | null;
   } | null;
 }
 
@@ -52,6 +54,8 @@ export const PATH_LABELS = {
   start: 'До першого кроку',
   next: 'Далі',
   end: 'Кінець шляху',
+  /** The closing card at the end of a volume's journey: the journey map. */
+  map: 'Мапа подорожі',
 } as const;
 
 /** True when the chapter is in the path format (its content carries the chapter's path parts). */
@@ -86,7 +90,12 @@ export function pathStepModel(
     opening: index === 0 && chapter.hook ? { hook: chapter.hook, know: chapter.know } : null,
     closing:
       last && (chapter.now.length > 0 || chapter.bridge)
-        ? { now: chapter.now, bridge: chapter.bridge, next: chapter.next }
+        ? {
+            now: chapter.now,
+            bridge: chapter.bridge,
+            next: chapter.next,
+            restart: chapter.next ? null : (chapter.labels?.[0] ?? null),
+          }
         : null,
   };
 }

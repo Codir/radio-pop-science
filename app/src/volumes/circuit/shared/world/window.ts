@@ -45,6 +45,8 @@ export interface LensWindow {
   amount: number;
   /** Local copper units seen across the window's diameter (smaller = closer). */
   span: number;
+  /** Seconds the iris takes to close (default 0: at once, as the dive needs). */
+  closeSeconds: number;
   /** Put `world` inside the lens (call every frame while open; the lens may move). */
   place(world: Object3D): void;
   /** Turn the stencil test of every material below `world` on or off. */
@@ -82,6 +84,7 @@ export function createLensWindow(lens: LensModel): LensWindow {
   const win: LensWindow = {
     amount: 0,
     span: 12,
+    closeSeconds: 0,
     place(world) {
       lens.glass.updateWorldMatrix(true, false);
       lens.glass.getWorldPosition(centre);
@@ -107,7 +110,9 @@ export function createLensWindow(lens: LensModel): LensWindow {
         }
         if (!(o as Mesh).isMesh) return;
         if (!orders.has(o)) orders.set(o, o.renderOrder);
-        o.renderOrder = on ? Math.max(orders.get(o)!, INSIDE_ORDER) : orders.get(o)!;
+        // after the iris, keeping the world's own order among its parts (the dome −20 and the veils −10 are drawn
+        // before the atoms; flattening them all to one order let the dome cover the picture)
+        o.renderOrder = on ? INSIDE_ORDER + 100 + orders.get(o)! : orders.get(o)!;
       });
     },
     update() {

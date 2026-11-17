@@ -70,7 +70,17 @@ export interface WireShape {
   copper: number;
   /** Normal of the strip's flat side at its start (transported along the path). Default: the board's up. */
   up?: Vector3;
+  /** Length of stripped copper at the start and at the end (default `BARE` both): 0 = sheath to the very tip. */
+  bare?: readonly [number, number];
+  /**
+   * A break in the copper under the intact sheath: centre (share of the length 0…1) and width (units). The copper
+   * ends are flat cut faces (the core's rings are re-laid around the gap; the sheath is untouched).
+   */
+  gap?: { at: number; width: number };
 }
+
+/** Stripped copper at each end of a piece (the part that goes into a terminal, and a little more). */
+export const BARE = 0.11;
 
 export interface Wires {
   group: Group;
@@ -92,6 +102,32 @@ export interface Wires {
 }
 
 const UP = new Vector3(0, 1, 0);
+/** Indices of the two collapsed rings of the last `breakRings` (the copper is missing between them). */
+const breakAt: [number, number] = [-1, -1];
+const HAIR = 0.002;
+/**
+ * `n` rings along `pts` (already even, of total `length`) with a gap of copper: rings spread evenly up to the
+ * first cut, one collapsed ring a hair after it, one collapsed a hair before the second cut, evenly on from it.
+ */
+function breakRings(pts: readonly Vector3[], n: number, gap: { at: number; width: number }, length: number): Vector3[] {
+  const s0 = Math.max(gap.at * length - gap.width / 2, 0.05);
+  const s1 = Math.min(gap.at * length + gap.width / 2, length - 0.05);
+  const rest = n - 2;
+  const k0 = Math.max(2, Math.min(rest - 2, Math.round((rest * s0) / (length - (s1 - s0)))));
+  const at: number[] = [];
+  for (let i = 0; i < k0; i++) at.push((s0 * i) / (k0 - 1));
+  at.push(s0 + HAIR, s1 - HAIR);
+  const k1 = rest - k0;
+  for (let i = 0; i < k1; i++) at.push(s1 + ((length - s1) * i) / (k1 - 1));
+  breakAt[0] = k0;
+  breakAt[1] = k0 + 1;
+  const step = length / (n - 1);
+  return at.map((d) => {
+    const f = Math.min(Math.max(d / step, 0), n - 1);
+    const i = Math.min(Math.floor(f), n - 2);
+    return pts[i]!.clone().lerp(pts[i + 1]!, f - i);
+  });
+}
 /** Flat strip: 2.1 wire radii wide, a quarter of one thick. */
 const STRIP: [number, number] = [WIRE.core * 2.1, WIRE.core * 0.3];
 
@@ -146,17 +182,23 @@ export function createWires(): Wires {
     const w = STRIP[0] + (WIRE.core - STRIP[0]) * r;
     const h = STRIP[1] + (WIRE.core - STRIP[1]) * r;
     const up = shape.up ?? UP;
-    p.core.update(p.pts, up, (_i, out) => {
-      out[0] = w;
-      out[1] = h;
+    const length = G.pathLength(p.pts);
+    const gap = shape.gap;
+    // a break: the core's rings are laid out anew so that two of them stand exactly at each copper end — a full
+    // ring and a collapsed one a hair apart give a flat cut face; the sheath keeps the even rings
+    const corePts = gap ? breakRings(p.pts, n, gap, length) : p.pts;
+    p.core.update(corePts, up, (i, out) => {
+      const k = gap && (i === breakAt[0] || i === breakAt[1]) ? 0 : 1;
+      out[0] = w * k;
+      out[1] = h * k;
     });
     // sheath: full radius where covered, tucked just under the core's surface beyond the growth front;
     // a short length at both ends stays bare — the stripped copper that goes into the terminals
     const front = shape.cover * 1.08;
-    const length = G.pathLength(p.pts);
+    const [bare0, bare1] = shape.bare ?? [BARE, BARE];
     p.skin.update(p.pts, up, (i, out) => {
       const s = i / (n - 1);
-      const bare = Math.min(s, 1 - s) * length < 0.11 ? 0 : 1;
+      const bare = s * length < bare0 || (1 - s) * length < bare1 ? 0 : 1;
       const k = Math.min(Math.max((front - s) / 0.08, 0), 1) * bare * r;
       out[0] = w * 0.96 + (WIRE.sheath - w * 0.96) * k;
       out[1] = h * 0.96 + (WIRE.sheath - h * 0.96) * k;

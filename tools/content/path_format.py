@@ -18,7 +18,7 @@ STEP_ID = re.compile(r'^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$')
 REF = re.compile(r'^`([^`\s]+)`$')
 
 SECTIONS = {'Питання з життя': 'hook', 'Що ми вже знаємо': 'know', 'Кроки': 'steps', 'Нитка глави': 'thread',
-            'Що ми тепер знаємо': 'now', 'Місток': 'bridge'}
+            'Що ми тепер знаємо': 'now', 'Місток': 'bridge', 'Підписи глави': 'labels'}
 ORDER = list(SECTIONS.values())
 # document field → export key; the practicum names two of them differently
 FIELDS = {'Думка': 'idea', 'Завдання': 'idea', 'Текст': 'text', 'Дія': 'action', 'Висновок': 'takeaway',
@@ -90,11 +90,11 @@ def split_list(value):
 
 
 def parse_chapter(text, cid):
-    """→ (chapter, problems). chapter = {id, title, hook, know, thread, now[], bridge, steps[], sections[]}."""
+    """→ (chapter, problems). chapter = {id, title, hook, know, thread, now[], bridge, labels[], steps[], sections[]}."""
     err = []
     # HTML comments are notes for reviewers (fact sources, «перевірити»): never content
     lines = COMMENT.sub('', text).splitlines()
-    ch = dict(id=cid, title='', hook='', know='', thread='', now=[], bridge='', steps=[], sections=[])
+    ch = dict(id=cid, title='', hook='', know='', thread='', now=[], bridge='', labels=[], steps=[], sections=[])
     first = next((ln for ln in lines if ln.strip()), '')
     m = H1.match(first)
     if not m or m.group(1) != cid:
@@ -120,6 +120,9 @@ def parse_chapter(text, cid):
                     ch['now'][-1] += ' ' + ln.strip()
                 elif ln.strip():
                     err.append('%s: «Що ми тепер знаємо» expects numbered lines, got «%s»' % (cid, ln.strip()[:40]))
+        elif section == 'labels':
+            # chapter-level captions of the closing card, «…» · «…» (the volume's end: «Почати з початку»)
+            ch['labels'] = re.findall(r'«([^»]+)»', ' '.join(paras))
         else:
             ch[section] = ' '.join(paras)
 

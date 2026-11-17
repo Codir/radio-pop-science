@@ -5,11 +5,16 @@
 import { fullChapterId, type ChapterManifest, type HudMetrics } from '@/engine/api';
 import { isVisited } from '@/content';
 import { navHidden, onNavGate } from '@/hud/nav-gate';
+import { pathEnd } from '@/hud/path-end';
 import type { Hud } from '@/hud/shell';
 import { h, setClass, setStyle, setText } from '../core/dom';
 import { icon } from '../core/icons';
 import { MOTION } from '@/style/motion';
 import { createNavGlide } from './nav-glide';
+import { fitSegment } from './nav-fit';
+
+/** The «Далі» labels: on any step, and on the last one when another chapter follows. */
+const NEXT = { step: 'Далі', chapter: 'Далі: наступний розділ' } as const;
 
 /** How the held-back bar comes in (seconds; `rise` in HUD units from below). */
 export const REVEAL = { delay: 0.12, fade: 0.5, slide: 0.55, rise: 14 } as const;
@@ -26,6 +31,9 @@ export interface DomNavigator {
 export function createDomNavigator(hud: Hud): DomNavigator {
   const { nav, store } = hud.engine;
   let manifest: ChapterManifest | null = null;
+  /** The closing card's state the bar was last synced to (the card comes and goes within a step). */
+  const endKey = (): string => `${pathEnd.shown}|${pathEnd.forward !== null}|${pathEnd.back !== null}`;
+  let seenEnd = '';
   const prev = h(
     'button.btn.icon',
     {
@@ -36,7 +44,7 @@ export function createDomNavigator(hud: Hud): DomNavigator {
     },
     icon('prev'),
   );
-  const nextLabel = h('span', null, 'Далі');
+  const nextLabel = h('span', null, NEXT.step);
   const next = h(
     'button.btn.primary.md',
     { type: 'button', 'data-ui': 'nav-next', 'data-tip': 'Наступний крок (→)' },
@@ -58,17 +66,57 @@ export function createDomNavigator(hud: Hud): DomNavigator {
   let seen: { w: number; h: number; layout: HudMetrics['layout'] } = { w: 0, h: 0, layout: 'wide' };
   const instant = (): boolean =>
     resized || el.inert || fade.o <= 0.001 || document.documentElement.classList.contains('kd-reduced');
-  prev.addEventListener('click', () => void nav.prev());
-  next.addEventListener('click', () => void nav.next());
+  // a closing card over the last step (`pathEnd`): back to the step first, then to the previous step
+  prev.addEventListener('click', () => (pathEnd.back ? pathEnd.back() : void nav.prev()));
+  // the last step of a chapter: its closing card first, then the next chapter (from the card)
+  next.addEventListener('click', () => (pathEnd.forward ? pathEnd.forward() : void nav.next()));
+
+  // the segment width fitted to the window, the chapter and the bar's goal place (nav-fit.ts); measured only when
+  // one of them changes, never per step — the dots stay put while the «Далі» label changes
+  let fitted = '';
+  let ruler: CanvasRenderingContext2D | null = null;
+  const labelWidth = (): number => {
+    ruler ??= document.createElement('canvas').getContext('2d');
+    if (!ruler) return 0;
+    const cs = getComputedStyle(nextLabel);
+    ruler.font = cs.font;
+    ruler.letterSpacing = cs.letterSpacing;
+    return Math.ceil(Math.max(ruler.measureText(NEXT.chapter).width, ruler.measureText(NEXT.step).width)) + 2;
+  };
+  const refit = (shift: number): void => {
+    const m = hud.metrics;
+    const key = manifest
+      ? `${manifest.id}|${m.cssWidth}|${m.pxPerUnit}|${m.safeMargin}|${Math.round(shift)}`
+      : '';
+    if (!manifest || key === fitted) return;
+    fitted = key;
+    const u = m.pxPerUnit;
+    const fixedPx =
+      el.getBoundingClientRect().width -
+      dots.getBoundingClientRect().width -
+      nextLabel.getBoundingClientRect().width;
+    const seg = fitSegment({
+      steps: manifest.steps.length,
+      widthUnits: m.width,
+      pxPerUnit: u,
+      roomPx: m.cssWidth - 2 * m.safeMargin * u - 2 * Math.abs(shift),
+      fixedPx,
+      labelPx: labelWidth(),
+    });
+    setStyle(dots, '--seg', seg.toFixed(2));
+  };
 
   const sync = (): void => {
     const pos = nav.position;
     if (!manifest || !pos || pos.volumeId !== manifest.volume || pos.chapterId !== manifest.id) return;
     const i = manifest.steps.findIndex((s) => s.id === pos.stepId);
     setText(counter, `${i + 1} / ${manifest.steps.length}`);
-    prev.disabled = !nav.canPrev;
-    next.disabled = !nav.canNext;
-    glide.label(i === manifest.steps.length - 1 && nav.canNext ? 'Далі: наступний розділ' : 'Далі', instant());
+    prev.disabled = !nav.canPrev && !pathEnd.back;
+    next.disabled = !nav.canNext && !pathEnd.forward;
+    // a last step with a closing card: plain «Далі» to the card; on the card it names the next chapter
+    const onward = i === manifest.steps.length - 1 && nav.canNext && !pathEnd.forward;
+    glide.label(onward ? NEXT.chapter : NEXT.step, instant());
+    seenEnd = endKey();
     const visited = store.get().progress.visited;
     const key = fullChapterId(manifest);
     [...dots.children].forEach((li, k) => {
@@ -149,9 +197,7 @@ export function createDomNavigator(hud: Hud): DomNavigator {
           return h('li', null, b);
         }),
       );
-      // segment width as the WebGL stepper: half the screen shared by the steps, 22…44 units each
-      const fit = Math.min(44, Math.max(22, (hud.metrics.width * 0.5) / Math.max(m.steps.length, 1)));
-      setStyle(dots, '--seg', fit.toFixed(2));
+      fitted = '';
       sync();
       gate(navHidden());
     },
@@ -167,7 +213,10 @@ export function createDomNavigator(hud: Hud): DomNavigator {
       const m = hud.metrics;
       const shift = m.layout === 'wide' ? -(hud.engine.hud.insetFractions().right * m.cssWidth) / 2 : 0;
       glide.shift(shift, instant());
+      refit(shift);
       resized = false;
+      // the closing card came or went within the step: the labels and the way back follow
+      if (endKey() !== seenEnd) sync();
     },
   };
 }
