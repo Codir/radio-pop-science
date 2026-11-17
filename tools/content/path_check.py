@@ -7,7 +7,7 @@ errors    structure (sections, fields incl. «Ціль», step numbering; > 2 hi
           step that introduces it, a step whose «Нові терміни» differ from the register, an introduced term the
           step does not use; a «Докладніше»-only or banned word in on-screen text; «Що ми тепер знаємо» not three
           lines; a bridge that does not end with the next chapter's question; «Згадати» to an unknown or later step;
-          an unknown honesty mark; a formula sign in the main text, a `**…**` span that is not a new term of the step; Latin words outside the allowlists (§54)
+          a formula sign in the main text, a `**…**` span that is not a new term of the step; Latin words outside the allowlists (§54)
 warnings  idea > 25 or text > 80 words; a sentence that starts with the term it introduces; singular address
           («ти», «твій», «натисни» …) — the reader is addressed as «ви» (owner, 16.11.2026)
 
@@ -69,7 +69,7 @@ def units(ch, ci):
     out += [('%s: now %d' % (cid, i + 1), t, last) for i, t in enumerate(ch['now'])]
     for si, s in enumerate(ch['steps']):
         out += [('%s/%s: %s' % (cid, s['id'], k), flat(s.get(k)), ci * 1000 + si + 1)
-                for k in ('title', 'idea', 'text', 'action', 'takeaway', 'hints', 'labels', 'note')]
+                for k in ('title', 'idea', 'text', 'action', 'takeaway', 'hints', 'labels')]
     return out
 
 
@@ -101,8 +101,6 @@ def check_chapter(ch, ci, jn, docs, reg, b, err, warn):
                 err.append('%s: «%s» is one paragraph' % (where, k))
         if isinstance(s.get('text'), list) and len(s['text']) > 2:
             err.append('%s: «Текст» has %d paragraphs (at most 2)' % (where, len(s['text'])))
-        if sentences(flat(s.get('note'))) > 2:
-            warn.append('%s: «Чесно» has %d sentences (one or two)' % (where, sentences(flat(s.get('note')))))
         idea, text = flat(s.get('idea')), flat(s.get('text'))
         if sentences(idea) != 1 or words(idea) > b['ideaWords'][1]:
             err.append('%s: idea is %d sentence(s), %d words (one sentence ≤ %d)' % (where, sentences(idea), words(idea),
@@ -130,9 +128,6 @@ def check_chapter(ch, ci, jn, docs, reg, b, err, warn):
                 err.append('%s: term «%s» of type «%s» in a %s chapter' % (where, t, kinds[t], layer))
             else:
                 n_terms += kinds[t] == 'шлях'
-        for h in s['honesty'] + s['honestyOnAction']:
-            if not P.HONESTY.match(h):
-                err.append('%s: unknown honesty mark «%s»' % (where, h))
     if layer == 'prologue' and n_terms:
         err.append('%s: the prologue introduces %d term(s)' % (cid, n_terms))
     if n_terms > b['chapterTerms']:

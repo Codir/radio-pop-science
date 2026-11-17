@@ -10,7 +10,9 @@ import {
 } from '../device';
 import { parseSafeArea } from '../device-monitor';
 import { parseFlags } from '../app';
-import { HudLayer, shellOf } from '../hud';
+import { HudLayer, layoutDevice, shellOf } from '../hud';
+import { APP_STORAGE_PREFIX } from '../reset';
+import { Store } from '../store';
 import { QUALITY_PROFILES, isQualityTier } from '../quality';
 
 const probe = (over: Partial<DeviceProbe>): DeviceProbe => ({
@@ -106,6 +108,53 @@ describe('HUD metrics follow the device', () => {
     expect(hud.metrics.safeArea.bottom).toBe(200);
     expect(shellOf({ formFactor: 'tablet', orientation: 'portrait' })).toBe('sheet');
     expect(shellOf({ formFactor: 'desktop', orientation: 'portrait' })).toBe('desk');
+  });
+
+  it('«Версія для комп\'ютера» gives a phone the desktop shell with a computer\'s metrics, pointer kept', () => {
+    expect(shellOf({ formFactor: 'phone', orientation: 'landscape' }, true)).toBe('desk');
+    expect(shellOf({ formFactor: 'tablet', orientation: 'portrait' }, true)).toBe('desk');
+    expect(shellOf({ formFactor: 'desktop', orientation: 'landscape' }, false)).toBe('desk');
+    const desk = new HudLayer();
+    desk.setDevice(classifyDevice(probe({ width: 844, height: 390 })));
+    desk.setViewport(844, 390);
+    const hud = new HudLayer();
+    const safeArea = { top: 0, right: 47, bottom: 21, left: 47 };
+    hud.setDevice(classifyDevice(probe({ width: 844, height: 390, coarse: true, safeArea })));
+    hud.setViewport(844, 390);
+    expect(hud.metrics).toMatchObject({ shell: 'side', formFactor: 'phone', pxPerUnit: 1 });
+    hud.setDeskShell(true);
+    // the same layout a computer gets at 844 × 390 (unit floor 0.7), the phone's pointer and safe area kept
+    expect(hud.metrics).toMatchObject({
+      shell: 'desk',
+      formFactor: 'desktop',
+      layout: desk.metrics.layout,
+      pxPerUnit: desk.metrics.pxPerUnit,
+      width: desk.metrics.width,
+      pointer: 'coarse',
+    });
+    expect(hud.metrics.safeArea.left).toBeCloseTo(47 / hud.metrics.pxPerUnit);
+    hud.setDeskShell(false);
+    expect(hud.metrics).toMatchObject({ shell: 'side', formFactor: 'phone', pxPerUnit: 1 });
+  });
+
+  it('chapters and the HUD read the same layout device: desktop form factor, the phone\'s pointer and budget', () => {
+    const phone = classifyDevice(probe({ width: 844, height: 390, coarse: true }));
+    expect(layoutDevice(phone, false)).toBe(phone);
+    const desk = layoutDevice(phone, true);
+    expect(desk).toMatchObject({ formFactor: 'desktop', pointer: 'coarse', hover: false, pixelBudget: phone.pixelBudget });
+    const computer = classifyDevice(probe({ width: 844, height: 390 }));
+    expect(layoutDevice(computer, true)).toBe(computer);
+  });
+
+  it('the choice is saved under the app\'s `electricity:` key and read back at start', () => {
+    const data = new Map<string, string>();
+    const storage = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v) };
+    expect(new Store(storage).get().settings.deskShell).toBe(false);
+    new Store(storage).updateSettings({ deskShell: true });
+    expect([...data.keys()].every((k) => k.startsWith(APP_STORAGE_PREFIX))).toBe(true);
+    expect(new Store(storage).get().settings.deskShell).toBe(true);
+    data.set('electricity:v2', JSON.stringify({ v: 2, settings: { deskShell: 'yes' }, progress: { visited: {} } }));
+    expect(new Store(storage).get().settings.deskShell).toBe(false);
   });
 });
 

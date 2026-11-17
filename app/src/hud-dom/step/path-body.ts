@@ -3,8 +3,8 @@
  * one reader — no «Просто | Докладно», no section tabs. Pages of the panel's pager:
  *   first step: the chapter's opening card («Питання з життя», «Що ми вже знаємо») → the step;
  *   every step: main text (new terms are links to their glossary cards), the action, hints for a stuck reader,
- *     the takeaway once the step's goal is reached, «Згадайте…» links, honesty chips and «Чесно про картинку»,
- *     one disclosure «Докладніше»;
+ *     the takeaway once the step's goal is reached, «Згадайте…» links, one disclosure
+ *     «Докладніше» (no honesty chips or «Чесно про картинку» — DECISIONS §60 x);
  *   last step: the step → the closing card («Що ми тепер знаємо», the bridge, «Далі: <next question>»).
  * Everything is real text (selectable, read by screen readers); reveals run on the engine clock.
  */
@@ -27,8 +27,6 @@ export interface PathBodyContext {
   readonly trail: RecallTrail;
   /** The step's goal from its `stepUi` (undefined: the takeaway shows at once). */
   readonly goal: When | undefined;
-  /** The reader's action is under way (`stepUi … acting`): chips marked `→` appear. */
-  readonly acting: When | undefined;
   /** Goals already reached this session (`volume/chapter/step`): the takeaway shows at once there. */
   readonly reached: Set<string>;
   readonly key: string;
@@ -148,24 +146,6 @@ export function buildPathBody(m: PathStepModel, ctx: PathBodyContext): PathBody 
         return b;
       })) // prettier-ignore
     : null;
-  // chips marked `→` wait for the reader's action (`stepUi … acting`)
-  const later = m.honestyOnAction.map((c) => h('li.chip.honesty', { hidden: true }, icon('layers'), c));
-  const honest =
-    m.honesty.length || later.length || m.note
-      ? h(
-          'div.path-honest',
-          null,
-          m.honesty.length || later.length
-            ? h(
-                'ul.badges',
-                { 'aria-label': 'Чесність моделі' },
-                ...m.honesty.map((c) => h('li.chip.honesty', null, icon('layers'), c)),
-                ...later,
-              )
-            : null,
-          m.note ? h('p.path-note', null, h('span.path-note-k', null, `${L.note}. `), nbDash(m.note)) : null,
-        )
-      : null;
   let more: HTMLElement | null = null;
   if (m.more.length) {
     const body = h(
@@ -202,7 +182,6 @@ export function buildPathBody(m: PathStepModel, ctx: PathBodyContext): PathBody 
     hint,
     takeaway,
     recall,
-    honest,
     more,
   );
   const opening = openingPage(m, () => ctx.goPage(1));
@@ -237,8 +216,6 @@ export function buildPathBody(m: PathStepModel, ctx: PathBodyContext): PathBody 
         back.hidden = !away;
         if (away) back.querySelector('span')!.textContent = `${L.back}: ${stepTitle(hud, origin!)}`;
       }
-      if (later.length && later[0]!.hidden && (done || (ctx.acting !== undefined && holds(ctx.acting))))
-        for (const c of later) presence(c).reveal({ dy: 4, scale: 1 });
       if (done) return;
       if (holds(ctx.goal)) return reveal();
       const due = hintsDue(m.hints, clock.time - entered);

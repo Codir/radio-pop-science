@@ -1,8 +1,9 @@
 /**
- * Settings overlay: reading level («Просто / Докладно»), quality tier, sound, reduced motion, text size, dynamic resolution, reset progress.
+ * Settings overlay: reading level («Просто / Докладно»), quality tier, sound, reduced motion, text size, dynamic resolution, reset progress, «Почати з нуля» (engine/reset.ts).
  * Everything writes straight to the engine store (persisted in localStorage by the engine).
  */
 import { clearedProgress, fmtPercent, READING_LEVELS, type ReadingLevel } from '@/content';
+import { resetApp } from '@/engine/reset';
 import { Button, Divider, Slider, Tabs, Toggle, UiNode } from '@/ui3d';
 import type { Hud, Overlay } from '../shell';
 import { createModal, field } from './modal';
@@ -117,6 +118,26 @@ export function createSettings(hud: Hud): Overlay {
           hud.toast('Прогрес скинуто.', { tone: 'ok', duration: 3 });
         },
       });
+      // «Почати з нуля» (engine/reset.ts): everything the app keeps in the browser; the WebGL twin of the DOM
+      // system bar's confirmation is the same arm-then-press as «Скинути прогрес»
+      let wipeArmed = false;
+      const wipe: Button = new Button({
+        name: 'settings-wipe',
+        label: 'Почати з нуля',
+        icon: 'resetView',
+        onClick: () => {
+          if (!wipeArmed) {
+            wipeArmed = true;
+            wipe.label = 'Ще раз — скинути все';
+            hud.host.tweens.delay(4, () => {
+              wipeArmed = false;
+              wipe.label = 'Почати з нуля';
+            });
+            return;
+          }
+          void resetApp(store);
+        },
+      });
       const frames = new Tabs({
         items: [
           { id: 'auto', label: 'Авто' },
@@ -156,7 +177,7 @@ export function createSettings(hud: Hud): Overlay {
         new UiNode({ dir: 'col', gap: 4, width: 'fill', children: [sound, volume] }),
         dynamic,
         new Divider(),
-        new UiNode({ dir: 'row', justify: 'between', align: 'center', width: 'fill', children: [reset] }),
+        new UiNode({ dir: 'row', justify: 'between', align: 'center', width: 'fill', children: [reset, wipe] }),
       );
     },
   });

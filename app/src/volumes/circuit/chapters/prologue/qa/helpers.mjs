@@ -1,4 +1,4 @@
-/* global window */
+/* global window, document */
 // Playwright helpers shared by the chapter's QA scripts (run on lenovo through tools/qa/shot.mjs --script or
 // directly: see interactions.mjs).
 //
@@ -92,6 +92,26 @@ export async function dragProbe(page, name, fx, fy, { settle = 0.6 } = {}) {
     await page.mouse.up();
     await advance(page, after);
   };
+}
+
+/**
+ * In a narrow desktop window (portrait / narrow layout) the step column is a bottom sheet where «Опис» (`text`)
+ * and «Керування» (`controls`) share the space through tabs (hud-dom/dock/column.ts): pick one as a reader would,
+ * by a click on it. A no-op where there are no tabs (wide layouts: text and controls are on screen together).
+ * Returns whether a tab was clicked.
+ */
+export async function sheetTab(page, id) {
+  const tab = await page.evaluate((t) => {
+    const el = document.querySelector(`[data-ui="sheet-tabs:${t}"]`);
+    if (!el || el.closest('[hidden]')) return null;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return null;
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, on: el.getAttribute('aria-selected') === 'true' };
+  }, id);
+  if (!tab || tab.on) return false;
+  await page.mouse.click(tab.x, tab.y);
+  await advance(page, 0.2);
+  return true;
 }
 
 /** Click a scene object by its probe. */

@@ -40,6 +40,11 @@ export interface Settings {
    * long even at the lowest dynamic resolution (steady pacing, cooler device); `30` / `60` force it.
    */
   frameCap: 'auto' | 30 | 60;
+  /**
+   * «Версія для комп'ютера» (touch devices, the «Меню»): the HUD builds the desktop shell with a computer's metrics
+   * at this viewport (`engine/hud.ts` `shellOf`); input stays touch. No effect where the device gets `desk` anyway.
+   */
+  deskShell: boolean;
 }
 
 export interface Progress {
@@ -102,6 +107,7 @@ export const DEFAULT_SETTINGS: Settings = {
   textScale: 1,
   readingLevel: DEFAULT_READING_LEVEL,
   frameCap: 'auto',
+  deskShell: false,
 };
 
 export function initialState(): AppState {
@@ -187,7 +193,7 @@ export class Store {
    *   (`library.json → legacyVolume`; not the default volume, which may change).
    */
   constructor(
-    private readonly storage: StorageLike | null = null,
+    private storage: StorageLike | null = null,
     private readonly legacyVolume = 'electricity',
   ) {
     this.state = initialState();
@@ -229,6 +235,14 @@ export class Store {
   /** Record the position the user settled on: the global last position and the last one inside its volume. */
   settle(pos: Position): void {
     this.set((s) => ({ last: pos, lastIn: { ...s.lastIn, [pos.volumeId]: pos } }));
+  }
+
+  /**
+   * Stop persisting: from now on the state lives in memory only (the reset «Почати з нуля», `engine/reset.ts`,
+   * calls this before wiping the storage, so nothing is written back before the reload).
+   */
+  forget(): void {
+    this.storage = null;
   }
 
   /**
@@ -296,6 +310,7 @@ export class Store {
       };
       if (!isReadingLevel(this.state.settings.readingLevel))
         this.state.settings = { ...this.state.settings, readingLevel: DEFAULT_READING_LEVEL };
+      if (typeof this.state.settings.deskShell !== 'boolean') this.state.settings = { ...this.state.settings, deskShell: false };
     } catch {
       // Corrupt or inaccessible storage: start from defaults.
     }

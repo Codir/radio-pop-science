@@ -67,6 +67,7 @@ export class AnnotationLayer extends UiNode {
   private callouts: { def: CalloutDef; node: Callout }[] = [];
   private hotspots: { def: HotspotDef; node: HotspotMarker }[] = [];
   private time = 0;
+  private labelSize = 0;
 
   constructor() {
     super({ dir: 'stack', width: 'fill', height: 'fill' });
@@ -75,7 +76,7 @@ export class AnnotationLayer extends UiNode {
   /** Replace all annotations. */
   set(callouts: readonly CalloutDef[], hotspots: readonly HotspotDef[], cssPxPerUnit: number): void {
     this.clear();
-    const size = worldLabelSize(cssPxPerUnit);
+    const size = (this.labelSize = worldLabelSize(cssPxPerUnit));
     this.callouts = callouts.map((def) => ({ def, node: new Callout(def.text, def.color ?? null, size) }));
     this.hotspots = hotspots.map((def) => {
       const node: HotspotMarker = new HotspotMarker(def.title, () => def.onPick(node));
@@ -86,6 +87,17 @@ export class AnnotationLayer extends UiNode {
     this.hotspots.forEach((h, i) => (h.node.name = `hotspot-${i}`));
     for (const c of this.callouts) this.add(c.node);
     for (const h of this.hotspots) this.add(h.node);
+  }
+
+  /**
+   * The units-per-CSS-px changed while the labels are up (the shell switched: «Версія для комп'ютера» and back,
+   * the text-size setting): re-size the tags on screen to the world-label minimum of the new scale.
+   */
+  setScale(cssPxPerUnit: number): void {
+    const size = worldLabelSize(cssPxPerUnit);
+    if (size === this.labelSize) return;
+    this.labelSize = size;
+    for (const c of this.callouts) c.node.text.setStyle({ size });
   }
 
   get markers(): readonly HotspotMarker[] {

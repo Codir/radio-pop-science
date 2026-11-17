@@ -27,17 +27,41 @@ export interface BatteryModel {
   minusTip: Vector3;
 }
 
-/** A strip lying on the can's surface: `len` along the axis, `arc` radians around it, centred at angle `phi`. */
-function mark(b: Builder, x: number, len: number, arc: number, phi: number, c: string): void {
-  const R = BATTERY.radius + 0.004;
+/**
+ * Printed pole marks: bars `MARK.bar` long and `MARK.thick` thick, measured ON the surface (an arc of `a` radians
+ * at radius r is a·r long), so the bar along the axis and the bar around it come out the same size.
+ * They float `lift` above the amber band (radius R + 0.004) — at the band's own radius they z-fought with it.
+ */
+const MARK = { bar: 0.2, thick: 0.05, lift: 0.012 };
+const MARK_R = BATTERY.radius + MARK.lift;
+
+/** A strip lying on the can's surface: `len` along the axis, `width` around it, centred at angle `phi`. */
+function strip(b: Builder, x: number, len: number, width: number, phi: number, c: string): void {
+  const arc = width / MARK_R;
   const g = G.lathe(
     [
-      [R, -len / 2],
-      [R, len / 2],
+      [MARK_R, -len / 2],
+      [MARK_R, len / 2],
     ],
-    { seg: 6, phiStart: phi - arc / 2, phiLength: arc },
+    // ~1 segment per 0.01 of arc length: the curved bar reads as one smooth band, not facets
+    { seg: Math.max(4, Math.ceil(width / 0.01)), phiStart: phi - arc / 2, phiLength: arc },
   );
   b.add(g, { slot: 'toon', c, at: [x, 0, 0], rot: [0, 0, -Math.PI / 2] });
+}
+
+/** «−»: one bar along the axis. */
+function minus(b: Builder, x: number, phi: number, c: string): void {
+  strip(b, x, MARK.bar, MARK.thick, phi, c);
+}
+
+/** «+»: the «−» bar plus a bar around the can, split around the centre so no two pieces overlap. */
+function plus(b: Builder, x: number, phi: number, c: string): void {
+  const { bar, thick } = MARK;
+  minus(b, x, phi, c);
+  const arm = (bar - thick) / 2;
+  const off = (thick / 2 + arm / 2) / MARK_R;
+  strip(b, x, thick, arm, phi + off, c);
+  strip(b, x, thick, arm, phi - off, c);
 }
 
 export function createBattery(): BatteryModel {
@@ -88,9 +112,9 @@ export function createBattery(): BatteryModel {
   // pole marks, turned toward the reader
   // G.lathe: φ = 0 → +x; laid along x it becomes φ = π/2 → facing the reader (+z), φ = π → facing up
   const phi = Math.PI / 2 + 0.85;
-  mark(b, L / 2 - 0.3, 0.2, 0.2, phi, 'white');
-  mark(b, L / 2 - 0.3, 0.055, 0.72, phi, 'white');
-  mark(b, -L / 2 + 0.27, 0.2, 0.2, phi, 'mist');
+  // «+» in the middle of the band's visible part; «−», a clear gap, then «1,5 V», the group centred on the jacket
+  plus(b, L / 2 - 0.35, phi, 'white');
+  minus(b, -L / 2 + 0.29, phi, 'mist');
 
   const model = b.build();
   const band = new Mesh(
@@ -112,7 +136,8 @@ export function createBattery(): BatteryModel {
     halo: false,
     rich: false,
   });
-  print.position.set(-0.36, Math.cos(0.85) * 0 + Math.sin(0.85) * (R + 0.008), Math.cos(0.85) * (R + 0.008));
+  // ≈0.48 wide; its left edge ≈0.15 (more than one character) right of the «−» bar's end
+  print.position.set(-0.17, Math.sin(0.85) * (R + 0.008), Math.cos(0.85) * (R + 0.008));
   print.rotation.x = -0.85;
   print.name = 'battery:print';
   model.group.add(print);

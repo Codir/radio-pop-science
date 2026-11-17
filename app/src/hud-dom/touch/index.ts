@@ -6,7 +6,8 @@
  *   (CSS px, the device's insets) and `--kb` (on-screen keyboard) on `#kd-hud`; `--tch-*` placements (units) for the
  *   compact header, the system buttons and the navigation row (touch.css).
  * - The sheet (`sheet.ts`) hosts the column's parts on touch shells and reports its insets (`hud.touch`).
- * - The menu (`menu.ts`) — overlay `menu` — collects the system functions.
+ * - The menu (`menu.ts`) — overlay `menu` — collects the system functions, «Версія для комп'ютера» among them: the
+ *   desktop shell on this device (root class `kd-desk-forced`, «Мобільна версія» in the system bar leads back).
  * - Touch scrolling: the page cancels every `touchmove` (engine/page.ts, no bounce or pull-to-refresh); inside the
  *   DOM interface a move that a scroll area can follow is kept from that listener, so the area scrolls natively.
  */
@@ -64,6 +65,8 @@ export function mount(dom: DomHud): void {
     // one unit ≥ 1 CSS px on touch devices: 44 / 48 units are at least 44 / 48 real px
     setStyle(root, '--hit', String(touch && m.formFactor === 'tablet' ? 48 : UI.hit));
     const d = hud.engine.device;
+    // «Версія для комп'ютера»: the desktop shell on a device that would get a touch shell (`Settings.deskShell`)
+    setClass(root, 'kd-desk-forced', !touch && d.formFactor !== 'desktop');
     for (const side of ['top', 'right', 'bottom', 'left'] as const) setStyle(root, `--safe-${side}`, `${d.safeArea[side]}px`);
     setStyle(root, '--kb', `${d.keyboard}px`);
     if (!touch) return;

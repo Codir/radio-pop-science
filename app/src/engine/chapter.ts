@@ -204,7 +204,9 @@ export interface ChapterContext {
   /**
    * The device model (F5, DECISIONS §57 f): `formFactor` (`desktop` | `tablet` | `phone`), `orientation`,
    * `pointer` (`fine` | `coarse`), safe area. Live — read it when you need it (it changes on rotation); the only
-   * sanctioned way for a chapter to learn about the device. Most chapters never need it.
+   * sanctioned way for a chapter to learn about the device. Most chapters never need it. Under the reader's
+   * «Версія для комп'ютера» a phone or tablet reads as `desktop` here (layouts follow the desktop shell; pointer,
+   * safe area and pixel budget stay real — `engine/hud.ts` `layoutDevice`); a switch calls `onResize`.
    */
   readonly device: DeviceState;
   /** For render targets / capability queries. Do not call `render()` or change global state. */

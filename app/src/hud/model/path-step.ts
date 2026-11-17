@@ -1,8 +1,7 @@
 /**
  * View model of the step panel for a path-format chapter (docs/PATH_FORMAT.md): one reader, no reading levels,
  * no section tabs. The main text with its term marks, the action line, the takeaway (shown once the step's goal
- * is reached), hints for a stuck reader, «Докладніше», «Згадайте…» links, honesty chips and note — and on the
- * first step the chapter's opening card, on the last its closing card. Shared by every renderer; pure.
+ * is reached), hints for a stuck reader, «Докладніше», «Згадайте…» links — and on the first step the chapter's opening card, on the last its closing card. Shared by every renderer; pure.
  */
 import { stepContent, type ChapterContent, type PathRecall } from '@/content';
 import type { ChapterManifest } from '@/engine/api';
@@ -29,11 +28,6 @@ export interface PathStepModel {
   readonly takeaway: string;
   readonly hints: readonly string[];
   readonly more: readonly string[];
-  readonly honesty: readonly string[];
-  /** Chips that appear with the reader's action (`StepUiSpec.acting`). */
-  readonly honestyOnAction: readonly string[];
-  /** «Чесно про картинку» — empty when the step has none. */
-  readonly note: string;
   readonly recall: readonly PathRecall[];
   /** First step: «Питання з життя» and «Що ми вже знаємо» (empty `know` in a prologue). */
   readonly opening: { readonly hook: string; readonly know: string } | null;
@@ -50,7 +44,6 @@ export const PATH_LABELS = {
   action: 'Що зробити',
   takeaway: 'Висновок',
   hint: 'Підказка',
-  note: 'Чесно про картинку',
   recall: 'Згадайте',
   back: 'Повернутися',
   hook: 'Питання з життя',
@@ -89,9 +82,6 @@ export function pathStepModel(
     takeaway: path.takeaway,
     hints: path.hints ?? [],
     more: path.more,
-    honesty: path.honesty ?? [],
-    honestyOnAction: path.honestyOnAction ?? [],
-    note: path.note ?? '',
     recall: path.recall ?? [],
     opening: index === 0 && chapter.hook ? { hook: chapter.hook, know: chapter.know } : null,
     closing:

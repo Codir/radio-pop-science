@@ -27,8 +27,7 @@ import type { ColorLike } from '@/style';
 import type { StepUiBinding } from './step-ui';
 import { controlDefault, notifyChange } from './step-ui';
 import { arrangeControls, slotOf, type ControlSlot } from './model/controls';
-import { honestyModel } from './model/step';
-import type { ControlSpec, HonestySpec, When } from './step-ui-types';
+import type { ControlSpec, When } from './step-ui-types';
 
 export interface BuiltControls {
   /** Content groups in display order (empty when nothing is declared). */
@@ -68,22 +67,6 @@ export function bindVisible(
     else conceal(node, { dy: opts.dy ?? -6, scale: 0.98, onDone: relayout });
     relayout();
   };
-}
-
-/** Chips under the step title; `visible` predicates are returned as per-frame work. */
-export function honestyChips(
-  list: readonly HonestySpec[] = [],
-  relayout: () => void = () => undefined,
-): { chips: Chip[]; tick: ((t: number) => void)[] } {
-  const tick: ((t: number) => void)[] = [];
-  // texts, icons and predicates from the shared step model (the DOM panel renders the same list)
-  const chips = honestyModel(list).map((h) => {
-    const c = new Chip({ kind: 'honesty', icon: h.icon, text: h.text });
-    const fn = bindVisible(c, h.visible, relayout);
-    if (fn) tick.push(fn);
-    return c;
-  });
-  return { chips, tick };
 }
 
 type Out = number | boolean | string;

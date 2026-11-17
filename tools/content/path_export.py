@@ -108,9 +108,8 @@ def export_chapter(ch, reg, jn, docs):
         steps.append(dict(
             id=s['id'], title=s['title'], idea=s.get('idea', ''), text=paragraphs(s.get('text', '')), action=s.get('action', ''),
             takeaway=s.get('takeaway', ''), terms=cards(s['terms'], reg), more=paragraphs(s.get('more', '')),
-            recall=[dict(target=r, title=titles.get(r, '')) for r in recall], honesty=s['honesty'],
-            honestyOnAction=s['honestyOnAction'],
-            hints=s['hints'], captions=s['captions'], note=s.get('note', ''), goal=s.get('goal', ''),
+            recall=[dict(target=r, title=titles.get(r, '')) for r in recall],
+            hints=s['hints'], captions=s['captions'], goal=s.get('goal', ''),
             see=s.get('see', '')))
     intro = {t['name']: '%s/%s/%s' % (C.VOLUME, cid, s['id']) for s in ch['steps'] for t in cards(s['terms'], reg)}
     kinds = {t['name']: t['kind'] for t in reg['terms']}
@@ -137,16 +136,10 @@ def runtime(ex, reg):
         path = dict(idea=s['idea'], action=s['action'], takeaway=takeaway, more=s['more'], marks=marks)
         if s['recall']:
             path['recall'] = s['recall']
-        if s['honesty']:
-            path['honesty'] = s['honesty']
-        if s['honestyOnAction']:
-            path['honestyOnAction'] = s['honestyOnAction']
         if s['hints']:
             path['hints'] = s['hints']
         step = dict(id=s['id'], title=s['title'], panel=text.split(PARA), terms=[term(t['name'], t['card']) for t in s['terms']],
                     path=path)
-        if s['note']:
-            path['note'] = s['note']
         if any(len(c) > 1 for c in s['captions']):
             path['captions'] = s['captions']
         if s['captions']:

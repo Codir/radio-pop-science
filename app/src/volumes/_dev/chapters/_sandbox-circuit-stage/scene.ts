@@ -21,6 +21,7 @@ export default defineScene((ctx) => {
   // `?amb=0` shows the first, darker look of the unlit room (before / after pairs for the owner)
   const amb = new URLSearchParams(globalThis.location?.search ?? '').get('amb');
   if (amb !== null) stand.ambient = Number(amb);
+  const lampAt = STAGE_SHOTS.lamp.target;
   const mid = HANDOVER.spot.clone().addScaledVector(HANDOVER.direction, -1.9);
   camera.shots({
     ...STAGE_SHOTS,
@@ -29,6 +30,13 @@ export default defineScene((ctx) => {
       target: [-0.2, 1.05, 1.5],
       fov: STAGE_FOV,
       fit: { center: [0, 1, 1.4], radius: 2.6 },
+    },
+    // the lamp from steeply above: the board and the table behind the globe (its edge on a light ground)
+    lampTop: {
+      position: [lampAt[0] + 1.3, lampAt[1] + 4.4, lampAt[2] + 2.1],
+      target: lampAt,
+      fov: STAGE_FOV,
+      fit: { center: lampAt, radius: 1.3 },
     },
     diveMid: {
       position: [mid.x, mid.y, mid.z],
@@ -67,6 +75,9 @@ export default defineScene((ctx) => {
     'lens-call': { params: { closed: 0, lensCall: 1 }, camera: 'stand' },
     poles: { params: { closed: 1, poles: 1 }, camera: 'stand' },
     lamp: { params: { closed: 1 }, camera: 'lamp', post: STAGE_POST.lamp },
+    'lamp-off': { params: { closed: 0 }, camera: 'lamp', post: STAGE_POST.lamp },
+    'lamp-top': { params: { closed: 1 }, camera: 'lampTop', post: STAGE_POST.lamp },
+    'lamp-top-off': { params: { closed: 0 }, camera: 'lampTop', post: STAGE_POST.lamp },
     'lamp-warming': { params: { closed: 1, glow: 0.42 }, camera: 'lamp', post: STAGE_POST.lamp },
     'battery-tired': { params: { closed: 1, charge: 0.22 }, camera: 'stand' },
     'battery-dead': { params: { closed: 1, charge: 0 }, camera: 'stand' },

@@ -20,7 +20,7 @@ export const PLACE = {
   springLength: 0.165,
   /** Bottom contact of the bulb, on the socket's floor. */
   bulb: new Vector3(LAMP.x, LAMP.socketY - 0.2, LAMP.z),
-  /** Slider, closed (bridging both contacts). */
+  /** Slider, closed (bridging both contacts); open moves it −x by `SLIDER_TRAVEL`. */
   slider: new Vector3(SWITCH.x, SLIDER_Y, SWITCH.z),
 } as const;
 
@@ -68,7 +68,8 @@ export function createStand(bulbDims: BulbDims = BULB): Stand {
 
   const setSwitch = (open: number): void => {
     slider.position.copy(PLACE.slider);
-    slider.position.x += Math.min(Math.max(open, 0), 1) * SLIDER_TRAVEL;
+    // open = toward −x, as in the torch (toward its tail; a real slide switch is pushed toward the head to light)
+    slider.position.x -= Math.min(Math.max(open, 0), 1) * SLIDER_TRAVEL;
   };
   return {
     group,

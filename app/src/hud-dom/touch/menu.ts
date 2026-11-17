@@ -1,7 +1,7 @@
 /**
  * The menu of the touch shells in the DOM (WebGL twin `hud/touch/menu.ts`): on a phone or tablet the row of system
- * buttons collapses into «Мапа» and this one menu — library (at the library level), map, glossary, sound,
- * fullscreen where the browser has it, settings, help, title screen. D5's modal frame (focus, Esc, scrim); on touch
+ * buttons collapses into «Мапа» and this one menu — «Версія для комп'ютера» (first), library (at the library level),
+ * map, glossary, sound, fullscreen where the browser has it, settings, help, title screen, «Почати з нуля». D5's modal frame (focus, Esc, scrim); on touch
  * shells touch.css hangs it under the menu button as a popover. Rebuilt on every open: the sound state, the
  * fullscreen API and the library level may have changed.
  */
@@ -39,6 +39,12 @@ export function domMenu(dom: DomHud): DomModal {
       });
       sound.setAttribute('aria-pressed', String(audio));
       const rows = [
+        // first, so a phone held sideways shows it without scrolling the list: the desktop shell on this device
+        // (`Settings.deskShell`); «Мобільна версія» in its system row leads back
+        item('menu-desk', 'mouse', "Версія для комп'ютера", () => {
+          hud.close();
+          engine.store.updateSettings({ deskShell: true });
+        }),
         hud.libraryLevel ? item('menu-library', 'book', 'Бібліотека', go('library')) : null,
         item('menu-map', 'map', 'Мапа подорожі', go('map')),
         item('menu-glossary', 'glossary', 'Глосарій', go('glossary')),
@@ -52,6 +58,7 @@ export function domMenu(dom: DomHud): DomModal {
         item('menu-settings', 'settings', 'Налаштування', go('settings')),
         item('menu-help', 'help', 'Довідка', go('help')),
         item('menu-home', 'home', 'Титульний екран', go('home')),
+        item('menu-reset', 'resetView', 'Почати з нуля', go('reset')),
       ];
       body.append(h('nav.ov-menu-list', { 'aria-label': 'Меню' }, ...rows));
     },

@@ -76,9 +76,20 @@ need three windows of one world — not built. A «де ми» HUD ladder is a p
 
 ## The dive as a position (round 4, DECISIONS §60 p) — `dive.ts`
 
-`world.scrub(t)` / `world.travelTo(t)` / `world.takeLens()` / `world.position` / `world.goal`, `t` 0…3 (0 the lens
-over the wire · 1 «жила» · 2 «ряди» · 3 «один атом»). While the rail is engaged the frame — camera (stops'
-shots interpolated: direction slerped, distance log-lerped), `deep`, every dissolve — is a function of `t`.
-A depth slider: `onChange: travelTo`, `onInput: (v, how) => how === 'drag' && scrub(v)`, and patch `current` with
-`world.position` (UI_API §3.3). Step flights (`fly`, `flyIn`, a change of `deep` between steps) ride the same rail:
-lens leg → travel → (if the step's camera is not the stop's shot) one camera move. A step entry releases the rail.
+`world.scrub(t)` / `world.travelTo(t, seconds?)` / `world.takeLens()` / `world.release()` / `world.position` /
+`world.goal`, `t` −½…3 (−½ = `−LENS_LEG` the stand plan with the lens in its holder · 0 the lens over the wire ·
+1 «жила» · 2 «ряди» · 3 «один атом»). While the rail is engaged the frame — camera (stops' shots interpolated:
+direction slerped, distance log-lerped), the lens, `deep`, every dissolve — is a function of `t`.
+
+- The lens leg −½…0 (round 5, owner 2026-11-17: the slider's first move jumped): the lens rises first, lands on the
+  wire at 85 % of the leg; the camera follows from 10 % and arrives with the pace the push-in starts with; the ring
+  leg 0…1 eases in (slope 0.22) so the joint at 0 keeps its pace (`__tests__/dive.test.ts`). `takeLens()` glides the
+  rail to 0 (from the stand: through the lens leg). A slider that starts with the lens on the wire (`wire/atoms`)
+  simply uses 0…3 — nothing changed there. Before the rail engages, `position` is what the state shows
+  (`deep`, `lens`); engaging never cuts: an orbit, the idle drift or a camera move still under way is carried as an
+  offset that fades out in ≈ 0.5 s.
+- `travelTo(t, seconds)`: a timed, eased glide (a rewind, e.g. «Назад» from `prologue/dive` to `click`);
+  `release()`: the rail lets go where it is (the step's own motion takes the camera from there).
+  A depth slider: `onChange: travelTo`, `onInput: (v, how) => how === 'drag' && scrub(v)`, and patch `current` with
+  `world.position` (UI_API §3.3). Step flights (`fly`, `flyIn`, a change of `deep` between steps) ride the same rail:
+  lens leg → travel → (if the step's camera is not the stop's shot) one camera move. A step entry releases the rail.

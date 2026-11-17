@@ -1,6 +1,6 @@
 /**
  * DOM step panel (WebGL twin `hud/step-panel.ts`): head with «КРОК n / N» and the «Просто | Докладно» switch,
- * step title, honesty chips, paged rich text with its page bar (the last page's «next» goes on to the next
+ * step title, paged rich text with its page bar (the last page's «next» goes on to the next
  * step), the sections, «Див. також» and the quiz entry. All copy comes from the shared model
  * (`hud/model/step.ts`) at the reading level in effect (L1's selector).
  *
@@ -18,7 +18,6 @@ import type { Hud } from '@/hud/shell';
 import { h, scrollArea, setClass, setStyle, setText } from '../core/dom';
 import { icon } from '../core/icons';
 import { nbDash, prose } from './typo';
-import { createBadges } from './badges';
 import { createLevelSwitch } from './level-switch';
 import { buildPathBody, type PathBody } from './path-body';
 import { buildDomLinks } from './links';
@@ -55,7 +54,6 @@ export function createDomStepPanel(hud: Hud): DomStepPanel {
   const counter = h('div.kicker.sp-count', { 'aria-hidden': 'true' });
   const level = createLevelSwitch(engine);
   const title = h('h2.sp-title', { id: 'kd-step-title' });
-  const badges = createBadges();
   const pages = h('div.pages');
   const extra = h('div.sp-extra');
   const scroll = scrollArea(
@@ -89,7 +87,6 @@ export function createDomStepPanel(hud: Hud): DomStepPanel {
     { 'data-ui': 'step-panel', 'aria-labelledby': 'kd-step-title' },
     head,
     title,
-    badges.el,
     scroll,
     bar,
   );
@@ -168,16 +165,13 @@ export function createDomStepPanel(hud: Hud): DomStepPanel {
     const key = `${fullChapterId(m)}/${id}`;
     setText(counter, pm.counter);
     setText(title, nbDash(pm.title));
-    badges.el.hidden = true;
     const spec = bindingOf(fullChapterId(m))?.specs.get(id);
     const goal = spec?.goal;
-    const acting = spec?.acting;
     const body = buildPathBody(pm, {
       hud,
       scroll,
       trail,
       goal,
-      acting,
       reached,
       key,
       goPage: (i) => showPage(i),
@@ -235,7 +229,6 @@ export function createDomStepPanel(hud: Hud): DomStepPanel {
     onChapter(m) {
       manifest = m;
       stepId = engine.store.get().stepId ?? m.steps[0]!.id;
-      badges.show(m, stepId);
     },
     onContent(c) {
       content = c;
@@ -246,7 +239,6 @@ export function createDomStepPanel(hud: Hud): DomStepPanel {
       if (id === stepId && pages.children.length > 0) return;
       stepId = id;
       openKey = '';
-      badges.show(manifest, id);
       if (instant) return fill();
       // the page-turn dip of the WebGL panel, on the engine clock (deterministic under ?freeze)
       const tweens = hud.host.tweens;
@@ -261,7 +253,6 @@ export function createDomStepPanel(hud: Hud): DomStepPanel {
       } }); // prettier-ignore
     },
     update: () => {
-      badges.update();
       panelGate();
       path?.tick(held);
     },

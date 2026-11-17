@@ -92,6 +92,7 @@ export function mountAnnotations(hud: Hud): (spec: StepUiSpec | null) => void {
     if (layer.children.length === 0) return;
     if (checks.length > 0) checks[turn++ % checks.length]!();
     const m = hud.metrics;
+    layer.setScale(m.pxPerUnit);
     const f = hud.engine.hud.insetFractions();
     // touch shells: a marker's whole 44-px target stays on screen (desktops: the margin they always had)
     const pad = m.shell === 'desk' ? 12 : 24;

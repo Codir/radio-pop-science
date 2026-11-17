@@ -27,7 +27,7 @@ import {
 import type { Clock } from './clock';
 import { Disposables, disposeObject3D } from './disposables';
 import { Emitter, type Unsubscribe } from './events';
-import type { HudLayer } from './hud';
+import { layoutDevice, type HudLayer } from './hud';
 import type { InputSystem } from './input';
 import type { Nav } from './nav';
 import type { RenderPipeline, WorldView } from './pipeline/pipeline';
@@ -186,13 +186,11 @@ export class ChapterRuntime {
       });
     });
     deps.hud.onInsets((insets) => this.active?.director.setInsets(insets));
-    // the device became a phone / tablet or a desktop (emulation, a mouse plugged in): re-framing follows
-    deps.store.subscribe(
-      (s) => s.device.formFactor,
-      (formFactor) => {
-        if (this.active) this.active.director.reframe = formFactor !== 'desktop';
-      },
-    );
+    // the device became a phone / tablet or a desktop (emulation, a mouse plugged in), or the reader chose
+    // «Версія для комп'ютера» (`Settings.deskShell`): re-framing follows the form factor the HUD lays out for
+    deps.hud.onResize((m) => {
+      if (this.active) this.active.director.reframe = m.formFactor !== 'desktop';
+    });
   }
 
   on<K extends keyof RuntimeEvents>(type: K, fn: (payload: RuntimeEvents[K]) => void): Unsubscribe {
@@ -545,8 +543,9 @@ export class ChapterRuntime {
     director.setViewport(vp.width, vp.height);
     director.setInsets(this.deps.hud.insetFractions(), true);
     director.reducedMotion = this.deps.reducedMotion();
-    // phones and tablets: re-frame shots for narrow free areas (never on desktops — see `REFRAME`)
-    director.reframe = this.deps.store.get().device.formFactor !== 'desktop';
+    // phones and tablets: re-frame shots for narrow free areas (never on desktops or in the forced desktop shell —
+    // see `REFRAME`)
+    director.reframe = this.deps.hud.metrics.formFactor !== 'desktop';
     const env = new Environment(
       scene,
       { preset: manifest.theme.sky, accent: manifest.theme.accent },
@@ -609,7 +608,9 @@ export class ChapterRuntime {
         return deps.viewport();
       },
       get device() {
-        return deps.store.get().device;
+        // the forced desktop shell («Версія для комп'ютера») reads as a desktop here too (`layoutDevice`)
+        const s = deps.store.get();
+        return layoutDevice(s.device, s.settings.deskShell);
       },
       renderer: deps.renderer,
       get reducedMotion() {

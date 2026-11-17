@@ -10,7 +10,11 @@ import { SWITCH } from './layout';
 
 /** Height of the slider's origin above the face when it sits on the switch block. */
 export const SLIDER_Y = 0.26;
-/** How far the slider travels between closed (0) and open: the bridge leaves the left contact. */
+/**
+ * How far the slider travels between closed (0) and open, along its own −x: toward the flashlight's tail in the
+ * torch (pushed toward the head = light on, as on a real flashlight), to the left on the stand — the bridge leaves
+ * the right contact and the gap shows between them.
+ */
 export const SLIDER_TRAVEL = SWITCH.gap / 2 + 0.15;
 
 /** Origin = centre of the bridge's underside; the bridge spans both contact studs when the slider is centred. */

@@ -51,6 +51,11 @@ for other places (`LensPose` in the board frame; `poses.holder`, `poses.overWire
 - `mountStage(ctx, { globe })` — radius of the lamp's glass globe (default 0.66 = 16 % of the frame height in
   the main shot; 0.52 is the smallest that still reads at 1280×720, about 13 %). The flashlight's head is built
   around the globe, so the lamp never changes size in the unfolding. Side by side: `qa/W1-circuit-stage/lamp-scale.jpg`.
+- **The glass and depth of field.** Transparent glass writes no depth, so the post pipeline's depth of field
+  blurred the globe by whatever lay behind it (smeared rim over the far room, sharp over the table). The bulb
+  carries an invisible depth-only copy of its glass (`bulb:glass-depth`, drawn last, 1.2 % larger): the globe is
+  focused like the solid lamp. Any other large glass that must read crisp needs the same (`depthShell` in
+  `bulb.ts`). Steps `lamp-off`, `lamp-top`, `lamp-top-off` of the showcase show the glass on dark and light ground.
 - **Lamp on or off at step entry** is just `closed` in the step's params plus `stand.snap()` on an instant entry
   (deep link): `prologue/open`, `prologue/dive` enter with `closed: 1`; `prologue/riddle`, `wire/restless` with 0.
 - **The slider in the dark**: the thumb has its own faint yellow glow that fades as the room gets light — it is

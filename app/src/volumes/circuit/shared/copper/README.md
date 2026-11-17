@@ -117,7 +117,7 @@ see «Hand-over»). The counter frame is shown as a window by perspective alone:
   in three layers 2 · 8 · 18 that flow slowly (`soft-dots.ts`, `shells.ts`); the 29th, outer electron farther out
   and drawn as the bright electron character. No orbit lines.
 - **Plastic** — violet atoms in wavy zigzag chains, one electron per atom on a short thread (`plastic.ts`).
-- **Stated simplifications** for the panel's honesty marks: electrons as small balls; the wire, atom and nucleus
+- **Stated simplifications** (no longer shown on the panel — DECISIONS §60 x): electrons as small balls; the wire, atom and nucleus
   are not to scale; motion slowed by many orders of magnitude; polymer chains simplified to one kind of atom.
 
 ## Performance (RTX 5060, quality `high`, `tools/qa/chapter-check.mjs _dev/_sandbox-circuit-copper`)

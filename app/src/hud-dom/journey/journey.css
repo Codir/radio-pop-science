@@ -176,6 +176,11 @@
     text-align: left;
     border-radius: calc(var(--r-card) * var(--u));
   }
+  /* the row is the hit area (min-height above): no reaching-out ::before — a static button anchors it to the
+     plot, and the last stop's then covered every row (each tap opened «Практикум») */
+  .ji .ji-stop::before {
+    display: none;
+  }
   .ji-stop.selected {
     background: rgb(var(--accent-rgb) / 0.12);
   }
@@ -264,24 +269,28 @@
   font-size: calc(var(--t-h3) * var(--u));
   color: var(--c-mist);
 }
-.bd.fill .ji-plot {
-  height: auto;
-  aspect-ratio: 12 / 5;
-  min-height: calc(240 * var(--u));
-  max-height: calc((var(--bd-room, 640) - 300) * var(--u));
-}
 .bd.fill .ji-path {
   stroke-width: 4;
 }
-.bd.fill .ji-stop {
-  width: calc(60 * var(--u));
-  height: calc(60 * var(--u));
-}
-.bd.fill .ji-dot {
-  width: calc(48 * var(--u));
-  height: calc(48 * var(--u));
-  border-width: calc(3 * var(--u));
-  font-size: calc(var(--t-h3) * var(--u));
+/* the plot's sizes only while it is a plot: in the list form (a narrow window) they would pin each row to a
+   60-unit square and pile the stops' words on one another */
+@container ji (width > 380px) {
+  .bd.fill .ji-plot {
+    height: auto;
+    aspect-ratio: 12 / 5;
+    min-height: calc(240 * var(--u));
+    max-height: calc((var(--bd-room, 640) - 300) * var(--u));
+  }
+  .bd.fill .ji-stop {
+    width: calc(60 * var(--u));
+    height: calc(60 * var(--u));
+  }
+  .bd.fill .ji-dot {
+    width: calc(48 * var(--u));
+    height: calc(48 * var(--u));
+    border-width: calc(3 * var(--u));
+    font-size: calc(var(--t-h3) * var(--u));
+  }
 }
 .bd.fill .ji-card {
   min-height: calc(96 * var(--u));

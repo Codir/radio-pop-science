@@ -101,8 +101,9 @@ export function riddleStep(
       goal.reset();
       crawl.time = 0;
       showing = false;
-      // from `dive` the lamp was lit: it will dim into the dark of time 0 instead of snapping off
-      dimFrom = info.instant ? -1 : world.stand.glow;
+      // from `dive` the lamp was lit: it will dim into the dark of time 0 instead of snapping off (the reader may
+      // have opened the switch there: a dark or cooling lamp just goes on cooling by itself)
+      dimFrom = info.instant || world.stand.glow < 0.5 ? -1 : world.stand.glow;
       dimT = 0;
       if (info.instant) {
         crawl.show(true);

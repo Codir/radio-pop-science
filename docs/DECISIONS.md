@@ -435,3 +435,25 @@ If a chapter document contradicts this file, this file wins and the document mus
        approved preview prints «5 см», «6 мм», «2 хв 16 с». In this volume, lengths and times of everyday scale are
        written with Ukrainian unit signs (мм, см, м, с, хв, год) in captions and spelled out in running text;
        electrical units stay international as §54 f says (V, A, Ω, W). Volume 1 is not changed.
+    v. **Models (owner, 2026-11-17, verbatim):** «тепер ти opus і можеш запускати тільки opus (high effort для
+       важчих задач і medium для простіших)». Supersedes §60 d: the orchestrator runs on Opus; every subagent runs
+       on Opus — effort high for harder work (chapter building, scenes and visuals, platform, hard fixes,
+       planning), medium for simpler work (small fixes, doc edits, cleanups, test updates). No Fable; agents that
+       were spawned on Fable are not resumed — a fresh Opus agent is briefed instead.
+    w. **The dive slider starts with the lens (owner, 2026-11-17, verbatim):** «на другому кроці перший рух слайдера
+       на самому початку перескоком анімує початок. а має бути видно ще рух лупи і піднесення її до дроту». In
+       `prologue/dive` the depth slider's first stretch scrubs the lens out of its holder onto the wire (camera
+       following); the rest is the dive. No jump anywhere on the track. A tap on the lens glides that stretch.
+    x. **No honesty badges or note (owner, 2026-11-17, verbatim):** «прибирай надписи "спрощена модель", "не в
+       масштабі" і блок "чесно про картинку". це все зайве». The reader's step panel shows neither the honesty marks
+       nor the «Чесно про картинку» note — in every volume, both interfaces. In `circuit` the scripts drop them
+       (path format: the fields become optional, never required); their text is not moved into the main text.
+       Earlier rules requiring them are superseded.
+    y. **«Почати з нуля» (owner, 2026-11-17, verbatim):** «додай кнопку в меню панель (зверху справа), котра
+       скидатиме увесь кеш і я зможу проходити все з нуля». Last button of the top-right system bar (phone: last
+       item of «Меню»): in-app confirmation, then every `electricity:` key is cleared and the app restarts at `#/`
+       keeping URL flags.
+    z. **The 2D interface is the default (owner, 2026-11-17, verbatim):** «не треба додаткових адрес. я хочу
+       відкривати : http://<host>:8080/ і бачити те, про що я тебе прохав». D9 phase B now: `DEFAULT_HUD =
+       'dom'`, the plain address shows the DOM interface; `?hud=gl` keeps working until phase C (deletion), which
+       still waits for its own review.

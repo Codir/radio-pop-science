@@ -184,13 +184,12 @@ export type ControlSpec =
   | StatsSpec
   | NoteSpec;
 
-/** Kinds of the standard honesty chips (DECISIONS §5). */
+/** Kinds of the former honesty chips (DECISIONS §5, superseded by §60 x). */
 export type HonestyKind = 'notToScale' | 'simplified' | 'illustrative';
 
 /**
- * Honesty note of a step (DECISIONS §5). Object forms accept `text` (custom wording, e.g. «сповільнено ≈ у
- * мільярд разів», «спрощена модель сліду») and `visible` (e.g. hide «збільшено ×1000» while true proportions
- * are shown).
+ * Former honesty chip of a step. Superseded by DECISIONS §60 x: no interface renders it any more; the type stays
+ * only so volume 1's step declarations (content on hold) still compile. New steps do not declare it.
  */
 export type HonestySpec =
   | HonestyKind
@@ -259,6 +258,7 @@ export interface BoardSpec {
 
 export interface StepUiSpec {
   controls?: readonly ControlSpec[];
+  /** Ignored — no honesty chips are shown (DECISIONS §60 x); kept for volume 1's untouched declarations. */
   honesty?: readonly HonestySpec[];
   callouts?: readonly CalloutSpec[];
   hotspots?: readonly HotspotSpec[];
@@ -273,11 +273,6 @@ export interface StepUiSpec {
    * takeaway at once.
    */
   goal?: When;
-  /**
-   * Path-format chapters: the reader's action is under way (the race runs, the scene is sped up). Honesty chips
-   * marked `→` in the document («→ прискорено ×20») appear once this has held, and stay for the visit.
-   */
-  acting?: When;
   /**
    * The step navigator stays hidden (no pointer, no focus, forward keys do nothing) until `hiddenUntil` first
    * holds — a predicate, or `'goal'` for the step's `goal` — then it is revealed smoothly (`hud/nav-gate.ts`).

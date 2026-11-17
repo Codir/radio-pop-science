@@ -298,6 +298,30 @@ export class CameraDirector {
     this.ease = resolveEase(opts.ease ?? MOTION.camera.ease);
   }
 
+  /**
+   * Stop where the frame is now — never a cut: a move in progress ends on the pose on screen, the user's orbit
+   * and zoom are baked into it (nothing unwinds), idle drift goes on. With `shot`, that shot's settings (orbit
+   * limits, `fit`, drift, near/far) apply from now while the camera stays put; the depth-of-field focus stays
+   * where it is. The next `go()` leaves from this very pose. Use it when a scene drives its own transition and
+   * the camera must wait for its moment (instead of `go(…, { instant: true })`, which snaps the reader's view).
+   */
+  hold(shot?: string | Shot): void {
+    if (shot !== undefined) {
+      const resolved = typeof shot === 'string' ? this.named.get(shot) : shot;
+      if (!resolved) throw new Error(`CameraDirector: unknown shot '${String(shot)}'`);
+      this.shot = resolved;
+      this.resolveFit(resolved.fit);
+    }
+    this.focusObject = null;
+    this.focusPoint.copy(this.focusCurrent);
+    this.focusFrom.copy(this.focusCurrent);
+    this.bakeOrbitInto(this.pose);
+    this.orbitAzTarget = this.orbitPolTarget = this.orbitZoomTarget = 0;
+    this.copyPose(this.pose, this.from);
+    this.copyPose(this.pose, this.to);
+    this.progress = 1;
+  }
+
   /** Frame an object (or point) so that it fills the safe frame, keeping the current view direction. */
   focusOn(subject: Object3D | Vec3Like, opts: FocusOptions = {}): void {
     const fov = opts.fov ?? this.shot.fov ?? DEFAULT_FOV;

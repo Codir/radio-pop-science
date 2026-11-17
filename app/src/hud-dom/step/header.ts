@@ -46,7 +46,11 @@ function ring(): { el: HTMLElement; set(fraction: number, label: string): void }
   };
 }
 
-export function createDomHeader(hud: Hud): {
+/** `system`: the system row's element (top-right), which the header must not run under. */
+export function createDomHeader(
+  hud: Hud,
+  system: () => HTMLElement | null,
+): {
   el: HTMLElement;
   onChapter(m: ChapterManifest): void;
   onLayout(m: HudMetrics): void;
@@ -94,7 +98,19 @@ export function createDomHeader(hud: Hud): {
       progress();
     },
     onLayout(m) {
+      // beside the system row first (its own title width), so the decision never depends on the previous one
+      setClass(el, 'below', false);
+      setStyle(el, 'top', '');
       setStyle(title, 'max-width', `calc(${headerTitleMax(m.layout, m.width).toFixed(1)} * var(--u))`);
+      const sys = system();
+      if (m.shell !== 'desk' || !sys || sys.offsetParent === null || el.offsetParent === null) return;
+      // a narrow desktop window (≲ 700 px): beside the system row the header would run under its buttons — it
+      // takes its own row under them instead, as wide as the window (header and system never overlap, HUD_DOM §12)
+      const gap = 8 * m.pxPerUnit;
+      if (el.offsetLeft + el.offsetWidth + gap <= sys.offsetLeft) return;
+      setClass(el, 'below', true);
+      setStyle(el, 'top', `${sys.offsetTop + sys.offsetHeight + gap}px`);
+      setStyle(title, 'max-width', '');
     },
   };
 }

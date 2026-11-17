@@ -36,6 +36,7 @@ import { registerParams, type WorldParam } from './params';
 
 export * from './levels';
 export { STOP_SHOTS } from './flight';
+export { LENS_LEG } from './dive';
 export { AWAY_FOCUS, AWAY_POST, AWAY_SHOT } from './away';
 export type { WorldParam } from './params';
 
@@ -77,17 +78,22 @@ export interface CircuitWorld {
   /** Fly to a floor within a step: lens leg if needed, then a travel on the dive rail, then the step's camera. */
   fly(deep: number, camera: string, info?: Pick<StepInfo, 'scope'>, lens?: number): void;
   /**
-   * The dive as a position 0…3 (0 the lens over the wire · 1 «жила» · 2 «ряди» · 3 «один атом»): the frame —
-   * camera, `deep`, every dissolve — is a function of it. `scrub` follows the hand; `travelTo` glides there
-   * (eased, speed-limited: a click on a slider's track, a programmatic move). Both take the camera from the stage
-   * until the next step entry. Call `takeLens()` first when the reader is on the stand plan.
+   * The dive as a position −½…3 (−`LENS_LEG` the stand plan, the lens in its holder · 0 the lens over the wire ·
+   * 1 «жила» · 2 «ряди» · 3 «один атом»): the frame — camera, the lens, `deep`, every dissolve — is a function of it.
+   * The lens leg −½…0 is the take of the lens (it rises, crosses the stand and settles on the near wire; the camera comes
+   * with it); a slider that starts at the lens over the wire simply uses 0…3. `scrub` follows the hand; `travelTo`
+   * glides there (eased, speed-limited: a click on a slider's track, a programmatic move). Both take the camera
+   * from the stage until the next step entry, and engaging never cuts (an orbit or drift on screen fades out).
    */
   scrub(t: number): void;
-  travelTo(t: number): void;
-  /** Where the rail is now (0…3) and where it is going. */
+  /** `seconds`: glide in exactly that long (eased in and out) instead of at the rail's pace — a rewind. */
+  travelTo(t: number, seconds?: number): void;
+  /** Let the rail go where it is: the stage has the camera again (a step's own motion takes over from here). */
+  release(): void;
+  /** Where the rail is now (−½…3) and where it is going (before it engages: the position the stand's state shows). */
   readonly position: number;
   readonly goal: number;
-  /** Lay the lens on the wire and bring the camera to the rail's start (`lens`); `flying` until it is there. */
+  /** Glide the rail to 0 (the lens on the wire, the camera at the rail's start); from the stand: the lens leg. */
   takeLens(): void;
   /**
    * The entry flight of a chapter that starts below the stand (call from `enterStep` after `world.enterStep`, e.g.
@@ -135,12 +141,11 @@ export function mountWorld(ctx: ChapterContext, opts: WorldOptions = {}): Circui
   // QA: the hero atom of the copper world (its origin), for colour checks of the lower floors
   const hero = new Vector3();
   ctx.qa.probe('copper-hero', () => copper.space.localToWorld(hero.set(0, 0, 0)));
-  const rail = createDiveRail([
-    STAGE_SHOTS.lens,
-    STAGE_SHOTS.handover,
-    lower['copper-rows']!,
-    lower['copper-atom']!,
-  ]);
+  const rail = createDiveRail(
+    [STAGE_SHOTS.lens, STAGE_SHOTS.handover, lower['copper-rows']!, lower['copper-atom']!],
+    // the lens leg starts on the stand plan (`prologue/dive`'s camera)
+    STAGE_SHOTS.stand,
+  );
   const flight = createFlight(
     ctx,
     rail,
@@ -184,13 +189,14 @@ export function mountWorld(ctx: ChapterContext, opts: WorldOptions = {}): Circui
       flight.fly({ deep, camera, lens });
     },
     scrub: (t) => flight.scrub(t),
-    travelTo: (t) => flight.travelTo(t),
+    travelTo: (t, seconds) => flight.travelTo(t, seconds),
+    release: () => flight.release(),
     takeLens: () => flight.takeLens(),
     get position() {
-      return rail.position;
+      return flight.engaged ? rail.position : rail.positionOf(params.deep.value, params.lens.value);
     },
     get goal() {
-      return rail.target;
+      return flight.engaged ? rail.target : rail.positionOf(params.deep.value, params.lens.value);
     },
     flyIn(id) {
       const spec = specs[id];

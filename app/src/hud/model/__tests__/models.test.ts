@@ -6,7 +6,7 @@ import type { Journey, JourneyChapter } from '../../journey';
 import { headerModel, headerTitleMax } from '../header';
 import { stepLinks, stepOf } from '../links';
 import { factModel, stepSections } from '../sections';
-import { honestyFactor, honestyModel, stepModel } from '../step';
+import { stepModel } from '../step';
 import { spineFamily, spinePick, spineRows } from '../spine';
 
 const manifest = {
@@ -188,23 +188,6 @@ describe('step model', () => {
     });
     expect(stepModel(manifest, null, 'anatomy', 'detailed')!.pending).toBe(true);
     expect(stepModel(manifest, content, 'nope', 'detailed')).toBeNull();
-  });
-  it('words the honesty chips', () => {
-    const live = (): boolean => true;
-    const h = honestyModel([
-      'notToScale',
-      { slowed: 1000, visible: live },
-      { kind: 'simplified', text: 'спрощено' },
-      { text: 'нотатка' },
-    ]);
-    expect(h.map((x) => [x.icon, x.text])).toEqual([
-      ['scale', 'не в масштабі'],
-      ['clock', `сповільнено ${honestyFactor(1000)}`],
-      ['layers', 'спрощено'],
-      ['info', 'нотатка'],
-    ]);
-    expect(h[1]!.visible).toBe(live);
-    expect(honestyFactor(2e9)).not.toContain('000');
   });
 });
 

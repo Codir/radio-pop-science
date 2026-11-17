@@ -11,8 +11,10 @@ import {
   BufferAttribute,
   CatmullRomCurve3,
   Color,
+  FrontSide,
   type Group,
   Mesh,
+  MeshBasicMaterial,
   Object3D,
   PlaneGeometry,
   ShaderMaterial,
@@ -110,6 +112,30 @@ void main() {
   gl_FragColor = vec4( uColor * a, 1.0 );
 }`;
 
+/**
+ * The glass's place in the depth buffer. Glass is transparent and writes no depth, so the depth of field (and
+ * AO) of the post pipeline used to see straight through it: the globe took the blur of whatever lay behind it —
+ * a soft, smeared rim spilling out over the far, dark room, a sharp one over the table in focus, and a visible
+ * change where the two meet. This invisible copy of the glass's front faces writes only depth, after every
+ * other transparent thing of the frame (so nothing behind it is hidden), and the globe is focused like the
+ * solid lamp it belongs to.
+ */
+function depthShell(glass: Mesh, centreY: number): Mesh {
+  const shell = new Mesh(
+    glass.geometry,
+    new MeshBasicMaterial({ colorWrite: false, depthWrite: true, transparent: true, side: FrontSide }),
+  );
+  shell.name = 'bulb:glass-depth';
+  shell.renderOrder = 5000;
+  shell.raycast = () => {};
+  // a hair larger than the glass (about the globe's centre): the anti-aliased pixels of the silhouette, whose
+  // resolved depth would still be the background's, are covered too — no faint spray just outside the rim
+  const k = 1.012;
+  shell.scale.setScalar(k);
+  shell.position.y = centreY * (1 - k);
+  return shell;
+}
+
 export function createBulb(B: BulbDims = BULB): BulbModel {
   const b = new Builder('bulb', {
     glass: { color: 'sky', opacity: 0.05, edgeOpacity: 0.55, specular: 0.14 },
@@ -145,8 +171,25 @@ export function createBulb(B: BulbDims = BULB): BulbModel {
     const y = 0.125 + i * 0.05;
     thread.push([tr - 0.018, y], [tr, y + 0.014], [tr, y + 0.03], [tr - 0.018, y + 0.044]);
   }
-  thread.push([tr + 0.012, B.thread - 0.02], [tr + 0.012, B.thread], [0, B.thread]);
+  // collar: its top edge is rolled in over the glass neck and the brass goes on down inside (no flat cap: seen
+  // through the neck a brass disc read as a plate pasted over the thread)
+  thread.push(
+    [tr + 0.012, B.thread - 0.02],
+    [tr + 0.012, B.thread - 0.004],
+    [tr + 0.002, B.thread + 0.006],
+    [tr - 0.01, B.thread - 0.004],
+  );
   b.lathe(thread, { seg: 40, slot: 'metal', c: ['amber.dark', 'amber'], crease: 50 });
+  // the basing cement inside the collar, under the glass: the dark well the neck stands in
+  b.lathe(
+    [
+      [tr - 0.01, B.thread - 0.004],
+      [tr - 0.016, B.thread - 0.05],
+      [0.06, B.thread - 0.075],
+      [0, B.thread - 0.08],
+    ],
+    { seg: 32, c: 'ink' },
+  );
   // the two support wires rising from the glass stem bead (the bead itself is lit glass, added below)
   for (const s of [-1, 1] as const) {
     const path = [
@@ -159,19 +202,25 @@ export function createBulb(B: BulbDims = BULB): BulbModel {
   }
   // globe: neck out of the base, sphere above
   const R = B.globe;
+  // the neck starts inside the collar, under its rolled edge, and flares out above it
   const globe: G.Pt[] = [
-    [tr + 0.004, B.thread - 0.015],
-    [tr + 0.02, B.thread + 0.07],
+    [tr - 0.022, B.thread - 0.045],
+    [tr - 0.012, B.thread + 0.004],
+    [tr + 0.004, B.thread + 0.05],
+    [tr + 0.03, B.thread + 0.1],
   ];
   for (let a = -52; a <= 90; a += 6) {
     const rad = (a * Math.PI) / 180;
     globe.push([Math.max(Math.cos(rad) * R, 0), B.globeY + Math.sin(rad) * R]);
   }
+  // close the crown (the 6° steps stop at 86°: a small hole at the top read as a dark spot on the glass)
+  globe.push([0, B.globeY + R]);
   b.lathe(globe, { seg: 64, slot: 'glass', c: 'white' });
   const model = b.build();
   const glass = model.group.getObjectByName('bulb:glass') as Mesh;
   const glassMaterial = model.mats.get('glass') as KGlassMaterial;
   (glassMaterial.uniforms.uGlass!.value as Vector3).y = 3.4; // thinner, crisper fresnel rim
+  glass.add(depthShell(glass, B.globeY));
   const edgeCold = col('sky').lerp(col('white'), 0.45);
   const edgeWarm = col('yellow.light').lerp(col('white'), 0.35);
 
@@ -197,21 +246,23 @@ export function createBulb(B: BulbDims = BULB): BulbModel {
   halo.position.y = B.globeY;
   halo.name = 'bulb:halo';
   halo.renderOrder = 1;
-  // glass stem bead (pinched glass): translucent, so that it never outshines the coil above it
+  // glass stem (pinched glass): a flare fused to the neck down in the collar, narrowing to the bead that holds
+  // the supports; open at the bottom (no flat disc). Translucent, so that it never outshines the coil above it
   const bead = new Mesh(
     G.lathe(
       G.fillet(
         [
-          [0, B.thread],
-          [0.1, B.thread],
+          [tr - 0.024, B.thread - 0.045],
+          [0.12, B.thread + 0.03],
+          [0.088, 0.47],
           [0.085, 0.52],
           [0.05, 0.68],
           [0, 0.7],
         ],
-        [0, 0.02, 0.05, 0.03, 0],
+        [0, 0.05, 0.03, 0.05, 0.03, 0],
         4,
       ),
-      { seg: 20 },
+      { seg: 24 },
     ),
     sheath({ color: col('mist').lerp(col('sky'), 0.3), opacity: 0.3, edgeOpacity: 0.8, gloss: 0.5 }),
   );

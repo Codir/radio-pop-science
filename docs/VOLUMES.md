@@ -46,7 +46,7 @@ named, and how to start a volume. Code-level API: `docs/ENGINE_API.md` §22, `do
 | Visual language | palette, K materials, environments, motion, UI kit; the **global core** of the semantic colour code (STYLE_GUIDE §2.2.1) | the volume's semantic table (STYLE_GUIDE §2.2.2 for electricity), its accent and default environment |
 | Navigation | library screen, HUD, glossary overlay, journey-map renderer | journey axis (label, unit, range, formatter, zoom direction), groups, map layout hints, emblems, home-screen text |
 | Tools | `tools/content/*` (take `--volume`), `tools/qa/*`, export schema, global `terms_allowlist.tsv` | journey order / groups / parents / extra documents / extra checks in `volume.json` |
-| Rules | AGENT_GUIDE, term rule (DECISIONS §54), mobile rules (§57), honesty chips, QA budgets | rulings that concern one subject (recorded in DECISIONS, marked with the volume) |
+| Rules | AGENT_GUIDE, term rule (DECISIONS §54), mobile rules (§57), QA budgets | rulings that concern one subject (recorded in DECISIONS, marked with the volume) |
 
 `sim/**` is per volume on purpose (a chapter may import only its own volume's simulations). `shared/**` is the
 volume's **scene library** — one world for the whole volume (`circuit`: `shared/stage`, `shared/copper`):

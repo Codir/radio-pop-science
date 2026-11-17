@@ -1,14 +1,10 @@
 /**
- * View model of the step panel, shared by the WebGL view (`hud/step-panel.ts`, `hud/dock-build.ts`
- * `honestyChips`) and the DOM view (`hud-dom/step/step-panel.ts`): counter, title and pages of the step at the
- * reading level in effect (L1's selector, never the `simple` fields directly), the honesty chips of its step UI
- * and whether the chapter quiz entry belongs under it.
+ * View model of the step panel, shared by the WebGL view (`hud/step-panel.ts`) and the DOM view
+ * (`hud-dom/step/step-panel.ts`): counter, title and pages of the step at the reading level in effect (L1's
+ * selector, never the `simple` fields directly) and whether the chapter quiz entry belongs under it.
  */
 import type { ChapterManifest, ReadingLevel } from '@/engine/api';
-import { fmtNumber, fmtSci } from '@/content/format';
 import { quizAtLevel, stepAtLevel, stepContent, type ChapterContent, type LeveledStep } from '@/content';
-import type { IconName } from '@/ui3d';
-import type { HonestySpec, When } from '../step-ui-types';
 
 export interface StepModel {
   readonly index: number;
@@ -56,36 +52,3 @@ export function stepModel(
   };
 }
 
-/** One honesty chip of a step («сповільнено ×1 000», «не в масштабі» …). */
-export interface HonestyModel {
-  readonly icon: IconName;
-  readonly text: string;
-  /** Shown only while this holds (undefined: always). */
-  readonly visible: When | undefined;
-}
-
-/** «×1 000», but «×10⁹» for huge factors (a row of zeros is unreadable). */
-export function honestyFactor(n: number): string {
-  return n >= 1e6 ? `×${fmtSci(n, 2)}` : `×${fmtNumber(n)}`;
-}
-
-/** The course-wide wording of the honesty chips (DECISIONS §5); `text` is the document's own wording. */
-const KINDS = {
-  notToScale: ['scale', 'не в масштабі'],
-  simplified: ['layers', 'спрощена модель'],
-  illustrative: ['eye', 'ілюстративно'],
-} as const satisfies Record<string, readonly [IconName, string]>;
-
-export function honestyModel(list: readonly HonestySpec[] = []): HonestyModel[] {
-  return list.map((h): HonestyModel => {
-    if (typeof h === 'string') return { icon: KINDS[h][0], text: KINDS[h][1], visible: undefined };
-    const visible = h.visible;
-    if ('slowed' in h)
-      return { icon: 'clock', text: h.text ?? `сповільнено ${honestyFactor(h.slowed)}`, visible };
-    if ('sped' in h) return { icon: 'clock', text: h.text ?? `прискорено ${honestyFactor(h.sped)}`, visible };
-    if ('enlarged' in h)
-      return { icon: 'search', text: h.text ?? `збільшено ${honestyFactor(h.enlarged)}`, visible };
-    if ('kind' in h) return { icon: KINDS[h.kind][0], text: h.text ?? KINDS[h.kind][1], visible };
-    return { icon: 'info', text: h.text ?? '', visible };
-  });
-}

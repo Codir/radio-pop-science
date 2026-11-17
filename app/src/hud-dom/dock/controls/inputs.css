@@ -134,7 +134,8 @@
   font: 500 calc(var(--t-small) * var(--u)) / 1.2 var(--mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  transform: translateX(-50%);
+  /* --bx: shift that keeps the chip inside the control at the ends (slider.ts fitBubble); the arrow stays on the thumb */
+  transform: translateX(calc(-50% + var(--bx, 0px)));
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.25s 0.35s;
@@ -142,7 +143,7 @@
 .dk-bubble::after {
   content: '';
   position: absolute;
-  left: 50%;
+  left: calc(50% - var(--bx, 0px));
   bottom: calc(-3.5 * var(--u));
   width: calc(9 * var(--u));
   height: calc(9 * var(--u));
@@ -152,6 +153,15 @@
 }
 .dk-slider.drag .dk-bubble {
   opacity: 1;
+  transition: opacity var(--dur-hover);
+}
+/* the head's label / value give way while the chip covers them, and return as the chip fades */
+.dk-slider .dk-head > * {
+  transition: opacity 0.25s 0.35s;
+}
+.dk-slider.drag.cover-name .dk-label,
+.dk-slider.drag.cover-value .dk-value {
+  opacity: 0;
   transition: opacity var(--dur-hover);
 }
 /* labelled marks under the track: anchored at 3 %…97 % of the width, pivot sliding with the value (ends inside) */
@@ -168,6 +178,20 @@
   color: var(--c-steel);
   white-space: nowrap;
   transform: translate(calc(var(--m) * -100%), -50%);
+}
+/* measured (slider.ts fitMarks → mark-layout.ts): names never touch — shifted inward, or on a second line */
+.dk-marks.laid span {
+  left: var(--x);
+  transform: translateY(-50%);
+}
+.dk-marks.two {
+  height: calc(36 * var(--u));
+}
+.dk-marks.two span {
+  top: calc(10 * var(--u));
+}
+.dk-marks.two span.row2 {
+  top: calc(27 * var(--u));
 }
 
 /* ---- toggle ---------------------------------------------------------------------------------------------- */

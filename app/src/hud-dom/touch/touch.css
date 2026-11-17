@@ -154,9 +154,6 @@
 .kd-sheet .sp-head:not(:has(> :not([hidden], .sp-count))) {
   display: none;
 }
-.kd-sheet .sp .badges {
-  padding: 0 calc(16 * var(--u));
-}
 .kd-sheet .sp-scroll {
   flex: 1 1 auto;
   min-height: calc(var(--hit) * var(--u));
@@ -237,6 +234,22 @@
 /* ---- system: «Мапа» (icon) and «Меню»; the rest lives in the menu ------------------------------------- */
 .kd-root:not(.kd-touch) [data-ui='sys-menu'] {
   display: none;
+}
+/* «Мобільна версія»: only while a phone or tablet shows the desktop shell by the reader's choice */
+.kd-root:not(.kd-desk-forced) [data-ui='sys-mobile'] {
+  display: none;
+}
+/* below 1000 CSS px (every phone, a tablet held upright) only its icon: a label would widen the row so far that
+   the desktop header steps under it (hud-dom/step/header.ts) — the very layout this mode is there to show would
+   change. One icon more keeps it as a computer shows it (844 × 390: the header still fits beside the row). */
+@media (max-width: 999px) {
+  .kd-desk-forced [data-ui='sys-mobile'] {
+    width: calc(var(--h) * var(--u));
+    padding: 0;
+  }
+  .kd-desk-forced [data-ui='sys-mobile'] > span {
+    display: none;
+  }
 }
 .kd-touch .kd-system {
   right: calc(var(--tch-right) * var(--u));
