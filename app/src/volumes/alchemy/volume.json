@@ -8,7 +8,8 @@
   "order": 3,
   "accent": "violet",
   "emblem": "star",
-  "status": "draft",
+  "status": "published",
+  "aside": { "label": "Відгалуження: Ядерна алхімія" },
   "axis": { "label": "Масштаб", "unit": "m", "hint": "Характерний масштаб розділу", "range": "10⁻¹⁸ m … 10⁻¹⁰ m" },
   "groups": [{ "id": "nucleus", "label": "Ядро", "part": "Частина I. Ядро" }],
   "journey": [{ "id": "lab", "group": "nucleus" }]
