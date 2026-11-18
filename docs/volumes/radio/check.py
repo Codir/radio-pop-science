@@ -57,7 +57,11 @@ def h2(line):
 
 
 def table(md, title):
-    """Rows of the first table under the H2 heading `title`, as dicts keyed by the header cells."""
+    """Rows of the first table under the H2 heading `title`, as dicts keyed by the header cells.
+
+    The heading is matched through h2(), so a leading number is allowed here as in rule 6: `## 1. <title>`
+    matches `title`. This only widens which headings match; a table found either way is checked in full.
+    """
     rows, head, inside = [], None, False
     for line in md.split('\n'):
         if line.startswith('## '):
