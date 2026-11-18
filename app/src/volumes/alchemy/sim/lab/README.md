@@ -1,6 +1,6 @@
 # sim/lab — the model behind the nuclear lab
 
-Import from `sim/lab` (`index.ts`; no `@alchemy/*` alias yet). Pure TypeScript, no three.js, no storage, no clock,
+Import from `@alchemy/sim/lab` (`index.ts`; the alias `@alchemy/*` is in `app/tsconfig.json`). Pure TypeScript, no three.js, no storage, no clock,
 no `Math.random`: dice come in as arguments (`u` in [0, 1)). Tests in `__tests__/`. Nuclide data comes from `sim/core`.
 
 ## State and event

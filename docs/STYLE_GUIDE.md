@@ -89,6 +89,36 @@ import/export `white` with `sky` outline, load shedding = `red` hatching.
 A new volume writes its own table as §2.2.3, §2.2.4 … (and, where chapters need tokens for it, a token group
 in `app/src/style` next to `SEMANTIC`) when its curriculum is reconciled — see `docs/VOLUMES.md` §4.
 
+#### 2.2.3 Volume «Ядерна алхімія» (`alchemy`)
+
+The particles keep the code of §2.2.2 (`SEMANTIC.electron` / `proton` / `neutron` / `photon`). Only the state of the
+nucleus and the board's status line use the core's ok / caution / alarm. On the nuclide chart (the board of the
+chapter `lab`) the cell colours are categories: `amber` marks α decay there, not caution. Tokens live in the chapter
+(`chapters/lab/parts/chart-model.ts` `KIND_COLOR`, `nuclide-chart.ts` `MARK`); no token group of its own yet.
+
+| Meaning | Colour |
+|---|---|
+| Electron / proton / neutron, in the atom and in every event | `cyan` (glowing) / `coral` / `mist`→`steel` (FX characters); electron shells `sky` glass |
+| Positron (β⁺ decay, p + p fusion) | `coral` electron-sized orb with a «+» glyph |
+| γ quantum (in flight; the γ source in the emitter) | `yellow` wave packet, hue kept; the source glows `yellow` |
+| Trail of a flying particle | neutral (n) `mist`; charged (p, α, nuclei, e⁺) `coral`; electron `cyan` |
+| A nucleus changes (capture, decay, knock-out, fission tearing) | `yellow` flash |
+| State of the nucleus (badge on the atom's name plate) | stable / practically stable `green`, radioactive `amber`, fleeting (T½ < 1 s) `red`, too little data `mist` |
+| Fleeting nucleus | `red` halo and `red` countdown ring (bright arc running out over a dim track) |
+| Emitter | barrel `steel` (metal), collar `slate`, glowing lip `violet` (the nuclear marker of §2.2.2, the chapter accent) |
+| Fission fragment waiting to be picked | `cyan` ring (affordance), pulsing, brighter under the pointer |
+| Status line of the board | core tones: a transformation `ui.ok`, electrons / fragment picked `ui.info`, refusal or bounce `ui.warning` |
+| Chart cell: stable / practically stable | `white` / `mist` |
+| Chart cell by the main decay: β⁻ / β⁺ or electron capture / α | `blue` / `coral` (positive, as the proton) / `amber` |
+| Chart cell: proton emission / neutron emission / spontaneous fission / too little data | `steel.light` / `steel` / `violet` (nuclear marker) / `slate`; the legend's «інше» swatch `steel` |
+| Not discovered yet (the collection) | the cell's own colour at 0.35 of its sRGB brightness, opaque |
+| You are here | `white` ring with glow |
+| Goal | `yellow`: ring round a nuclide; outline of an element's row and its row label; off the window, an arrow at the edge with the goal's symbol on a dark tag |
+| Trail of the run | `mist` line with `mist` dots on the visited cells |
+| Picked cell | `cyan` outline (what the reader touched; on this chart `yellow` belongs to the goal); its line on the board `mist` |
+| Window frame on «Уся карта» | `white` (0.7) |
+| Chart plate | fill `bg.void` (0.35), border `slate` (0.7); labels `mist`, the current row `white` bold |
+
 ### 2.3 Chapter moods
 
 Each chapter gets an accent + sky preset: micro-world chapters live in deep violet/indigo "inner space"
