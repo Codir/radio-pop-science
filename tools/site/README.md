@@ -124,10 +124,11 @@ ImageMagick тут не встановлено, а `tools/qa/sheet.sh` збир�
 ## Робоча копія: не запускати в ній pnpm і corepack
 
 Робоча копія лишається після `--keep-work` або коли впали `tsc` чи `vite` (`site: … failed … (work copy kept: <шлях>)
-— do not run pnpm or corepack in it`); копію, яку не вдалося зробити, збірка вилучає сама. Її `node_modules` — посилання на справжній `app/node_modules`. pnpm 12, запущений у
-копії (`pnpm test`, `pnpm typecheck` чи будь-що інше), спершу перев’язує `app/node_modules` на шлях копії, і після
-її вилучення `tsc`, `vite` й `vitest` в `app/` уже не знаходять пакетів. Тому в копії `tsc` і `vite` кличуть із
-`app/node_modules/.bin/`, як це робить сама збірка:
+— do not run pnpm or corepack in it`). Копію, яку не вдалося зробити до кінця, збірка вилучає сама. `node_modules`
+робочої копії — посилання на справжній `app/node_modules`. pnpm 12, запущений у копії (`pnpm test`, `pnpm typecheck`
+чи будь-що інше), спершу перев’язує `app/node_modules` на шлях копії, і після її вилучення `tsc`, `vite` й `vitest`
+в `app/` уже не знаходять пакетів. Тому в копії `tsc` і `vite` кличуть із `app/node_modules/.bin/`, як це робить
+сама збірка:
 
 ```bash
 cd <робоча копія> && <корінь репозиторію>/app/node_modules/.bin/tsc -p tsconfig.json --noEmit
