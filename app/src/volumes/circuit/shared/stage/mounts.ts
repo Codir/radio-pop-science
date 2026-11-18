@@ -155,8 +155,8 @@ export function addMounts(b: Builder): string[] {
   terminal(post, LAMP.term, 1, undefined, 'z'); // right wire (from the plus, through the switch) — to the bottom contact
 
   // second, empty switch seat on the far side, closed by a short jumper (`flow/loop` moves the switch here).
-  // It stands on the board only in `flow/loop` (`Stand.setSeat`); everywhere else the far wire runs whole under
-  // a staple at its place. Neither is in the wave of the unfolding: the stand shows the seat or the staple.
+  // It stands on the board only in `flow/loop` (`Stand.setSeat`); everywhere else the far wire runs whole, with
+  // nothing at its place (the far wire is one piece). The seat is not in the wave of the unfolding.
   const seat = b.part('seat', { at: [SEAT.x, 0, SEAT.z] });
   seat.box(SEAT.width - 0.3, 0.15, 0.6, { r: 0.05, c: INK });
   // the jumper is a part of its own (origin on the face under it), so that `flow/loop` can lift it out
@@ -184,7 +184,6 @@ export function addMounts(b: Builder): string[] {
     });
   };
   STAPLES.forEach(([x, z, along], i) => staple(`staple${i}`, x, z, along));
-  staple('seatStaple', SEAT.x, SEAT.z, 'x');
 
   // magnifier rest in the near left corner: three low pegs under the ring and a small fork for the ferrule at
   // the front edge (the handle points at the reader, over the edge)
@@ -220,7 +219,6 @@ export function mountX(name: string): number {
     lampPost: LAMP.x,
     seat: SEAT.x,
     seatJumper: SEAT.x,
-    seatStaple: SEAT.x,
     lensHolder: LENS.holder.x,
   };
   return xs[name] ?? 0;
