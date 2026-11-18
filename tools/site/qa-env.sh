@@ -3,7 +3,8 @@
 #   source tools/site/qa-env.sh
 #   site_serve [port] [dir]   serve a site-profile build under /radio-pop-science/ (default 5391, tools/site/dist);
 #                             prints http://127.0.0.1:<port>/radio-pop-science/ once it answers 200
-#   site_stop [port]          stop that server; returns once the port is free
+#   site_stop [port]          stop whoever of this repository listens on the port (site_serve, `pnpm preview`,
+#                             `pnpm dev` from app/); returns once the port is free
 #
 # It sets: Node 24 (nvm), QA_ALLOW_SOFTWARE=1 (no GPU here), QA_OUT (default ~/.cache/radio-pop-science/qa,
 # created), and puts tools/site/shims (ImageMagick stand-ins on Pillow) first on PATH when `montage` is missing.
@@ -49,18 +50,40 @@ site_serve() {
   return 1
 }
 
+# A process belongs to this repository when its working directory or one of its arguments lies inside the
+# repository or one of its git worktrees. That covers site_serve (absolute path to smoke.mjs) and
+# `pnpm preview` / `pnpm dev` started from app/ (working directory), and leaves alone servers of other
+# projects and servers run from scratch directories.
+_site_owned() {
+  local pid="$1" cwd root item
+  local -a args=()
+  cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null)"
+  [ -r "/proc/$pid/cmdline" ] && mapfile -d '' args <"/proc/$pid/cmdline"
+  while IFS= read -r root; do
+    [ -n "$root" ] || continue
+    for item in "$cwd" "${args[@]}"; do
+      case "$item" in "$root" | "$root"/*) return 0 ;; esac
+    done
+  done < <(
+    printf '%s\n' "$SITE_REPO"
+    readlink -f "$SITE_REPO"
+    git -C "$SITE_REPO" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p'
+  )
+  return 1
+}
+
 site_stop() {
-  local port="${1:-5391}" pid args i
+  local port="${1:-5391}" pid i foreign=0
   for pid in $(ss -ltnpH "sport = :$port" | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u); do
-    args="$(ps -o args= -p "$pid" 2>/dev/null)"
-    case "$args" in
-      *tools/site/smoke.mjs*--serve*) kill "$pid" 2>/dev/null ;;
-      *)
-        echo "site_stop: port $port is held by another program (pid $pid: $args); left alone" >&2
-        return 1
-        ;;
-    esac
+    if _site_owned "$pid"; then
+      kill "$pid" 2>/dev/null
+    else
+      echo "site_stop: port $port is held by a program outside this repository" \
+        "(pid $pid: $(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null)); left alone" >&2
+      foreign=1
+    fi
   done
+  [ "$foreign" = 0 ] || return 1
   for i in $(seq 1 50); do
     [ -z "$(ss -ltnH "sport = :$port")" ] && return 0
     sleep 0.1
