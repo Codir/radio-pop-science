@@ -2,7 +2,8 @@
  * The far wire as a snake (`shape`, VISUAL §5.7 «Дріт-змійка»): pure geometry, one function of the stretch `k`
  * (1 … 40; script: the wire is `k` times longer and its cross-section `k` times smaller).
  *
- * The wire `m2` runs along the far side from the second seat to the lamp. Stretched, it hangs from that line into
+ * The far wire `m` runs along the far side to the lamp. From the place of the second seat (its staple) on, stretched,
+ * it hangs from that line into
  * the empty middle of the board as a meander of ten runs (five folds, at any `k`: one wire, never a hatch), whose
  * depth grows with `k` while the tube thins — the handle's place is the bottom of the middle fold. The turns are
  * half circles; the outer folds hang a little shallower, so the snake has round shoulders. A fold of depth 0 is a
@@ -14,13 +15,15 @@
  */
 import { Vector3 } from 'three';
 import { LAMP, LOOP, SEAT, WIRE } from '@circuit/shared/stage';
+import { standPath } from '@circuit/shared/stage/wires';
 
 /** The stretch at the handle's end and the deepest the snake hangs (board units, from the far line). */
 export const K_MAX = 40;
 export const DEPTH_MAX = 2.3;
-/** Where the wire leaves the seat's terminal and enters the lamp's (as `standPath('m2')`), and the snake's zone. */
+/** Where the snake starts (under the staple at the seat's place), where the far wire enters the lamp's terminal
+ * (as `standPath('m')`), and the snake's zone. */
 const INSET = 0.07;
-export const FROM_X = SEAT.x + SEAT.width / 2 - INSET;
+export const FROM_X = SEAT.x;
 export const TO_X = LAMP.x - LAMP.term + INSET;
 export const ZONE = { from: 0.1, to: 1.92 } as const;
 export const MIDDLE_X = (ZONE.from + ZONE.to) / 2;
@@ -108,5 +111,27 @@ export function snakePath(k: number, out: Vector3[] = []): Vector3[] {
   }
   put(new Vector3(TO_X, y, far));
   out.length = n;
+  return out;
+}
+
+/** The stand's far wire up to its last corner (the minus clamp, the left side, the far left corner). */
+const NEAR = standPath('m').slice(0, -1);
+/**
+ * Length of the far wire from the minus clamp to the snake's start (`FROM_X`): the wire is thin from there on
+ * (`WireShape.thin`, centred so that its taper sits under the staple at the seat's place).
+ */
+export const SNAKE_FROM =
+  NEAR.reduce((a, p, i) => (i ? a + p.distanceTo(NEAR[i - 1]!) : 0), 0) +
+  NEAR[NEAR.length - 1]!.distanceTo(new Vector3(FROM_X, LOOP.y, LOOP.far));
+
+/**
+ * The whole far wire for a stretch `k`: its stand route up to the far left corner, then `snakePath(k)` to the lamp
+ * — at k = 1 the very same line as `standPath('m')`, so the wire stays one tube with no join.
+ */
+export function farWirePath(k: number, out: Vector3[] = []): Vector3[] {
+  const snake = snakePath(k);
+  out.length = 0;
+  for (const p of NEAR) out.push(p);
+  for (const p of snake) out.push(p);
   return out;
 }

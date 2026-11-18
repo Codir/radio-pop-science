@@ -14,7 +14,7 @@
  * to go out — its light is parented to the filament and travels with it.
  */
 import { CatmullRomCurve3, Matrix4, Quaternion, Vector3, type Object3D } from 'three';
-import { BATTERY, BOARD, LAMP, LOOP, SEAT, SHELF_WORLD, SWITCH } from './layout';
+import { BATTERY, BOARD, LAMP, LOOP, SHELF_WORLD, SWITCH } from './layout';
 import { BOARD_Y } from './base';
 import { SLIDER_TRAVEL } from './small-parts';
 import { PLACE, type Stand } from './stand';
@@ -47,7 +47,7 @@ const hump = (x: number): number => Math.sin(Math.PI * clamp01(x));
 const YAW = -0.52;
 const HOVER_LIFT = 0.3;
 /** Points per strip while it moves (the finished stand uses the exact paths). */
-const SAMPLES: Record<WireId, number> = { m1: 140, m2: 24, p1: 24, p2: 90 };
+const SAMPLES: Record<WireId, number> = { m: 164, p1: 24, p2: 90 };
 
 const X = new Vector3(1, 0, 0);
 const Y = new Vector3(0, 1, 0);
@@ -254,10 +254,10 @@ export function createUnfold(stand: Stand, torch: Torch, T: TorchDims = TORCH, B
   const unBulb = bulbUp.clone().invert();
   // strip ends, local to the part they touch: [in the torch, on the stand]
   const ends = {
-    m1a: [first('m1').clone().sub(local.springT), term(BATTERY.minusX + INSET, LOOP.near).sub(PLACE.spring)],
-    m2b: [
-      last('m2').clone().sub(local.bulbT).applyQuaternion(unBulb),
-      term(LAMP.x - LAMP.term + INSET, SEAT.z).sub(PLACE.bulb),
+    ma: [first('m').clone().sub(local.springT), term(BATTERY.minusX + INSET, LOOP.near).sub(PLACE.spring)],
+    mb: [
+      last('m').clone().sub(local.bulbT).applyQuaternion(unBulb),
+      term(LAMP.x - LAMP.term + INSET, LOOP.far).sub(PLACE.bulb),
     ],
     p1a: [first('p1').clone().sub(local.battT), term(BATTERY.plusX - INSET, LOOP.near).sub(PLACE.battery)],
     p1b: [last('p1').clone().sub(local.sliderT), term(SWITCH.inX + INSET, LOOP.near).sub(PLACE.slider)],
@@ -269,8 +269,9 @@ export function createUnfold(stand: Stand, torch: Torch, T: TorchDims = TORCH, B
   } as const;
   const end = (key: keyof typeof ends, p: Vector3, q: Quaternion, k: number, out: Vector3): Vector3 =>
     out.copy(ends[key][0]).lerp(ends[key][1], k).applyQuaternion(q).add(p);
-  // which way the flat side of each strip faces in the torch (carrier axes): against the wall it runs along
-  const flat: Record<WireId, Vector3> = { m1: X, m2: Z, p1: X, p2: Y };
+  // which way the flat side of each strip faces in the torch (carrier axes): against the wall it runs along; the
+  // minus strip leaves the spring facing it and keeps that side, transported along the whole strip (no twist)
+  const flat: Record<WireId, Vector3> = { m: X, p1: X, p2: Y };
   const up = new Vector3();
   const wires = (t: number): void => {
     if (t >= UNFOLD_SECONDS - 1e-6) return stand.wires.setStand();
@@ -292,27 +293,22 @@ export function createUnfold(stand: Stand, torch: Torch, T: TorchDims = TORCH, B
       }
       // pin both ends to the parts they touch; the correction fades quadratically along the piece
       const start =
-        id === 'm1'
-          ? end('m1a', spring.position, spring.quaternion, e.batt, a)
+        id === 'm'
+          ? end('ma', spring.position, spring.quaternion, e.batt, a)
           : id === 'p1'
             ? end('p1a', battery.position, battery.quaternion, e.batt, a)
-            : id === 'p2'
-              ? end('p2a', sliderP, sliderQ, e.slider, a)
-              : null;
+            : end('p2a', sliderP, sliderQ, e.slider, a);
       const finish =
-        id === 'm2'
-          ? end('m2b', bulbP, bulbQ, e.bulb, b)
+        id === 'm'
+          ? end('mb', bulbP, bulbQ, e.bulb, b)
           : id === 'p1'
             ? end('p1b', sliderP, sliderQ, e.slider, b)
-            : id === 'p2'
-              ? end('p2b', bulbP, bulbQ, e.bulb, b)
-              : null;
-      if (start) start.sub(out[0]!);
-      if (finish) finish.sub(out[n - 1]!);
+            : end('p2b', bulbP, bulbQ, e.bulb, b);
+      start.sub(out[0]!);
+      finish.sub(out[n - 1]!);
       for (let i = 0; i < n; i++) {
         const s = i / (n - 1);
-        if (start) out[i]!.addScaledVector(start, (1 - s) ** 2);
-        if (finish) out[i]!.addScaledVector(finish, s ** 2);
+        out[i]!.addScaledVector(start, (1 - s) ** 2).addScaledVector(finish, s ** 2);
       }
       stand.wires.setShape(id, {
         path: out,

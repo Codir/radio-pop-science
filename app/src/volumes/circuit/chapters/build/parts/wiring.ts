@@ -1,15 +1,16 @@
 /**
  * The practicum's three wires as the reader handles them (VISUAL §5.7): A = plus → switch (`p1`), B = switch → lamp
- * (`p2`), C = lamp → minus (`m2` + the second seat's jumper + `m1`; its middle stays on the far side's staples).
+ * (`p2`), C = minus → lamp (`m`, one wire: `c0` its start at the minus, `c1` its end at the lamp; its middle stays
+ * on the staples of the left and the far side).
  * Six ends (`ends.ts`), each with a big `cyan` grip; any end goes into any clamp, a clamp takes two. The shapes are
  * written into the stand's own four pieces every frame while `active`: loose → curves (`curves.ts`), an end home in
  * its stand clamp → the wire settles onto its stand route (eased), so the assembled stand IS the stand of every
  * other chapter (and the stand's own shapes take over again, unchanged, when `active` is off).
  */
 import { Vector3 } from 'three';
-import { BARE } from '@circuit/shared/stage/wires';
-import { standPath, type WireId } from '@circuit/shared/stage/wires';
-import type { CircuitStage } from '@circuit/shared/stage';
+import { BARE, standPath, type WireId } from '@circuit/shared/stage/wires';
+import { resample } from '@circuit/shared/stage/dyn-tube';
+import { LOOP, SEAT, type CircuitStage } from '@circuit/shared/stage';
 import { glide, type Glide } from './glide';
 import { CLAMP_CAPACITY, HOME, WIRE_KEYS, type CircuitState, type ClampId, type WireKey } from './circuit';
 import { REST, REST_OUT } from './clamps';
@@ -19,6 +20,8 @@ import { createGrips, type Grips } from './grips';
 
 /** Points of the blended polylines handed to the stand (it resamples them to each piece's rings). */
 const N = 160;
+/** The far wire is five times longer than the jumper and turns two corners: more points for it. */
+const N_M = 420;
 /** Seconds a wire takes to settle onto (or lift off) its stand route. */
 const SETTLE = 0.55;
 
@@ -27,7 +30,7 @@ export interface Wiring {
   grips: Grips;
   /** The wiring writes the wires' shapes (off: the stand's own shapes, e.g. while it folds). */
   active: boolean;
-  /** The copper core of each wire is whole (C's break is in its far stretch, `m2`). */
+  /** The copper core of each wire is whole (C's break is on the far side, `C_GAP`). */
   whole: Record<WireKey, boolean>;
   /** Share of the bare copper shown at each end (0 = the sheath reaches the tip). Travels; set its target. */
   bare: Readonly<Record<EndKey, Glide>>;
@@ -59,7 +62,9 @@ export interface Wiring {
   update(dt: number, t: number): void;
 }
 
-const TUBES: Record<WireKey, readonly WireId[]> = { a: ['p1'], b: ['p2'], c: ['m1', 'm2'] };
+const TUBES: Record<WireKey, WireId> = { a: 'p1', b: 'p2', c: 'm' };
+/** What settles onto its stand route: the jumpers whole; the far wire end by end (its middle never leaves). */
+type Settle = 'p1' | 'p2' | 'c0' | 'c1';
 /**
  * The free wires' own lengths (board units): the plus→switch jumper a little longer than its place on the stand
  * (it lies beside its clamps with some slack), the lamp wire its route's. A taut wire drags a loose other end along
@@ -71,18 +76,19 @@ const REACH = 2.9;
 
 export function createWiring(stage: CircuitStage): Wiring {
   const wires = stage.stand.wires;
-  const routes = Object.fromEntries(
-    (['p1', 'p2', 'm1', 'm2'] as const).map((id) => {
-      const r = standPath(id);
-      return [id, { pts: r, rev: [...r].reverse(), acc: lengths(r), revAcc: lengths([...r].reverse()) }];
-    }),
-  ) as Record<WireId, { pts: Vector3[]; rev: Vector3[]; acc: number[]; revAcc: number[] }>;
+  const routes = Object.fromEntries((['p1', 'p2', 'm'] as const).map((id) => [id, { pts: standPath(id) }])) as Record<
+    WireId,
+    { pts: Vector3[] }
+  >;
   const homeOf = (key: EndKey): ClampId => HOME[key[0] as WireKey][key[1] === '0' ? 0 : 1];
   const ends = Object.fromEntries(
     END_KEYS.map((k) => [k, new End(k, { kind: 'clamp', clamp: homeOf(k), slot: 0, shared: false })]),
   ) as Record<EndKey, End>;
   const bare = Object.fromEntries(END_KEYS.map((k) => [k, glide(1)])) as Record<EndKey, Glide>;
-  const settle = { p1: glide(1), p2: glide(1), m1: glide(1), m2: glide(1) } as Record<WireId, Glide>;
+  const settle: Record<Settle, Glide> = { p1: glide(1), p2: glide(1), c0: glide(1), c1: glide(1) };
+  // where the far wire's two loose tails come from: the end of the near left corner, and the seat's place
+  const cBody = [routes.m.pts[12]!, new Vector3(SEAT.x, LOOP.y, LOOP.far)] as const;
+  const gapAt = shareOf(routes.m.pts, C_GAP.x);
   const grips = createGrips(stage, ends);
   const whole: Record<WireKey, boolean> = { a: true, b: true, c: true };
   const free: Vector3[] = [];
@@ -154,7 +160,7 @@ export function createWiring(stage: CircuitStage): Wiring {
     hop(key, clamp, seconds, shared) {
       ends[key].go({ kind: 'clamp', clamp, slot: shared?.slot ?? 0, shared: !!shared }, seconds, 0.22, true);
     },
-    lift: { p1: new Vector3(), p2: new Vector3(), m1: new Vector3(), m2: new Vector3() },
+    lift: { p1: new Vector3(), p2: new Vector3(), m: new Vector3() },
     loose(seconds) {
       for (const k of END_KEYS) wiring.lay(k, seconds);
     },
@@ -172,7 +178,7 @@ export function createWiring(stage: CircuitStage): Wiring {
         ends[k].snap();
         bare[k].set(bare[k].target);
       }
-      for (const id of Object.keys(settle) as WireId[]) settle[id].set(isHome(id) ? 1 : 0);
+      for (const id of Object.keys(settle) as Settle[]) settle[id].set(isHome(id) ? 1 : 0);
       grips.snap();
     },
     update(dt, t) {
@@ -182,7 +188,7 @@ export function createWiring(stage: CircuitStage): Wiring {
         ends[k].update(dt, anchor);
         bare[k].update(dt);
       }
-      for (const id of Object.keys(settle) as WireId[]) {
+      for (const id of Object.keys(settle) as Settle[]) {
         const want = isHome(id) ? 1 : 0;
         if (settle[id].target !== want) settle[id].go(want, SETTLE);
         settle[id].update(dt);
@@ -190,7 +196,7 @@ export function createWiring(stage: CircuitStage): Wiring {
       grips.update(dt, t);
       // while the stand is (un)folding its own unfolding lays the wires
       if (!wiring.active || stage.unfold < 1) return;
-      for (const key of WIRE_KEYS) for (const id of TUBES[key]) shape(id);
+      for (const key of WIRE_KEYS) shape(TUBES[key]);
     },
   };
 
@@ -234,10 +240,10 @@ export function createWiring(stage: CircuitStage): Wiring {
     const p = ends[k].place;
     return p.kind === 'clamp' && p.clamp === homeOf(k) && !p.shared && !ends[k].moving;
   }
-  function isHome(id: WireId): boolean {
+  function isHome(id: Settle): boolean {
     if (id === 'p1') return endHome('a0') && endHome('a1');
     if (id === 'p2') return endHome('b0') && endHome('b1');
-    return endHome(id === 'm1' ? 'c0' : 'c1');
+    return endHome(id);
   }
   /** A point of the body an end's wire comes from (a carried end leaves toward it). */
   function bodyPoint(k: EndKey, out: Vector3): Vector3 {
@@ -245,47 +251,53 @@ export function createWiring(stage: CircuitStage): Wiring {
     if (k === 'a1') return out.copy(ends.a0.pos);
     if (k === 'b0') return out.copy(ends.b1.pos);
     if (k === 'b1') return out.copy(ends.b0.pos);
-    // C's ends: the route's middle on the far side
-    return out.copy(k === 'c0' ? routes.m1.pts[Math.floor(routes.m1.pts.length * 0.45)]! : routes.m2.pts[0]!);
+    // C's ends: their tails come off the route
+    return out.copy(cBody[k === 'c0' ? 0 : 1]);
   }
+  /** C's route with its end's tail peeled off by `k` (0 peeled … 1 on the route), from the start or the end. */
+  function peel(route: readonly Vector3[], end: End, k: number, fromEnd: boolean, out: Vector3[]): Vector3[] {
+    if (k >= 1) return resample(route, N_M, out);
+    const pts = fromEnd ? [...route].reverse() : route;
+    const d = Math.hypot(end.pos.x - pts[0]!.x, end.pos.z - pts[0]!.z);
+    peeled(pts, lengths(pts), end, 0.5 + 0.95 * d, free);
+    if (fromEnd) free.reverse();
+    return blend(free, route, k, N_M, out);
+  }
+  const half: Vector3[] = [];
   /** Write one piece's shape. */
   function shape(id: WireId): void {
-    const r = routes[id];
-    const k = settle[id].value;
     if (id === 'p1' || id === 'p2') {
       const [e0, e1] = id === 'p1' ? [ends.a0, ends.a1] : [ends.b0, ends.b1];
       hermite(e0, e1, free, undefined, { length: LENGTH[id], side: sideOf(id, e0.pos, e1.pos) });
-    } else if (id === 'm1') {
-      const e = ends.c0;
-      const d = Math.hypot(e.pos.x - r.pts[0]!.x, e.pos.z - r.pts[0]!.z);
-      peeled(r.pts, r.acc, e, 0.5 + 0.95 * d, free);
+      blend(free, routes[id].pts, settle[id].value, N, shaped);
     } else {
-      const e = ends.c1;
-      const d = Math.hypot(e.pos.x - r.rev[0]!.x, e.pos.z - r.rev[0]!.z);
-      peeled(r.rev, r.revAcc, e, 0.5 + 0.95 * d, free).reverse();
+      // one wire, two ends: the start's tail first, then the end's on what the start left
+      peel(routes.m.pts, ends.c0, settle.c0.value, false, half);
+      peel(half, ends.c1, settle.c1.value, true, shaped);
     }
-    blend(free, r.pts, k, N, shaped);
     const off = wiring.lift[id];
     if (off.lengthSq() > 0) for (const p of shaped) p.add(off);
-    const [b0, b1] =
-      id === 'p1' ? ['a0', 'a1'] : id === 'p2' ? ['b0', 'b1'] : id === 'm1' ? ['c0', null] : [null, 'c1'];
-    const gap = id === 'm2' && !whole.c ? { at: M2_GAP, width: 0.09 } : undefined;
+    const [b0, b1] = id === 'p1' ? (['a0', 'a1'] as const) : id === 'p2' ? (['b0', 'b1'] as const) : (['c0', 'c1'] as const);
     wires.setShape(id, {
       path: shaped,
       round: 1,
       cover: 1,
       copper: 1,
-      bare: [b0 ? BARE * bare[b0 as EndKey].value : BARE, b1 ? BARE * bare[b1 as EndKey].value : BARE],
-      gap,
+      bare: [BARE * bare[b0].value, BARE * bare[b1].value],
+      gap: id === 'm' && !whole.c ? { at: gapAt, width: 0.09 } : undefined,
     });
-    if (b0) grips.place(b0 as EndKey, shaped, false);
-    if (b1) grips.place(b1 as EndKey, shaped, true);
+    grips.place(b0, shaped, false);
+    grips.place(b1, shaped, true);
   }
   return wiring;
 }
 
-/**
- * Where C's copper is broken (`find-fault` 3): about a third of the way from the lamp along the far wire, between
- * two of `m2`'s 40 rings (so two rings collapse: a short clean gap, `wires.ts` `gap`).
- */
-export const M2_GAP = 26.5 / 39;
+/** Where C's copper is broken (`find-fault` 3): on the far side, about a third of the way back from the lamp. */
+export const C_GAP = new Vector3(1.28, LOOP.y, LOOP.far);
+
+/** Share of a route's length at which its last, straight stretch (along +x) passes `x`. */
+function shareOf(route: readonly Vector3[], x: number): number {
+  const acc = lengths(route);
+  const total = acc[acc.length - 1]!;
+  return (total - (route[route.length - 1]!.x - x)) / total;
+}

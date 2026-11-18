@@ -12,6 +12,7 @@ import { KToonMaterial, col } from '@/style';
 import { BULB, type BulbDims } from './bulb';
 import { BATTERY } from './layout';
 import { sheath, tame } from './materials';
+import type { WireId } from './wires';
 
 export interface TorchDims {
   /** Radii of the body and the head; x of the tail, of the flare, of the head's start and of the front. */
@@ -56,7 +57,7 @@ export const TORCH: TorchDims = torchDims();
 
 /** Local strip paths (torch frame). Each matches one wire piece of the stand, start → end. */
 export function torchPath(
-  id: 'm1' | 'm2' | 'p1' | 'p2',
+  id: WireId,
   T: TorchDims = TORCH,
   B: BulbDims = BULB,
 ): Vector3[] {
@@ -64,27 +65,29 @@ export function torchPath(
   const side = T.body - T.wall - 0.012;
   const plate = T.batteryX + BATTERY.length / 2 + 0.125;
   switch (id) {
-    // minus strip: tail contact under the spring → along the near wall → (rivet) → the lamp's thread
-    case 'm1':
-      return G.roundPath(
-        [
-          new Vector3(T.springX - 0.02, 0, 0),
-          new Vector3(T.springX - 0.02, -0.06, side),
-          new Vector3(-0.35, -0.06, side),
-        ],
-        0.12,
-        5,
-      );
-    case 'm2':
-      return G.roundPath(
-        [
-          new Vector3(-0.35, -0.06, side),
-          new Vector3(T.bulbX + 0.16, -0.06, side),
-          new Vector3(T.bulbX + 0.2, -0.04, B.threadRadius + 0.01),
-        ],
-        0.08,
-        4,
-      );
+    // minus strip, one piece: tail contact under the spring → along the near wall → past the rivet → the lamp's
+    // thread (two bends of their own, one polyline)
+    case 'm':
+      return [
+        ...G.roundPath(
+          [
+            new Vector3(T.springX - 0.02, 0, 0),
+            new Vector3(T.springX - 0.02, -0.06, side),
+            new Vector3(-0.35, -0.06, side),
+          ],
+          0.12,
+          5,
+        ),
+        ...G.roundPath(
+          [
+            new Vector3(-0.35, -0.06, side),
+            new Vector3(T.bulbX + 0.16, -0.06, side),
+            new Vector3(T.bulbX + 0.2, -0.04, B.threadRadius + 0.01),
+          ],
+          0.08,
+          4,
+        ).slice(1),
+      ];
     // plus strip: contact plate on the battery's nub → up → back along the top to the slider's first contact;
     // from the slider's second contact forward again → down to the lamp's bottom contact
     case 'p1':

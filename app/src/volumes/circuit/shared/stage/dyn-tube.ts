@@ -47,8 +47,14 @@ export class DynTube {
     this.normals = new BufferAttribute(new Float32Array(count * 3), 3);
     this.geometry.setAttribute('position', this.position);
     this.geometry.setAttribute('normal', this.normals);
-    const idx: number[] = [];
     const cols = radial + 1;
+    this.cos = new Float32Array(cols);
+    this.sin = new Float32Array(cols);
+    for (let j = 0; j < cols; j++) {
+      this.cos[j] = Math.cos((j / radial) * Math.PI * 2);
+      this.sin[j] = Math.sin((j / radial) * Math.PI * 2);
+    }
+    const idx: number[] = [];
     for (let i = 0; i < rings - 1; i++) {
       for (let j = 0; j < radial; j++) {
         const a = i * cols + j;
@@ -58,17 +64,8 @@ export class DynTube {
     }
     // end caps: fans around two centre vertices (the last two)
     const c0 = rings * cols;
-    for (let j = 0; j < radial; j++) {
-      idx.push(c0, j, j + 1);
-      idx.push(c0 + 1, (rings - 1) * cols + j + 1, (rings - 1) * cols + j);
-    }
+    for (let j = 0; j < radial; j++) idx.push(c0, j, j + 1, c0 + 1, (rings - 1) * cols + j + 1, (rings - 1) * cols + j);
     this.geometry.setIndex(idx);
-    this.cos = new Float32Array(cols);
-    this.sin = new Float32Array(cols);
-    for (let j = 0; j < cols; j++) {
-      this.cos[j] = Math.cos((j / radial) * Math.PI * 2);
-      this.sin[j] = Math.sin((j / radial) * Math.PI * 2);
-    }
   }
 
   /**

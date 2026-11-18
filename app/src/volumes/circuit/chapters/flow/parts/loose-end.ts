@@ -1,5 +1,5 @@
 /**
- * `flow/connect`: the minus wire's end out of its clamp. The first stretch of the piece `m1` bends out of the
+ * `flow/connect`: the minus wire's end out of its clamp. The first stretch of the far wire `m` bends out of the
  * minus terminal and lies on the board in front of the clamp, its stripped copper end showing, a big `cyan` grip
  * on it (the practicum's handle, VISUAL §5.7). The reader drags the grip; near the terminal the end clicks in.
  * `out` 0…1 is how far the end is out (one number, both ways: «Назад» lays it out again); `hand` overrides the
@@ -34,7 +34,7 @@ export interface LooseEnd {
 }
 
 export function looseEnd(stand: CircuitStage): LooseEnd {
-  const path = standPath('m1');
+  const path = standPath('m');
   const along: number[] = [];
   let acc = 0;
   path.forEach((p, i) => {
@@ -90,7 +90,7 @@ export function looseEnd(stand: CircuitStage): LooseEnd {
           WIRE.sheath,
         );
       }
-      stand.stand.wires.setShape('m1', { path: k === 0 ? path : bent, round: 1, cover: 1, copper: 1 });
+      stand.stand.wires.setShape('m', { path: k === 0 ? path : bent, round: 1, cover: 1, copper: 1 });
       laid = k;
       // the grip sits on the wire just behind the stripped end, along the wire
       const a = bent[0]!;

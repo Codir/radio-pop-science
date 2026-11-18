@@ -285,8 +285,9 @@ six. Merge static props (`Builder`) and set `castShadow = false` on small things
 ## Not here yet (for the chapter builders)
 
 - `flow/loop`: the slider moving to the second seat (the seat and its jumper are modelled; no motion).
-- `resistance/shape`: the far wire as a snake — `wires.setShape('m2', { path, round: 1, cover: 1, copper: 1 })`
-  takes any path, but the radius is fixed (thinning is not parameterised).
+- `resistance/shape`: the far wire as a snake — `wires.setShape('m', { path, …, thin: { from, core, sheath } })`
+  (the far wire `m` is ONE tube from the minus clamp to the lamp; `thin` thins it from a length on, `setEmber` warms
+  that stretch).
 - `build/*` (built, chapter-side): loose wires with cyan handles are the chapter's (`chapters/build/parts/wiring.ts`);
   `wires.setShape` takes `bare: [start, end]` (stripped copper, default `BARE` 0.11 both) and `gap: { at, width }`
   (a break in the core under the sheath) — both default to today's wire.
@@ -351,7 +352,7 @@ shot (≈ 6 px-eq there; `flow/count` keeps «0,3 A» as its caption), but in th
 - `stand.ts` — Everything that stands on the board, assembled in the BOARD FRAME, with each thing on its permanent place (VISUAL.md §2): mounts, the one ba…
 - `torch.ts` — The flashlight (VISUAL.md §5.1): a pocket torch for one AA battery — a cylinder with a wider head, a glass, a cone mirror inside, the yellow…
 - `unfold.ts` — The unfolding of the flashlight into the stand (VISUAL.md §5.1) as ONE pure function of `u` ∈ 0…1, so the reader can drag it, stop it and le…
-- `wires.ts` — The loop of wire (VISUAL.md §2): four pieces that together with the battery, the switch, the lamp and the jumper of the second seat close th…
+- `wires.ts` — The loop of wire (VISUAL.md §2): three pieces that together with the battery, the switch and the lamp close the rounded rectangle.
 - `tools/crawl-lane.ts` — The geometry of the crawl (the owner's snail scene, DECISIONS §60 r–s): the wire's run from the battery's minus clamp to the lamp — the way…
 - `tools/crawl.ts` — The crawl (the owner's snail scene, DECISIONS §60 r–s)
 - `tools/frame.ts` — The counter frame (VISUAL.md §5.7): a thin `teal` frame around the wire that can be carried along the loop, with its number right above it —…
@@ -361,3 +362,14 @@ shot (≈ 6 px-eq there; `flow/count` keeps «0,3 A» as its caption), but in th
 - `tools/loupe-shader.ts` — What a PLAIN magnifier shows of the wire's first centimetre (the crawl): the wire leaving the clamp, a millimetre scale along it, and stylis…
 - `tools/loupe.ts` — The magnifier as a PLAIN magnifier (the crawl, DECISIONS §60 s–t): inside the ring the first centimetre of the wire a few times enlarged — t…
 - `tools/snail.ts` — The snail (VISUAL.md §5.6).
+
+## The far wire is one piece (`F-one-far-wire`, 2026-11-18)
+
+- The far wire is ONE tube `m` (minus clamp → left side → far side → the lamp's thread), not `m1` + `m2`:
+  one mesh pair (core + sheath), no joins, no open caps (`DynTube` is always capped; `WireShape.open` is gone).
+- `wires.setSeat(k)` (`Stand.setSeat`, `flow/loop` only) parts it between the second seat's two terminals: the
+  section collapses there (flat copper ends as the `gap` cut faces, `BARE × k` of copper into each terminal); at 0
+  it is whole again. It applies to any shape of `m` whose path ends with the straight far stretch.
+- `WireShape.thin` + `wires.setEmber` — the snake of `resistance/shape` is the far stretch of `m` itself
+  (`farWirePath(k)`); `wires.shapeOf(id)` tells a chapter when the stand re-laid its piece; `wires.sheath(id)`.
+- The flashlight's minus strip is one strip `torchPath('m')`, its flat side transported along the whole strip.

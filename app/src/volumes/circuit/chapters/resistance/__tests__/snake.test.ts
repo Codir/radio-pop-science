@@ -9,9 +9,13 @@ import {
   currentOf,
   depthOf,
   radiiOf,
+  SNAKE_FROM,
+  farWirePath,
   snakePath,
   stretchOf,
 } from '../parts/snake-path';
+import { standPath } from '@circuit/shared/stage/wires';
+import { resample } from '@circuit/shared/stage/dyn-tube';
 
 describe('the current of the stretched wire (script: I = 1,5 V : (5 Ω + 0,0072 Ω × k²))', () => {
   it.each([
@@ -54,5 +58,18 @@ describe('the snake', () => {
     expect(depthOf(1)).toBe(0);
     expect(depthOf(K_MAX)).toBeCloseTo(DEPTH_MAX, 6);
     for (const k of [1, 3, 12.5, 25, 40]) expect(stretchOf(depthOf(k))).toBeCloseTo(k, 6);
+  });
+});
+
+describe('the far wire with its snake', () => {
+  it('is the stand wire exactly at k = 1 (one tube, no join)', () => {
+    const a = resample(farWirePath(1), 900);
+    const b = resample(standPath('m'), 900);
+    a.forEach((p, i) => expect(p.distanceTo(b[i]!)).toBeLessThan(1e-6));
+  });
+  it('starts thinning at the seat place', () => {
+    const near = standPath('m');
+    const at = near.reduce((acc, p, i) => (i ? acc + p.distanceTo(near[i - 1]!) : 0), 0) - (TO_X - FROM_X);
+    expect(SNAKE_FROM).toBeCloseTo(at, 6);
   });
 });
