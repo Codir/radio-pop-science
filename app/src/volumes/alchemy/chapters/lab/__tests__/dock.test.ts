@@ -284,14 +284,15 @@ describe('lab dock', () => {
     expect(statusOf(spec)).toBeNull();
   });
 
-  it('puts one nuclide chart on every board, then the picked line, the switch, the collection and the readouts', () => {
+  it('puts one nuclide chart on every board, then the picked line, the switch with the energy, the collection and the readouts', () => {
     const { specs } = makeLab();
     const chart = specs['heavy-hydrogen'].board!.children[0];
     for (const step of STEP_IDS) {
       const board = specs[step].board!;
       expect(board.title, step).toBe(L.chart.title);
       expect(board.children.map((c) => c.id), step).toEqual([
-        'chart', 'picked', 'full', 'collection', 'moves', 'elapsed', 'status', 'energy',
+        // the switch and the energy share a row (a toggle and the readout after it)
+        'chart', 'picked', 'full', 'energy', 'collection', 'moves', 'elapsed', 'status',
         ...(step === 'free' ? ['start-here'] : []),
       ]);
       expect(board.children[0], step).toBe(chart); // one node and one DOM widget for all twelve steps

@@ -132,6 +132,30 @@ async function boardFits() {
   return { ok, detail: `board ${top.toFixed(0)}…${bottom.toFixed(0)}, right ${right.toFixed(0)}; ${parts.join(', ')}` };
 }
 
+/**
+ * Nothing of the board's body hides under its button row (buttons stay put under the scrolling body): every row
+ * `ids` names is on screen and ends above the top of the board's button `button`, so none needs scrolling to.
+ */
+async function bodyAbove(button, ids) {
+  const b = await box(page, `ctl-${button}`);
+  if (!b) return { ok: false, detail: `${button} not on screen` };
+  const top = b.y - b.h / 2;
+  const parts = [];
+  let ok = true;
+  for (const id of ids) {
+    const r = await box(page, `ctl-${id}`);
+    if (!r) {
+      ok = false;
+      parts.push(`${id} off`);
+      continue;
+    }
+    const bottom = r.y + r.h / 2;
+    ok &&= bottom <= top + 1;
+    parts.push(`${id} …${bottom.toFixed(0)}`);
+  }
+  return { ok, detail: `${button} from ${top.toFixed(0)}: ${parts.join(', ')}` };
+}
+
 async function offscreen() {
   return page.evaluate(() => window.__ui.offscreen().map((o) => `${o.name} (${o.reason})`));
 }
@@ -339,6 +363,7 @@ try {
   check('console clean', quick.length === 0, errorsText(quick));
 
   // 9 — every step: the dock shows the step's tools, nothing else, and fits 1280×720 without scrolling
+  let cardHeight = null;
   for (const [id, step] of Object.entries(STEPS)) {
     label = `9 ${id}`;
     await enter(page, id);
@@ -368,6 +393,11 @@ try {
     check('the dock fits without scrolling', fit.ok, fit.detail);
     const win = windowOf(...step.start);
     check(`the chart's window ${win.n0}-${win.z0} stays on the table`, s.chart.n0 === win.n0 && s.chart.z0 === win.z0 && s.chart.cols === 15, JSON.stringify(s.chart));
+    // the card's rows are one line each, also «Ядро» of a heavy nucleus (it used to wrap at «α-» / «розпад»)
+    const card = await box(page, 'ctl-card');
+    cardHeight ??= card?.h ?? null;
+    check('the card is as tall as the first step’s: one line per row', card !== null && Math.abs(card.h - cardHeight) <= 1,
+      `card ${card ? card.h.toFixed(1) : '—'}, first ${cardHeight === null ? '—' : cardHeight.toFixed(1)}`);
     if (out) await screenshot(page, join(out, `dock-${id}.jpg`));
     // …and still fits once the status line has something to say (a decay or a refusal)
     await click(page, 'wait');
@@ -654,6 +684,17 @@ try {
   s = await read(page);
   check('«Почати звідси»: ¹⁹⁸Hg, 0 moves, the pick forgotten',
     s.z === 80 && s.n === 118 && s.electrons === 80 && s.moves === 0 && s.picked === null && !(await shown(page, 'start-here')), `${at(s)}, picked ${s.picked}`);
+
+  // the fullest board: a picked natural nuclide (its two-line note and «Почати звідси») and the longest refusal
+  label = 'free board full';
+  await click(page, 'restart');
+  await clickCell(page, 1, 0);
+  await click(page, 'gamma-p', 1);
+  s = await read(page);
+  const under = await bodyAbove('start-here', ['chart', 'picked', 'full', 'energy', 'collection', 'moves', 'elapsed', 'status']);
+  check('¹H picked, γ refused: every row of the board above «Почати звідси», nothing to scroll',
+    s.z === 1 && s.n === 0 && s.picked === '1-0' && (await shown(page, 'status')) && under.ok, `${at(s)}; ${under.detail}`);
+  if (out) await screenshot(page, join(out, 'free-board-full.jpg'));
 
   label = 'free elsewhere';
   await enter(page, 'sun');

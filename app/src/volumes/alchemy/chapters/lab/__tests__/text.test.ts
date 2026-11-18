@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NBSP } from '@/content';
-import { getNuclide } from '@alchemy/sim/core';
+import { allNuclides, getNuclide } from '@alchemy/sim/core';
 import {
   autoDecay, chooseFragment, fireAt, knock, setElectrons, startGame, waitForDecay,
 } from '@alchemy/sim/lab';
@@ -8,6 +8,7 @@ import type { GameEvent, PlayedMode, Refusal } from '@alchemy/sim/lab';
 import {
   cardRows, chargeText, elapsedText, energyText, eventLine, halfLifeText, modeName, questDoneLine, statusLine,
 } from '../parts/text';
+import { L } from '../labels';
 
 const s = (t: string) => t.replaceAll(NBSP, ' ');
 const BAD = /undefined|null|NaN|Infinity|\[object/;
@@ -127,6 +128,21 @@ describe('lab text', () => {
     expect(statusLine(getNuclide(3, 1)!).tone).toBe('red');
     expect(statusLine(getNuclide(3, 1)!).text).not.toMatch(BAD);
     expect(statusLine(getNuclide(92, 146)!).tone).toBe('amber');
+  });
+  it('keeps the card’s «Ядро» row short: half-life and main decay, the status word only when nothing else is said', () => {
+    const row = (z: number, n: number): string => s(cardRows(startGame(z, n))[2]![1]!);
+    expect(row(92, 146)).toBe('T½ 4,47 млрд р. · α-розпад');
+    expect(row(92, 143)).toBe('T½ 704 млн р. · α-розпад');
+    expect(row(6, 8)).toBe('T½ 5700 р. · β⁻-розпад');
+    expect(row(4, 4)).toMatch(/^T½ .+ · α-розпад$/);
+    expect(row(79, 118)).toBe('Стабільне ядро');
+    expect(row(82, 122)).toBe('Довгоживуче ядро · розпаду не спостерігали');
+    // the plate under the atom names the status: whenever the row has a half-life or a decay, it has no status word
+    const words = [L.status.longLived, L.status.radioactive, L.status.fleeting];
+    for (const x of allNuclides()) {
+      const text = statusLine(x).text;
+      if (x.branches.length > 0) expect(words.some((w) => text.includes(w)), `${x.z}-${x.n}`).toBe(false);
+    }
   });
   it('fills the card and the event line', () => {
     const rows = cardRows(startGame(79, 118));

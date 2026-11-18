@@ -113,6 +113,12 @@ export function modeName(mode: PlayedMode): string {
 /** The name of a decay branch as the table gives it (also the table's «β⁺ or electron capture»). */
 export const codeName = (code: DecayCode): string => L.modes[code];
 
+/**
+ * The nucleus in the card's «Ядро» row, and the tone of the plate's status badge. The text gives the half-life and
+ * the main decay («T½ 4,47 млрд р. · α-розпад»); the status word stays only where there is nothing else to say
+ * («Стабільне ядро», «Довгоживуче ядро · розпаду не спостерігали», «Даних замало»). The plate under the atom names
+ * the status in its tone anyway, and with the word the row of a heavy nucleus wrapped at «α-» / «розпад».
+ */
 export function statusLine(x: Nuclide): { readonly text: string; readonly tone: Tone } {
   const S = L.status;
   const half = typeof x.halfLife === 'number' ? `${S.halfLife} ${halfLifeText(x.halfLife)}` : S.halfLifeUnknown;
@@ -122,11 +128,11 @@ export function statusLine(x: Nuclide): { readonly text: string; readonly tone: 
     case 'stable':
       return { text: S.stable, tone: 'green' };
     case 'longLived':
-      return { text: join(S.longLived, main === null ? S.notObserved : half, main), tone: 'green' };
+      return { text: main === null ? join(S.longLived, S.notObserved) : join(half, main), tone: 'green' };
     case 'radioactive':
-      return { text: join(S.radioactive, half, main), tone: 'amber' };
+      return { text: join(half, main), tone: 'amber' };
     case 'fleeting':
-      return { text: join(S.fleeting, half, main), tone: 'red' };
+      return { text: join(half, main), tone: 'red' };
     case 'incomplete':
       return { text: S.incomplete, tone: 'mist' };
   }

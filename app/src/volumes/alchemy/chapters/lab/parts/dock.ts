@@ -22,10 +22,11 @@
  * waits for the choice, callouts name the two fragments hanging in the scene (picked there or with the buttons).
  *
  * The board is «Карта нуклідів» (plan decision 10): the chart (`nuclide-chart.ts`), the line of a picked cell, the
- * «Уся карта» switch and the collection counters, then the readouts and the status line (and in the free lab the
- * button «Почати звідси», last as on every board). The energy readout has a row of its own under the status line:
- * consecutive readouts share a row, and its «виділилось ≈ 18,6 keV» does not fit beside the other two on a
- * 520-unit board.
+ * «Уся карта» switch with the energy readout beside it, the collection counters, then the readouts of moves and
+ * time and the status line (and in the free lab the button «Почати звідси», last as on every board). Consecutive
+ * readouts and toggles share a row: beside moves and time the energy's «виділилось ≈ 18,6 keV» would overrun the
+ * 520-unit board, and in a row of its own under the status line it was pushed under «Почати звідси» at 1280×720
+ * (a picked natural nuclide and a two-line status) — beside the switch it costs no row at all.
  */
 import type { Object3D } from 'three';
 import { audio } from '@/audio';
@@ -398,7 +399,9 @@ export function stepSpec(lab: Lab, step: StepId): StepUiSpec {
       children: [
         dock.chartSpec,
         { type: 'note', id: 'picked', text: dock.pickedText, icon: 'target', color: 'mist', visible: () => dock.picked !== null },
+        // the switch and the readout after it share a row (see the header: why the energy stands here)
         { type: 'toggle', id: 'full', label: L.chart.full, value: false },
+        { type: 'readout', id: 'energy', label: L.dock.energy, text: () => energyText(session.lastQ) },
         {
           type: 'stats',
           id: 'collection',
@@ -418,8 +421,6 @@ export function stepSpec(lab: Lab, step: StepId): StepUiSpec {
           color: () => TONE_COLOR[dock.status?.tone ?? 'info'],
           visible: () => dock.status !== null,
         },
-        // after the status line, not next to the other two: in their row its long text would overrun the board
-        { type: 'readout', id: 'energy', label: L.dock.energy, text: () => energyText(session.lastQ) },
         // (a board shows its buttons last)
         ...(step === 'free' ? [startHere(lab, dock)] : []),
       ],
