@@ -119,7 +119,7 @@
 | QPSK | Д: `points/four`, `sat-digital/four` |
 | QAM | Д: `points/dense` |
 | OFDM | Д: `many/slow` |
-| PAL | Д: `colour-sound/flip` |
+| PAL | Д: `tv/roof`, `colour-sound/flip` |
 | SECAM | Д: `tv/roof`, `colour-sound/flip` |
 
 PLL і LDPC сюди не входять: вони стоять на екрані лише у своїх гілках, після українського пояснення.
