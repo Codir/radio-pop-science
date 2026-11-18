@@ -447,8 +447,11 @@ try {
     const win = windowOf(...step.start);
     check(`the chart's window ${win.n0}-${win.z0} stays on the table`, s.chart.n0 === win.n0 && s.chart.z0 === win.z0 && s.chart.cols === 15, JSON.stringify(s.chart));
     // the card's «Ядро» row: the status first (for a screen reader, for a phone), then the main decay
-    const cardText = await controlText(page, 'card');
-    check(`the card's «Ядро» row begins «${NUCLEUS_ROW[id]}»`, cardText.includes(NUCLEUS_ROW[id]), cardText.slice(0, 160));
+    // (DOM: the card's own text; WebGL: its cells are unnamed text pieces — one of them must begin so, and right
+    // after an entry no status line or toast is up that could begin «Стабільне ядро»)
+    const cardText = hud === 'dom' ? await controlText(page, 'card') : '';
+    const rowOk = hud === 'dom' ? cardText.includes(NUCLEUS_ROW[id]) : await textShown(page, NUCLEUS_ROW[id]);
+    check(`the card's «Ядро» row begins «${NUCLEUS_ROW[id]}»`, rowOk, cardText.slice(0, 160));
     // DOM: no line of the card ends at a hyphen («α-» / «розпад»); the WebGL HUD reports no line breaks
     if (hud === 'dom') {
       const broken = await hyphenBreaks();
@@ -488,8 +491,10 @@ try {
   await advance(page, 2.2);
   s = await read(page);
   check('²H + ³He → ⁵Li → ⁴He: done in 2 moves', s.z === 2 && s.n === 2 && s.moves === 2 && s.done, at(s));
-  // the 6-s result toast does not hang over the volume home: the reader leaves within a second of the win
+  // the 6-s result toast does not hang over the volume home: the reader leaves within a second of the win (the
+  // result speaks after the proton of ⁵Li's decay has flown, ≈ 0.7 s after the decay)
   label = '11 toast home';
+  await advance(page, 0.6);
   const resultUp = await resultToast();
   await page.evaluate(() => window.__ui.open('home'));
   await advance(page, 0.6);
