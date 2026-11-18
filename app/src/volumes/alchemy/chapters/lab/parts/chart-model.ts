@@ -172,8 +172,8 @@ function allInTable(): NonNullable<typeof table> {
   return table;
 }
 
-/** Percent in nature: two decimals from 1 % up, three significant digits below (0,0145 %). */
-function abundanceText(percent: number): string {
+/** Percent in nature: two decimals from 1 % up, three significant digits below (0,0145 %). Also the start picker's. */
+export function abundanceText(percent: number): string {
   const decimals = percent >= 1 || percent <= 0 ? 2 : Math.max(2, 2 - Math.floor(Math.log10(percent)));
   return fmtUnit(percent, '%', { maxDigits: decimals });
 }

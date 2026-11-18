@@ -49,11 +49,19 @@ export const L = {
     waitSkipped: 'час очікування пропущено',
     fleeting: 'нетривке ядро сповільнено: живе',
   },
+  /**
+   * The free lab's start picker (`parts/start-picker.ts`): its buttons as the document quotes them, the names of
+   * its two sliders and their tooltips.
+   */
   free: {
     newStart: doc('free', 'Новий старт'),
     take: doc('free', 'Взяти як старт'),
     cancel: doc('free', 'Скасувати'),
     startHere: doc('free', 'Почати звідси'),
+    element: 'Елемент',
+    isotope: 'Ізотоп',
+    elementHint: '84 елементи, що трапляються в природі',
+    isotopeHint: 'Природні ізотопи елемента та їхня частка в природі',
   },
   /** Units of time and energy; `day` holds the three plural forms separated by `|`. */
   units: {

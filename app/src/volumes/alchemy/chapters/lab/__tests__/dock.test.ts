@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { NBSP } from '@/content';
 import type { ChapterContext } from '@/engine/api';
 import type {
-  ButtonSpec, ControlSpec, CustomSpec, HonestySpec, NoteSpec, ReadoutSpec, SegmentedSpec, StatsSpec, StepUiApi, StepUiSpec,
+  ButtonSpec, ControlSpec, CustomSpec, HonestySpec, NoteSpec, ReadoutSpec, SegmentedSpec, SliderSpec, StatsSpec, StepUiApi,
+  StepUiSpec,
 } from '@/hud';
 import type { UiNode } from '@/ui3d';
 import { ALL_TOOLS, EMPTY_PROGRESS, PROJECTILES, questById } from '@alchemy/sim/lab';
@@ -12,20 +13,23 @@ import { L } from '../labels';
 import type { AtomView } from '../parts/atom-view';
 import { announce, chartState, stepSpec, type Lab } from '../parts/dock';
 import { Session } from '../parts/session';
+import { NATURAL_Z } from '../parts/start-picker';
 
 interface Toast { readonly text: string; readonly tone?: string; readonly icon?: string; hidden: boolean }
 
 /** A lab with a real session and a step UI that only records what it is asked to do. */
 function makeLab() {
   const toasts: Toast[] = [];
-  const values = new Map<string, string>();
+  const values = new Map<string, string | number>();
   const ui = {
     define: () => undefined,
     value: (id: string) => values.get(id),
-    set: (id: string, v: string) => values.set(id, v),
+    set: (id: string, v: string | number) => values.set(id, v),
     onChange: () => undefined,
     press: () => undefined,
-    patch: () => undefined,
+    patch: (id: string, p: { value?: number }) => {
+      if (p.value !== undefined) values.set(id, p.value);
+    },
     toast: (text: string, opts?: { tone?: string; icon?: string }) => {
       const t: Toast = { text, tone: opts?.tone, icon: opts?.icon, hidden: false };
       toasts.push(t);
@@ -75,6 +79,7 @@ describe('lab dock', () => {
         ...(projectiles.length > 0 ? ['fire'] : []),
         ...(['gamma-n', 'gamma-p', 'wait'] as const).filter((t) => tools.includes(t)),
         'neutral', 'pick-heavy', 'pick-light', 'restart',
+        ...(step === 'free' ? ['new-start', 'take-start', 'cancel-start'] : []),
       ];
       expect(buttons(specs[step]).map((b) => b.id), step).toEqual(want);
       const choice = control<SegmentedSpec>(specs[step], 'projectile');
@@ -203,6 +208,22 @@ describe('lab dock', () => {
     expect(shownButtons(spec)).toEqual(['fire', 'wait', 'restart']);
   });
 
+  it('never shows more than six buttons in the free lab: three rows of the action row at 1280×720', () => {
+    const { session, specs } = makeLab();
+    session.enter('free');
+    expect(shownButtons(specs.free)).toEqual(['fire', 'gamma-n', 'gamma-p', 'wait', 'restart', 'new-start']);
+    session.setElectrons(2);
+    expect(shownButtons(specs.free)).toEqual(['fire', 'gamma-n', 'gamma-p', 'wait', 'neutral', 'new-start']);
+    session.startFrom(92, 143); // ²³⁵U
+    session.setElectrons(90);
+    session.fire('n'); // a fission of an ion: the fragment choice, and «Почати знову» back
+    expect(shownButtons(specs.free)).toEqual(['pick-heavy', 'pick-light', 'restart']);
+    // the other steps keep «Почати знову» next to «Нейтралізувати»
+    session.enter('superheavy');
+    session.setElectrons(0);
+    expect(shownButtons(specs.superheavy)).toEqual(['fire', 'wait', 'neutral', 'restart']);
+  });
+
   it('shows «Нейтралізувати» only while the atom is charged', () => {
     const { session, specs } = makeLab();
     session.enter('heavy-hydrogen');
@@ -269,12 +290,49 @@ describe('lab dock', () => {
     for (const step of STEP_IDS) {
       const board = specs[step].board!;
       expect(board.title, step).toBe(L.chart.title);
-      expect(board.children.map((c) => c.id), step).toEqual(
-        ['chart', 'picked', 'full', 'collection', 'moves', 'elapsed', 'status', 'energy'],
-      );
+      expect(board.children.map((c) => c.id), step).toEqual([
+        'chart', 'picked', 'full', 'collection', 'moves', 'elapsed', 'status', 'energy',
+        ...(step === 'free' ? ['start-here'] : []),
+      ]);
       expect(board.children[0], step).toBe(chart); // one node and one DOM widget for all twelve steps
     }
     expect(holds(control(specs.free, 'picked')!)).toBe(false); // nothing picked yet
+    expect(holds(control(specs.free, 'start-here')!)).toBe(false); // so nothing to start from
+  });
+
+  it('offers «Новий старт» only in the free lab; while it is open, only the choice — until a take, a cancel or a new run', () => {
+    const { lab, session, specs, values } = makeLab();
+    const spec = specs.free;
+    const press = (id: string): void => buttons(spec).find((b) => b.id === id)!.onClick();
+    const shownControls = (): string[] => (spec.controls ?? []).filter(holds).map((c) => c.id);
+    for (const step of STEP_IDS) if (step !== 'free') expect(control(specs[step], 'new-start'), step).toBeUndefined();
+    session.enter('free');
+    const idle = ['card', 'projectile', 'electrons', 'fire', 'gamma-n', 'gamma-p', 'wait', 'restart', 'new-start'];
+    const choice = ['card', 'pick-element', 'pick-isotope', 'take-start', 'cancel-start'];
+    expect(shownControls()).toEqual(idle);
+    session.setElectrons(0); // a charged atom: «Нейтралізувати» takes the place of «Почати знову» (six buttons fit)…
+    expect(shownControls()).toEqual([...idle.slice(0, 7), 'neutral', 'new-start']);
+    press('new-start');
+    expect(shownControls()).toEqual(choice); // …and gives way too
+    press('cancel-start');
+    expect(session.state).toMatchObject({ z: 1, n: 0, electrons: 0, moves: 0 });
+    session.neutralise();
+    expect(shownControls()).toEqual(idle);
+    // any new run closes it: «Почати знову» (hidden meanwhile, but the session may restart), an entry, a take
+    press('new-start');
+    session.restart();
+    expect(shownControls()).toEqual(idle);
+    press('new-start');
+    session.enter('sun');
+    session.enter('free');
+    expect(shownControls()).toEqual(idle);
+    press('new-start');
+    values.set('pick-element', NATURAL_Z.indexOf(79));
+    control<SliderSpec>(spec, 'pick-element')!.onChange!(NATURAL_Z.indexOf(79));
+    press('take-start');
+    expect(session.state).toMatchObject({ z: 79, n: 118, moves: 0 });
+    expect(shownControls()).toEqual(idle);
+    expect(chartState(lab).picked).toBeNull();
   });
 
   it('counts the collection and follows the current nuclide with the window', () => {

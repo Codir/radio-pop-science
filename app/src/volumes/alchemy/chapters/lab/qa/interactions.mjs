@@ -9,7 +9,9 @@
 // only from `__app.read('lab')`. The checks are numbered as in the plan (task 12); «chart» checks (task 13) run
 // first, while the collection is still empty; «fx» checks (task 14) follow the animations of the events (a
 // fragment is picked in the scene through the `lab.fragment.*` probes); «walk» checks then win every quest from
-// the dock. The model changes at the click; the status line, the toasts and the chips speak when the scene shows
+// the dock; «free» checks (task 15) take a new start in the dock and on the chart, reload the page (the same
+// browser context keeps its storage) and finally open the chapter in a second context whose `localStorage`
+// throws. The model changes at the click; the status line, the toasts and the chips speak when the scene shows
 // the change (a shot reaches the nucleus ≈ 0.45 s later), so checks of those give the clock time to get there.
 // Frozen engine clock (`?freeze`); a fresh browser context has empty storage, so the dice fall the same way on
 // every run.
@@ -20,6 +22,7 @@ import {
   appUrl,
   baseUrl,
   ensureDir,
+  hudMode,
   launch,
   openApp,
   parseArgs,
@@ -58,6 +61,13 @@ const STEPS = {
   superheavy: { tools: [...PROJECTILES, 'wait'], start: [98, 151] },
   free: { tools: [...PROJECTILES, 'gamma-n', 'gamma-p', 'wait'], start: [1, 0] },
 };
+/** The 84 elements with a nuclide in nature (parts/start-picker.ts): the element slider's values index this. */
+const NATURAL_Z = [...Array.from({ length: 83 }, (_, i) => i + 1).filter((z) => z !== 43 && z !== 61), 90, 91, 92];
+/** The controls of the free lab's start choice, and everything else of the dock that it replaces. */
+const CHOICE = ['pick-element', 'pick-isotope', 'take-start', 'cancel-start'];
+const REPLACED = [
+  'fire', 'projectile', 'gamma-n', 'gamma-p', 'wait', 'electrons', 'neutral', 'restart', 'new-start', 'pick-heavy', 'pick-light',
+];
 
 /**
  * The dock's body fits its column: nothing scrolls. Both interfaces: every body row on screen lies inside the
@@ -65,7 +75,8 @@ const STEPS = {
  */
 async function dockFits() {
   const scroll = await box(page, 'dock-scroll');
-  const rows = (await Promise.all(['card', 'projectile', 'electrons'].map((id) => box(page, `ctl-${id}`)))).filter(Boolean);
+  const ids = ['pick-element', 'pick-isotope', 'card', 'projectile', 'electrons'];
+  const rows = (await Promise.all(ids.map((id) => box(page, `ctl-${id}`)))).filter(Boolean);
   if (!scroll || rows.length === 0) return { ok: false, detail: 'dock rows not on screen' };
   const top = scroll.y - scroll.h / 2;
   const bottom = scroll.y + scroll.h / 2;
@@ -145,6 +156,36 @@ const fragText = ({ heavy, light }) =>
     const p = i === 0 ? heavy : light;
     return `${k} ${p ? `${p.x.toFixed(0)},${p.y.toFixed(0)}${p.shown ? '' : ' hidden'}` : '—'}`;
   }).join(', ');
+
+/** Controls of `ids` that are on screen (`on`) or not. */
+async function filterShown(p, ids, on) {
+  const out = [];
+  for (const id of ids) if ((await shown(p, id)) === on) out.push(id);
+  return out;
+}
+
+/** The dock offers the start choice and nothing it replaces; the wrong ones, for the check's detail. */
+async function choiceOnly(p) {
+  const missing = await filterShown(p, CHOICE, false);
+  const extra = await filterShown(p, REPLACED, true);
+  return [...missing.map((id) => `${id} missing`), ...extra.map((id) => `${id} shown`)];
+}
+
+/** Move the element slider as a gesture would (`notify`: its `onChange` runs), then let 0.4 s of clock pass. */
+async function chooseElement(p, z) {
+  await p.evaluate((i) => window.__ui.set('pick-element', i, true), NATURAL_Z.indexOf(z));
+  await advance(p, 0.4);
+}
+
+/** Reload the page (same URL, same storage) and wait as `openApp` does; then the start settles (0.5 s). */
+async function reload(p) {
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForFunction(() => typeof window.__app === 'object');
+  await p.evaluate(() => window.__app.ready);
+  if ((await hudMode(p)) === 'dom') await p.evaluate(() => document.fonts.ready.then(() => undefined));
+  await p.evaluate(() => window.__app.settled());
+  await advance(p, 0.5);
+}
 
 let failed = true;
 try {
@@ -310,6 +351,7 @@ try {
       status: false, neutral: false, 'pick-heavy': false, 'pick-light': false,
       fire: projectiles.length > 0, projectile: projectiles.length > 1,
       'gamma-n': step.tools.includes('gamma-n'), 'gamma-p': step.tools.includes('gamma-p'), wait: step.tools.includes('wait'),
+      'new-start': id === 'free', 'start-here': false, ...Object.fromEntries(CHOICE.map((c) => [c, false])),
     };
     const wrong = [];
     for (const [ctl, want] of Object.entries(expect)) if ((await shown(page, ctl)) !== want) wrong.push(`${ctl} ${want ? 'missing' : 'shown'}`);
@@ -527,10 +569,138 @@ try {
   s = await read(page);
   check('the free lab plays: ¹H + n → ²H', s.z === 1 && s.n === 1 && s.moves === 1, at(s));
 
+  // free — a new start (task 15): any natural nuclide, in the dock («Новий старт») or from the chart («Почати
+  // звідси»); the free lab and the collection outlive a reload
+  label = 'free new start';
+  check('«Новий старт» is offered, its choice is not', (await shown(page, 'new-start')) && (await filterShown(page, CHOICE, true)).length === 0);
+  await click(page, 'new-start');
+  s = await read(page);
+  let wrong = await choiceOnly(page);
+  check('«Новий старт»: «Вистрілити» and every other tool give way to the two sliders, «Взяти» and «Скасувати»',
+    s.picking && wrong.length === 0, wrong.join(', '));
+  check('…the choice opens on the current nuclide ²H, the card stays',
+    s.choice === '1-1' && (await textShown(page, '²H · 0,0145')) && (await shown(page, 'card')), `choice ${s.choice}`);
+  let fit = await dockFits();
+  let off = await offscreen();
+  check('…the dock fits without scrolling, nothing off screen', fit.ok && off.length === 0, `${fit.detail} ${off.join(', ')}`);
+  await chooseElement(page, 50);
+  s = await read(page);
+  check('tin: the isotope slider goes to the most abundant isotope, ¹²⁰Sn',
+    s.choice === '50-70' && (await textShown(page, 'Sn · Станум')) && (await textShown(page, '¹²⁰Sn · 32,58')), `choice ${s.choice}`);
+  fit = await dockFits();
+  check('…the dock still fits', fit.ok, fit.detail);
+  if (out) await screenshot(page, join(out, 'free-choice-tin.jpg'));
+  await click(page, 'cancel-start');
+  s = await read(page);
+  check('«Скасувати»: the tools are back, nothing changed', !s.picking && (await shown(page, 'fire')) && !(await shown(page, 'pick-element')) && s.z === 1 && s.n === 1 && s.moves === 1, at(s));
+  await click(page, 'new-start');
+  await chooseElement(page, 79);
+  s = await read(page);
+  // (a disabled slider: the DOM interface dims the whole control, and `__ui` counts it as hidden — read its text)
+  const goldCaption = (await controlText(page, 'pick-isotope')).includes('¹⁹⁷Au · 100') || (await textShown(page, '¹⁹⁷Au · 100'));
+  // the DOM range input tells whether it is disabled; the WebGL slider has no such hook (null)
+  const goldOff = await page.evaluate(() => document.querySelector('[data-ui="ctl-pick-isotope"] input')?.disabled ?? null);
+  check('gold: its only natural isotope ¹⁹⁷Au · 100 % (DOM: the isotope slider disabled)', s.choice === '79-118' && goldCaption && goldOff !== false,
+    `choice ${s.choice}, disabled ${goldOff}`);
+  fit = await dockFits();
+  off = await offscreen();
+  check('…the dock fits, nothing off screen', fit.ok && off.length === 0, `${fit.detail} ${off.join(', ')}`);
+  if (out) await screenshot(page, join(out, 'free-choice-gold.jpg'));
+  await click(page, 'take-start');
+  s = await read(page);
+  check('«Взяти як старт»: ¹⁹⁷Au, a neutral atom, 0 moves, the tools are back',
+    s.z === 79 && s.n === 118 && s.electrons === 79 && s.moves === 0 && s.elapsed === 0 && !s.picking && (await shown(page, 'fire')) && !(await shown(page, 'take-start')),
+    at(s));
+  check('…a new run: no status line, the chart centred on gold',
+    !(await shown(page, 'status')) && s.chart.n0 === windowOf(79, 118).n0 && s.chart.z0 === windowOf(79, 118).z0, JSON.stringify(s.chart));
+  if (out) await screenshot(page, join(out, 'free-gold.jpg'));
+  // a move and a charge, for the reload to keep
+  await click(page, 'fire');
+  await pick(page, 'electrons', 'minus');
+  const kept = await read(page);
+  check('¹⁹⁷Au + n → ¹⁹⁸Au, one electron off', kept.z === 79 && kept.n === 119 && kept.moves === 1 && kept.electrons === 78, at(kept));
+  // the tallest free dock: an ion (with «Нейтралізувати») of a nucleus whose card line takes two rows
+  fit = await dockFits();
+  off = await offscreen();
+  check('¹⁹⁸Au⁺: «Нейтралізувати» in the place of «Почати знову», «Новий старт» stays; the dock fits',
+    (await shown(page, 'neutral')) && !(await shown(page, 'restart')) && (await shown(page, 'new-start')) && fit.ok && off.length === 0,
+    `${fit.detail} ${off.join(', ')}`);
+  if (out) await screenshot(page, join(out, 'free-ion.jpg'));
+  const beforeReload = await appErrors(page);
+  check('console clean', beforeReload.length === 0, errorsText(beforeReload));
+
+  label = 'free reload';
+  await reload(page);
+  s = await read(page);
+  check('after a reload: the same nuclide, electrons and moves, the same collection',
+    s.step === 'free' && s.z === kept.z && s.n === kept.n && s.electrons === kept.electrons && s.moves === kept.moves && s.discovered === kept.discovered,
+    `${at(s)}, discovered ${s.discovered} (was ${kept.discovered})`);
+
+  label = 'free start here';
+  await clickCell(page, 79, 119);
+  s = await read(page);
+  check('a pick of ¹⁹⁸Au (not in nature): no «Почати звідси»', s.picked === '79-119' && !(await shown(page, 'start-here')), `picked ${s.picked}`);
+  await clickCell(page, 80, 118);
+  s = await read(page);
+  check('a pick of ¹⁹⁸Hg (in nature): «Почати звідси» on the board', s.picked === '80-118' && (await shown(page, 'start-here')), `picked ${s.picked}`);
+  const fitHere = await boardFits();
+  off = await offscreen();
+  check('…chart and energy unscrolled, the button on screen, the atom free', fitHere.ok && off.length === 0, `${fitHere.detail} ${off.join(', ')}`);
+  if (out) await screenshot(page, join(out, 'free-start-here.jpg'));
+  await click(page, 'new-start');
+  check('…not while the dock’s choice is open', !(await shown(page, 'start-here')));
+  await click(page, 'cancel-start');
+  await click(page, 'start-here');
+  s = await read(page);
+  check('«Почати звідси»: ¹⁹⁸Hg, 0 moves, the pick forgotten',
+    s.z === 80 && s.n === 118 && s.electrons === 80 && s.moves === 0 && s.picked === null && !(await shown(page, 'start-here')), `${at(s)}, picked ${s.picked}`);
+
+  label = 'free elsewhere';
+  await enter(page, 'sun');
+  check('a quest step has no «Новий старт» and no «Почати звідси»', !(await shown(page, 'new-start')) && !(await shown(page, 'start-here')));
+
   label = 'console';
   await advance(page, 1);
   const errors = await appErrors(page);
   check('no console errors or warnings', errors.length === 0, errorsText(errors));
+
+  // storage that throws (a private window, blocked site data): the chapter still opens and plays (Review Focus 1)
+  label = 'broken storage';
+  const denied = await browser.newContext({ viewport: { width, height } });
+  await denied.addInitScript(() =>
+    Object.defineProperty(window, 'localStorage', {
+      get() {
+        throw new Error('denied');
+      },
+    }),
+  );
+  const p2 = await denied.newPage();
+  const uncaught = [];
+  p2.on('pageerror', (e) => uncaught.push({ message: String(e) }));
+  await openApp(p2, appUrl(baseUrl(args), { route: 'alchemy/lab/free', freeze: 1 }));
+  await p2.evaluate(() => window.__app.settled());
+  await advance(p2, 0.5);
+  const throws = await p2.evaluate(() => {
+    try {
+      return window.localStorage === undefined;
+    } catch {
+      return true;
+    }
+  });
+  s = await read(p2);
+  check('localStorage throws, and the free lab opens on ¹H', throws && s.step === 'free' && s.z === 1 && s.n === 0 && s.moves === 0, at(s));
+  await click(p2, 'fire');
+  s = await read(p2);
+  check('«Вистрілити» works: ²H', s.z === 1 && s.n === 1 && s.moves === 1, at(s));
+  await click(p2, 'new-start');
+  await chooseElement(p2, 79);
+  await click(p2, 'take-start');
+  s = await read(p2);
+  check('a new start works: ¹⁹⁷Au', s.z === 79 && s.n === 118 && s.moves === 0, at(s));
+  await advance(p2, 1);
+  const deniedErrors = [...(await appErrors(p2)), ...uncaught];
+  check('console clean', deniedErrors.length === 0, errorsText(deniedErrors));
+  await denied.close();
   failed = results.some((r) => !r.ok);
   console.log(
     `${failed ? 'FAIL' : 'PASS'} alchemy/lab interactions — ${results.filter((r) => r.ok).length}/${results.length} checks at ${width}x${height}`,

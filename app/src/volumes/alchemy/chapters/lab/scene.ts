@@ -25,6 +25,7 @@ import { announce, chartState, hasEmitter, loaded, stepSpec, type Lab } from './
 import { createEmitter, type EventFx } from './parts/emitter';
 import { createFissionView } from './parts/fission-view';
 import { FLEETING_DELAY_S, Session, type SessionEvent } from './parts/session';
+import { pickerState } from './parts/start-picker';
 import { loadProgress, saveProgress } from './parts/storage';
 import { SHOTS } from './shots';
 
@@ -176,6 +177,7 @@ export default defineScene(async (ctx) => {
       /** An event animation is playing or waiting (the model above is already final). */
       busy: busy() || queue.length > 0,
       ...chartState(lab),
+      ...pickerState(lab),
     };
   });
   ctx.qa.probe('lab.nucleus', atom.anchors.nucleus);

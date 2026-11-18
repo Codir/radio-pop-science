@@ -6,6 +6,11 @@
  *
  * A step shows only the tools its quest allows (the same list `Session.tools` gives: `quests.ts`). While a
  * fission waits for the fragment choice, the tools give way to the two fragment buttons and «Почати знову».
+ * The free lab adds «Новий старт» (`start-picker.ts`): while its choice is open, only the choice is offered — the
+ * tools, the projectile choice, the electron counter, «Нейтралізувати» and «Почати знову» give way to the two
+ * sliders, «Взяти як старт» and «Скасувати». Its board adds «Почати звідси» for a natural nuclide picked on the chart.
+ * Seven buttons would take a fourth row of the action row and make the dock scroll at 1280×720, so in the free lab
+ * «Нейтралізувати» takes the place of «Почати знову» while the atom is charged.
  *
  * Height at 1280×720 (UI_API §3.1): the dock must not scroll. As the plan orders, the card's last row («Заряд і
  * зв'язок») is the caption of the electron counter and the readouts sit on the board; that was still too tall for
@@ -17,9 +22,10 @@
  * waits for the choice, callouts name the two fragments hanging in the scene (picked there or with the buttons).
  *
  * The board is «Карта нуклідів» (plan decision 10): the chart (`nuclide-chart.ts`), the line of a picked cell, the
- * «Уся карта» switch and the collection counters, then the readouts and the status line. The energy readout has a
- * row of its own under the status line: consecutive readouts share a row, and its «виділилось ≈ 18,6 keV» does
- * not fit beside the other two on a 520-unit board.
+ * «Уся карта» switch and the collection counters, then the readouts and the status line (and in the free lab the
+ * button «Почати звідси», last as on every board). The energy readout has a row of its own under the status line:
+ * consecutive readouts share a row, and its «виділилось ≈ 18,6 keV» does not fit beside the other two on a
+ * 520-unit board.
  */
 import type { Object3D } from 'three';
 import { audio } from '@/audio';
@@ -43,6 +49,7 @@ import type { Loaded } from './emitter';
 import type { FissionView } from './fission-view';
 import { createNuclideChart, type ChartFrame, type NuclideChart } from './nuclide-chart';
 import { FLEETING_DELAY_S, type Session, type SessionEvent } from './session';
+import { endPicking, isNatural, pickerControls, picking } from './start-picker';
 import { cardRows, elapsedText, energyText, eventLine, questDoneLine } from './text';
 
 export interface Lab {
@@ -104,6 +111,8 @@ const PRIMARY_ORDER = ['fire', 'wait', 'gamma-p'] as const;
 const CAPTION_SIZE = 15;
 
 const pending = (lab: Lab): boolean => lab.session.state.pending !== null;
+/** The tools are on offer: no fragment choice is pending and no new start is being chosen. */
+const playing = (lab: Lab): boolean => !pending(lab) && !picking(lab);
 
 /**
  * The electron counter («−  N  +», `shared/count-stepper.ts`) with the card's «Заряд і зв'язок» under it — the
@@ -120,9 +129,10 @@ function electronCounter(lab: Lab, caption: () => string): Pick<Dock, 'electrons
     get: () => session.state.electrons,
     min: () => 0,
     max: () => maxElectrons(session.state.z),
-    // hidden while a fragment choice is pending; a «+» still held then must not raise 8 refusals a second
+    // hidden while a fragment choice is pending (or a new start is chosen); a «+» still held then must not raise
+    // 8 refusals a second
     onStep: (delta) => {
-      if (!pending(lab)) session.setElectrons(session.state.electrons + delta);
+      if (playing(lab)) session.setElectrons(session.state.electrons + delta);
     },
   });
   const line = new Label('', { size: CAPTION_SIZE, color: 'mist' }, { width: 'fill' });
@@ -151,7 +161,7 @@ function electronCounter(lab: Lab, caption: () => string): Pick<Dock, 'electrons
         line.text = shown = text;
         if (view) domKit.setText(view, text);
       },
-      visible: () => !pending(lab),
+      visible: () => playing(lab),
     },
     releaseCounter: () => counter.release(),
   };
@@ -300,26 +310,52 @@ function honestyOf(step: StepId, dock: Dock): HonestySpec[] {
   ];
 }
 
+/**
+ * «Почати звідси» on the free lab's board: a new run from the natural nuclide picked on the chart — what «Взяти як
+ * старт» does for the dock's choice. Not while a fragment choice is pending or a new start is chosen in the dock.
+ */
+function startHere(lab: Lab, dock: Dock): ButtonSpec {
+  return {
+    type: 'button',
+    id: 'start-here',
+    label: L.free.startHere,
+    onClick: () => {
+      const ref = dock.picked;
+      if (ref && playing(lab)) lab.session.startFrom(ref.z, ref.n); // a new run forgets the pick
+    },
+    visible: () => {
+      const ref = dock.picked;
+      return ref !== null && playing(lab) && isNatural(ref);
+    },
+  };
+}
+
 export function stepSpec(lab: Lab, step: StepId): StepUiSpec {
   const dock = dockOf(lab);
   const { session, atom, fx } = lab;
   const tools = toolsOf(step);
   const projectiles = projectilesOf(step);
-  const free = (): boolean => !pending(lab);
+  const ready = (): boolean => playing(lab);
+  const choosing = (): boolean => picking(lab);
+  /** «Нейтралізувати» is on offer: the tools are, and the atom is charged. */
+  const neutralising = (): boolean => ready() && session.state.electrons !== session.state.z;
   const projectile = (): ProjectileId => chosenProjectile(lab, step)!;
 
   const buttons: ButtonSpec[] = [];
   const button = (id: string, label: string, onClick: () => void, visible: () => boolean): void => {
     buttons.push({ type: 'button', id, label, onClick, visible });
   };
-  if (projectiles.length > 0) button('fire', L.tools.fire, () => session.fire(projectile()), free);
-  if (tools.includes('gamma-n')) button('gamma-n', L.tools.gammaN, () => session.knock('n'), free);
-  if (tools.includes('gamma-p')) button('gamma-p', L.tools.gammaP, () => session.knock('p'), free);
-  if (tools.includes('wait')) button('wait', L.tools.wait, () => session.wait(), free);
-  button('neutral', L.tools.neutral, () => session.neutralise(), () => free() && session.state.electrons !== session.state.z);
-  button('pick-heavy', L.fission.heavy, () => session.pickFragment('heavy'), () => pending(lab));
-  button('pick-light', L.fission.light, () => session.pickFragment('light'), () => pending(lab));
-  button('restart', L.tools.restart, () => session.restart(), () => true);
+  if (projectiles.length > 0) button('fire', L.tools.fire, () => session.fire(projectile()), ready);
+  if (tools.includes('gamma-n')) button('gamma-n', L.tools.gammaN, () => session.knock('n'), ready);
+  if (tools.includes('gamma-p')) button('gamma-p', L.tools.gammaP, () => session.knock('p'), ready);
+  if (tools.includes('wait')) button('wait', L.tools.wait, () => session.wait(), ready);
+  button('neutral', L.tools.neutral, () => session.neutralise(), neutralising);
+  button('pick-heavy', L.fission.heavy, () => session.pickFragment('heavy'), () => pending(lab) && !choosing());
+  button('pick-light', L.fission.light, () => session.pickFragment('light'), () => pending(lab) && !choosing());
+  // the free lab's action row holds six buttons at 1280×720 (three rows; a fourth makes the dock scroll): there
+  // «Нейтралізувати» takes the place of «Почати знову» while it is on offer
+  const restartShown = step === 'free' ? () => !choosing() && !neutralising() : () => !choosing();
+  button('restart', L.tools.restart, () => session.restart(), restartShown);
   const primary = PRIMARY_ORDER.find((id) => buttons.some((b) => b.id === id));
   for (const b of buttons) if (b.id === primary) b.primary = true;
 
@@ -331,10 +367,12 @@ export function stepSpec(lab: Lab, step: StepId): StepUiSpec {
       hint: L.dock.projectile,
       items: projectiles.map((id) => ({ id, label: PROJECTILES.find((p) => p.id === id)!.symbol })),
       value: projectiles[0],
-      visible: free,
+      visible: ready,
     });
   }
   controls.push(dock.electrons, ...buttons);
+  // the free lab: «Новий старт» after «Почати знову»; its sliders go to the top of the dock (UI_API §3)
+  if (step === 'free') controls.push(...pickerControls(lab));
 
   const HOTSPOTS: Partial<Record<StepId, HotspotSpec[]>> = {
     'heavy-hydrogen': [
@@ -382,6 +420,8 @@ export function stepSpec(lab: Lab, step: StepId): StepUiSpec {
         },
         // after the status line, not next to the other two: in their row its long text would overrun the board
         { type: 'readout', id: 'energy', label: L.dock.energy, text: () => energyText(session.lastQ) },
+        // (a board shows its buttons last)
+        ...(step === 'free' ? [startHere(lab, dock)] : []),
       ],
     },
     honesty: honestyOf(step, dock),
@@ -395,12 +435,14 @@ export function stepSpec(lab: Lab, step: StepId): StepUiSpec {
 /**
  * Tells the player what an event of the session did: a toast (the newest event replaces the previous one), the
  * status line on the board and a sound. Uses the event's own payload — a queued event may be older than the
- * session. A new run (`reset`: an entry or «Почати знову») clears the line and the toasts and says nothing.
+ * session. A new run (`reset`: an entry, «Почати знову», a new start) clears the line and the toasts, forgets the
+ * chart's pick, closes the choice of a new start and says nothing.
  */
 export function announce(lab: Lab, e: SessionEvent): void {
   const dock = dockOf(lab);
   switch (e.type) {
     case 'reset':
+      endPicking(lab);
       dock.status = null;
       dock.won = false;
       dock.picked = null;
