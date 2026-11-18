@@ -21,7 +21,7 @@ LINES = '| 4 | `lines` | Як передати цілу картинку одн�
 PATH = ('## Основний шлях\n| № | id | Назва-питання | ≈ хв | Без цієї глави не пояснити |\n|---|---|---|---|---|\n' + LINES
         + '| — | `build-analog` | Практикум. Проведіть картинку крізь подвір’я самі | 12 | — |\n## Кроки шляху\n'
         + '### 4. `lines` — Як передати цілу картинку одним числом?\n- `lines/row` — Комірки одного ряду дають сигнал.\n' + TV
-        + '### `build-analog` — Практикум. Проведіть картинку крізь подвір’я самі\n## Посилання на курс про електрику\n| Крок тому | Сторінка |\n'
+        + '- `tv/beam` — Магніт відхиляє промінь.\n### `build-analog` — Практикум. Проведіть картинку крізь подвір’я самі\n## Посилання на курс про електрику\n| Крок тому | Сторінка |\n'
         + '|---|---|\n| `lines/row` | `#/circuit/charge` — що тримає електрон біля ядра |\n| `tv/beam` | `#/electricity/magnetism/lorentz` |\n')
 LEDGER = '## Терміни шляху\n| № | Термін | Крок |\n|---|---|---|\n| 1 | рядок | `lines/row` |\n'; ROW = '| рядок | `\\bрядо?к\\w*` | `lines/row` | шлях | Ряд комірок, прочитаних по черзі. |\n'
 TERMS = ('## Терміни шляху\n| Термін | Форми | Крок | Тип | Картка |\n|---|---|---|---|---|\n' + ROW
@@ -33,13 +33,14 @@ FREE = ('Глушник гуде.', 'Заглушка на гнізді.', 'Гр
 
 class CheckTest(unittest.TestCase):
     def test_clean(self):
-        self.assertEqual(K.rule1(V, PATH) + K.rule2(V, PATH) + K.rule3(V, LEDGER, TERMS) + K.rule5({}, TERMS) + K.rule7(PATH, {'circuit/charge', 'electricity/magnetism/lorentz'}), [])
+        self.assertEqual(K.rule1(V, PATH) + K.rule2(V, PATH) + K.rule3(V, LEDGER, TERMS, K.listed_steps(PATH)) + K.rule5({}, TERMS) + K.rule7(PATH, {'circuit/charge', 'electricity/magnetism/lorentz'}), [])
     def test_main_path(self):
         title = '| Як передати цілу картинку одним числом? |'
         self.assertEqual(K.rule1(V, PATH.replace('| 10 | третину', '| 9 | третину')), ['PATH.md: `lines`: 9 хв ≠ volume.json 10'])
         self.assertEqual(K.rule1(V, PATH.replace(title, '| як передати цілу картинку — одним числом |')), [])
         self.assertEqual(K.rule1(V, PATH.replace(title, '| Як передати картинку? |')), ['PATH.md: `lines`: title differs from volume.json'])
         self.assertEqual(K.rule1(V, PATH.replace(LINES, '')), ['PATH.md: no main-path row for `lines`'])
+        self.assertEqual(K.rule1(V, PATH.replace(LINES, LINES + LINES)), ['PATH.md: main-path row `lines` appears 2 times'])
     def test_headings(self):
         self.assertEqual(K.rule2(V, PATH.replace(TV, '')), ['PATH.md: no heading for `tv`'])
         self.assertEqual(K.rule2(V, PATH + TV), ['PATH.md: 2 headings for `tv`'])
@@ -48,12 +49,17 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(K.rule3(V, LEDGER, TERMS.replace('`lines/row`', '`lines/frame`')), ['PATH-ledger.md: «рядок» → `lines/row`, _terms.md → `lines/frame`'])
         self.assertEqual(K.rule3(V, LEDGER.replace('`lines/row`', '`nope/row`'), None), ['PATH-ledger.md: «рядок» → `nope/row`: no such chapter in the journey'])
         self.assertEqual(K.rule3(V, LEDGER, TERMS.replace(ROW, '')), ['_terms.md: «рядок» is missing'])
+        self.assertEqual(K.rule3(V, LEDGER + '| 2 | рядок | `lines/row` |\n', TERMS), ['PATH-ledger.md: «рядок» listed twice'])
+        self.assertEqual(K.rule3(V, LEDGER.replace('lines/row', 'lines/rows'), TERMS.replace('`lines/row`', '`lines/rows`'), K.listed_steps(PATH)),
+                         ['PATH-ledger.md: «рядок» → `lines/rows`: no such step in PATH.md'])
     def test_characters(self):
         self.assertEqual(K.rule4({'docs/volumes/radio/PATH.md': '64 \u00b5s\nподвір\'я\n`сузір[’\'\u02bc]`\n'}), [
             'docs/volumes/radio/PATH.md:1: micro sign U+00B5 (write U+03BC)', 'docs/volumes/radio/PATH.md:2: straight apostrophe in «подвір\u0027я» (write U+2019)'])
     def test_nowhere(self):
         got = K.rule5({'chapters/air.md': '- **Докладніше:** безпілотники тут ні до чого.\n'}, TERMS); self.assertEqual(len(got), 1); self.assertIn('chapters/air.md:1', got[0])
         self.assertIn('_terms.md: «рядок»', K.rule5({}, TERMS.replace('Ряд комірок', 'Як у радіолокації: ряд комірок'))[0])
+        renamed = TERMS.replace('Ряд комірок', 'Як у радіолокації: ряд комірок').replace('| Картка |', '| Пояснення |')  # the card is read by position
+        self.assertEqual(len(K.rule5({}, renamed)), 1)
         self.assertEqual(len(K.rule5({'chapters/x.md': 'Сусід заглушить картинку.\n'}, TERMS)), 1); self.assertEqual(K.rule5({'chapters/x.md': 'Ліхтар приглушили.\n'}, TERMS), [])
         for s in HIT:
             self.assertEqual(len(K.rule5({'chapters/x.md': s + '\n'}, TERMS)), 1, s)
@@ -70,6 +76,12 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(K.rule6(full), []); self.assertEqual(K.rule6(full.replace('## 8. Телефон\n', '')), ['VISUAL.md: section «Телефон» missing'])
     def test_links(self):
         self.assertEqual(K.rule7(PATH, {'circuit/charge'}), ['PATH.md: link `tv/beam` → #/electricity/magnetism/lorentz: no such page in this tree'])
+        self.assertEqual(K.rule7(PATH.replace('| `tv/beam` |', '| `tv/bean` |'), {'circuit/charge', 'electricity/magnetism/lorentz'}),
+                         ['PATH.md: link `tv/bean`: no such step in PATH.md'])
+    def test_documents(self):  # a document that is not there is a problem, not a skipped rule
+        texts = dict.fromkeys(K.DOCUMENTS, '')
+        self.assertEqual(K.DOCUMENTS, ('PATH.md', 'PATH-ledger.md', 'chapters/_terms.md', 'VISUAL.md')); self.assertEqual(K.missing(texts), [])
+        self.assertEqual(K.missing(dict(texts, **{'chapters/_terms.md': None, 'VISUAL.md': None})), ['chapters/_terms.md is missing', 'VISUAL.md is missing'])
 
 
 if __name__ == '__main__':

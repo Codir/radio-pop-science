@@ -185,7 +185,7 @@ U+00B5 → `μ`, `...` → `…`, `"…"` → `«…»`, нерозривний 
 
 Власна перевірка `docs/volumes/radio/check.py` — сім правил із шапки файла: `PATH.md` проти `journey`, `PATH-ledger.md`
 проти `_terms.md`, жодного U+00B5 і прямого апострофа між кириличними літерами в документах і коді тому, теми, яких том
-не торкається (сценарії й картки), розділи `VISUAL.md`, посилання на `circuit`; документа ще немає — `skipped rule N`.
+не торкається (сценарії й картки), розділи `VISUAL.md`, посилання на курс про електрику; немає документа — проблема.
 
 Не перевіряє ніхто: «Нитку глави», «Ціль», «Бачимо», картки (крім правила 5 `check.py`), чи справді крок дає щось
 зробити руками, знаки формул поза «Текстом», чи збігається H1 сценарію з `journey[].title`. `COPY_STYLE.md` — читач.
@@ -204,7 +204,7 @@ export COREPACK_ENABLE_DOWNLOAD_PROMPT=0` або `source tools/site/qa-env.sh`);
 | усе згенероване й ворота | `tools/content/regen.sh --volume radio` | пише `INDEX.md`, `GLOSSARY.md`, `chapters/_export/<id>.json`, `app/src/volumes/radio/content/generated/<id>.json` і `<id>.manifest.json`, далі `doccheck`: `doccheck[radio]: ALL GREEN` |
 | ворота без запису | `python3 tools/content/doccheck.py --volume radio` (усі томи — `--all`) | `doccheck[radio]: ALL GREEN`; томові без `chapters/` друкує `nothing to do` і теж «зелено» — шукати рядок `path[radio]` |
 | генератор, лише перевірити | `python3 tools/content/export_runtime.py --check --volume radio` (так само `export_content`, `build_index`, `build_glossary`) | `… up to date`; інакше `N file(s) out of date`, вихід 1 |
-| власна перевірка тому | `python3 docs/volumes/radio/check.py` | останній рядок `radio check: OK`, рядка `skipped` немає |
+| власна перевірка тому | `python3 docs/volumes/radio/check.py` | останній рядок `radio check: OK` |
 | тести перевірок | `python3 docs/volumes/radio/test_check.py`; `python3 tools/content/test_path_format.py` | `OK` |
 | код | `cd app && pnpm typecheck && pnpm lint && pnpm test && pnpm build` | вихід 0; лише том — `pnpm test src/volumes/radio` |
 | гліфи | `cd app && pnpm fonts:check` | `OK: every character has a glyph in every face` |

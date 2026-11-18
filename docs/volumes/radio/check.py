@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """The radio volume's own check: its documents against volume.json, against each other and against this tree.
 
-Rules: 1 — rows of «Основний шлях» in PATH.md are the non-branch journey entries of volume.json, in order, with the
-same titles and minutes; 2 — every journey id has exactly one H3 heading in PATH.md with the volume.json title, and
-no heading names an id outside the journey; 3 — «Терміни шляху» in PATH-ledger.md and chapters/_terms.md list the
-same terms with the same steps, and every step's chapter is in the journey; 4 — no micro sign U+00B5 and no
-straight apostrophe between two Cyrillic letters in docs/volumes/radio/ (except plan48/) or app/src/volumes/radio/;
-5 — no topic the volume never touches in chapters/*.md or in the cards of _terms.md; 6 — VISUAL.md has all its
-sections; 7 — every page linked from «Посилання на курс про електрику» exists in this tree.
-Prints one `radio check: <problem>` line per problem, a line of counts, one `skipped rule N` line per rule whose
-document is not written yet, then `radio check: OK` (exit 0) or `radio check: N problem(s)` (exit 1).
+Rules: 1 — rows of «Основний шлях» in PATH.md are the non-branch journey entries of volume.json, in order, once each,
+with the same titles and minutes; 2 — every journey id has exactly one H3 heading in PATH.md with the volume.json
+title, and no heading names an id outside the journey; 3 — «Терміни шляху» in PATH-ledger.md and chapters/_terms.md
+list the same terms with the same steps, the ledger lists each term once, and every step's chapter is in the journey
+and the step itself is listed in PATH.md; 4 — no micro sign U+00B5 and no straight apostrophe between two Cyrillic
+letters in docs/volumes/radio/ (except plan48/) or app/src/volumes/radio/; 5 — no topic the volume never touches in
+chapters/*.md or in the cards of _terms.md; 6 — VISUAL.md has all its sections; 7 — every link of «Посилання на курс
+про електрику» starts at a step listed in PATH.md and leads to a page that exists in this tree. PATH.md lists a step
+as an item «- `chapter/step` — …».
+Prints one `radio check: <problem>` line per problem (a missing document is one: its rules cannot run), a line of
+counts, then `radio check: OK` (exit 0) or `radio check: N problem(s)` (exit 1).
 The forbidden characters are written as escapes here: rule 4 reads this file too.
 Usage: python3 docs/volumes/radio/check.py
 """
@@ -33,10 +35,12 @@ NOWHERE = re.compile(r'\bглушінн|\b(?:за)?глуш(?:ил|ит|ив|а�
                      r'|військ|\bармі(?:я|ї|ю|єю|й|ям|ями|ях)\b|\bармійськ|\bРЕБ\b|радіоелектронн\w+ боротьб'
                      r'|радіолока[цт]|\bрадар|\bлокатор|\bРЛС\b', re.IGNORECASE)
 H3 = re.compile(r'^### (?:\d+\. )?`([^`]+)`(?: — (.+?))?\s*$')
+STEP_ITEM = re.compile(r'^[-*] `([a-z0-9-]+/[a-z0-9-]+)`', re.MULTILINE)
 ADDRESS = re.compile(r'^`#/([^`\s]+)`')
 SEPARATOR = re.compile(r'^:?-+:?$')
 VISUAL_SECTIONS = ['Принципи', 'Подвір’я', 'Де ми', 'Кольори зі змістом', 'Екран монітора', 'Щуп і стрічка',
                    'Ракурси', 'Телефон', 'Чек-лист аудитора кадру']
+DOCUMENTS = ('PATH.md', 'PATH-ledger.md', 'chapters/_terms.md', 'VISUAL.md')  # under docs/volumes/radio/
 # A chapter's own `steps: [ … ]` literal in index.ts; step lists built by code (`Object.entries(…)`) are not read.
 TS_STEPS = re.compile(r'^([ \t]*)steps:\s*\[[ \t]*$(.*?)^\1\]', re.MULTILINE | re.DOTALL)
 TS_STEP_ID = re.compile(r"^\s*(?:\{\s*)?id:\s*'([^']+)'", re.MULTILINE)
@@ -112,7 +116,10 @@ def rule1(volume, path_md):
         minutes = r.get('≈ хв', '')
         if minutes != str(e.get('minutes')):
             out.append('PATH.md: `%s`: %s хв ≠ volume.json %s' % (i, minutes, e.get('minutes')))
-    if [i for i, _ in rows if i in by_id] != [e['id'] for e in want if e['id'] in seen]:
+    ids = [i for i, _ in rows]
+    out += ['PATH.md: main-path row `%s` appears %d times' % (i, ids.count(i))
+            for i in sorted(set(ids)) if ids.count(i) > 1]
+    if list(dict.fromkeys(i for i in ids if i in by_id)) != [e['id'] for e in want if e['id'] in seen]:
         out.append('PATH.md: main-path rows are out of order')
     return out
 
@@ -137,11 +144,23 @@ def rule2(volume, path_md):
     return out
 
 
-def rule3(volume, ledger_md, terms_md):
+def listed_steps(path_md):
+    """Steps PATH.md lists: `chapter/step` of every item «- `chapter/step` — …»."""
+    return set(STEP_ITEM.findall(path_md))
+
+
+def rule3(volume, ledger_md, terms_md, listed=None):
+    """`listed`: listed_steps(PATH.md); None only when there is no PATH.md (then steps are not looked up there)."""
     ids = {e['id'] for e in volume['journey']}
     ledger = [(r.get('Термін', ''), r.get('Крок', '').strip('`')) for r in table(ledger_md, 'Терміни шляху')]
-    out = ['PATH-ledger.md: «%s» → `%s`: no such chapter in the journey' % (t, s)
-           for t, s in ledger if s.split('/')[0] not in ids]
+    out = []
+    for t, s in ledger:
+        if s.split('/')[0] not in ids:
+            out.append('PATH-ledger.md: «%s» → `%s`: no such chapter in the journey' % (t, s))
+        elif listed is not None and s not in listed:
+            out.append('PATH-ledger.md: «%s» → `%s`: no such step in PATH.md' % (t, s))
+    names = [t for t, _ in ledger]
+    out += ['PATH-ledger.md: «%s» listed twice' % t for t in sorted(set(names)) if names.count(t) > 1]
     if terms_md is None:
         return out
     terms = [(r.get('Термін', ''), r.get('Крок', '').strip('`')) for r in table(terms_md, 'Терміни шляху')]
@@ -175,7 +194,8 @@ def rule5(chapters, terms_md):
     if terms_md is not None:
         for title in ('Терміни шляху', 'Слова лише для «Докладніше»'):
             for r in table(terms_md, title):
-                name, card = next(iter(r.values()), ''), r.get('Картка', '')
+                values = list(r.values())  # by position, as tools/content/path_format.py reads it: the card is last
+                name, card = (values[0], values[-1]) if values else ('', '')
                 out += ['_terms.md: «%s»: card: «%s» is a topic the volume never touches' % (name, word_at(card, m))
                         for m in NOWHERE.finditer(card)]
     return out
@@ -187,10 +207,12 @@ def rule6(visual_md):
 
 
 def rule7(path_md, pages):
-    out = []
+    listed, out = listed_steps(path_md), []
     for r in table(path_md, 'Посилання на курс про електрику'):
         c = list(r.values())
         step = c[0].strip('`') if c else ''
+        if step not in listed:
+            out.append('PATH.md: link `%s`: no such step in PATH.md' % step)
         m = ADDRESS.match(c[1]) if len(c) > 1 else None
         if m is None:
             out.append('PATH.md: link `%s`: the second cell does not start with an address' % step)
@@ -233,27 +255,26 @@ def pages():
     return out
 
 
+def missing(texts):
+    """`texts`: each of DOCUMENTS → its text or None. A document that is not there is a problem: its rules cannot run."""
+    return ['%s is missing' % name for name in DOCUMENTS if texts.get(name) is None]
+
+
 def main():
     volume = json.loads((ROOT / APP / 'volume.json').read_text(encoding='utf-8'))
     docs = ROOT / DOCS
-    path_md, ledger_md = read(docs / 'PATH.md'), read(docs / 'PATH-ledger.md')
-    terms_md, visual_md = read(docs / 'chapters/_terms.md'), read(docs / 'VISUAL.md')
+    texts = {name: read(docs / name) for name in DOCUMENTS}
+    path_md, ledger_md, terms_md, visual_md = (texts[name] for name in DOCUMENTS)
     chapters = {'chapters/' + p.name: p.read_text(encoding='utf-8')
                 for p in sorted(docs.glob('chapters/*.md')) if p.name != '_terms.md'}
-    problems = ['%s is missing' % name for name, text in (('PATH.md', path_md), ('PATH-ledger.md', ledger_md))
-                if text is None]
-    skipped = []
+    problems = missing(texts)
     if path_md is not None:
         problems += rule1(volume, path_md) + rule2(volume, path_md)
     if ledger_md is not None:
-        problems += rule3(volume, ledger_md, terms_md)
-    if terms_md is None:
-        skipped.append((3, 'chapters/_terms.md'))
+        problems += rule3(volume, ledger_md, terms_md, listed_steps(path_md) if path_md is not None else None)
     problems += rule4(checked_files())
     problems += rule5(chapters, terms_md)
-    if visual_md is None:
-        skipped.append((6, 'VISUAL.md'))
-    else:
+    if visual_md is not None:
         problems += rule6(visual_md)
     if path_md is not None:
         problems += rule7(path_md, pages())
@@ -263,11 +284,10 @@ def main():
     def count(md, title):
         return len(table(md, title)) if md is not None else 0
 
-    print('radio check: journey %d · path %d · ledger terms %d · links %d · chapter documents %d' % (
+    print('radio check: journey %d · path %d · ledger terms %d · links %d · chapter documents %d · cards %d' % (
         len(volume['journey']), count(path_md, 'Основний шлях'), count(ledger_md, 'Терміни шляху'),
-        count(path_md, 'Посилання на курс про електрику'), len(chapters)))
-    for n, name in skipped:
-        print('radio check: skipped rule %d (%s is not there yet)' % (n, name))
+        count(path_md, 'Посилання на курс про електрику'), len(chapters),
+        count(terms_md, 'Терміни шляху') + count(terms_md, 'Слова лише для «Докладніше»')))
     print('radio check: %d problem(s)' % len(problems) if problems else 'radio check: OK')
     return 1 if problems else 0
 
