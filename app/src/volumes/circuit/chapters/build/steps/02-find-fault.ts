@@ -6,7 +6,7 @@
  *     battery) — a touch on that clamp: the end jumps to the free «+» clamp;
  *  2. the lamp wire's end is clamped with its sheath on (`contact` false, no bare copper) — with the lens over it, a
  *     touch: the end comes out, the sheath is stripped back, it goes in again;
- *  3. the far wire's copper is broken under the intact sheath (`whole.c` false, a gap in `m2`) — with the lens over
+ *  3. the far wire's copper is broken under the intact sheath (`whole.c` false, a gap in `m` at `C_GAP`) — with the lens over
  *     it, a touch: the old wire rolls off behind the board, a whole one comes down onto the staples.
  * The lamp lights after each repair (that is the check) and 1.5 s later the next fault comes. Touches elsewhere do
  * nothing. The lens: in its holder; a drag carries it along the loop (`loop-track`), and inside its ring the stand
@@ -23,7 +23,6 @@ import {
   worldDirToBoard,
   type LensPose,
 } from '@circuit/shared/stage';
-import { standPath } from '@circuit/shared/stage/wires';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';
 import { AMBIENT } from '../bench';
@@ -31,7 +30,7 @@ import { CLAMPS } from '../parts/clamps';
 import { END_KEYS } from '../parts/ends';
 import { emptyPose } from '../parts/lens-keeper';
 import { loopTrack } from '../parts/loop-track';
-import { M2_GAP } from '../parts/wiring';
+import { C_GAP } from '../parts/wiring';
 
 /** Seconds of the stand's reset (every end out and back in), of light after a repair, before the first fault. */
 const RESET = 1.0;
@@ -46,11 +45,10 @@ const OVER = 0.3;
 type Phase = 'arrive' | 'reset' | 'fault' | 'fixing' | 'shine' | 'done';
 
 /** The three places (board frame). */
-const M2 = standPath('m2');
 const PLACES = [
   CLAMPS.minus.mouth.clone(),
   CLAMPS.lampB.mouth.clone(),
-  M2[0]!.clone().lerp(M2[1]!, M2_GAP),
+  C_GAP.clone(),
 ] as const;
 
 export const findFaultStep: StepFactory = ({ ctx, bench, lens, magnifier, reached, reach, here }) => {

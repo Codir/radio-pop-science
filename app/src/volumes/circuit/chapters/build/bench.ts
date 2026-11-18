@@ -28,7 +28,7 @@ export interface Bench {
   sw: SwitchPart;
   /** The reader's hand on the wires' ends (a step installs its `policy`). */
   hands: Hands;
-  /** `find-fault` 3's repair: the far wire replaced (the stand's `m2`). */
+  /** `find-fault` 3's repair: the far wire C replaced (the stand's `m`, whole). */
   swap: Swap;
   /**
    * Back to the stand as built, every fault gone: the ends travel home (`hop`: each lifts out and goes back in),
@@ -69,7 +69,7 @@ export function createBench(ctx: ChapterContext): Bench {
     () => bench.switchLive(),
   );
   const hands = createHands(ctx, world, stage, wiring);
-  const swap = createSwap(stage, 'm2', wiring.lift.m2);
+  const swap = createSwap(stage, 'm', wiring.lift.m);
   const dead = createShelfBattery(ctx, stage);
   let shelfShown = 1;
   let now: Verdict = 'lit';

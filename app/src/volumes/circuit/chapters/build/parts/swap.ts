@@ -1,11 +1,11 @@
 /**
- * `find-fault` 3, the repair: the far wire with the broken copper is replaced by a whole one. A still copy of the
- * old piece (its geometry as it is at the touch, the piece's own materials) rises off the staples, rolls back over
- * the far edge of the board and drops out of sight behind it; meanwhile the stand's own piece — now whole — comes down from above onto its
+ * `find-fault` 3, the repair: the far wire C (`m`, minus → lamp) with the broken copper is replaced by a whole one.
+ * A still copy of the old wire (its geometry as it is at the touch, the wire's own materials) rises off the
+ * staples, rolls back over the far edge of the board about its far stretch and drops out of sight behind it; meanwhile the stand's own piece — now whole — comes down from above onto its
  * staples (`Wiring.lift`). One number `t` 0 … 1 places everything (`SECONDS` long), so it can be played and snapped.
  */
 import { Group, Mesh, Vector3, type Material } from 'three';
-import type { CircuitStage } from '@circuit/shared/stage';
+import { LOOP, type CircuitStage } from '@circuit/shared/stage';
 import type { WireId } from '@circuit/shared/stage/wires';
 
 export const SWAP_SECONDS = 2.4;
@@ -27,7 +27,7 @@ export interface Swap {
 export function createSwap(stage: CircuitStage, id: WireId, lift: Vector3): Swap {
   const wires = stage.stand.wires;
   const core = wires.core(id);
-  const skin = wires.group.getObjectByName(`wire-${id}:sheath`) as Mesh;
+  const skin = wires.sheath(id);
   const holder = new Group();
   holder.name = `build-swap:${id}`;
   holder.visible = false;
@@ -72,7 +72,8 @@ export function createSwap(stage: CircuitStage, id: WireId, lift: Vector3): Swap
         return m;
       });
       copies[0]!.geometry.computeBoundingSphere();
-      centre.copy(copies[0]!.geometry.boundingSphere!.center);
+      // it rolls about its far stretch (the L of the left side swings up and over it)
+      centre.set(copies[0]!.geometry.boundingSphere!.center.x, LOOP.y, LOOP.far);
       t = 0;
       running = true;
       place();
