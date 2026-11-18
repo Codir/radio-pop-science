@@ -5,6 +5,7 @@ The micro sign and the straight apostrophe appear here only as escapes: rule 4 r
 Usage: python3 docs/volumes/radio/test_check.py
 """
 import pathlib
+import re
 import sys
 import unittest
 
@@ -25,6 +26,10 @@ PATH = ('## Основний шлях\n| № | id | Назва-питання | 
 LEDGER = '## Терміни шляху\n| № | Термін | Крок |\n|---|---|---|\n| 1 | рядок | `lines/row` |\n'; ROW = '| рядок | `\\bрядо?к\\w*` | `lines/row` | шлях | Ряд комірок, прочитаних по черзі. |\n'
 TERMS = ('## Терміни шляху\n| Термін | Форми | Крок | Тип | Картка |\n|---|---|---|---|---|\n' + ROW
          + '## Чого на шляху немає\n| Тема | Форми |\n|---|---|\n| безпілотники | `безпілотн\\w*` |\n')
+HIT = ('Сусід глушив картинку.', 'Вони глушать канал.', 'Я глушу його.', 'Сусід заглушує канал.', 'Заглушення каналу.', 'Радари стоять там.',
+       'Радіолокатор крутиться.', 'Квадрокоптер висить.', 'FPV-камера.', 'Радіоелектронна боротьба.', 'Армія пішла.', 'Армійська рація.')
+FREE = ('Глушник гуде.', 'Заглушка на гнізді.', 'Грім оглушив кота.', 'Хата в глуші.', 'Звук приглушений.', 'Арматура в стіні.',
+        'Армірований бетон.', 'Копір гуде.')
 
 class CheckTest(unittest.TestCase):
     def test_clean(self):
@@ -50,10 +55,15 @@ class CheckTest(unittest.TestCase):
         got = K.rule5({'chapters/air.md': '- **Докладніше:** безпілотники тут ні до чого.\n'}, TERMS); self.assertEqual(len(got), 1); self.assertIn('chapters/air.md:1', got[0])
         self.assertIn('_terms.md: «рядок»', K.rule5({}, TERMS.replace('Ряд комірок', 'Як у радіолокації: ряд комірок'))[0])
         self.assertEqual(len(K.rule5({'chapters/x.md': 'Сусід заглушить картинку.\n'}, TERMS)), 1); self.assertEqual(K.rule5({'chapters/x.md': 'Ліхтар приглушили.\n'}, TERMS), [])
-        for s in ('Сусід глушив картинку.', 'Вони глушать канал.', 'Я глушу його.', 'Радари стоять там.'):
+        for s in HIT:
             self.assertEqual(len(K.rule5({'chapters/x.md': s + '\n'}, TERMS)), 1, s)
-        for s in ('Глушник гуде.', 'Заглушка на гнізді.', 'Грім оглушив кота.', 'Хата в глуші.'):
+        for s in FREE:
             self.assertEqual(K.rule5({'chapters/x.md': s + '\n'}, TERMS), [], s)
+    def test_nowhere_in_step(self):  # the forms of «Чого на шляху немає» in the real _terms.md hit what NOWHERE hits
+        md = (pathlib.Path(__file__).resolve().parent / 'chapters/_terms.md').read_text(encoding='utf-8')
+        forms = [re.compile(r['Форми'].strip('`'), re.IGNORECASE) for r in K.table(md, 'Чого на шляху немає')]; self.assertEqual(len(forms), 4)
+        for s in HIT + FREE + ('Сусід заглушить картинку.', 'Ліхтар приглушили.'):
+            self.assertEqual(any(f.search(s) for f in forms), bool(K.NOWHERE.search(s)), s)
     def test_visual(self):
         names = ['Принципи', 'Подвір’я', 'Де ми', 'Кольори зі змістом', 'Екран монітора', 'Щуп і стрічка', 'Ракурси', 'Телефон', 'Чек-лист аудитора кадру']
         full = ''.join('## %d. %s\n' % (i + 1, h) for i, h in enumerate(names)); self.assertEqual(K.VISUAL_SECTIONS, names)

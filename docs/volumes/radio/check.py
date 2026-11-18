@@ -27,8 +27,11 @@ SUFFIXES = {'.md', '.tsv', '.json', '.ts', '.mjs', '.py'}
 MICRO = '\u00b5'
 CYRILLIC = '\u0400-\u04ff'
 STRAIGHT = re.compile(r'\w*[%s]\u0027[%s]\w*' % (CYRILLIC, CYRILLIC))
-NOWHERE = re.compile(r'\bглушінн|\b(?:за)?глуш(?:ил|ит|ив|ат|им|иш|и\b|іть|у\b)|джамер|\bдрон|безпілотн|БПЛА|військ'
-                     r'|радіолокац|\bрадар|\bРЕБ\b|\bРЛС\b', re.IGNORECASE)
+# The same topics as «Чого на шляху немає» in chapters/_terms.md; test_check.py keeps the two in step.
+NOWHERE = re.compile(r'\bглушінн|\b(?:за)?глуш(?:ил|ит|ив|ат|им|иш|и\b|іть|у\b|ує|ую|ува|ен)|джамер'
+                     r'|\bдрон|безпілотн|БПЛА|коптер|\bFPV\b'
+                     r'|військ|\bармі(?:я|ї|ю|єю|й|ям|ями|ях)\b|\bармійськ|\bРЕБ\b|радіоелектронн\w+ боротьб'
+                     r'|радіолока[цт]|\bрадар|\bлокатор|\bРЛС\b', re.IGNORECASE)
 H3 = re.compile(r'^### (?:\d+\. )?`([^`]+)`(?: — (.+?))?\s*$')
 ADDRESS = re.compile(r'^`#/([^`\s]+)`')
 SEPARATOR = re.compile(r'^:?-+:?$')
