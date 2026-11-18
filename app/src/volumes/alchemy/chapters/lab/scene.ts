@@ -1,13 +1,16 @@
 /**
  * Scene of the chapter `lab`: one scene for all 12 steps. One game session holds the state; entering a step
- * starts its quest (or the free lab), and the atom on stage follows every event of the session. The tools, the
- * chart and the event animations arrive in the following tasks.
+ * starts its quest (or the free lab), the atom on stage follows every event of the session, and the dock
+ * (`parts/dock.ts`) is where the game is played. The chart and the event animations arrive in the following
+ * tasks.
  */
 import { defineScene, type StepSpec } from '@/engine/api';
+import { stepUi } from '@/hud';
 import { ionSymbol } from '@alchemy/sim/core';
 import { nextVisit } from '@alchemy/sim/lab';
 import { STEP_IDS, type StepId } from './chapter';
 import { createAtomView } from './parts/atom-view';
+import { announce, stepSpec, type Lab } from './parts/dock';
 import { FLEETING_DELAY_S, Session } from './parts/session';
 import { loadProgress, saveProgress } from './parts/storage';
 import { SHOTS } from './shots';
@@ -25,10 +28,16 @@ export default defineScene(async (ctx) => {
   const rng = ctx.random.fork(`visit:${progress.rolls}`);
   saveProgress(nextVisit(progress));
   const session = new Session({ random: () => rng.next(), load: loadProgress, save: saveProgress });
+  const ui = stepUi(ctx);
+  const lab: Lab = { ctx, ui, session, atom };
+
+  // an entry shows its start itself (at once on a deep link): the run it begins is not an event to animate
+  let entering = false;
   session.on((e) => {
     // the payload, not `session.state`: a queued event may be older than the session
-    if (e.type === 'reset') atom.show(e.state, false);
+    if (e.type === 'reset' && !entering) atom.show(e.state, false);
     else if (e.type === 'turn') atom.show(e.after, false);
+    announce(lab, e);
   });
 
   ctx.stage.define(
@@ -39,14 +48,20 @@ export default defineScene(async (ctx) => {
           show: [atom.group],
           camera: 'lab',
           enter(info) {
-            session.enter(id);
-            // a deep link shows the start at once; a step change lets the atom rebuild itself
+            entering = true;
+            try {
+              session.enter(id);
+            } finally {
+              entering = false;
+            }
+            // a deep link or the chapter entry shows the start at once; a step change lets the atom rebuild itself
             atom.show(session.state, info.instant);
           },
         },
       ]),
     ),
   );
+  ui.define(Object.fromEntries(STEP_IDS.map((id) => [id, stepSpec(lab, id)])));
 
   ctx.qa.expose('lab', () => {
     const s = session.state;

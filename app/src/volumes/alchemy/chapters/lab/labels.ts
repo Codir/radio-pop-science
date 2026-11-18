@@ -29,6 +29,16 @@ export const L = {
   chart: {
     full: doc('heavy-hydrogen', 'Уся карта'),
   },
+  /** Dock and board captions the document describes without quoting; the readouts are named as in design doc §5.6. */
+  dock: {
+    projectile: 'Снаряд', electrons: 'Електрони', minus: '−', plus: '+',
+    board: 'Хід гри', moves: 'Ходів', elapsed: 'Минуло часу', energy: 'Енергія',
+  },
+  /** Honesty chips worded for the lab (UI_API §6); the standard kinds need no text. `fleeting` + the delay. */
+  honesty: {
+    waitSkipped: 'час очікування пропущено',
+    fleeting: 'нетривке ядро сповільнено: живе',
+  },
   free: {
     newStart: doc('free', 'Новий старт'),
     take: doc('free', 'Взяти як старт'),
