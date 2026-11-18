@@ -48,7 +48,9 @@ jobs:
 
       - name: Unit tests
         working-directory: app
-        run: pnpm test
+        # the runner has 4 cores: the long simulation tests take several times longer here than on a developer's
+        # machine and cross vitest's default limit of 5 s per test (first run: circuit/shared/copper counter.test.ts)
+        run: pnpm test --testTimeout=30000
 
       - name: Documents
         run: |

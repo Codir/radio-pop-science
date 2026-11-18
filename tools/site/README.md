@@ -163,11 +163,16 @@ cd <робоча копія> && <корінь репозиторію>/app/node_m
 |---|---|
 | `pnpm` | `corepack enable` (версію pnpm закріплено в `app/package.json`) |
 | `Install` | `pnpm install --frozen-lockfile` в `app/` |
-| `Types`, `Lint`, `Unit tests` | `pnpm typecheck`, `pnpm lint`, `pnpm test` в `app/` |
+| `Types`, `Lint`, `Unit tests` | `pnpm typecheck`, `pnpm lint`, `pnpm test --testTimeout=30000` в `app/` |
 | `Documents` | `python3 tools/content/doccheck.py --all`, `python3 docs/volumes/radio/test_check.py`, `python3 docs/volumes/radio/check.py` |
 | `Pages settings` | `actions/configure-pages`: перевіряє, що Pages увімкнено, і дає підшлях сайту (`/radio-pop-science`) для `--sub` наступного кроку |
 | `Site profile` | `node tools/site/build.mjs --volume radio --out "$RUNNER_TEMP/site" --sub radio-pop-science` (підшлях — з `Pages settings`): збірка з перевіркою в браузері |
 | `actions/upload-pages-artifact` | пакує `$RUNNER_TEMP/site` для `deploy`; дерево репозиторію лишається чистим |
+
+**Чому тести в потоці мають власну межу часу.** Машина GitHub має чотири ядра, тож довгі тести симуляцій ідуть на
+ній у кілька разів довше, ніж на машині розробника: тест, якому тут досить 3,5 s, там не вкладається в межу vitest
+5 s на тест (так упав перший запуск — `circuit/shared/copper/__tests__/counter.test.ts`). Тому в потоці кожен тест має
+30 s. Місцевий `pnpm test` лишається зі звичайною межею.
 
 Ні `.nojekyll`, ні `404.html`, ні `--base` сайтові не потрібні: маршрути застосунку живуть лише після `#`, тож
 сервер дістає тільки запити `/radio-pop-science/` і статичних файлів під ним, а Vite збирає з `base: './'`.
