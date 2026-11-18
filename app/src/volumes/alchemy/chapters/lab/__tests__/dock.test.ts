@@ -1,15 +1,16 @@
 import { Object3D } from 'three';
 import { describe, expect, it } from 'vitest';
+import { NBSP } from '@/content';
 import type { ChapterContext } from '@/engine/api';
 import type {
-  ButtonSpec, ControlSpec, CustomSpec, HonestySpec, NoteSpec, ReadoutSpec, SegmentedSpec, StepUiApi, StepUiSpec,
+  ButtonSpec, ControlSpec, CustomSpec, HonestySpec, NoteSpec, ReadoutSpec, SegmentedSpec, StatsSpec, StepUiApi, StepUiSpec,
 } from '@/hud';
 import type { UiNode } from '@/ui3d';
 import { ALL_TOOLS, EMPTY_PROGRESS, PROJECTILES, questById } from '@alchemy/sim/lab';
 import { STEP_IDS, type StepId } from '../chapter';
 import { L } from '../labels';
 import type { AtomView } from '../parts/atom-view';
-import { announce, stepSpec, type Lab } from '../parts/dock';
+import { announce, chartState, stepSpec, type Lab } from '../parts/dock';
 import { Session } from '../parts/session';
 
 interface Toast { readonly text: string; readonly tone?: string; readonly icon?: string; hidden: boolean }
@@ -34,7 +35,7 @@ function makeLab() {
   const anchor = new Object3D();
   const atom = { anchors: { nucleus: anchor, shells: anchor, plate: anchor } } as unknown as AtomView;
   const session = new Session({ random: () => 0.5, load: () => EMPTY_PROGRESS, save: () => undefined });
-  const lab: Lab = { ctx: {} as ChapterContext, ui, session, atom };
+  const lab: Lab = { ctx: { onDispose: () => undefined } as unknown as ChapterContext, ui, session, atom };
   session.on((e) => announce(lab, e));
   const specs = Object.fromEntries(STEP_IDS.map((id) => [id, stepSpec(lab, id)])) as Record<StepId, StepUiSpec>;
   return { lab, session, toasts, values, specs };
@@ -258,5 +259,36 @@ describe('lab dock', () => {
     expect(toasts).toHaveLength(before);
     expect(toasts.every((t) => t.hidden)).toBe(true);
     expect(statusOf(spec)).toBeNull();
+  });
+
+  it('puts one nuclide chart on every board, then the picked line, the switch, the collection and the readouts', () => {
+    const { specs } = makeLab();
+    const chart = specs['heavy-hydrogen'].board!.children[0];
+    for (const step of STEP_IDS) {
+      const board = specs[step].board!;
+      expect(board.title, step).toBe(L.chart.title);
+      expect(board.children.map((c) => c.id), step).toEqual(
+        ['chart', 'picked', 'full', 'collection', 'moves', 'elapsed', 'status', 'energy'],
+      );
+      expect(board.children[0], step).toBe(chart); // one node and one DOM widget for all twelve steps
+    }
+    expect(holds(control(specs.free, 'picked')!)).toBe(false); // nothing picked yet
+  });
+
+  it('counts the collection and follows the current nuclide with the window', () => {
+    const { session, specs, lab } = makeLab();
+    const counts = () => control<StatsSpec>(specs.radiocarbon, 'collection')!.items.map((it) => String(it.get()));
+    session.enter('radiocarbon');
+    expect(counts()).toEqual([`1${NBSP}/${NBSP}118`, `1${NBSP}/${NBSP}3383`]);
+    const chart = control<CustomSpec>(specs.radiocarbon, 'chart')!;
+    chart.update!(0);
+    expect(chartState(lab)).toMatchObject({ chart: { n0: 0, z0: 1, cols: 15, rows: 11, grid: null }, picked: null });
+    session.fire('n'); // ¹³C
+    session.fire('n'); // ¹⁴C
+    session.wait(); // ¹⁴N: a second element
+    expect(counts()).toEqual([`2${NBSP}/${NBSP}118`, `4${NBSP}/${NBSP}3383`]);
+    session.enter('lead-gold');
+    chart.update!(0);
+    expect(chartState(lab).chart).toMatchObject({ n0: 119, z0: 77 });
   });
 });

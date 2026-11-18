@@ -5,6 +5,7 @@
 // script serves 1280×720, 1920×1080 and 3840×2160, under both interfaces (`--hud gl | dom`):
 //   HUD controls   `__ui.locate('ctl-<id>')`, segmented items and parts of a custom control `ctl-<id>:<item>`
 //   chapter state  `__app.read('lab')`      (the chapter's `ctx.qa.expose`)
+//   chart cells    `ctl-chart` + `read('lab').chart` (the window and its grid as fractions of the control's box)
 
 /** Frames rendered one by one at the end of every `advance` (HUD fades ease per rendered frame). */
 const SETTLE_FRAMES = 14;
@@ -57,6 +58,32 @@ export async function pick(page, id, item, settle = 0.4) {
   const r = await box(page, `ctl-${id}:${item}`);
   if (!r) throw new Error(`'${id}:${item}' is not on screen`);
   await page.mouse.click(r.x, r.y);
+  if (settle > 0) await advance(page, settle);
+}
+
+/**
+ * Where the cell of nuclide (z, n) is on screen (CSS px), or null when it is not in the chart's view: the chart
+ * is one control (`ctl-chart`), `read('lab').chart` gives the window and its cell grid as fractions of that box.
+ */
+export async function cellPoint(page, z, n) {
+  const { chart } = await read(page);
+  const r = await box(page, 'ctl-chart');
+  if (!r || !chart.grid) return null;
+  const col = n - chart.n0;
+  const row = z - chart.z0;
+  if (col < 0 || col >= chart.cols || row < 0 || row >= chart.rows) return null;
+  const g = chart.grid;
+  return {
+    x: r.x - r.w / 2 + (g.left + ((col + 0.5) / chart.cols) * g.width) * r.w,
+    y: r.y - r.h / 2 + (g.top + ((chart.rows - row - 0.5) / chart.rows) * g.height) * r.h,
+  };
+}
+
+/** Click the chart's cell of nuclide (z, n), then let exactly `settle` seconds of engine time pass. */
+export async function clickCell(page, z, n, settle = 0.4) {
+  const p = await cellPoint(page, z, n);
+  if (!p) throw new Error(`cell ${z}-${n} is not on the chart`);
+  await page.mouse.click(p.x, p.y);
   if (settle > 0) await advance(page, settle);
 }
 

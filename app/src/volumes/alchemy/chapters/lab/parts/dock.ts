@@ -1,8 +1,8 @@
 /**
  * The dock of the lab — the controls the game is played with, one declaration per step (`stepUi`): the nuclide
  * card, the projectile choice, the electron counter and the tools of the step, plus the step's honesty chips,
- * hotspots and the board with the readouts and the status line. It also turns the session's events into
- * messages: a toast per event, the status line, a sound.
+ * hotspots and the board: the nuclide chart, the collection, the readouts and the status line. It also turns the
+ * session's events into messages: a toast per event, the status line, a sound.
  *
  * A step shows only the tools its quest allows (the same list `Session.tools` gives: `quests.ts`). While a
  * fission waits for the fragment choice, the tools give way to the two fragment buttons and «Почати знову».
@@ -11,21 +11,28 @@
  * зв'язок») is the caption of the electron counter and the readouts sit on the board; that was still too tall for
  * `free` and `superheavy`, so the status line (passive, like the readouts) joins them on the board and the
  * projectile choice carries its caption as a tooltip.
+ *
+ * The board is «Карта нуклідів» (plan decision 10): the chart (`nuclide-chart.ts`), the line of a picked cell, the
+ * «Уся карта» switch and the collection counters, then the readouts and the status line. The energy readout has a
+ * row of its own under the status line: consecutive readouts share a row, and its «виділилось ≈ 18,6 keV» does
+ * not fit beside the other two on a 520-unit board.
  */
 import { audio } from '@/audio';
-import { fmtUnit } from '@/content';
+import { fmtUnit, NBSP } from '@/content';
 import type { ChapterContext } from '@/engine/api';
 import { domKit } from '@/hud';
 import type { ButtonSpec, ControlSpec, CustomSpec, HonestySpec, HotspotSpec, StepUiApi, StepUiSpec } from '@/hud';
 import { SEMANTIC } from '@/style';
 import { Label, UiNode } from '@/ui3d';
-import { maxElectrons } from '@alchemy/sim/core';
+import { MAX_Z, NUCLIDE_COUNT, maxElectrons, nuclideKey, type NuclideRef } from '@alchemy/sim/core';
 import { ALL_TOOLS, PROJECTILES, isFleeting, questById } from '@alchemy/sim/lab';
 import type { GameState, ProjectileId, ToolId } from '@alchemy/sim/lab';
 import { createCountStepper } from '@alchemy/shared/count-stepper';
 import type { StepId } from '../chapter';
 import { L } from '../labels';
 import type { AtomView } from './atom-view';
+import { pickedLine, type ChartView } from './chart-model';
+import { createNuclideChart, type ChartFrame, type NuclideChart } from './nuclide-chart';
 import { FLEETING_DELAY_S, type Session, type SessionEvent } from './session';
 import { cardRows, elapsedText, energyText, eventLine, questDoneLine } from './text';
 
@@ -54,6 +61,16 @@ interface Dock {
   /** Hide the toast of the latest event (a newer event replaces it) and the toast of the result. */
   hideEventToast: (() => void) | null;
   hideResultToast: (() => void) | null;
+  /** The nuclide chart: one node for all twelve steps (like the counter), and its `custom` control. */
+  readonly chart: NuclideChart;
+  readonly chartSpec: CustomSpec;
+  /** The collection under the chart: discovered elements and nuclides. */
+  readonly elements: () => number;
+  readonly nuclides: () => number;
+  /** The line of the picked nuclide ('' when none). */
+  readonly pickedText: () => string;
+  /** The nuclide picked on the chart; a new run forgets it. */
+  picked: NuclideRef | null;
 }
 
 // keyed by the chapter instance: a new instance (the chapter left and entered again) gets a new dock
@@ -126,6 +143,42 @@ function electronCounter(lab: Lab, caption: () => string): Pick<Dock, 'electrons
   };
 }
 
+/**
+ * What the chart shows, read from the session: the same object until the centre, the trail, the collection or
+ * the goal change (a new object makes the chart redraw). The discovered set is rebuilt only with the collection.
+ */
+function chartViews(lab: Lab): Pick<Dock, 'elements' | 'nuclides'> & { readonly view: () => ChartView } {
+  const { session } = lab;
+  let keys: readonly string[] | null = null;
+  let discovered: ReadonlySet<string> = new Set();
+  let elements = 0;
+  let view: ChartView | null = null;
+  const sync = (): ReadonlySet<string> => {
+    const now = session.progress.discovered;
+    if (now !== keys) {
+      keys = now;
+      discovered = new Set(now);
+      elements = new Set(now.map((k) => k.slice(0, k.indexOf('-')))).size;
+    }
+    return discovered;
+  };
+  return {
+    view() {
+      const set = sync();
+      const { z, n, history } = session.state;
+      const goal = session.quest?.goal ?? null;
+      if (!view || view.center.z !== z || view.center.n !== n || view.trail !== history || view.discovered !== set || view.goal !== goal)
+        view = { center: { z, n }, discovered: set, trail: history, goal };
+      return view;
+    },
+    elements: () => {
+      sync();
+      return elements;
+    },
+    nuclides: () => sync().size,
+  };
+}
+
 function dockOf(lab: Lab): Dock {
   const known = docks.get(lab);
   if (known) return known;
@@ -146,6 +199,29 @@ function dockOf(lab: Lab): Dock {
     card();
     return caption;
   };
+  const views = chartViews(lab);
+  const chart = createNuclideChart({
+    view: views.view,
+    full: () => lab.ui.value<boolean>('full') === true,
+    picked: () => dock.picked,
+    onPick: (ref) => {
+      dock.picked = ref;
+    },
+  });
+  lab.ctx.onDispose(() => chart.dispose());
+  // the picked line changes only with the pick and the collection
+  let lineOf: { readonly ref: NuclideRef; readonly view: ChartView } | null = null;
+  let line = '';
+  const pickedText = (): string => {
+    const ref = dock.picked;
+    if (!ref) return '';
+    const view = views.view();
+    if (!lineOf || lineOf.ref !== ref || lineOf.view.discovered !== view.discovered) {
+      lineOf = { ref, view };
+      line = pickedLine(ref, view.discovered.has(nuclideKey(ref.z, ref.n)));
+    }
+    return line;
+  };
   const dock: Dock = {
     card,
     ...electronCounter(lab, chargeAndBinding),
@@ -155,9 +231,21 @@ function dockOf(lab: Lab): Dock {
     sawFission: false,
     hideEventToast: null,
     hideResultToast: null,
+    chart,
+    chartSpec: { type: 'custom', id: 'chart', node: chart.node, dom: chart.dom, update: (t) => chart.update(t) },
+    elements: views.elements,
+    nuclides: views.nuclides,
+    pickedText,
+    picked: null,
   };
   docks.set(lab, dock);
   return dock;
+}
+
+/** What QA reads of the chart (`__app.read('lab')`): the window on screen and the picked nuclide's key. */
+export function chartState(lab: Lab): { readonly chart: ChartFrame; readonly picked: string | null } {
+  const dock = dockOf(lab);
+  return { chart: dock.chart.frame(), picked: dock.picked ? nuclideKey(dock.picked.z, dock.picked.n) : null };
 }
 
 /** The tools of a step's quest (all of them in the free lab) — what `Session.tools` gives inside the step. */
@@ -227,12 +315,23 @@ export function stepSpec(lab: Lab, step: StepId): StepUiSpec {
   return {
     controls,
     board: {
-      title: L.dock.board,
-      size: 'sm',
+      title: L.chart.title,
+      size: 'md',
       children: [
+        dock.chartSpec,
+        { type: 'note', id: 'picked', text: dock.pickedText, icon: 'target', color: 'mist', visible: () => dock.picked !== null },
+        { type: 'toggle', id: 'full', label: L.chart.full, value: false },
+        {
+          type: 'stats',
+          id: 'collection',
+          columns: 2,
+          items: [
+            { label: L.chart.elements, get: () => `${dock.elements()}${NBSP}/${NBSP}${MAX_Z}` },
+            { label: L.chart.nuclides, get: () => `${dock.nuclides()}${NBSP}/${NBSP}${NUCLIDE_COUNT}` },
+          ],
+        },
         { type: 'readout', id: 'moves', label: L.dock.moves, digits: 0, get: () => session.state.moves },
         { type: 'readout', id: 'elapsed', label: L.dock.elapsed, text: () => elapsedText(session.state.elapsedSeconds) },
-        { type: 'readout', id: 'energy', label: L.dock.energy, text: () => energyText(session.lastQ) },
         {
           type: 'note',
           id: 'status',
@@ -241,6 +340,8 @@ export function stepSpec(lab: Lab, step: StepId): StepUiSpec {
           color: () => TONE_COLOR[dock.status?.tone ?? 'info'],
           visible: () => dock.status !== null,
         },
+        // after the status line, not next to the other two: in their row its long text would overrun the board
+        { type: 'readout', id: 'energy', label: L.dock.energy, text: () => energyText(session.lastQ) },
       ],
     },
     honesty: honestyOf(step, dock),
@@ -261,6 +362,7 @@ export function announce(lab: Lab, e: SessionEvent): void {
     case 'reset':
       dock.status = null;
       dock.won = false;
+      dock.picked = null;
       dock.sawFleeting = isFleeting(e.state);
       dock.sawFission = e.state.fissioned;
       dock.hideEventToast?.();

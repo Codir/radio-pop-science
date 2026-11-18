@@ -1,8 +1,8 @@
 /**
  * Scene of the chapter `lab`: one scene for all 12 steps. One game session holds the state; entering a step
- * starts its quest (or the free lab), the atom on stage follows every event of the session, and the dock
- * (`parts/dock.ts`) is where the game is played. The chart and the event animations arrive in the following
- * tasks.
+ * starts its quest (or the free lab), the atom on stage follows every event of the session, the dock
+ * (`parts/dock.ts`) is where the game is played and the board carries the nuclide chart. The event animations
+ * arrive in the following tasks.
  */
 import { defineScene, type StepSpec } from '@/engine/api';
 import { stepUi } from '@/hud';
@@ -10,7 +10,7 @@ import { ionSymbol } from '@alchemy/sim/core';
 import { nextVisit } from '@alchemy/sim/lab';
 import { STEP_IDS, type StepId } from './chapter';
 import { createAtomView } from './parts/atom-view';
-import { announce, stepSpec, type Lab } from './parts/dock';
+import { announce, chartState, stepSpec, type Lab } from './parts/dock';
 import { FLEETING_DELAY_S, Session } from './parts/session';
 import { loadProgress, saveProgress } from './parts/storage';
 import { SHOTS } from './shots';
@@ -78,9 +78,11 @@ export default defineScene(async (ctx) => {
       countdown: session.countdown,
       discovered: session.progress.discovered.length,
       symbol: ionSymbol(s.z, s.n, s.electrons),
+      ...chartState(lab),
     };
   });
   ctx.qa.probe('lab.nucleus', atom.anchors.nucleus);
+  ctx.qa.probe('lab.plate', atom.anchors.plate);
 
   return {
     update(dt, t) {

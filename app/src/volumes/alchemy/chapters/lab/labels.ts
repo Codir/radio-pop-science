@@ -26,13 +26,23 @@ export const L = {
     heavy: doc('fission', 'Продовжити з важким уламком'),
     light: doc('fission', 'Продовжити з легким уламком'),
   },
+  /**
+   * The nuclide chart on the board (`parts/nuclide-chart.ts`, `parts/chart-model.ts`): its title, the tooltip,
+   * the five legend entries and the names of the axes, the collection counters, the words of a picked cell's line.
+   */
   chart: {
     full: doc('heavy-hydrogen', 'Уся карта'),
+    title: 'Карта нуклідів',
+    hint: 'Клацніть клітинку — побачите, що це за нуклід',
+    stableKind: 'стабільні', betaMinus: 'β⁻', betaPlus: 'β⁺ / захоплення', alpha: 'α', other: 'інше',
+    axisZ: 'Z — протони', axisN: 'N — нейтрони',
+    elements: 'Відкрито елементів', nuclides: 'Відкрито нуклідів',
+    stable: 'стабільне ядро', notYet: 'ще не відкрито', foundIn: 'відкрито', inNature: 'у природі',
   },
   /** Dock and board captions the document describes without quoting; the readouts are named as in design doc §5.6. */
   dock: {
     projectile: 'Снаряд', electrons: 'Електрони', minus: '−', plus: '+',
-    board: 'Хід гри', moves: 'Ходів', elapsed: 'Минуло часу', energy: 'Енергія',
+    moves: 'Ходів', elapsed: 'Минуло часу', energy: 'Енергія',
   },
   /** Honesty chips worded for the lab (UI_API §6); the standard kinds need no text. `fleeting` + the delay. */
   honesty: {

@@ -110,7 +110,8 @@ export function modeName(mode: PlayedMode): string {
   return L.modes[mode];
 }
 
-const codeName = (code: DecayCode): string => L.modes[code];
+/** The name of a decay branch as the table gives it (also the table's «β⁺ or electron capture»). */
+export const codeName = (code: DecayCode): string => L.modes[code];
 
 export function statusLine(x: Nuclide): { readonly text: string; readonly tone: Tone } {
   const S = L.status;
