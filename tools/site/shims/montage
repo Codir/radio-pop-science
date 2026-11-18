@@ -1,0 +1,41 @@
+#!/usr/bin/python3
+"""Stand-in for ImageMagick `montage` as tools/qa/sheet.sh calls it (PIL): a labelled grid of tiles."""
+import os, sys
+from PIL import Image, ImageDraw, ImageFont
+ONE = {'-background', '-fill', '-font', '-pointsize', '-tile', '-geometry', '-label', '-title', '-quality'}
+opt, files, a = {}, [], sys.argv[1:]
+i = 0
+while i < len(a):
+    if a[i] in ONE:
+        opt[a[i]] = a[i + 1]; i += 2
+    else:
+        files.append(a[i]); i += 1
+out, images = files[-1], files[:-1]
+cols = int(opt.get('-tile', '3x').split('x')[0] or 3)
+tile = int(opt.get('-geometry', '640x+6+6').split('x')[0] or 640)
+bg, fg, pad, lab = opt.get('-background', '#070A1F'), opt.get('-fill', '#C9C6EA'), 6, 22
+try:
+    font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', int(opt.get('-pointsize', 15)))
+except OSError:
+    font = ImageFont.load_default()
+tiles = []
+for f in images:
+    im = Image.open(f).convert('RGB')
+    tiles.append((im.resize((tile, max(1, round(im.height * tile / im.width)))), os.path.splitext(os.path.basename(f))[0]))
+rows = [tiles[k:k + cols] for k in range(0, len(tiles), cols)]
+top = 34 if opt.get('-title') else 0
+w = cols * (tile + 2 * pad)
+h = top + sum(max(t.height for t, _ in r) + lab + 2 * pad for r in rows)
+sheet = Image.new('RGB', (w, h), bg)
+d = ImageDraw.Draw(sheet)
+if top:
+    d.text((pad, 6), opt['-title'], fill=fg, font=font)
+y = top
+for r in rows:
+    rh = max(t.height for t, _ in r)
+    for k, (t, name) in enumerate(r):
+        x = k * (tile + 2 * pad) + pad
+        sheet.paste(t, (x, y + pad))
+        d.text((x, y + pad + rh + 2), name, fill=fg, font=font)
+    y += rh + lab + 2 * pad
+sheet.save(out, quality=int(opt.get('-quality', 88)))

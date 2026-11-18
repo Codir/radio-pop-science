@@ -1,0 +1,7 @@
+#!/usr/bin/python3
+"""Stand-in for `identify -format '%w' | '%wx%h' <file>`."""
+import sys
+from PIL import Image
+fmt, f = sys.argv[2], sys.argv[3]
+w, h = Image.open(f).size
+sys.stdout.write(fmt.replace('%w', str(w)).replace('%h', str(h)))
