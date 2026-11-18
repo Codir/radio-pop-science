@@ -71,8 +71,6 @@ const MOUNTS = [
   'cradle',
   'switchBlock',
   'lampPost',
-  'seat',
-  'seatJumper',
   'lensHolder',
 ];
 
@@ -170,6 +168,7 @@ export function water(stage: CircuitStage, phone: () => boolean): Water {
         o.scale.setScalar(Math.max(gone, 1e-3));
         o.visible = gone > 0.002;
       }
+      stage.stand.setSeatSink(gone); // the second seat (or the staple at its place) sinks too
       // the magnifier in its holder sinks with it (the tools set its scale every frame: multiply)
       stage.tools.lens.group.scale.multiplyScalar(Math.max(gone, 1e-3));
       if (gone < 0.002) stage.tools.lens.group.visible = false;

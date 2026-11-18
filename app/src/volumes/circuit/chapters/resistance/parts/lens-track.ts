@@ -7,7 +7,7 @@
  */
 import { Vector3 } from 'three';
 import { G } from '@/kit';
-import { BATTERY, LAMP, LOOP, SEAT, SWITCH, loopPath } from '@circuit/shared/stage';
+import { BATTERY, LAMP, LOOP, SWITCH, loopPath } from '@circuit/shared/stage';
 
 export type Place = 'minus' | 'plus' | 'switch' | 'battery' | 'lamp';
 
@@ -103,7 +103,6 @@ export function lensTrack(): LensTrack {
     { x: LOOP.right - 0.12, z: LOOP.far + 0.12, width: 0.05, hold: 0.8 },
     { x: BATTERY.minusX, z: LOOP.near, width: 0.018, hold: 0.5 },
     { x: BATTERY.plusX, z: LOOP.near, width: 0.018, hold: 0.5 },
-    { x: SEAT.x, z: LOOP.far, width: 0.022, hold: 0.5 },
   ].map((s) => ({ u: track.uOf(s.x, s.z), width: s.width, hold: s.hold }));
   return track;
 }

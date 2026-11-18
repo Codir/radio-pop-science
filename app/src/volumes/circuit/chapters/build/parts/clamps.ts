@@ -4,7 +4,7 @@
  * directions are the stand's own (`wires.ts`: the stripped end sits `INSET` deep in its screw terminal).
  */
 import { Vector3 } from 'three';
-import { BATTERY, LAMP, LOOP, SEAT, SWITCH, WIRE } from '@circuit/shared/stage';
+import { BATTERY, LAMP, LOOP, SWITCH, WIRE } from '@circuit/shared/stage';
 import type { ClampId } from './circuit';
 
 const INSET = 0.07;
@@ -52,7 +52,6 @@ const RAISED: readonly (readonly [number, number, number, number, number])[] = [
   [0.6, 0.86, LOOP.near - 0.3, LOOP.near + 0.3, 0.42],
   [SWITCH.inX + 0.18, SWITCH.outX - 0.18, LOOP.near - 0.24, LOOP.near + 0.24, 0.5],
   [LAMP.x - 0.2, LAMP.x + 0.2, LAMP.z - 0.2, LAMP.z + 0.2, 0.95],
-  [SEAT.x - SEAT.width / 2, SEAT.x + SEAT.width / 2, LOOP.far - 0.22, LOOP.far + 0.22, 0.38],
 ];
 /** Width of the soft shoulder round each raised box. */
 const SHOULDER = 0.18;

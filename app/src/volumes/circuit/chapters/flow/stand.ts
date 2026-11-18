@@ -34,6 +34,9 @@ export interface FlowStand {
   /** The slider's seat (0 the first … 1 the second; travels on an arc) and the jumper's (0 home … 1 the first). */
   swSeat: Glide;
   jumperSeat: Glide;
+  /** The second seat on the board (0 none … 1 standing); `seatWanted` — the step needs it (`loop`). */
+  seatShown: Glide;
+  seatWanted: boolean;
   /** What the slider does when the reader handles it (a step installs its own; default inert). */
   switchUse: SwitchUse;
   /** The three lenses of `together` / `push`. */
@@ -79,6 +82,8 @@ export function createFlowStand(ctx: ChapterContext): FlowStand {
   const count = counter(ctx, stage, caption('count', 0), caption('count', 1));
   const swSeat = glide(0);
   const jumperSeat = glide(0);
+  const seatShown = glide(0);
+  let seatShownAt = -1;
   const jumper = stage.stand.mounts.seatJumper!;
   const three = lenses(ctx, stage);
   const glow = createLoopGlow();
@@ -104,6 +109,8 @@ export function createFlowStand(ctx: ChapterContext): FlowStand {
     counter: count,
     swSeat,
     jumperSeat,
+    seatShown,
+    seatWanted: false,
     switchUse: { enabled: () => false },
     lenses: three,
     glow,
@@ -122,6 +129,8 @@ export function createFlowStand(ctx: ChapterContext): FlowStand {
       sw.snap();
       swSeat.set(swSeat.target);
       jumperSeat.set(jumperSeat.target);
+      if (!flow.seatWanted) seatShown.go(0, 0);
+      seatShown.set(seatShown.target);
       three.presence.set(three.presence.target);
       waterMorph.set(waterMorph.target);
       endOut.set(endOut.target);
@@ -131,6 +140,14 @@ export function createFlowStand(ctx: ChapterContext): FlowStand {
       world.update(dt, t);
       sw.seat = swSeat.update(dt);
       placeJumper(jumper, jumperSeat.update(dt));
+      // the seat sinks only once the slider and the jumper are back home
+      const home = swSeat.value < 0.005 && jumperSeat.value < 0.005;
+      if (!flow.seatWanted && home && seatShown.target !== 0) seatShown.go(0, 0.6);
+      const seat = seatShown.update(dt);
+      if (seat !== seatShownAt) {
+        seatShownAt = seat;
+        stage.stand.setSeat(seat);
+      }
       sw.place(dt);
       three.update(dt, t, stage.glow);
       glow.update(t);

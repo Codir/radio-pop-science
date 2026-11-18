@@ -9,7 +9,7 @@ import { Group, Mesh, Vector3 } from 'three';
 import { G } from '@/kit';
 import { K } from '@/style';
 import { BATTERY, LOOP, WIRE, type CircuitStage } from '@circuit/shared/stage';
-import { standPath } from '@circuit/shared/stage/wires';
+import { BARE, standPath } from '@circuit/shared/stage/wires';
 
 /** Where the end lies when it is out: left of the minus clamp, in the near corner the lens has left (board frame). */
 export const REST = new Vector3(BATTERY.minusX - 0.62, WIRE.sheath + 0.004, LOOP.near + 0.4);
@@ -90,7 +90,16 @@ export function looseEnd(stand: CircuitStage): LooseEnd {
           WIRE.sheath,
         );
       }
-      stand.stand.wires.setShape('m1', { path: k === 0 ? path : bent, round: 1, cover: 1, copper: 1 });
+      // its far end meets `m2` end to end (no seat on the board before `loop`): no copper, no cap there
+      const seat = stand.stand.wires.seat;
+      stand.stand.wires.setShape('m1', {
+        path: k === 0 ? path : bent,
+        round: 1,
+        cover: 1,
+        copper: 1,
+        bare: [BARE, BARE * seat],
+        open: [false, seat < 1e-4],
+      });
       laid = k;
       // the grip sits on the wire just behind the stripped end, along the wire
       const a = bent[0]!;

@@ -270,12 +270,19 @@ export function createWiring(stage: CircuitStage): Wiring {
     const [b0, b1] =
       id === 'p1' ? ['a0', 'a1'] : id === 'p2' ? ['b0', 'b1'] : id === 'm1' ? ['c0', null] : [null, 'c1'];
     const gap = id === 'm2' && !whole.c ? { at: M2_GAP, width: 0.09 } : undefined;
+    // C's two pieces meet end to end on the far side: there no copper, no caps — one wire to the eye (while
+    // neither is lifted off the board)
+    const join = wiring.lift.m1.lengthSq() === 0 && wiring.lift.m2.lengthSq() === 0;
     wires.setShape(id, {
       path: shaped,
       round: 1,
       cover: 1,
       copper: 1,
-      bare: [b0 ? BARE * bare[b0 as EndKey].value : BARE, b1 ? BARE * bare[b1 as EndKey].value : BARE],
+      bare: [
+        b0 ? BARE * bare[b0 as EndKey].value : join ? 0 : BARE,
+        b1 ? BARE * bare[b1 as EndKey].value : join ? 0 : BARE,
+      ],
+      open: [!b0 && join, !b1 && join],
       gap,
     });
     if (b0) grips.place(b0 as EndKey, shaped, false);

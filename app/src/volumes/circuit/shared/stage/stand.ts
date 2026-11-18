@@ -41,6 +41,13 @@ export interface Stand {
   setSliderGlow(amount: number): void;
   /** Slider only: 0 = closed (bridge on both contacts) … 1 = open (the gap shows). */
   setSwitch(open: number): void;
+  /**
+   * The second switch seat 0…1: 0 (the default) — no seat, the far wire whole under a staple; 1 — the seat with its
+   * jumper stands on the board (`flow/loop`). Between, it rises from the board as the staple sinks.
+   */
+  setSeat(amount: number): void;
+  /** 1 as it stands … 0 sunk into the board (`flow/pump`'s water picture): scales the seat or its staple. */
+  setSeatSink(amount: number): void;
   /** Objects worth a tooltip / hotspot, on their places. */
   anchors: Record<'battery' | 'switch' | 'lamp' | 'plus' | 'minus', Object3D>;
 }
@@ -56,7 +63,20 @@ export function createStand(bulbDims: BulbDims = BULB): Stand {
   const model = b.build();
   const group = model.group;
   const mounts: Record<string, Group> = {};
-  for (const name of mountOrder) mounts[name] = model.part(name);
+  for (const name of [...mountOrder, 'seat', 'seatJumper']) mounts[name] = model.part(name);
+  let seatK = 0;
+  let sink = 1;
+  /** The seat, its jumper and the staple at its place, for `seatK`. */
+  const showSeat = (): void => {
+    const e = seatK * seatK * (3 - 2 * seatK);
+    for (const name of ['seat', 'seatJumper']) {
+      mounts[name]!.visible = e * sink > 1e-3;
+      mounts[name]!.scale.setScalar(Math.max(e * sink, 1e-3));
+    }
+    mounts.seatStaple!.visible = (1 - e) * sink > 1e-3;
+    mounts.seatStaple!.scale.setScalar(Math.max((1 - e) * sink, 1e-3));
+  };
+  showSeat();
 
   const battery = createBattery();
   const bulb = createBulb(bulbDims);
@@ -81,9 +101,21 @@ export function createStand(bulbDims: BulbDims = BULB): Stand {
     spring,
     wires,
     setSwitch,
+    setSeat(amount) {
+      seatK = Math.min(Math.max(amount, 0), 1);
+      showSeat();
+      wires.setSeat(seatK);
+    },
+    setSeatSink(amount) {
+      const s = Math.min(Math.max(amount, 0), 1);
+      if (s === sink) return;
+      sink = s;
+      showSeat();
+    },
     setSliderGlow: sliderModel.setGlow,
     settle(open) {
-      for (const m of Object.values(mounts)) m.scale.setScalar(1);
+      for (const name of mountOrder) mounts[name]!.scale.setScalar(1);
+      showSeat();
       battery.group.position.copy(PLACE.battery);
       battery.group.quaternion.identity();
       spring.group.position.copy(PLACE.spring);

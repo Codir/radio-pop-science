@@ -28,8 +28,13 @@ const INSET = 0.07;
 const y = LOOP.y;
 const v = (x: number, z: number): Vector3 => new Vector3(x, y, z);
 
-/** The stand's wire paths (board frame), dense polylines with rounded corners. */
-export function standPath(id: WireId): Vector3[] {
+/**
+ * The stand's wire paths (board frame), dense polylines with rounded corners. `seat` 0…1: how far the second
+ * seat stands on the board (`Stand.setSeat`) — 0: `m1` and `m2` meet under the staple at its place, the far wire
+ * reads as one; 1: they end in the seat's two terminals.
+ */
+export function standPath(id: WireId, seat = 0): Vector3[] {
+  const open = (SEAT.width / 2 - INSET) * Math.min(Math.max(seat, 0), 1);
   switch (id) {
     case 'm1':
       return G.roundPath(
@@ -37,13 +42,13 @@ export function standPath(id: WireId): Vector3[] {
           v(BATTERY.minusX + INSET, LOOP.near),
           v(LOOP.left, LOOP.near),
           v(LOOP.left, LOOP.far),
-          v(SEAT.x - SEAT.width / 2 + INSET, LOOP.far),
+          v(SEAT.x - open, LOOP.far),
         ],
         LOOP.corner,
         12,
       );
     case 'm2':
-      return [v(SEAT.x + SEAT.width / 2 - INSET, LOOP.far), v(LAMP.x - LAMP.term + INSET, LOOP.far)];
+      return [v(SEAT.x + open, LOOP.far), v(LAMP.x - LAMP.term + INSET, LOOP.far)];
     case 'p1':
       return [v(BATTERY.plusX - INSET, LOOP.near), v(SWITCH.inX + INSET, LOOP.near)];
     case 'p2':
@@ -77,6 +82,9 @@ export interface WireShape {
    * ends are flat cut faces (the core's rings are re-laid around the gap; the sheath is untouched).
    */
   gap?: { at: number; width: number };
+  /** Leave the start / the end without its cap (default both capped): where this piece meets another end to end,
+   * the two read as one wire. */
+  open?: readonly [boolean, boolean];
 }
 
 /** Stripped copper at each end of a piece (the part that goes into a terminal, and a little more). */
@@ -87,6 +95,9 @@ export interface Wires {
   setShape(id: WireId, shape: WireShape): void;
   /** Lay all four pieces on the stand as finished wires. */
   setStand(): void;
+  /** The second seat 0…1 (see `standPath`); re-lays `m1` and `m2` on the stand. */
+  setSeat(seat: number): void;
+  readonly seat: number;
   /** 0 = the sheaths nearly one neutral tint … 1 = coral from the plus, blue from the minus. */
   setPoles(amount: number): void;
   /**
@@ -187,6 +198,9 @@ export function createWires(): Wires {
     // a break: the core's rings are laid out anew so that two of them stand exactly at each copper end — a full
     // ring and a collapsed one a hair apart give a flat cut face; the sheath keeps the even rings
     const corePts = gap ? breakRings(p.pts, n, gap, length) : p.pts;
+    const [open0, open1] = shape.open ?? [false, false];
+    p.core.setCaps(!open0, !open1);
+    p.skin.setCaps(!open0, !open1);
     p.core.update(corePts, up, (i, out) => {
       const k = gap && (i === breakAt[0] || i === breakAt[1]) ? 0 : 1;
       out[0] = w * k;
@@ -211,11 +225,31 @@ export function createWires(): Wires {
     if (id === 'p1') dived = -1; // the dive look is re-applied on top of a new shape
   };
 
+  let seat = 0;
+  /** On the stand; where the far pieces meet (no seat) the sheath runs to their very ends. */
+  const layStand = (id: WireId): void => {
+    const bare: readonly [number, number] | undefined =
+      id === 'm1' ? [BARE, BARE * seat] : id === 'm2' ? [BARE * seat, BARE] : undefined;
+    // no seat: the two pieces meet end to end with their ends there open — one whole wire to the eye
+    const joined = seat < 1e-4;
+    const open: readonly [boolean, boolean] | undefined =
+      id === 'm1' ? [false, joined] : id === 'm2' ? [joined, false] : undefined;
+    setShape(id, { path: standPath(id, seat), round: 1, cover: 1, copper: 1, bare, open });
+  };
+
   return {
     group,
     setShape,
     setStand() {
-      for (const id of WIRE_IDS) setShape(id, { path: standPath(id), round: 1, cover: 1, copper: 1 });
+      for (const id of WIRE_IDS) layStand(id);
+    },
+    setSeat(k) {
+      seat = Math.min(Math.max(k, 0), 1);
+      layStand('m1');
+      layStand('m2');
+    },
+    get seat() {
+      return seat;
     },
     setPoles(amount) {
       const k = Math.min(Math.max(amount, 0), 1);

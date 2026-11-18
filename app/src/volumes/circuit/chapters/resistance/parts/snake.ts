@@ -47,6 +47,8 @@ export function snake(stage: CircuitStage): Snake {
   const core = new Mesh(coreTube.geometry, copper);
   core.name = 'resistance-snake:core';
   core.castShadow = core.receiveShadow = true;
+  coreTube.setCaps(false, true);
+  skinTube.setCaps(false, true);
   const skin = new Mesh(skinTube.geometry, m2skin.material as Material);
   skin.name = 'resistance-snake:sheath';
   skin.castShadow = true;
@@ -77,7 +79,8 @@ export function snake(stage: CircuitStage): Snake {
       out[0] = out[1] = rc;
     });
     skinTube.update(path, up, (i, out) => {
-      const bare = Math.min(along[i]!, total - along[i]!) < BARE;
+      // stripped copper only at the lamp's terminal: its start meets `m1` end to end under the staple
+      const bare = total - along[i]! < BARE;
       out[0] = out[1] = bare ? rc * 0.96 : rs;
     });
   };

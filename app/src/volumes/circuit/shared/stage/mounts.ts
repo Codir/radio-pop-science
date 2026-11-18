@@ -154,13 +154,13 @@ export function addMounts(b: Builder): string[] {
   terminal(post, -LAMP.term, -1); // far wire (from the minus) — to the thread
   terminal(post, LAMP.term, 1, undefined, 'z'); // right wire (from the plus, through the switch) — to the bottom contact
 
-  // second, empty switch seat on the far side, closed by a short jumper (`flow/loop` moves the switch here)
+  // second, empty switch seat on the far side, closed by a short jumper (`flow/loop` moves the switch here).
+  // It stands on the board only in `flow/loop` (`Stand.setSeat`); everywhere else the far wire runs whole under
+  // a staple at its place. Neither is in the wave of the unfolding: the stand shows the seat or the staple.
   const seat = b.part('seat', { at: [SEAT.x, 0, SEAT.z] });
-  order.push('seat');
   seat.box(SEAT.width - 0.3, 0.15, 0.6, { r: 0.05, c: INK });
   // the jumper is a part of its own (origin on the face under it), so that `flow/loop` can lift it out
   const jumper = b.part('seatJumper', { at: [SEAT.x, 0, SEAT.z] });
-  order.push('seatJumper');
   jumper.box(SEAT.width - 0.36, 0.045, 0.2, { at: [0, 0.15, 0], r: 0.015, slot: 'metal', c: STEEL });
   for (const s of [-1, 1] as const) {
     seat.cyl(0.055, 0.06, { at: [s * 0.1, 0.18, 0], seg: 12, slot: 'metal', c: 'mist', bevel: 0.015 });
@@ -168,9 +168,10 @@ export function addMounts(b: Builder): string[] {
   }
 
   // staples: a small pedestal with an arch that holds the wire one wire thickness above the face
-  STAPLES.forEach(([x, z, along], i) => {
-    const st = b.part(`staple${i}`, { at: [x, 0, z], rot: [0, along === 'x' ? 0 : Math.PI / 2, 0] });
-    order.push(`staple${i}`);
+  /** `wide`: the arch is a band along the wire (the one over the join of the far wire's two pieces). */
+  const staple = (name: string, x: number, z: number, along: 'x' | 'z', wide = 1): void => {
+    const st = b.part(name, { at: [x, 0, z], rot: [0, along === 'x' ? 0 : Math.PI / 2, 0] });
+    order.push(name);
     st.box(0.2, LOOP.y - 0.075, 0.26, { r: 0.03, c: INK });
     st.ring(0.1, 0.022, {
       at: [0, LOOP.y - 0.02, 0],
@@ -179,9 +180,11 @@ export function addMounts(b: Builder): string[] {
       tubeSeg: 8,
       slot: 'metal',
       c: STEEL,
-      s: [1.6, 1, 1],
+      s: [1.6 * wide, 1, 1],
     });
-  });
+  };
+  STAPLES.forEach(([x, z, along], i) => staple(`staple${i}`, x, z, along));
+  staple('seatStaple', SEAT.x, SEAT.z, 'x');
 
   // magnifier rest in the near left corner: three low pegs under the ring and a small fork for the ferrule at
   // the front edge (the handle points at the reader, over the edge)
@@ -217,6 +220,7 @@ export function mountX(name: string): number {
     lampPost: LAMP.x,
     seat: SEAT.x,
     seatJumper: SEAT.x,
+    seatStaple: SEAT.x,
     lensHolder: LENS.holder.x,
   };
   return xs[name] ?? 0;

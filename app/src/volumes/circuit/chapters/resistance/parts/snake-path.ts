@@ -18,9 +18,10 @@ import { LAMP, LOOP, SEAT, WIRE } from '@circuit/shared/stage';
 /** The stretch at the handle's end and the deepest the snake hangs (board units, from the far line). */
 export const K_MAX = 40;
 export const DEPTH_MAX = 2.3;
-/** Where the wire leaves the seat's terminal and enters the lamp's (as `standPath('m2')`), and the snake's zone. */
+/** Where the far wire starts (under the staple at the seat's place) and enters the lamp's terminal (as
+ * `standPath('m2')`), and the snake's zone. */
 const INSET = 0.07;
-export const FROM_X = SEAT.x + SEAT.width / 2 - INSET;
+export const FROM_X = SEAT.x;
 export const TO_X = LAMP.x - LAMP.term + INSET;
 export const ZONE = { from: 0.1, to: 1.92 } as const;
 export const MIDDLE_X = (ZONE.from + ZONE.to) / 2;

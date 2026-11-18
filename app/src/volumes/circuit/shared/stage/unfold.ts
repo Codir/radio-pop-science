@@ -20,7 +20,7 @@ import { SLIDER_TRAVEL } from './small-parts';
 import { PLACE, type Stand } from './stand';
 import { TORCH, torchPath, type Torch, type TorchDims } from './torch';
 import { BULB, type BulbDims } from './bulb';
-import { WIRE_IDS, standPath, type WireId } from './wires';
+import { BARE, WIRE_IDS, standPath, type WireId } from './wires';
 import { resample } from './dyn-tube';
 
 export const UNFOLD_SECONDS = 6;
@@ -272,6 +272,32 @@ export function createUnfold(stand: Stand, torch: Torch, T: TorchDims = TORCH, B
   // which way the flat side of each strip faces in the torch (carrier axes): against the wall it runs along
   const flat: Record<WireId, Vector3> = { m1: X, m2: Z, p1: X, p2: Y };
   const up = new Vector3();
+  // the far wire `m1` + `m2` is ONE wire to the eye (they meet end to end on the stand): one arch of the lift,
+  // one front of the sheath, no stripped copper and no caps where they meet. Its two shares of the length:
+  const len = (pts: readonly Vector3[]): number =>
+    pts.reduce((a, q, i) => (i ? a + q.distanceTo(pts[i - 1]!) : 0), 0);
+  const L1 = len(paths.m1.stand);
+  const L2 = len(paths.m2.stand);
+  const share = { m1: [0, L1 / (L1 + L2)], m2: [L1 / (L1 + L2), 1], p1: [0, 1], p2: [0, 1] } as Record<
+    WireId,
+    [number, number]
+  >;
+  /** The strip's normal at the end of `pts`, transported from `start` the way `DynTube` does it. */
+  const tan = new Vector3();
+  const endNormal = (pts: readonly Vector3[], start: Vector3, out: Vector3): Vector3 => {
+    out.copy(start);
+    for (let i = 0; i < pts.length; i++) {
+      tan.copy(pts[Math.min(i + 1, pts.length - 1)]!).sub(pts[Math.max(i - 1, 0)]!);
+      if (tan.lengthSq() < 1e-12) continue;
+      tan.normalize();
+      const keep = out.clone();
+      out.addScaledVector(tan, -out.dot(tan));
+      if (out.lengthSq() < 1e-8) out.copy(keep);
+      out.normalize();
+    }
+    return out;
+  };
+  const m1End = new Vector3();
   const wires = (t: number): void => {
     if (t >= UNFOLD_SECONDS - 1e-6) return stand.wires.setStand();
     const w = smooth(ramp(t, 2.2, 4.7));
@@ -286,9 +312,10 @@ export function createUnfold(stand: Stand, torch: Torch, T: TorchDims = TORCH, B
       for (let i = 0; i < n; i++) {
         const s = i / (n - 1);
         const p = (out[i] ??= new Vector3());
+        const [s0, s1] = share[id];
         inTorch(from[i]!, p)
           .lerp(to[i]!, w)
-          .addScaledVector(Y, lift * Math.sin(Math.PI * s));
+          .addScaledVector(Y, lift * Math.sin(Math.PI * (s0 + (s1 - s0) * s)));
       }
       // pin both ends to the parts they touch; the correction fades quadratically along the piece
       const start =
@@ -314,12 +341,19 @@ export function createUnfold(stand: Stand, torch: Torch, T: TorchDims = TORCH, B
         if (start) out[i]!.addScaledVector(start, (1 - s) ** 2);
         if (finish) out[i]!.addScaledVector(finish, s ** 2);
       }
+      // the sheath's one front runs over the whole far wire: `m2` takes it over where `m1` ends
+      if (id === 'm1') endNormal(out, up.copy(flat.m1).applyQuaternion(carrierQ), m1End);
+      const [s0, s1] = share[id];
+      const front = Math.min(Math.max((cover * 1.08 - s0) / (s1 - s0), 0), 1.08) / 1.08;
       stand.wires.setShape(id, {
         path: out,
         round,
-        cover,
+        cover: id === 'm1' || id === 'm2' ? front : cover,
         copper: 1,
-        up: up.copy(flat[id]).applyQuaternion(carrierQ),
+        // `m2` goes on with the flat side `m1` ends with — no twist where the two strips meet
+        up: id === 'm2' ? up.copy(m1End) : up.copy(flat[id]).applyQuaternion(carrierQ),
+        bare: id === 'm1' ? [BARE, 0] : id === 'm2' ? [0, BARE] : undefined,
+        open: id === 'm1' ? [false, true] : id === 'm2' ? [true, false] : undefined,
       });
     }
   };

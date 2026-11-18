@@ -132,6 +132,8 @@ export const loopStep: StepFactory = ({ ctx, stand, reached, reach, here }) => {
       sw.closed = true;
       swSeat.go(0, info.instant ? 0 : 0.9);
       jumperSeat.go(0, info.instant ? 0 : 0.6);
+      stand.seatWanted = true;
+      stand.seatShown.go(1, info.instant ? 0 : 0.6);
       stand.endOut.go(0, info.instant ? 0 : 0.5);
       // back from the water picture the frame comes once the stand is back (one motion after the other)
       frameDue = !info.instant && stand.waterMorph.value > 0.02;
@@ -148,6 +150,7 @@ export const loopStep: StepFactory = ({ ctx, stand, reached, reach, here }) => {
       sw.hand = null;
       returning = 0;
       sw.closed = true;
+      stand.seatWanted = false;
     },
     update(dt) {
       if (frameDue && stand.waterMorph.value < 0.05) {
