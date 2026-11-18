@@ -32,6 +32,10 @@ node tools/site/build.mjs --volume radio
 Перший рядок — `site: volume radio (draft → published); removed from the copy: _demo _dev _path circuit electricity`,
 останній — `PASS site smoke`, вихід 0 (10–20 с). `--no-smoke` лише збирає; `--keep-work` лишає робочу копію й
 друкує її шлях (див. «Робоча копія»). Тому немає — `site: app/src/volumes/<том>/volume.json is missing`, вихід 1.
+Ще до копії `build.mjs` відмовляє (рядок `site: …`, вихід 1), якщо `volume.json` тому в дереві має інший `id` чи
+поле `aside` або якщо порт перевірки зайнятий (`port 5391 on 127.0.0.1 is not free: EADDRINUSE …`; з `--no-smoke`
+порт не потрібен). Тож через зайнятий порт у `--out` не лягає збірка, якої не бачив браузер. `tsc` і `vite` мають
+по 10 хвилин: завислий інструмент збірка зупиняє, і це провал, а не вічне очікування.
 Для перевірок глав будь-який інший том можна зібрати в окремий каталог:
 `node tools/site/build.mjs --volume circuit --out "$HOME/.cache/radio-pop-science/site-circuit"`.
 
@@ -61,7 +65,10 @@ node tools/site/smoke.mjs --url https://codir.github.io/radio-pop-science/ --vol
   або `home-resume`, а глибоке посилання на перший крок відкриває саме цей крок;
 - посилання в том, якого тут немає, веде в обраний.
 
-Без `<dist>/index.html` — одразу `site: <dist>/index.html is missing`, вихід 1, браузер не запускається.
+Без `<dist>/index.html` — одразу `site: <dist>/index.html is missing`, вихід 1, браузер не запускається. Зайнятий
+порт чи Chrome, що не запускається, — рядок `FAILED site smoke: cannot serve …` або `FAILED site smoke: cannot start
+Chrome …`, вихід 1. Кожне очікування сторінки має межу: завантаження й поява `__app` — 60 с, `__app.ready`,
+`__app.settled()` і шрифти — по 90 с; завислий запуск закінчується рядком `FAILED site smoke`, а не чеканням без кінця.
 
 ### Змінні середовища
 
@@ -79,7 +86,8 @@ source tools/site/qa-env.sh
 ```
 
 Ставить Node 24 (nvm), `QA_ALLOW_SOFTWARE=1`, `QA_OUT` (типово `~/.cache/radio-pop-science/qa`, каталог
-створюється) і, якщо `montage` у системі немає, кладе `tools/site/shims` на початок `PATH`. Дві функції:
+створюється) і, якщо `montage` у системі немає, кладе `tools/site/shims` на початок `PATH`. Без `$NVM_DIR/nvm.sh`
+друкує в stderr, що Node лишився системним, а потрібен 24. Дві функції:
 
 - `site_serve [порт] [каталог]` (типово 5391 і `tools/site/dist`) запускає `smoke.mjs --serve` відокремлено
   (журнал — `$QA_OUT/site-<порт>.log`), чекає відповіді 200 до 10 с і друкує адресу
@@ -115,8 +123,8 @@ ImageMagick тут не встановлено, а `tools/qa/sheet.sh` збир�
 
 ## Робоча копія: не запускати в ній pnpm і corepack
 
-Робоча копія лишається після `--keep-work` або невдалої збірки (`site: … failed (work copy kept: <шлях>) — do not
-run pnpm or corepack in it`). Її `node_modules` — посилання на справжній `app/node_modules`. pnpm 12, запущений у
+Робоча копія лишається після `--keep-work` або коли впали `tsc` чи `vite` (`site: … failed … (work copy kept: <шлях>)
+— do not run pnpm or corepack in it`); копію, яку не вдалося зробити, збірка вилучає сама. Її `node_modules` — посилання на справжній `app/node_modules`. pnpm 12, запущений у
 копії (`pnpm test`, `pnpm typecheck` чи будь-що інше), спершу перев’язує `app/node_modules` на шлях копії, і після
 її вилучення `tsc`, `vite` й `vitest` в `app/` уже не знаходять пакетів. Тому в копії `tsc` і `vite` кличуть із
 `app/node_modules/.bin/`, як це робить сама збірка:
@@ -128,9 +136,11 @@ cd <робоча копія> && <корінь репозиторію>/app/node_m
 Якщо `app/node_modules` уже зіпсовано, його лагодить `(cd app && pnpm install --frozen-lockfile --offline)`:
 сховище тепле, мережа не потрібна.
 
-Модульні тести в копії профілю не запускаємо: вісім тестів платформи (`engine/__tests__/volumes.test.ts`,
-`engine/__tests__/lint-chapter-boundary.test.ts`) спираються на повний набір томів і там падають за побудовою.
-Модульні тести — справа повного дерева (`cd app && pnpm test`).
+Модульні тести в копії профілю не запускаємо: тести платформи `engine/__tests__/volumes.test.ts` і
+`engine/__tests__/lint-chapter-boundary.test.ts` спираються на повний набір томів, а тест тому
+`volumes/radio/__tests__/journey.test.ts` чекає статусу `draft`, який профіль міняє на `published`, тож у копії частина
+з них падає за побудовою (18.11.2026 — одинадцять тестів у цих трьох файлах). Модульні тести — справа повного дерева
+(`cd app && pnpm test`).
 
 ## Дві поламки, які ловить лише браузер
 

@@ -65,17 +65,31 @@ export function serve(dist, sub, port) {
  */
 export async function smoke({ dist, url, sub, port, volume, title, note = '', appDir }) {
   const { chromium } = createRequire(join(appDir, 'package.json'))('playwright-core');
-  const site = url ? { url, close: async () => {} } : await serve(dist, sub, port);
+  let site;
+  try {
+    site = url ? { url, close: async () => {} } : await serve(dist, sub, port);
+  } catch (error) {
+    console.log(`FAILED site smoke: cannot serve ${dist} on 127.0.0.1:${port} (${error.message})`);
+    return false;
+  }
   const failures = [];
   const check = (ok, name, detail = '') => {
     console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`);
     if (!ok) failures.push(name);
   };
-  const browser = await chromium.launch({
-    executablePath: process.env.QA_CHROME ?? '/usr/bin/google-chrome',
-    headless: true,
-    args: (process.env.QA_CHROME_ARGS ?? SOFTWARE_ARGS).split(/\s+/).filter(Boolean),
-  });
+  const chrome = process.env.QA_CHROME ?? '/usr/bin/google-chrome';
+  let browser;
+  try {
+    browser = await chromium.launch({
+      executablePath: chrome,
+      headless: true,
+      args: (process.env.QA_CHROME_ARGS ?? SOFTWARE_ARGS).split(/\s+/).filter(Boolean),
+    });
+  } catch (error) {
+    await site.close();
+    console.log(`FAILED site smoke: cannot start Chrome ${chrome} (${error.message})`);
+    return false;
+  }
   /** One page load in a fresh profile; `label` prefixes the checks every load must pass. */
   const open = async (hash, label) => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -90,11 +104,23 @@ export async function smoke({ dist, url, sub, port, volume, title, note = '', ap
     page.on('requestfailed', (r) => bad.push(`failed ${r.url()}`));
     page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
     page.on('pageerror', (e) => errors.push(String(e)));
+    // page.evaluate has no time limit of its own: a boot that hangs instead of failing must still end as a FAILED line
+    const within = async (promise, what) => {
+      let timer;
+      const late = new Promise((_, no) => {
+        timer = setTimeout(() => no(new Error(`${label}: ${what} did not finish in 90 s`)), 90000);
+      });
+      try {
+        return await Promise.race([promise, late]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
     await page.goto(site.url + hash, { waitUntil: 'load', timeout: 60000 });
     await page.waitForFunction(() => typeof window.__app === 'object', null, { timeout: 60000 });
-    await page.evaluate(() => window.__app.ready);
-    await page.evaluate(() => window.__app.settled());
-    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    await within(page.evaluate(() => window.__app.ready), '__app.ready');
+    await within(page.evaluate(() => window.__app.settled()), '__app.settled()');
+    await within(page.evaluate(() => document.fonts.ready.then(() => undefined)), 'document.fonts.ready');
     await page.waitForTimeout(1000);
     const state = await page.evaluate(() => ({
       hash: window.location.hash,

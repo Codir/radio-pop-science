@@ -15,6 +15,8 @@ export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 if [ -s "$NVM_DIR/nvm.sh" ]; then
   . "$NVM_DIR/nvm.sh"
   nvm use 24 >/dev/null
+else
+  echo "qa-env: $NVM_DIR/nvm.sh is missing; Node stays $(node --version 2>/dev/null || echo 'not found'), Node 24 is expected" >&2
 fi
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 
@@ -30,7 +32,7 @@ site_serve() {
   local port="${1:-5391}" dir="${2:-$SITE_REPO/tools/site/dist}"
   local url="http://127.0.0.1:$port/radio-pop-science/" log="$QA_OUT/site-$port.log" i
   if [ -n "$(ss -ltnH "sport = :$port")" ]; then
-    echo "site_serve: port $port is already taken (site_stop $port frees it if site_serve started it)" >&2
+    echo "site_serve: port $port is already taken (site_stop $port frees it if a server of this repository holds it)" >&2
     return 1
   fi
   if [ ! -f "$dir/index.html" ]; then
@@ -77,9 +79,9 @@ site_stop() {
   for pid in $(ss -ltnpH "sport = :$port" | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u); do
     if _site_owned "$pid"; then
       kill "$pid" 2>/dev/null
-    else
+    elif [ -e "/proc/$pid" ]; then # a listener that has exited since `ss` frees its port by itself
       echo "site_stop: port $port is held by a program outside this repository" \
-        "(pid $pid: $(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null)); left alone" >&2
+        "(pid $pid: $(tr '\0' ' ' 2>/dev/null <"/proc/$pid/cmdline")); left alone" >&2
       foreign=1
     fi
   done
