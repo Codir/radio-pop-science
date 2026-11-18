@@ -50,6 +50,10 @@ class CheckTest(unittest.TestCase):
         got = K.rule5({'chapters/air.md': '- **Докладніше:** безпілотники тут ні до чого.\n'}, TERMS); self.assertEqual(len(got), 1); self.assertIn('chapters/air.md:1', got[0])
         self.assertIn('_terms.md: «рядок»', K.rule5({}, TERMS.replace('Ряд комірок', 'Як у радіолокації: ряд комірок'))[0])
         self.assertEqual(len(K.rule5({'chapters/x.md': 'Сусід заглушить картинку.\n'}, TERMS)), 1); self.assertEqual(K.rule5({'chapters/x.md': 'Ліхтар приглушили.\n'}, TERMS), [])
+        for s in ('Сусід глушив картинку.', 'Вони глушать канал.', 'Я глушу його.', 'Радари стоять там.'):
+            self.assertEqual(len(K.rule5({'chapters/x.md': s + '\n'}, TERMS)), 1, s)
+        for s in ('Глушник гуде.', 'Заглушка на гнізді.', 'Грім оглушив кота.', 'Хата в глуші.'):
+            self.assertEqual(K.rule5({'chapters/x.md': s + '\n'}, TERMS), [], s)
     def test_visual(self):
         names = ['Принципи', 'Подвір’я', 'Де ми', 'Кольори зі змістом', 'Екран монітора', 'Щуп і стрічка', 'Ракурси', 'Телефон', 'Чек-лист аудитора кадру']
         full = ''.join('## %d. %s\n' % (i + 1, h) for i, h in enumerate(names)); self.assertEqual(K.VISUAL_SECTIONS, names)

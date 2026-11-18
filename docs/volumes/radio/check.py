@@ -27,8 +27,8 @@ SUFFIXES = {'.md', '.tsv', '.json', '.ts', '.mjs', '.py'}
 MICRO = '\u00b5'
 CYRILLIC = '\u0400-\u04ff'
 STRAIGHT = re.compile(r'\w*[%s]\u0027[%s]\w*' % (CYRILLIC, CYRILLIC))
-NOWHERE = re.compile(r'\bглушінн|\b(?:за)?глуш(?:ил|ит)|джамер|\bдрон|безпілотн|БПЛА|військ|радіолокац|\bРЕБ\b|\bРЛС\b',
-                     re.IGNORECASE)
+NOWHERE = re.compile(r'\bглушінн|\b(?:за)?глуш(?:ил|ит|ив|ат|им|иш|и\b|іть|у\b)|джамер|\bдрон|безпілотн|БПЛА|військ'
+                     r'|радіолокац|\bрадар|\bРЕБ\b|\bРЛС\b', re.IGNORECASE)
 H3 = re.compile(r'^### (?:\d+\. )?`([^`]+)`(?: — (.+?))?\s*$')
 ADDRESS = re.compile(r'^`#/([^`\s]+)`')
 SEPARATOR = re.compile(r'^:?-+:?$')
