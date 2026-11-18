@@ -1,0 +1,17 @@
+# Latin-script words of the radio volume, in addition to tools/content/terms_allowlist.tsv (read by tools/content/terms_check.py).
+# Columns (TAB-separated): word, kind (abbr | mark | name | symbol), explanation, reason. Explanation is «—» unless kind is abbr.
+# A word may be listed only once across both files: FM, I, Q, Wi-Fi and the units V/m, MHz, GHz, mW, dB, μs, ns are global or exempt.
+dBm	symbol	—	рівень хвилі відносно 1 mW: стовпчик, шкала частот, «Докладніше» глав 6–17
+nW	symbol	—	нановат: «Докладніше» `air/spread` (10 mW → 4 nW за 20 м)
+bit/s	symbol	—	потік бітів: «Докладніше» й підписи глав 13–17
+Mbit/s	symbol	—	мільйон бітів за секунду: «Докладніше» `compress/flood`, `cliff/answer`
+QPSK	abbr	сузір’я з чотирьох точок	лише «Докладніше» `points/four`, `sat-digital/four`
+QAM	abbr	сузір’я з багатьох точок	лише «Докладніше» `points/dense`
+OFDM	abbr	багато піднесних	лише «Докладніше» `many/slow`
+PLL	abbr	петля підстроювання	гілка `synth`, після українського пояснення
+LDPC	abbr	код із рідкими перевірками	гілка `codes`, після українського пояснення
+PAL	mark	—	назва системи кольорового телебачення: «Докладніше» `colour-sound/flip`
+SECAM	mark	—	назва системи кольорового телебачення: «Докладніше» `tv/roof`, `colour-sound/flip`
+angle	symbol	—	запис кута між відліками в «Докладніше» `angle/step`
+conj	symbol	—	запис кута між відліками в «Докладніше» `angle/step`
+fs	symbol	—	темп відліків у записі «Докладніше» `angle/step` (…·fs/2π)
