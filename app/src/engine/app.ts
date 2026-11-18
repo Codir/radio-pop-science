@@ -49,8 +49,8 @@ export interface UrlFlags {
  */
 export type HudRenderer = 'dom' | 'gl';
 
-/** The renderer used without `?hud=` (D9 flips it to `'dom'` at cut-over). */
-export const DEFAULT_HUD: HudRenderer = 'gl';
+/** The renderer used without `?hud=`: the DOM interface since D9 phase B (DECISIONS §60 z); `?hud=gl` still works. */
+export const DEFAULT_HUD: HudRenderer = 'dom';
 
 export function parseFlags(search: string): UrlFlags {
   const q = new URLSearchParams(search);
@@ -283,6 +283,19 @@ export class Engine {
     this.store.subscribe(
       (s) => s.settings.textScale,
       (scale) => this.hud.setTextScale(scale),
+      { immediate: true },
+    );
+    // «Версія для комп'ютера»: read with the saved settings, so the first frame already has the chosen shell; a
+    // switch later is a resize for everything downstream (world-text scale, the chapter's `ctx.onResize` — its
+    // `ctx.device` now reads differently, `layoutDevice`)
+    let started = false;
+    this.store.subscribe(
+      (s) => s.settings.deskShell,
+      (on) => {
+        this.hud.setDeskShell(on);
+        if (started) this.resize();
+        started = true;
+      },
       { immediate: true },
     );
     this.store.subscribe(

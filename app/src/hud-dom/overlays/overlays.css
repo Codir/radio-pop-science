@@ -432,3 +432,16 @@
 .ov-quiz-score {
   font: 800 calc(var(--t-h2) * var(--u)) / 1.2 var(--display);
 }
+
+/* ---- «Почати з нуля»: the confirmation of the system bar's reset button (reset.ts) ----------------------------- */
+.ov-reset-text {
+  margin: 0;
+  line-height: 1.45;
+}
+.ov-reset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: calc(12 * var(--u));
+  margin-top: calc(16 * var(--u));
+}

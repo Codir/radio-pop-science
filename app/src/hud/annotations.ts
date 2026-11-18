@@ -92,6 +92,7 @@ export function mountAnnotations(hud: Hud): (spec: StepUiSpec | null) => void {
     if (layer.children.length === 0) return;
     if (checks.length > 0) checks[turn++ % checks.length]!();
     const m = hud.metrics;
+    layer.setScale(m.pxPerUnit);
     const f = hud.engine.hud.insetFractions();
     // touch shells: a marker's whole 44-px target stays on screen (desktops: the margin they always had)
     const pad = m.shell === 'desk' ? 12 : 24;
@@ -121,6 +122,10 @@ export function mountAnnotations(hud: Hud): (spec: StepUiSpec | null) => void {
     checks = [];
     const callouts = spec?.callouts ?? [];
     // importance order of the step's callouts: explicit priority first, then declaration order
+    const bordering = (): boolean => {
+      const t = hud.engine.store.get().transition;
+      return t.phase !== 'idle' && t.quiet === true;
+    };
     const order = callouts
       .map((c, i) => ({ c, i, p: c.priority ?? i }))
       .sort((a, b) => a.p - b.p || a.i - b.i)
@@ -147,10 +152,9 @@ export function mountAnnotations(hud: Hud): (spec: StepUiSpec | null) => void {
           color: c.color,
           side: c.side,
           occluded: occluder(c.anchor, c.occluders),
-          hidden:
-            when === undefined && callouts.length <= MAX_CALLOUTS.phone
-              ? undefined
-              : () => (when !== undefined && !holds(when)) || thinned(c),
+          // the chapter walks to a same-frame border (`transition.quiet`): its names leave with it, the border
+          // frame is the stand alone
+          hidden: () => bordering() || (when !== undefined && !holds(when)) || thinned(c),
         };
       }),
       (spec?.hotspots ?? []).map((h) => {

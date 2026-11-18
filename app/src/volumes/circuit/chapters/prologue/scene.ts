@@ -6,7 +6,7 @@
 import { defineScene } from '@/engine/api';
 import { stepUi } from '@/hud';
 import { floorLadder } from '@/hud-dom/journey';
-import { AWAY_POST, mountWorld } from '@circuit/shared/world';
+import { AWAY_MOON, AWAY_POST, LENS_LEG, borderOf, mountWorld } from '@circuit/shared/world';
 import content from './content';
 import { PROLOGUE_SHOTS } from './shots';
 import { diveStep } from './steps/dive';
@@ -16,25 +16,41 @@ import { riddleStep } from './steps/riddle';
 import { switchControl } from './steps/switch';
 import { createUnfolding } from './steps/unfold';
 
+/** Seconds of the dive's rewind before the flashlight folds («Назад» from `dive` below the stand plan). */
+const rewindSeconds = (span: number): number => Math.min(1.8, 0.4 + 0.55 * span);
+
 export default defineScene((ctx) => {
   const world = mountWorld(ctx);
   ctx.camera.shots(PROLOGUE_SHOTS);
   const labels = (id: string): readonly string[] => content.steps.find((s) => s.id === id)?.labels ?? [];
   const ui = stepUi(ctx);
-  const toggle = switchControl(ctx, world, labels('click')[0] ?? '', ['click'], ['dive']);
   const unfolding = createUnfolding(ctx, world);
+  // the switch is the reader's on `click` and on `dive` — not while the flashlight unfolds or folds back (the lamp
+  // stays as it is), nor while the dive rewinds before the fold
+  const toggle = switchControl(ctx, world, labels('click')[0] ?? '', ['click', 'dive'], [], {
+    when: () => !unfolding.playing && (ctx.stage.current === 'dive' || !world.flying),
+    touched: () => names.dismiss(),
+  });
   // captions 5–8 of `dive`: the parts' names as they land
   const [, , , , , battery = '', lamp = '', switchName = '', wire = ''] = labels('dive');
   const names = partNames(ctx, world, unfolding, { battery, lamp, switch: switchName, wire });
   // the unfolding plays with nothing to read or to use: text and controls of `dive` come together when it ends
   const held = (): boolean => unfolding.playing;
   const riddle = riddleStep(ctx, world, ui, labels('riddle'));
-  const dive = diveStep(ctx, world, ui, labels('dive'), names, held, riddle.lensName);
+  // the moment the reader starts the dive an open switch closes by itself: the copper is always seen lit
+  const dive = diveStep(ctx, world, ui, labels('dive'), names, held, () => toggle.close(), riddle.lensName);
   const map = mapStep(ctx);
   // «де ми» (VISUAL §3): the platform's floor ladder, shown during a dive and on the lower floors
   // behind the map board the stand is out of focus: its small print («1,5 V») would read as unreadable text there
   const print = world.stand.group.getObjectByName('battery:print');
   const ladder = floorLadder(ctx, { floor: () => (world.deep > 0.01 ? world.floorId : null) });
+  /** «Назад» from `dive`: the dive rewinds to the lens in its holder first, then the flashlight folds. */
+  let foldWhenBack = false;
+  const fold = (): void => {
+    foldWhenBack = false;
+    world.release();
+    unfolding.reverse('flashlight', () => ctx.stage.setParam('closed', 0, { instant: true }));
+  };
 
   world.define({
     // the flashlight lies on the board in the dark: no moon, the lamp is the only light once clicked
@@ -49,7 +65,7 @@ export default defineScene((ctx) => {
     // cold light low, strongly out of focus (the focus is in front of it, `AWAY_FOCUS`), the corners darker
     map: {
       camera: 'map',
-      params: { closed: 1, moon: 0.3 },
+      params: { closed: 1, moon: AWAY_MOON },
       post: AWAY_POST,
     },
   });
@@ -60,7 +76,8 @@ export default defineScene((ctx) => {
         {
           anchor: world.stand.stand.slider,
           text: labels('click')[0] ?? '',
-          visible: () => ctx.stage.current === 'click',
+          // not while «Назад» rewinds the dive and folds the stand: the name comes with the closed flashlight
+          visible: () => ctx.stage.current === 'click' && !unfolding.playing && !world.flying,
         },
       ],
       goal: () => toggle.lightings >= 2 && world.stand.glow > 0.5,
@@ -79,7 +96,10 @@ export default defineScene((ctx) => {
     glow: world.stand.glow,
     light: world.stand.light.lamp.intensity,
     camera: ctx.camera.camera.position.toArray().map((v) => Math.round(v * 100) / 100),
+    // the look-at point: the shot without the director's idle drift (which orbits the camera around it)
+    look: ctx.camera.target.toArray().map((v) => Math.round(v * 1000) / 1000),
     lightings: toggle.lightings,
+    closed: toggle.closed,
     unfold: { value: unfolding.value, playing: unfolding.playing },
     dive: dive.state(),
     names: names.up(),
@@ -95,19 +115,35 @@ export default defineScene((ctx) => {
         if (!info.instant && info.from === 'click') unfolding.play('stand');
         else unfolding.finish();
       }
+      foldWhenBack = false;
       if (id === 'click' && !info.instant && info.from === 'dive') {
-        // «Назад»: the same motion backwards, the lamp on until the flashlight has closed, then the dark of `click`
-        ctx.stage.setParam('closed', 1, { instant: true });
+        // «Назад»: the same motion backwards, faster; the lamp as the reader left it on `dive` (on, unless the
+        // switch was opened there) until the flashlight has closed, then the dark of `click`. The step's own
+        // tweens are held: from wherever the dive is, it rewinds (one eased glide on the rail: the lens back into
+        // its holder, the camera to the stand plan), and only then the flashlight folds — never a cut
+        ctx.stage.setParam('closed', world.stand.glow > 0.5 ? 1 : 0, { instant: true });
         ctx.stage.setParam('moon', 1, { instant: true });
-        unfolding.reverse('flashlight', () => ctx.stage.setParam('closed', 0, { instant: true }));
+        ctx.stage.setParam('unfold', world.stand.unfold, { instant: true });
+        ctx.stage.setParam('lens', world.value('lens'), { instant: true });
+        const span = world.position + LENS_LEG;
+        if (span > 1e-3) {
+          world.travelTo(-LENS_LEG, rewindSeconds(span));
+          foldWhenBack = true;
+        } else fold();
       }
       if (id === 'dive') dive.enter();
       // the crawl arrives with `riddle` and leaves with every other step, as one motion (shared/stage README «Crawl»)
       if (id === 'riddle') riddle.enter(info);
       else world.stand.crawlScene.hide(info.instant);
     },
+    // the map step is the border frame with `wire` already (the «away» frame, `world.flyIn` starts there); from any
+    // other step, or to another chapter, the platform's own transition
+    leaveChapter(to) {
+      return ctx.stage.current === 'map' && borderOf('prologue', to.chapterId) ? 0 : null;
+    },
     update(dt, t) {
       world.update(dt, t);
+      if (foldWhenBack && !world.flying) fold();
       toggle.update();
       unfolding.update(dt);
       dive.update(dt);

@@ -72,6 +72,6 @@ describe('flags.hud (?hud=dom|gl)', () => {
     expect(parseFlags('?hud=gl').hud).toBe('gl');
     expect(parseFlags('?hud=svg').hud).toBe(DEFAULT_HUD);
     expect(parseFlags('').hud).toBe(DEFAULT_HUD);
-    expect(DEFAULT_HUD).toBe('gl'); // until the cut-over (D9)
+    expect(DEFAULT_HUD).toBe('dom'); // since D9 phase B (DECISIONS §60 z)
   });
 });

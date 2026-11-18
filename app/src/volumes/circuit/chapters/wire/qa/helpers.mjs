@@ -2,15 +2,25 @@
 // Playwright helpers of the chapter's QA scripts (production hooks only; positions in CSS px from
 // `__ui.locate` / `__app.locate`, so one script serves every size). Runs on the frozen engine clock (`?freeze`).
 
+import { sheetTab as openSheetTab } from '../../../../../../../tools/qa/sheet-tab.mjs';
+
 /** Advance the frozen engine clock by `seconds`, then a few single frames so HUD fades settle. */
 export async function advance(page, seconds) {
   await page.evaluate((n) => window.__app.step(1 / 60, n), Math.max(1, Math.round(seconds * 60)));
   for (let i = 0; i < 10; i++) await page.evaluate(() => window.__app.step(1 / 60, 1));
 }
 
-/** Rectangle { x, y, w, h } (centre + size) of the control `ctl-<id>`; throws when it is not on screen. */
+/** Open a tab of the narrow window's bottom sheet (`text` | `controls`); a no-op where there are none. */
+export const sheetTab = (page, id) => openSheetTab(page, id, (p) => advance(p, 0.2));
+
+/**
+ * Rectangle { x, y, w, h } (centre + size) of the control `ctl-<id>`; throws when it is not on screen. In a
+ * narrow window the controls sit on the sheet's «Керування» tab: it is opened first, as a reader would.
+ */
 export async function locate(page, id) {
-  const rect = await page.evaluate((n) => window.__ui.locate(n), `ctl-${id}`);
+  const find = () => page.evaluate((n) => window.__ui.locate(n), `ctl-${id}`);
+  let rect = await find();
+  if (!rect && (await sheetTab(page, 'controls'))) rect = await find();
   if (!rect) throw new Error(`control '${id}' is not on screen`);
   return rect;
 }
@@ -115,4 +125,18 @@ export const shown = (page, sel) =>
 export async function press(page, sel) {
   await page.evaluate((s) => document.querySelector(s)?.click(), sel);
   await advance(page, 0.3);
+}
+
+/**
+ * The lowest y ≤ `y` at column `x` where the scene itself is under the pointer (not the step panel): in a narrow
+ * window the bottom sheet covers the lower part of the screen, so a drag must start above it.
+ */
+export async function sceneY(page, x, y) {
+  return page.evaluate(
+    ([px, py]) => {
+      for (let q = py; q > 0; q -= 8) if (document.elementFromPoint(px, q)?.tagName === 'CANVAS') return q;
+      return py;
+    },
+    [x, y],
+  );
 }

@@ -46,7 +46,7 @@ named, and how to start a volume. Code-level API: `docs/ENGINE_API.md` §22, `do
 | Visual language | palette, K materials, environments, motion, UI kit; the **global core** of the semantic colour code (STYLE_GUIDE §2.2.1) | the volume's semantic table (STYLE_GUIDE §2.2.2 for electricity), its accent and default environment |
 | Navigation | library screen, HUD, glossary overlay, journey-map renderer | journey axis (label, unit, range, formatter, zoom direction), groups, map layout hints, emblems, home-screen text |
 | Tools | `tools/content/*` (take `--volume`), `tools/qa/*`, export schema, global `terms_allowlist.tsv` | journey order / groups / parents / extra documents / extra checks in `volume.json` |
-| Rules | AGENT_GUIDE, term rule (DECISIONS §54), mobile rules (§57), honesty chips, QA budgets | rulings that concern one subject (recorded in DECISIONS, marked with the volume) |
+| Rules | AGENT_GUIDE, term rule (DECISIONS §54), mobile rules (§57), QA budgets | rulings that concern one subject (recorded in DECISIONS, marked with the volume) |
 
 `sim/**` is per volume on purpose (a chapter may import only its own volume's simulations). `shared/**` is the
 volume's **scene library** — one world for the whole volume (`circuit`: `shared/stage`, `shared/copper`):
@@ -192,7 +192,8 @@ The manifest plans the whole journey before any chapter exists; the map and the 
 | `journey[].title` | the chapter's question — a planned (unbuilt) chapter is drawn on the map with it, as planned: slate platform, no emblem, «у планах · ≈ N хв», cannot be opened |
 | `journey[].minutes` | length of the chapter; the home screen shows the total («≈ 82 хв»), the map «Пройдено X з Y глав · лишилося ≈ N хв» (a built chapter counts by its unopened steps) |
 | `journey[].floor` | id of a floor of `axis.floors`: the height of a planned chapter, and `axisLabel` / `axisValue` of the generated chapter manifest (`index.ts`: `axisValue: meta.axisValue`) |
-| `axis.floors[]` | `{ id, label, value, plain?, namedAt? }` — the ruler shows these names instead of formatted numbers («стенд», «деталь», «ряди атомів», «один атом»); a name with a word the journey has not introduced yet shows `plain` («ряди кульок») until the reader has opened the step `namedAt` (`chapter/step`) — `floorLabel(volume, floor, visited)`, also for a scene's «де ми» ladder |
+| `axis.floors[]` | `{ id, label, value, plain?, namedAt? }` — the ruler shows these names instead of formatted numbers («стенд», «деталь», «ряди атомів», «один атом»); a name with a word the journey has not introduced yet shows `plain` («ряди кульок») until the reader is past the step `namedAt` (`chapter/step`): opened it, or a step of a later chapter, or (where the step order is known) a later step of its chapter — `floorLabel(volume, floor, visited, stepsOf?)`, also for a scene's «де ми» ladder |
+| `seamless` | `true`: the chapters share one world and every border is the same frame — a chapter change cross-fades 0.3 s (no scale-zoom), the incoming camera keeps the outgoing drift and free area; chapters walk to the border frame in `SceneHooks.leaveChapter` (`circuit`: `shared/world/border.ts`) |
 | `path.budgets` | optional overrides of the checker's budgets (the dev sandbox has 2-step chapters) |
 
 - A volume whose planned chapters have titles keeps its map even with **no built chapter**: the lobby home

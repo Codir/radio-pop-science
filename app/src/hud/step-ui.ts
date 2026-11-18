@@ -8,7 +8,6 @@
  *         { type: 'slider', id: 'R', label: 'Опір R', min: 0.05, max: 1000, scale: 'log', step: 3, unit: 'Ω', value: 10 },
  *         { type: 'readout', id: 'P', label: 'Потужність P', unit: 'W', get: () => model.power },
  *       ],
- *       honesty: ['simplified'],
  *       callouts: [{ anchor: module, text: 'Фотомодуль' }],
  *     },
  *   });

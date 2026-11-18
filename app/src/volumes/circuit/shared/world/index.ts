@@ -26,7 +26,9 @@ import {
 import { createCopper, type Copper } from '@circuit/shared/copper/copper';
 import { mountAtHandover } from '@circuit/shared/copper/mount';
 import { copperShots } from '@circuit/shared/copper/shots';
-import { AWAY_POST, AWAY_SHOT } from './away';
+import { AWAY_MOON, AWAY_POST, AWAY_SHOT } from './away';
+import { setWhereBase } from '@/hud/where';
+import { HOLD, createBorders, type Borders } from './border';
 import { createDiveRail } from './dive';
 import { createFlight } from './flight';
 import { floorAt, floorValue, mixAt, type FloorId } from './levels';
@@ -36,8 +38,10 @@ import { registerParams, type WorldParam } from './params';
 
 export * from './levels';
 export { STOP_SHOTS } from './flight';
-export { AWAY_FOCUS, AWAY_POST, AWAY_SHOT } from './away';
+export { LENS_LEG } from './dive';
+export { AWAY_FOCUS, AWAY_MOON, AWAY_POST, AWAY_SHOT } from './away';
 export type { WorldParam } from './params';
+export { BORDERS, borderOf, type BorderState, type Borders } from './border';
 
 export interface WorldOptions {
   /** Radius of the lamp's globe (`mountStage` option; default = the stage's default). */
@@ -68,6 +72,11 @@ export interface CircuitWorld {
   lensPose: LensPose | null;
   /** Share of the speed of the electrons' common shift at full glow (default 0.05; 0 hides it). */
   drift: number;
+  /**
+   * Called every frame right after the stand has laid the lens (and `lensPose`), before the lens window is placed:
+   * a chapter that carries the lens itself lays it here, so the window opens where the lens is. Default none.
+   */
+  afterLens: ((dt: number) => void) | null;
   /** A registered param's live value (`deep`, `lens`, `closed`, …). */
   value(name: WorldParam): number;
   /** True while a flight between floors is under way (input that changes the floor should wait). */
@@ -77,17 +86,22 @@ export interface CircuitWorld {
   /** Fly to a floor within a step: lens leg if needed, then a travel on the dive rail, then the step's camera. */
   fly(deep: number, camera: string, info?: Pick<StepInfo, 'scope'>, lens?: number): void;
   /**
-   * The dive as a position 0…3 (0 the lens over the wire · 1 «жила» · 2 «ряди» · 3 «один атом»): the frame —
-   * camera, `deep`, every dissolve — is a function of it. `scrub` follows the hand; `travelTo` glides there
-   * (eased, speed-limited: a click on a slider's track, a programmatic move). Both take the camera from the stage
-   * until the next step entry. Call `takeLens()` first when the reader is on the stand plan.
+   * The dive as a position −½…3 (−`LENS_LEG` the stand plan, the lens in its holder · 0 the lens over the wire ·
+   * 1 «жила» · 2 «ряди» · 3 «один атом»): the frame — camera, the lens, `deep`, every dissolve — is a function of it.
+   * The lens leg −½…0 is the take of the lens (it rises, crosses the stand and settles on the near wire; the camera comes
+   * with it); a slider that starts at the lens over the wire simply uses 0…3. `scrub` follows the hand; `travelTo`
+   * glides there (eased, speed-limited: a click on a slider's track, a programmatic move). Both take the camera
+   * from the stage until the next step entry, and engaging never cuts (an orbit or drift on screen fades out).
    */
   scrub(t: number): void;
-  travelTo(t: number): void;
-  /** Where the rail is now (0…3) and where it is going. */
+  /** `seconds`: glide in exactly that long (eased in and out) instead of at the rail's pace — a rewind. */
+  travelTo(t: number, seconds?: number): void;
+  /** Let the rail go where it is: the stage has the camera again (a step's own motion takes over from here). */
+  release(): void;
+  /** Where the rail is now (−½…3) and where it is going (before it engages: the position the stand's state shows). */
   readonly position: number;
   readonly goal: number;
-  /** Lay the lens on the wire and bring the camera to the rail's start (`lens`); `flying` until it is there. */
+  /** Glide the rail to 0 (the lens on the wire, the camera at the rail's start); from the stand: the lens leg. */
   takeLens(): void;
   /**
    * The entry flight of a chapter that starts below the stand (call from `enterStep` after `world.enterStep`, e.g.
@@ -95,6 +109,8 @@ export interface CircuitWorld {
    * its holder, then fly down to the step's own floor and camera. Returns the seconds it takes.
    */
   flyIn(id: string, info?: Pick<StepInfo, 'scope'>): void;
+  /** Chapter borders: the walk to the shared border frame and the arrival from it (`border.ts`). */
+  border: Borders;
   /** Forward from the scene's `enterStep`. Re-choreographs a change of floor as a flight; snaps on deep links. */
   enterStep(id: string, info: StepInfo): void;
   /** Forward from the scene's `update`. */
@@ -135,27 +151,55 @@ export function mountWorld(ctx: ChapterContext, opts: WorldOptions = {}): Circui
   // QA: the hero atom of the copper world (its origin), for colour checks of the lower floors
   const hero = new Vector3();
   ctx.qa.probe('copper-hero', () => copper.space.localToWorld(hero.set(0, 0, 0)));
-  const rail = createDiveRail([
-    STAGE_SHOTS.lens,
-    STAGE_SHOTS.handover,
-    lower['copper-rows']!,
-    lower['copper-atom']!,
-  ]);
+  const rail = createDiveRail(
+    [STAGE_SHOTS.lens, STAGE_SHOTS.handover, lower['copper-rows']!, lower['copper-atom']!],
+    // the lens leg starts on the stand plan (`prologue/dive`'s camera)
+    STAGE_SHOTS.stand,
+  );
   const flight = createFlight(
     ctx,
     rail,
     () => params.deep.value,
     () => params.lens.value,
   );
+  // the header's floor chip (`hud/where.ts`): the stand, or the floor of a dive — never the chapter's own floor
+  // while the camera is elsewhere (a floor ladder's report, where a chapter has one, wins over this)
+  const whereKey = `${ctx.manifest.volume}/${ctx.manifest.id}`;
+  ctx.onDispose(() => setWhereBase(whereKey, null));
   const specs: Record<string, StepSpec> = {};
+  /** `flyIn` waits out the border hold before it moves. */
+  let flyInAfter: { wait: number; go(): void } | null = null;
   const standPost = (): PostOverrides => specs[ctx.stage.current ?? '']?.post ?? STAGE_POST.stand;
+  const border = createBorders(ctx.manifest.id, {
+    ctx,
+    specs,
+    value: (name) => params.all.get(name as WorldParam)?.value ?? Number.NaN,
+    get deep() {
+      return params.deep.value;
+    },
+    get flying() {
+      return flight.flying;
+    },
+    release: () => flight.release(),
+    fly: (deep, camera, lens) => flight.fly({ deep, camera, lens }),
+    travel: (t, seconds) => flight.travelTo(t, seconds),
+    snap() {
+      rail.set(0);
+      iris = 0;
+      stand.snap();
+      apply();
+      look.assert(false, { instant: true, standPost: STAGE_POST.stand });
+    },
+  });
   const world: CircuitWorld = {
     stand,
     copper,
     scale,
     window: win,
+    border,
     lensPose: null,
     drift: opts.drift ?? 0.05,
+    afterLens: null,
     get deep() {
       return params.deep.value;
     },
@@ -184,13 +228,14 @@ export function mountWorld(ctx: ChapterContext, opts: WorldOptions = {}): Circui
       flight.fly({ deep, camera, lens });
     },
     scrub: (t) => flight.scrub(t),
-    travelTo: (t) => flight.travelTo(t),
+    travelTo: (t, seconds) => flight.travelTo(t, seconds),
+    release: () => flight.release(),
     takeLens: () => flight.takeLens(),
     get position() {
-      return rail.position;
+      return flight.engaged ? rail.position : rail.positionOf(params.deep.value, params.lens.value);
     },
     get goal() {
-      return rail.target;
+      return flight.engaged ? rail.target : rail.positionOf(params.deep.value, params.lens.value);
     },
     flyIn(id) {
       const spec = specs[id];
@@ -200,20 +245,26 @@ export function mountWorld(ctx: ChapterContext, opts: WorldOptions = {}): Circui
       // the reader leaves the prologue on the «away» frame (the stand behind the map board): start right there and
       // move on in one go — the focus pulls from the board's plane onto the stand while the camera comes in
       ctx.camera.go('away', { instant: true });
+      // the prologue's map left the room's cold light low: it comes back up with the move
+      ctx.stage.setParam('moon', AWAY_MOON, { instant: true });
       apply();
       look.assert(false, { instant: true, standPost: AWAY_POST });
-      ctx.post.apply(STAGE_POST.stand, { duration: ENTRY_LEAD * 0.8 });
       flight.release();
-      flight.fly(
-        {
-          deep: spec.params?.deep ?? 0,
-          camera: spec.camera as string,
-          lens: spec.params?.lens ?? 1,
+      // the border frame holds while the platform cross-fades the two equal frames (`border.ts` HOLD), then moves
+      flyInAfter = {
+        wait: HOLD,
+        go() {
+          ctx.stage.setParam('moon', (spec.params?.moon as number | undefined) ?? 1, { duration: ENTRY_LEAD });
+          ctx.post.apply(STAGE_POST.stand, { duration: ENTRY_LEAD * 0.8 });
+          flight.fly(
+            { deep: spec.params?.deep ?? 0, camera: spec.camera as string, lens: spec.params?.lens ?? 1 },
+            ENTRY_LEAD,
+          );
         },
-        ENTRY_LEAD,
-      );
+      };
     },
     enterStep(id, info) {
+      flyInAfter = null;
       const spec = specs[id];
       const to = spec?.params?.deep ?? 0;
       const from = info.instant ? to : params.deepBefore;
@@ -238,6 +289,12 @@ export function mountWorld(ctx: ChapterContext, opts: WorldOptions = {}): Circui
     },
     update(dt, t) {
       frameDt = dt;
+      if (flyInAfter && (flyInAfter.wait -= dt) <= 0) {
+        const { go } = flyInAfter;
+        flyInAfter = null;
+        go();
+      }
+      border.update(dt);
       flight.update(dt);
       stand.update(dt, t);
       const toPose = world.lensPose && params.deep.value < 0.01 && params.lens.value > 0.99 ? 1 : 0;
@@ -249,6 +306,7 @@ export function mountWorld(ctx: ChapterContext, opts: WorldOptions = {}): Circui
         const k = poseWeight * poseWeight * (3 - 2 * poseWeight);
         stand.tools.lens.setPose(stand.tools.poses.overWire, lastPose!, k);
       }
+      world.afterLens?.(dt);
       apply();
       copper.lamp = stand.glow;
       copper.sim.drift = -world.drift * stand.glow;
@@ -260,6 +318,7 @@ export function mountWorld(ctx: ChapterContext, opts: WorldOptions = {}): Circui
       }
       look.update(mixAt(params.deep.value).below, copper.depth, standPost());
       params.deepBefore = params.deep.value;
+      setWhereBase(whereKey, params.deep.value > 0.01 ? floorAt(params.deep.value) : 'stand');
     },
   };
   function apply(): void {
@@ -267,7 +326,12 @@ export function mountWorld(ctx: ChapterContext, opts: WorldOptions = {}): Circui
     // the window shows «ряди» inside the resting lens, only on the stand and never during the dissolve
     // and only once the camera is out of the ring (at the lens shot or beyond): it opens like an iris from there
     const want = params.deep.value < 0.005 && !mix.copperShown ? params.window.value : 0;
-    iris = want > iris ? Math.min(want, iris + frameDt * 1.6) : want;
+    iris =
+      want > iris
+        ? Math.min(want, iris + frameDt * 1.6)
+        : win.closeSeconds > 0
+          ? Math.max(want, iris - frameDt / win.closeSeconds)
+          : want;
     const open = iris;
     const inWindow = open > 0.002;
     if (inWindow !== windowMode) {

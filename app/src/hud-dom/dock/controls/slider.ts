@@ -13,6 +13,7 @@ import { sfx } from '@/ui3d';
 import { nudge, tToValue, valueToT, type SliderScale } from '@/ui3d/widgets/slider-scale';
 import { h, setClass, setStyle, setText } from '../../core/dom';
 import { setRich } from '../../core/rich';
+import { layoutMarks } from './mark-layout';
 import { uid, type DomControl } from './types';
 
 const STEPS = 1000;
@@ -57,6 +58,38 @@ export function domSlider(c: SliderSpec, value: number, label: string, onChange:
   if (strip) el.append(strip);
   let current = tToValue(range, valueToT(range, value));
 
+  /**
+   * Mark names, once laid out: CSS places them as the WebGL strip does; with their widths known `mark-layout.ts`
+   * keeps them from touching (shift inward, else a second line under the tick). Runs on every size change.
+   */
+  const fitMarks = (): void => {
+    if (!strip) return;
+    const spans = [...strip.children] as HTMLElement[];
+    const width = strip.clientWidth;
+    if (!width || spans.length !== marks.length) return;
+    const font = parseFloat(getComputedStyle(spans[0] as HTMLElement).fontSize) || 12;
+    const boxes = marks.map((m, i) => ({ t: valueToT(range, m.value), w: spans[i]?.offsetWidth ?? 0 }));
+    const places = layoutMarks(boxes, width, font * 0.75);
+    places.forEach((p, i) => {
+      spans[i]?.style.setProperty('--x', `${p.x.toFixed(1)}px`);
+      if (spans[i]) setClass(spans[i], 'row2', p.row === 1);
+    });
+    setClass(strip, 'laid', true);
+    setClass(strip, 'two', places.some((p) => p.row === 1));
+  };
+  // laid out on the next frame, not inside the observer's callback: a second row of names changes the strip's own
+  // size, which inside the callback is the browser's «ResizeObserver loop» error; one pending fit at a time
+  let fitPending = false;
+  const queueFit = (): void => {
+    if (fitPending) return;
+    fitPending = true;
+    requestAnimationFrame(() => {
+      fitPending = false;
+      fitMarks();
+    });
+  };
+  const sizes = strip && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(queueFit) : null;
+
   /** Tick marks and mark captions follow the range (`ui.patch` may change it). */
   const placeMarks = (): void => {
     ticks.replaceChildren(
@@ -75,6 +108,30 @@ export function domSlider(c: SliderSpec, value: number, label: string, onChange:
         return s;
       }),
     );
+    if (sizes && strip) {
+      setClass(strip, 'laid', false); // new names: the CSS spot until measured
+      sizes.disconnect();
+      sizes.observe(strip);
+      for (const s of strip.children) sizes.observe(s); // a late web font changes the names' widths
+    }
+  };
+  /**
+   * While dragging, the value chip over the thumb stays inside the control (at the ends it would stick out and be
+   * cut by the dock), and the head's label or value hides while the chip covers it.
+   */
+  const fitBubble = (): void => {
+    if (!el.classList.contains('drag')) return;
+    bubble.style.setProperty('--bx', '0px');
+    const b = bubble.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    const dx = Math.max(box.left - b.left, 0) + Math.min(box.right - b.right, 0);
+    bubble.style.setProperty('--bx', `${dx.toFixed(1)}px`);
+    const hits = (e: Element): boolean => {
+      const q = e.getBoundingClientRect();
+      return q.width > 0 && b.left + dx < q.right && q.left < b.right + dx && b.top < q.bottom && q.top < b.bottom;
+    };
+    setClass(el, 'cover-name', hits(name));
+    setClass(el, 'cover-value', hits(out));
   };
   const show = (): void => {
     const t = valueToT(range, current);
@@ -84,6 +141,7 @@ export function domSlider(c: SliderSpec, value: number, label: string, onChange:
     setText(out, text);
     setText(bubble, text);
     input.setAttribute('aria-valuetext', text);
+    fitBubble();
   };
   const update = (v: number, notify: boolean, how: 'drag' | 'jump' | 'step' = 'step'): void => {
     const changed = v !== current;
@@ -135,7 +193,10 @@ export function domSlider(c: SliderSpec, value: number, label: string, onChange:
     fn();
   });
   // the bubble shows while a pointer drags (CSS fades it out 0.35 s after the release, as the WebGL bubble)
-  const drag = (on: boolean) => () => setClass(el, 'drag', on);
+  const drag = (on: boolean) => () => {
+    setClass(el, 'drag', on);
+    fitBubble();
+  };
   input.addEventListener('pointerdown', drag(true));
   for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture', 'blur'] as const)
     input.addEventListener(ev, drag(false));

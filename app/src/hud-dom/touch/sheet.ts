@@ -113,7 +113,7 @@ export function createDomSheet(hud: Hud, parts: ColumnParts): DomSheet {
   const memory = new Map<string, SheetSnap>();
   /** The step's controls sit under the text (a short dock) — no «Керування» tab. */
   let inline = false;
-  /** Height of the panel's own head (reading level, honesty chips) in the text view, units. */
+  /** Height of the panel's own head (reading level) in the text view, units. */
   let panelChrome = 0;
   const kind = (): string => `${has.controls ? (inline ? 'i' : 'c') : ''}${has.board ? 'g' : ''}`;
   const k = (): number => metrics?.pxPerUnit ?? 1;
@@ -241,7 +241,7 @@ export function createDomSheet(hud: Hud, parts: ColumnParts): DomSheet {
         : sheetGeometry(m, titleH, has.board).view.half;
       // a margin against flipping on the edge (the dock's own padding differs a little between the two places)
       const limit = Math.min(INLINE_MAX, room * 0.5) + (inline ? 24 : 0);
-      // and the text keeps a reading window beside the panel's own head (reading level, honesty chips)
+      // and the text keeps a reading window beside the panel's own head (reading level)
       // (the panel's head is measured while the text is on screen; the reader on «Керування» keeps the tab)
       if (tab === 'text' && card === null) panelChrome = parts.panel.chrome();
       const textRoom = room - dockH - panelChrome;

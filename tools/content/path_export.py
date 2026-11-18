@@ -108,9 +108,8 @@ def export_chapter(ch, reg, jn, docs):
         steps.append(dict(
             id=s['id'], title=s['title'], idea=s.get('idea', ''), text=paragraphs(s.get('text', '')), action=s.get('action', ''),
             takeaway=s.get('takeaway', ''), terms=cards(s['terms'], reg), more=paragraphs(s.get('more', '')),
-            recall=[dict(target=r, title=titles.get(r, '')) for r in recall], honesty=s['honesty'],
-            honestyOnAction=s['honestyOnAction'],
-            hints=s['hints'], captions=s['captions'], note=s.get('note', ''), goal=s.get('goal', ''),
+            recall=[dict(target=r, title=titles.get(r, '')) for r in recall],
+            hints=s['hints'], captions=s['captions'], goal=s.get('goal', ''),
             see=s.get('see', '')))
     intro = {t['name']: '%s/%s/%s' % (C.VOLUME, cid, s['id']) for s in ch['steps'] for t in cards(s['terms'], reg)}
     kinds = {t['name']: t['kind'] for t in reg['terms']}
@@ -120,7 +119,8 @@ def export_chapter(ch, reg, jn, docs):
     return dict(schemaVersion=SCHEMA, format='path', volume=C.VOLUME, id=cid, title=ch['title'], layer=j['layer'],
                 group=j['group'], order=j['order'], parent=j['parent'], floor=j['floor'], axisValue=j['axisValue'],
                 minutes=j['minutes'], hook=ch['hook'], know=ch['know'], thread=ch['thread'], now=ch['now'],
-                bridge=ch['bridge'], next=next_chapter(cid, jn, docs), steps=steps, glossary=glossary)
+                bridge=ch['bridge'], labels=ch.get('labels', []), next=next_chapter(cid, jn, docs), steps=steps,
+                glossary=glossary)
 
 
 def runtime(ex, reg):
@@ -137,16 +137,10 @@ def runtime(ex, reg):
         path = dict(idea=s['idea'], action=s['action'], takeaway=takeaway, more=s['more'], marks=marks)
         if s['recall']:
             path['recall'] = s['recall']
-        if s['honesty']:
-            path['honesty'] = s['honesty']
-        if s['honestyOnAction']:
-            path['honestyOnAction'] = s['honestyOnAction']
         if s['hints']:
             path['hints'] = s['hints']
         step = dict(id=s['id'], title=s['title'], panel=text.split(PARA), terms=[term(t['name'], t['card']) for t in s['terms']],
                     path=path)
-        if s['note']:
-            path['note'] = s['note']
         if any(len(c) > 1 for c in s['captions']):
             path['captions'] = s['captions']
         if s['captions']:
@@ -154,6 +148,8 @@ def runtime(ex, reg):
         steps.append(step)
     chapter = dict(layer=ex['layer'], hook=ex['hook'], know=ex['know'], now=ex['now'], bridge=ex['bridge'],
                    next=ex['next'], minutes=ex['minutes'])
+    if ex.get('labels'):
+        chapter['labels'] = ex['labels']
     content = dict(volume=ex['volume'], id=ex['id'], title=ex['title'], group=ex['group'], path=chapter,
                    steps=steps, glossary=[term(g['name'], g['card']) for g in ex['glossary']])
     manifest = dict(volume=ex['volume'], id=ex['id'], title=ex['title'], subtitle=ex['steps'][0]['title'] if ex['steps'] else '',

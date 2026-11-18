@@ -59,24 +59,23 @@ class Parser(unittest.TestCase):
         self.assertEqual(s['hints'], ['Перша.', 'Друга.'])
         self.assertEqual(s['labels'], ['лічильник', 'лупа'])
 
-    def test_paragraphs_note_captions(self):
+    def test_paragraphs_captions(self):
         doc = DOC.replace('- **Текст:** Текст\n  на два рядки.', '- **Текст:**\n  - Перший абзац.\n  - Другий абзац.')
         doc = doc.replace('«лічильник» · «лупа»', '«кульки» → «атоми» · → «ядро» · «лупа»')
-        doc = doc.replace('- **Нові терміни:** —', '- **Чесно:** Кульки намальовані.\n- **Нові терміни:** —')
         ch, err = P.parse_chapter(doc, 'demo')
         self.assertEqual(err, [])
         s = ch['steps'][0]
         self.assertEqual(s['text'], ['Перший абзац.', 'Другий абзац.'])
-        self.assertEqual(s['note'], 'Кульки намальовані.')
         self.assertEqual(s['captions'], [{'text': 'кульки', 'until': 'takeaway'}, {'text': 'атоми', 'at': 'takeaway'},
                                          {'text': 'ядро', 'at': 'takeaway'}, {'text': 'лупа'}])
         _, err = P.parse_chapter(doc.replace('→ «ядро»', '«ядро» →'), 'demo')
         self.assertTrue(any('caption' in e for e in err))
-        doc2 = doc.replace('- **Чесно:**', '- **Позначки:** спрощена модель · → прискорено ×20\n- **Чесно:**')
-        s2 = P.parse_chapter(doc2, 'demo')[0]['steps'][0]
-        self.assertEqual((s2['honesty'], s2['honestyOnAction']), (['спрощена модель'], ['прискорено ×20']))
-        for chip in ('сповільнено ×10¹⁴', 'сповільнено ×5·10¹⁴', 'прискорено ×1 000'):
-            self.assertTrue(P.HONESTY.match(chip), chip)
+        # the honesty marks and «Чесно» note are not shown (DECISIONS §60 x): accepted, never required, dropped
+        for field in ('Позначки', 'Чесно'):
+            old = doc.replace('- **Нові терміни:** —', '- **%s:** спрощена модель\n- **Нові терміни:** —' % field)
+            ch2, err2 = P.parse_chapter(old, 'demo')
+            self.assertEqual(err2, [])
+            self.assertFalse({'honesty', 'note', '-honesty', '-note'} & set(ch2['steps'][0]))
 
     def test_structure_errors(self):
         bad = DOC.replace('### 1. `one`', '### 2. `One`').replace('- **Дія:**', '- **Дії:**')

@@ -24,7 +24,7 @@ const args = parseArgs();
 const zoom = Math.max(1, Number(args.zoom ?? 1));
 const [width, height] = parseSize(args.size).map((v) => Math.round(v / zoom));
 const base = baseUrl(args);
-const out = ensureDir(`${outRoot(args)}/ui-check${hudParam() === 'dom' ? '-dom' : ''}${zoom > 1 ? `-zoom${zoom}` : ''}`);
+const out = ensureDir(`${outRoot(args)}/ui-check${(hudParam() ?? 'dom') === 'dom' ? '-dom' : ''}${zoom > 1 ? `-zoom${zoom}` : ''}`);
 const failures = [];
 const check = (ok, what, detail = '') => {
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${what}${detail ? ` — ${detail}` : ''}`);
@@ -32,7 +32,7 @@ const check = (ok, what, detail = '') => {
 };
 
 const { browser, page } = await launch({ width, height, dpr: zoom });
-let hud = 'gl';
+let hud = 'dom';
 const step = (frames = 45) => page.evaluate((n) => window.__app.step(1 / 60, n), frames);
 const pos = () => page.evaluate(() => window.__app.position());
 const at = async (name) => {

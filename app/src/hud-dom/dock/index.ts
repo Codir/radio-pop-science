@@ -7,7 +7,8 @@
  * (`domColumnParts`); the column takes them back on the desktop shell.
  */
 import { bindingOf, watchBindings, type StepUiBinding } from '@/hud/step-ui';
-import type { DomWidget } from '@/hud/step-ui-types';
+import type { ControlSpec, DomWidget } from '@/hud/step-ui-types';
+import { pathEnd } from '@/hud/path-end';
 import { fullChapterId } from '@/engine/api';
 import { createDomBoard } from '../board';
 import type { DomHud } from '../core/context';
@@ -56,7 +57,9 @@ export function mount(dom: DomHud): void {
   const board = createDomBoard(dom);
   // a visually hidden first stop of the Tab order (HUD_DOM §14): straight to the step's controls
   const skip = h('button.kd-skip', { type: 'button', hidden: true }, 'До керування кроком');
-  skip.addEventListener('click', () => column.dock.querySelector<HTMLElement>('input, button, [tabindex="0"]')?.focus());
+  skip.addEventListener('click', () =>
+    column.dock.querySelector<HTMLElement>('input, button, [tabindex="0"]')?.focus(),
+  );
   /** Back on the desktop shell: the parts the touch sheet re-homed return to the column, in their order. */
   const home = (): void => {
     columnParts?.release?.();
@@ -73,6 +76,15 @@ export function mount(dom: DomHud): void {
   let chapterId = '';
   let stepId = '';
   let time = 0;
+  /** The step's dock controls, and whether the dock shows now: it fades away while none of them is `visible`, and
+   *  while a chapter's closing card stands in the panel (`pathEnd`). */
+  let dockSpecs: readonly ControlSpec[] = [];
+  let dockOn = false;
+  const anyShown = (): boolean =>
+    !pathEnd.shown &&
+    dockSpecs.some(
+      (c) => c.visible === undefined || (typeof c.visible === 'function' ? c.visible() : c.visible),
+    );
 
   const release = (): void => {
     built?.leave();
@@ -101,7 +113,9 @@ export function mount(dom: DomHud): void {
     column.list.parentElement!.hidden = (built?.body.length ?? 0) === 0;
     column.actions.hidden = (built?.actions.length ?? 0) === 0;
     column.list.parentElement!.scrollTop = 0;
-    const has = (built?.body.length ?? 0) + (built?.actions.length ?? 0) > 0;
+    dockSpecs = spec?.controls ?? [];
+    const has = (built?.body.length ?? 0) + (built?.actions.length ?? 0) > 0 && anyShown();
+    dockOn = has;
     column.setDock(has, instant);
     skip.hidden = !has;
     hasBoard = !!spec?.board;
@@ -131,6 +145,13 @@ export function mount(dom: DomHud): void {
       update(dt) {
         time += dt;
         for (const fn of tick) fn(time);
+        // every control of the dock hidden (`visible`): the dock itself fades and gives the room back
+        const on = (built?.body.length ?? 0) + (built?.actions.length ?? 0) > 0 && anyShown();
+        if (on !== dockOn) {
+          dockOn = on;
+          column.setDock(on, false);
+          hud.relayout();
+        }
       },
       onLayout(m) {
         const desk = m.shell === 'desk';
@@ -141,10 +162,13 @@ export function mount(dom: DomHud): void {
         if (!desk) return;
         home();
         // the neighbours' boxes (layout pass: reading layout is allowed here)
-        const region = (n: string): HTMLElement | null => dom.layers.chrome.querySelector(`[data-region="${n}"]`);
+        const region = (n: string): HTMLElement | null =>
+          dom.layers.chrome.querySelector(`[data-region="${n}"]`);
         const header = region('header');
         const nav = region('navigator');
-        const headerBottom = header ? (header.offsetTop + header.offsetHeight) / m.pxPerUnit : m.safeMargin + 58;
+        const headerBottom = header
+          ? (header.offsetTop + header.offsetHeight) / m.pxPerUnit
+          : m.safeMargin + 58;
         const navigatorTop = nav?.offsetParent ? nav.offsetTop / m.pxPerUnit : m.height;
         const taken = column.layout(m, { headerBottom, navigatorTop }, () => {
           built?.layout();
@@ -166,7 +190,7 @@ export function mount(dom: DomHud): void {
     panel,
     dock: column.dock,
     board: board.el,
-    hasDock: () => (built?.body.length ?? 0) + (built?.actions.length ?? 0) > 0,
+    hasDock: () => dockOn,
     hasBoard: () => hasBoard,
     layoutControls() {
       built?.layout();

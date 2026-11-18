@@ -160,7 +160,7 @@ flow.setPathDensity(1, 0.3);     // a branch carries less after a resistance cha
   few hundred items; `speed` and `density` are tweenable.
 - Pure helpers: `bakePath`, `samplePath`, `tangentPath`, `concatPaths`.
 - Honesty: real drift speeds are mm/s and AC is 50 Hz — flows are slowed and exaggerated; show the
-  «сповільнено ×N» chip (DECISIONS §5).
+  «сповільнено ×N» chip (DECISIONS §5; superseded for the step panel by §60 x).
 
 ## 4. Conductors & beams
 

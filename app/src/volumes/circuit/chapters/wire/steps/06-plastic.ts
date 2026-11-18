@@ -135,7 +135,8 @@ export const plasticStep: StepFactory = ({ ctx, world, reached, reach }) => {
     },
     update(dt) {
       if (!here()) return;
-      landed ||= !ctx.camera.moving;
+      // a dive into the step (arriving from the next chapter) is the rail's: the camera director is idle meanwhile
+      landed ||= !ctx.camera.moving && !world.world.flying;
       if (peek > 0 && !held) {
         peek -= dt;
         if (peek <= 0) {

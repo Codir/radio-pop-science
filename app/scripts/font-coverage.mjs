@@ -57,7 +57,7 @@ const FIELDS = [
   'now.*',
   'next.title',
   'steps.*.{idea,text,action,takeaway}',
-  'steps.*.{more,honesty}.*',
+  'steps.*.more.*',
   'steps.*.recall.*.title',
   'steps.*.terms.*.{name,card}',
   'glossary.*.{name,card}',

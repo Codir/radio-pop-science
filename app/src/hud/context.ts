@@ -22,8 +22,8 @@ export interface TouchHooks {
   sheet: SheetControl | null;
 }
 
-/** Full-screen views and modal overlays; `quiz` exists only in the DOM interface (the WebGL quiz is a card of the step panel). */
-export type OverlayName = 'library' | 'map' | 'home' | 'settings' | 'glossary' | 'help' | 'menu' | 'quiz';
+/** Full-screen views and modal overlays; `quiz` and `reset` (the «Почати з нуля» confirmation) exist only in the DOM interface (the WebGL quiz is a card of the step panel, the WebGL reset a button in settings). */
+export type OverlayName = 'library' | 'map' | 'home' | 'settings' | 'glossary' | 'help' | 'menu' | 'quiz' | 'reset';
 
 export interface HudContext {
   readonly engine: Engine;

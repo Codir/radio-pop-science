@@ -8,6 +8,8 @@
 //   scene objects  `__app.locate('<probe>')`   (the chapter's `ctx.qa.probe`)
 //   chapter state  `__app.read('<name>')`      (the chapter's `ctx.qa.expose`)
 
+import { sheetTab as openSheetTab } from '../../../../../../../tools/qa/sheet-tab.mjs';
+
 /** Advance the frozen engine clock by `seconds` (QA runs with ?freeze, so nothing moves by itself). */
 export async function advance(page, seconds) {
   await page.evaluate((n) => window.__app.step(1 / 60, n), Math.max(1, Math.round(seconds * 60)));
@@ -93,6 +95,9 @@ export async function dragProbe(page, name, fx, fy, { settle = 0.6 } = {}) {
     await advance(page, after);
   };
 }
+
+/** Open a tab of the narrow window's bottom sheet (`text` | `controls`): tools/qa/sheet-tab.mjs. */
+export const sheetTab = (page, id) => openSheetTab(page, id, (p) => advance(p, 0.2));
 
 /** Click a scene object by its probe. */
 export async function clickProbe(page, name) {

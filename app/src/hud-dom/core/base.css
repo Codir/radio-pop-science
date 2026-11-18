@@ -191,10 +191,6 @@ sub {
   font-family: var(--mono);
   font-weight: 500;
 }
-.chip.honesty {
-  --tone-rgb: var(--c-amber-rgb);
-  font-weight: 600;
-}
 .chip.term {
   font-weight: 600;
 }

@@ -1,6 +1,6 @@
 /**
  * DOM step panel (WebGL twin `hud/step-panel.ts`): head with «КРОК n / N» and the «Просто | Докладно» switch,
- * step title, honesty chips, paged rich text with its page bar (the last page's «next» goes on to the next
+ * step title, paged rich text with its page bar (the last page's «next» goes on to the next
  * step), the sections, «Див. також» and the quiz entry. All copy comes from the shared model
  * (`hud/model/step.ts`) at the reading level in effect (L1's selector).
  *
@@ -12,13 +12,13 @@ import type { ChapterContent } from '@/content';
 import { QUIZ_TITLE, STEP_PENDING, stepModel, type StepModel } from '@/hud/model/step';
 import { onReadingLevel } from '@/hud/level';
 import { pathStepModel } from '@/hud/model/path-step';
+import { pathEnd } from '@/hud/path-end';
 import { RecallTrail } from '@/hud/recall';
 import { bindingOf } from '@/hud/step-ui';
 import type { Hud } from '@/hud/shell';
 import { h, scrollArea, setClass, setStyle, setText } from '../core/dom';
 import { icon } from '../core/icons';
 import { nbDash, prose } from './typo';
-import { createBadges } from './badges';
 import { createLevelSwitch } from './level-switch';
 import { buildPathBody, type PathBody } from './path-body';
 import { buildDomLinks } from './links';
@@ -55,7 +55,6 @@ export function createDomStepPanel(hud: Hud): DomStepPanel {
   const counter = h('div.kicker.sp-count', { 'aria-hidden': 'true' });
   const level = createLevelSwitch(engine);
   const title = h('h2.sp-title', { id: 'kd-step-title' });
-  const badges = createBadges();
   const pages = h('div.pages');
   const extra = h('div.sp-extra');
   const scroll = scrollArea(
@@ -89,7 +88,6 @@ export function createDomStepPanel(hud: Hud): DomStepPanel {
     { 'data-ui': 'step-panel', 'aria-labelledby': 'kd-step-title' },
     head,
     title,
-    badges.el,
     scroll,
     bar,
   );
@@ -116,7 +114,8 @@ export function createDomStepPanel(hud: Hud): DomStepPanel {
     if (openKey === key) return;
     const until = bindingOf(fullChapterId(manifest))?.specs.get(stepId)?.panel?.hiddenUntil;
     const root = document.documentElement.classList;
-    const go = until === undefined || root.contains('kd-reduced') || (typeof until === 'function' ? until() : until);
+    const go =
+      until === undefined || root.contains('kd-reduced') || (typeof until === 'function' ? until() : until);
     if (!go) {
       if (!held) setClass(el, 'held', (held = true));
       return;
@@ -140,11 +139,33 @@ export function createDomStepPanel(hud: Hud): DomStepPanel {
     page = Math.min(Math.max(i, 0), Math.max(list.length - 1, 0));
     const all = flow && path === null;
     list.forEach((p, k) => (p.hidden = !all && k !== page));
+    // the path format's closing card over the last step: chapters read it, «back» returns to the step first
+    const ending = path !== null && list[page]?.dataset.ui === 'path-closing';
+    const card = path !== null ? list.findIndex((p) => p.dataset.ui === 'path-closing') : -1;
+    pathEnd.shown = ending;
+    pathEnd.back = ending ? () => turnTo(list.findIndex((p) => p.dataset.ui === 'path-step')) : null;
+    // the last step of a chapter: «Далі» brings its closing card first (it is a state of the step, no extra dot)
+    pathEnd.forward =
+      card >= 0 && !ending && list[page]?.dataset.ui === 'path-step' ? () => turnTo(card) : null;
     // a path chapter has no pager: its opening card has a button forward and the step a link back
     bar.hidden = list.length < 2 || path !== null || flow;
     setText(pageLabel, `${page + 1} / ${list.length}`);
     prev.disabled = page === 0;
     scroll.scrollTop = 0;
+  };
+  /** The text gives way to another page with a calm dip (the closing card coming over the last step, and back). */
+  const turnTo = (i: number): void => {
+    if (document.documentElement.classList.contains('kd-reduced')) return showPage(i);
+    const tweens = hud.host.tweens;
+    const apply = (): void => {
+      const o = fade.o >= 1 ? '' : fade.o.toFixed(3);
+      setStyle(scroll, 'opacity', o);
+      setStyle(title, 'opacity', o);
+    };
+    tweens.to(fade, { o: 0 }, { duration: 0.35, ease: 'power1.in', onUpdate: apply, onComplete: () => {
+      showPage(i);
+      tweens.to(fade, { o: 1 }, { duration: 0.7, ease: 'power1.out', onUpdate: apply });
+    } }); // prettier-ignore
   };
   prev.addEventListener('click', () => showPage(page - 1));
   // like the WebGL pager: «next» on the last page goes on to the next step
@@ -168,19 +189,17 @@ export function createDomStepPanel(hud: Hud): DomStepPanel {
     const key = `${fullChapterId(m)}/${id}`;
     setText(counter, pm.counter);
     setText(title, nbDash(pm.title));
-    badges.el.hidden = true;
     const spec = bindingOf(fullChapterId(m))?.specs.get(id);
     const goal = spec?.goal;
-    const acting = spec?.acting;
     const body = buildPathBody(pm, {
       hud,
       scroll,
       trail,
       goal,
-      acting,
       reached,
       key,
-      goPage: (i) => showPage(i),
+      goPage: (i, smooth) => (smooth ? turnTo(i) : showPage(i)),
+      closingWhen: spec?.panel?.closingWhen,
     });
     // the first step opens on the chapter's opening card unless its goal was reached before (a way back)
     const start = pm.opening && !reached.has(key) ? 0 : pm.opening ? 1 : 0;
@@ -235,7 +254,6 @@ export function createDomStepPanel(hud: Hud): DomStepPanel {
     onChapter(m) {
       manifest = m;
       stepId = engine.store.get().stepId ?? m.steps[0]!.id;
-      badges.show(m, stepId);
     },
     onContent(c) {
       content = c;
@@ -246,7 +264,6 @@ export function createDomStepPanel(hud: Hud): DomStepPanel {
       if (id === stepId && pages.children.length > 0) return;
       stepId = id;
       openKey = '';
-      badges.show(manifest, id);
       if (instant) return fill();
       // the page-turn dip of the WebGL panel, on the engine clock (deterministic under ?freeze)
       const tweens = hud.host.tweens;
@@ -261,7 +278,6 @@ export function createDomStepPanel(hud: Hud): DomStepPanel {
       } }); // prettier-ignore
     },
     update: () => {
-      badges.update();
       panelGate();
       path?.tick(held);
     },

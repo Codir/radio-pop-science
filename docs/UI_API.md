@@ -12,7 +12,7 @@ Reference implementations that are compiled with the app and exercised by the QA
 | Kitchen sink: every widget, HUD and world placement, realistic content | `app/src/volumes/_dev/chapters/_sandbox-ui/` |
 
 Contents: 1 what you get for free · 2 content.ts · 3 step UI (`stepUi`) · 4 controls & readouts · 5 callouts &
-hotspots · 6 honesty chips · 7 charts · 8 world consoles and custom HUD · 9 journey-map emblem · 10 widget
+hotspots · 6 honesty chips (superseded) · 7 charts · 8 world consoles and custom HUD · 9 journey-map emblem · 10 widget
 reference · 11 layout & painting your own widget · 12 formatting numbers · 13 QA · 14 do / don't.
 
 ## 1. What a chapter gets without writing UI code
@@ -108,7 +108,6 @@ const ui = stepUi(ctx);                    // once per scene
 ui.define({
   'iv-curve': {
     hint: 'Покрутіть реостат і знайдіть максимум потужності',     // toast on entering the step
-    honesty: ['simplified', { slowed: 50 }],                       // chips under the step title (§6)
     controls: [ /* §4 */ ],
     callouts: [ /* §5 */ ],
     hotspots: [ /* §5 */ ],
@@ -140,7 +139,7 @@ for chapters that wrap it.
 - Every control, also inside segmented/tables/readouts/gauges/charts, is named `ctl-<id>`; segmented items are
   `ctl-<id>:<item id>` — `__ui.locate()` finds them in dev and production builds.
 - `visible: boolean | () => boolean` (and `disabled` for inputs) on every control: re-evaluated every frame, the
-  control fades in / out and gives its room back. Same field on honesty chips, callouts, hotspots and the board.
+  control fades in / out and gives its room back. Same field on callouts, hotspots and the board.
 
 ### 3.1 Height budget of the step column (wide layout, ≥ 16:10)
 
@@ -265,7 +264,10 @@ hotspots: [
 - `visible` hides a callout / hotspot by state: it fades out at its real place (no "anchor behind the camera").
 - Plain Ukrainian in every label you write (DECISIONS §54); abbreviations only where needed, in parentheses.
 
-## 6. Honesty chips (DECISIONS §5 — mandatory)
+## 6. Honesty chips — superseded (DECISIONS §60 x)
+
+**Superseded by DECISIONS §60 x:** the step panel shows no honesty chips; `stepUi … honesty` is ignored (kept
+only so volume 1's declarations compile). Do not add it to new steps. The former rule, for the record:
 
 Every slowed-down, scaled or simplified visual carries a chip. Declare it on the step:
 `honesty: ['notToScale', 'simplified', 'illustrative', { slowed: 1000 }, { sped: 60 }, { enlarged: 1000 }]`
@@ -497,7 +499,7 @@ QA_HUD=dom node app/src/volumes/electricity/chapters/atom/qa/interactions.mjs --
 ## 14. Do / don't
 
 **Do** declare step UI with `stepUi`; put all text in `content.ts`; label every interactive object with a tooltip;
-add honesty chips; use `fmt*` for every number; use `UI_STATUS` / `PLANT_TYPE` / `FLOW` / `SEMANTIC` colours; keep one primary
+use `fmt*` for every number; use `UI_STATUS` / `PLANT_TYPE` / `FLOW` / `SEMANTIC` colours; keep one primary
 button per step; put big charts and tables on the `board`; write your own labels in plain Ukrainian (§54); test at
 1280×720, in portrait and at 4K, with `__ui.offscreen()` empty.
 

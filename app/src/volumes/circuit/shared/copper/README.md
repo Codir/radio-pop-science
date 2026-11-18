@@ -117,7 +117,7 @@ see «Hand-over»). The counter frame is shown as a window by perspective alone:
   in three layers 2 · 8 · 18 that flow slowly (`soft-dots.ts`, `shells.ts`); the 29th, outer electron farther out
   and drawn as the bright electron character. No orbit lines.
 - **Plastic** — violet atoms in wavy zigzag chains, one electron per atom on a short thread (`plastic.ts`).
-- **Stated simplifications** for the panel's honesty marks: electrons as small balls; the wire, atom and nucleus
+- **Stated simplifications** (no longer shown on the panel — DECISIONS §60 x): electrons as small balls; the wire, atom and nucleus
   are not to scale; motion slowed by many orders of magnitude; polymer chains simplified to one kind of atom.
 
 ## Performance (RTX 5060, quality `high`, `tools/qa/chapter-check.mjs _dev/_sandbox-circuit-copper`)
@@ -188,3 +188,54 @@ area evenly (1.06 – 1.68, radius ∝ √), the warm-up of the core goes 55 % o
 `qa/W2-circuit-copper/sweep.mjs` (showcase steps `sweep`, `sweep-off`) runs 0 → 2 → 0 and prints the largest
 step of the mean frame luminance and colour between neighbouring samples; with 240 samples each way the largest
 is 1.4 / 255 of luminance (a discontinuity would not shrink with finer sampling; these do).
+
+## Additions of chapter 4 (`B-circuit-flow`, 2026-11-17) — the common drift made visible
+
+| Addition | Default | What for |
+|---|---|---|
+| `sim.leash` (units) | 0 (off: free roaming, as before) | Every electron darts about a home of its own, never farther than `leash` from it; the homes are carried along X by `sim.drift` together, so the crowd keeps its pattern and the whole of it slides while each electron still darts. Without it a drift of 3–6 % is lost in the darting. Homes are taken where the electrons are when it engages (nothing moves). Collisions apply as before. `flow/connect` uses 1.7 with the world's drift 6 % (`mountWorld(ctx, { drift: 0.06 })`). Unit-tested (`__tests__/leash.test.ts`). For chapter 5: collisions with the leash on simply bounce the electron, which then turns back toward its sliding home. |
+| `sim.box` `{ x, y }` | 15.5 × 8.6 | Half-size of the focus electrons' periodic box. Seen through the lens window (8.5 units across) `flow` shrinks it to window radius + leash + 0.3 (6.25 × 6.25), so the same 32 electrons crowd the glass (≈ 12 visible). Wrapping is now a modulo (an electron outside a new box is folded in at once). |
+
+## Additions of chapter 5 (`B-circuit-resistance`, 2026-11-17) — the hit, the run, the heat
+
+Every addition is a new file or a parameter whose default reproduces the earlier behaviour (chapters 1 and 4 unchanged).
+
+| Addition | Default | What for |
+|---|---|---|
+| `sim.field` (units/s²), `sim.restart` (units/s), `sim.runSpeed` (read) — `run.ts` | 0 (off), 7 | The marked electron's run (`resistance/bumps`): with `field` > 0 the followed electron (`copper.marked`) no longer turns at random; the field speeds it up toward −X (the plus) between atoms, so its path bends; at every atom it hits it bounces off and starts again at `restart` — it loses its run; near the edge of the frame the bounce is turned back toward the middle (never a hit that is not one). The leash does not hold it. Top speed 2.4 × `restart`. `bumps` uses field 9, restart 6.5: ≈ 2 hits a second. Unit-tested (`__tests__/run.test.ts`). |
+| `sim.onHit(electron, site)` | null | Called for every contact of a focus electron with an atom (the same contact may report on two frames: debounce). `hits.ts` owns it. |
+| `electrons.bend` (radians) | 0 (off) | The marked electron's path keeps a point every `bend` of a gentle turn, so a run curved by the field is drawn curved (only sharp turns were kept). `bumps`: 3°. |
+| `lattice.kick(site, flash, shake)` | — | A hit: the atom flashes `orange` (`flash` 0…1, decays in ≈ 0.5 s) and trembles harder and faster (`shake`, units of extra amplitude, settles in ≈ 1 s). Nothing changes until called. |
+| **`createHits(copper)`** (`hits.ts`) — the hit counter | — | Counts hits: `marked` (the marked electron's, since `reset()`), `total`, `rate` (hits/s, smoothed), `last` (`{ site, at, time }` of the marked electron's latest hit), `time`. Shows them: every hit of the marked electron flashes its atom and the trembling runs on to the two neighbours it pushed toward 0.11 s later (VISUAL §6 «Удар»); `flashRate` (default 0) lets that many hits of the other electrons flash per second (`heat`: 2.2 × (I / 0.3 A)²; `balance` 1.2); `show` 0…1 scales the flashes (0 = counted only). Call `update(dt)` after `copper.update`. **For `drain/inner`:** mount it once; its `rate` is the live hit rate of the window's crowd, its flashes need nothing else. |
+| **`createHitLens()`** (`hit-lens.ts`) — «Лупа з лічильником ударів» (VISUAL §5.7) | — | Add `group` to `stand.tools.lens.group`. `fill` 0…1: a thin strip over the top of the ring, filling from the left (above 0.9 it breathes `orange` with a soft additive glow); `shown` 0…1; `frost` 0…1: ground glass over the glass and over anything in the lens window (render order 950, after the window's copper); `light` = the room's light (unlit materials); `update(dt, t)`. `balance` fills it by place: wires and switch 0.02, battery 0.04, lamp 1 (script). **For `drain/inner`:** the same strip over the battery (full when the battery is dead): set `fill` from the battery's internal resistance, or from `hits.rate` scaled to the lamp's rate. |
+| `trembleHeat(amps, at = 0.3, top = WORKING_HEAT)` (`joule.ts`) | — | `lattice.heat` for a current: ∝ I² (Joule – Lenz), `WORKING_HEAT` 0.58 at 0.3 A = trembling 8 % of the diameter (VISUAL §6). `heat` drives it from the lamp's glow (`currentOfHeat`). |
+
+`lattice.heat` itself is unchanged (trembling × (1 + 3.8 heat), orange rim through the haze).
+
+## Files (index, 2026-11-17)
+
+- `atom.ts` — One copper atom from the inside (VISUAL §6, floor «один атом»): the nucleus is one small glowing coral ball (drawn far too big — «ядро збіль…
+- `backdrop.ts` — The air of the lower floors.
+- `copper.ts` — «Усередині міді» — the lower floors of the volume `circuit` as one object a chapter mounts (README.md).
+- `core-shader.ts` — The copper of the wire core.
+- `core.ts` — The floor «жила дроту»: the copper core of the wire as the stand hands it over.
+- `electron-rules.ts` — What a free electron may not do in the picture: fly through an atom, leave the piece of copper it belongs to, or enter the plastic.
+- `electron-sim.ts` — The restless crowd: free electrons as points flying straight, turning at random and off the atoms — everywhere and, on average, nowhere (`wi…
+- `electrons.ts` — How the free electrons are drawn (VISUAL §6, §4): bright cyan dots a sixth of an atom across with a short tail whose length follows the spee…
+- `gate.ts` — The counter frame among the atoms (`wire/restless`; later `flow/count`): the same thin teal frame that sits around the wire on the stand (VI…
+- `haze.ts` — The haze of an atom's own electrons: a soft camera-facing veil around every atom, densest at the limb of the sphere and gone by 1.7 radii (V…
+- `hit-lens.ts` — «Лупа з лічильником ударів» (VISUAL §5.7; `resistance/balance`, `drain/inner`).
+- `hits.ts` — The hit counter of the copper world (`resistance/*`, later `drain/inner`): every time a free electron of the focal slab runs into an atom (`…
+- `joule.ts` — How hard the atoms of a wire tremble for a current (`resistance/heat`, later `lamp/*`): the heat a current makes goes with its square (Joule…
+- `lattice.ts` — The rows of copper atoms (VISUAL §6): matte coral spheres without marks, each wrapped in a faint haze of its own electrons; the planes behin…
+- `layout.ts` — Geometry of «усередині міді» in the local units of the copper world (VISUAL §6).
+- `lean.ts` — The crowd leaning to one side (`charge/shift`): a field outside the copper drives the free electrons toward the far end of a piece until the…
+- `lens-rim.ts` — The rim of the magnifier, as it stays on screen below the stand (VISUAL §3): after the flight through the ring «обідок розходиться за краї к…
+- `look.ts` — Light and lens of the lower floors, for the chapter that mounts the copper world: pass `copperEnv(lamp, group)` as a step's `envTune` and `c…
+- `mount.ts` — Putting the copper world where the stand hands the reader over (`W1-circuit-stage`, `HANDOVER` in `shared/stage/shots.ts`): the camera looks…
+- `plastic.ts` — The plastic sheath from the inside (`wire/plastic`, VISUAL §6): atoms of another tint (violet), not in rows but in long wavy chains, and eve…
+- `run.ts` — The run of one electron in the field (`resistance/bumps`, VISUAL §6 «Удар»): between atoms the field speeds it up toward the plus (−X of the…
+- `shells.ts` — The blur of an atom's electron layers: three soft bands of light around the nucleus and a fainter fourth where the outer electron lives.
+- `shots.ts` — Camera shots of the copper world, in its own frame (origin = the hero atom, X = the wire, +Z = toward the reader).
+- `soft-dots.ts` — Soft dots: additive camera-facing blobs without an edge — how an atom's own electrons are drawn when the reader is inside the atom (VISUAL §…
+- `streaks.ts` — Tails of the free electrons: one tapered streak per electron, from where it is back along its flight.

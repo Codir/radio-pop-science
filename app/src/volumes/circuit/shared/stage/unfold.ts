@@ -229,9 +229,11 @@ export function createUnfold(stand: Stand, torch: Torch, T: TorchDims = TORCH, B
     place(stand.slider, torchPose(local.sliderT), pose(PLACE.slider), e.slider, 0.35);
     sliderP.copy(stand.slider.position);
     sliderQ.copy(stand.slider.quaternion);
+    // open = back along the slider's own −x: toward the flashlight's tail in the torch, to the left on the
+    // stand — the same local direction all the way, so the hand-over never makes it jump
     stand.slider.position.addScaledVector(
       tmp.copy(X).applyQuaternion(sliderQ),
-      clamp01(open) * SLIDER_TRAVEL,
+      -clamp01(open) * SLIDER_TRAVEL,
     );
 
     // the lamp: out of the mirror's place and up above the socket, turning upright; then one turn down into it

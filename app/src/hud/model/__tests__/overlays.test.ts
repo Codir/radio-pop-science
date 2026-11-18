@@ -77,6 +77,7 @@ describe('quiz run', () => {
 const volume = {
   id: 'c',
   format: 'path',
+  seamless: false,
   journey: {
     groups: [{ id: 'path', label: 'Шлях' }],
     axis: { floors: [{ id: 'f', label: 'атом', plain: 'кулька', namedAt: 'one/s2' }] },

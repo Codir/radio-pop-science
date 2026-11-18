@@ -53,7 +53,11 @@ export interface HudMetrics {
   readonly layout: HudLayout;
   /** Safe margin (3 % of the short side) in HUD units. */
   readonly safeMargin: number;
-  /** Device form factor, orientation and primary pointer (F5; `desktop` / `fine` on desktops). */
+  /**
+   * Device form factor, orientation and primary pointer (F5; `desktop` / `fine` on desktops). The forced desktop
+   * shell (`Settings.deskShell`) reports `desktop` here — the form factor the HUD lays out for — and the device's
+   * real pointer; `engine.device` keeps the real form factor.
+   */
   readonly formFactor: FormFactor;
   readonly orientation: Orientation;
   readonly pointer: PointerKind;
@@ -71,9 +75,23 @@ export interface HudMetrics {
 export const TOUCH_MIN_PX_PER_UNIT = 1;
 const DESK_MIN_PX_PER_UNIT = 0.7;
 
-export function shellOf(device: Pick<DeviceState, 'formFactor' | 'orientation'>): HudShell {
-  if (device.formFactor === 'desktop') return 'desk';
+/**
+ * The shell for a device. `deskShell` is the reader's «Версія для комп'ютера» (`Settings.deskShell`): a phone or
+ * tablet then gets `desk` too — with a computer's metrics (see `HudLayer.setViewport`), its touch input unchanged.
+ */
+export function shellOf(device: Pick<DeviceState, 'formFactor' | 'orientation'>, deskShell = false): HudShell {
+  if (device.formFactor === 'desktop' || deskShell) return 'desk';
   return device.orientation === 'portrait' ? 'sheet' : 'side';
+}
+
+/**
+ * The device as layouts see it — the HUD's metrics and the chapters' `ctx.device`: under the forced desktop shell
+ * a computer of this viewport (`formFactor: 'desktop'`), so the interface and the scene (prints and labels kept
+ * off phones, callout limits, camera re-framing) look as a computer shows them. Pointer, hover, safe area and the
+ * pixel budget stay the device's: touch keeps working, the quality tier and frame cost stay the phone's.
+ */
+export function layoutDevice(device: DeviceState, deskShell: boolean): DeviceState {
+  return deskShell && device.formFactor !== 'desktop' ? { ...device, formFactor: 'desktop' } : device;
 }
 
 /** Vertical field of view of the HUD camera: narrow, so depth layering is subtle rather than fish-eyed. */
@@ -107,6 +125,7 @@ export class HudLayer {
   private readonly events = new Emitter<{ resize: HudMetrics; insets: Insets }>();
   private readonly insetsUnits = { left: 0, right: 0, top: 0, bottom: 0 };
   private textScale = 1;
+  private deskShell = false;
 
   constructor() {
     this.scene.name = 'hud';
@@ -166,12 +185,23 @@ export class HudLayer {
     this.setViewport(this.current.cssWidth, this.current.cssHeight);
   }
 
+  /** @internal The reader's «Версія для комп'ютера» (`Settings.deskShell`). */
+  setDeskShell(on: boolean): void {
+    if (on === this.deskShell) return;
+    this.deskShell = on;
+    this.setViewport(this.current.cssWidth, this.current.cssHeight);
+  }
+
   /** @internal Viewport changed (CSS px). */
   setViewport(cssWidth: number, cssHeight: number): void {
     const w = Math.max(cssWidth, 1);
     const h = Math.max(cssHeight, 1);
-    const d = this.device;
-    const touch = d.formFactor !== 'desktop';
+    const d = layoutDevice(this.device, this.deskShell);
+    const shell = shellOf(d);
+    // the forced desktop shell lays out exactly as a computer at this viewport: desktop form factor and unit
+    // floor; the pointer stays the device's (a desktop with a coarse pointer — a big touch screen — is a case
+    // the desktop shell already serves), so touch picking and hit slop keep working
+    const touch = shell !== 'desk';
     // px-equivalent scale: proportional to the viewport, but never so small that 14-unit captions become
     // unreadable; on phones and tablets a unit is at least one CSS px (TOUCH_MIN_PX_PER_UNIT)
     const base = Math.min(h, (w * 9) / 16) / 1080;
@@ -191,7 +221,7 @@ export class HudLayer {
       formFactor: d.formFactor,
       orientation: d.orientation,
       pointer: d.pointer,
-      shell: shellOf(d),
+      shell,
       safeArea: {
         top: d.safeArea.top / pxPerUnit,
         right: d.safeArea.right / pxPerUnit,

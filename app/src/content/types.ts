@@ -129,14 +129,8 @@ export interface PathStep {
   more: readonly string[];
   marks: readonly { text: string; term: string }[];
   recall?: readonly PathRecall[];
-  /** Honesty chips («спрощена модель», «не в масштабі», «сповільнено ×1000»). */
-  honesty?: readonly string[];
-  /** Chips marked `→` in «Позначки»: they appear with the reader's action (`StepUiSpec.acting`). */
-  honestyOnAction?: readonly string[];
   /** Hints for a stuck reader: the first after 15 s, the second after 40 s. */
   hints?: readonly string[];
-  /** «Чесно про картинку»: what exactly the picture simplifies (shown under the honesty chips). */
-  note?: string;
   /**
    * Timing of the step's captions (`StepContent.labels`, same order), present when some caption changes at the
    * takeaway: `until` — shown until the takeaway, `at` — appears at the takeaway.
@@ -155,6 +149,8 @@ export interface PathChapter {
   now: readonly string[];
   /** «Місток» — ends with the next chapter's question. */
   bridge: string;
+  /** Chapter-level captions («Підписи глави»): at the volume's end, [0] is the closing card's «start over». */
+  labels?: readonly string[];
   /** The chapter the bridge leads to (built or planned); null at the end of the journey. */
   next: { id: string; title: string } | null;
   minutes: number | null;

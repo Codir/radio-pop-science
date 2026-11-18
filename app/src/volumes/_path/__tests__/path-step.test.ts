@@ -24,7 +24,7 @@ describe('path step model', () => {
       },
     ]);
     expect(m.action).toMatch(/^Приєднайте/);
-    expect(m.honesty).toEqual(['не в масштабі', 'сповільнено ×1000']);
+    expect(m).not.toHaveProperty('honesty');
     expect(m.opening?.know).toMatch(/провідник/);
     expect(m.closing).toBeNull();
   });

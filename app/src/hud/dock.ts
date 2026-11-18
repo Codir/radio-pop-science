@@ -11,7 +11,7 @@ import { Panel, ScrollView, Tabs, UiNode, conceal, reveal, worldConsoles } from 
 import { fullChapterId, type HudMetrics } from '@/engine/api';
 import { createBoard } from './board';
 import type { HudContext, HudModule } from './context';
-import { bindVisible, buildControls, honestyChips, type BuiltControls } from './dock-build';
+import { bindVisible, buildControls, type BuiltControls } from './dock-build';
 import { COLUMN_GAP, columnBudget } from './model/column';
 import { PANEL_WIDTH, createStepPanel } from './step-panel';
 import { bindingOf, watchBindings, type StepUiBinding } from './step-ui';
@@ -263,7 +263,7 @@ export function createStepColumn(hud: HudContext, popups: UiNode, header: UiNode
     hintOff?.();
     hintOff = null;
     // the DOM column draws the controls (and owns the binding's hooks): this column only keeps the step's
-    // honesty chips, hint and annotations going
+    // hint and annotations going
     const own = !columnBridge.domOwns();
     if (binding && own) binding.push = binding.repatch = binding.flash = null;
     binding = bindingOf(chapterId) ?? null;
@@ -296,9 +296,7 @@ export function createStepColumn(hud: HudContext, popups: UiNode, header: UiNode
     if (has) reveal(dock, { instant, dy: -10 });
     else conceal(dock, { instant });
     if (!has) tabs.value = 'text';
-    const chips = honestyChips(spec?.honesty, relayout);
-    panel.setBadges(chips.chips);
-    tick = [...(built?.tick ?? []), ...(boardBuilt?.tick ?? []), ...chips.tick];
+    tick = [...(built?.tick ?? []), ...(boardBuilt?.tick ?? [])];
     board.show(own ? (spec?.board ?? null) : null, boardBuilt?.body ?? [], boardBuilt?.actions ?? [], instant);
     const boardWhen = own ? bindVisible(board.node, spec?.board?.visible, relayout, { dy: 0 }) : null;
     if (boardWhen) tick.push(boardWhen);

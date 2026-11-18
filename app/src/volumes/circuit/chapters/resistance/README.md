@@ -1,0 +1,34 @@
+# Chapter `circuit/resistance` — «Що заважає струму?»
+
+Script: `docs/volumes/circuit/chapters/resistance.md` (all reader text from `content/generated/resistance.json`,
+captions by position — `__tests__/manifest.test.ts`). World: `@circuit/shared/world` (stand + copper, drift 6 % as in
+`flow`). First frame: the stand shot with the lamp on (the frame `flow/push` ends on), then the dive; last frame: the
+stand shot, lamp on, lens in its holder.
+
+## Files
+
+| File                                    | What                                                                                                                                                                                                                                                              |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scene.ts` · `chapter.ts`               | orchestrator (world → step modules → `world.define` + `stepUi.define`); the entry dive when the reader comes from another chapter of the volume (`stand.diveIn`)                                                                                                  |
+| `stand.ts`                              | the world, the hit counter (`shared/copper/hits.ts`), the switch, the thermometer, the snake and the counter frame in amperes; every prop a number that travels (`parts/glide.ts`); the lamp follows the snake's current (`setGlow(heatOfCurrent(I))`, floor 0.1) |
+| `parts/switch.ts`                       | the slider as a direct control (`heat`)                                                                                                                                                                                                                           |
+| `parts/thermometer.ts`                  | the column clipped to the right side of the loop beside the lens window, drawn 2.95× (`heat`)                                                                                                                                                                     |
+| `parts/snake-path.ts` · `snake.ts`      | the far wire `m2` as a meander of five folds (ten runs at any k), pure geometry of `k` (1 … 40), and its tube (m2's sheath material, the same copper with a warm ember as the lamp dims; the stand's piece hidden while it shows); the cyan grip                  |
+| `parts/lens-track.ts` · `poses.ts`      | `balance`: the loop as the lens's track (sticky stops on parts and terminals, what lies under the lens); lens poses over any loop point                                                                                                                           |
+| `parts/electron-proxies.ts` · `ring.ts` | the moving pick balls and the hover ring of `wire/restless` (copied: chapters do not import each other)                                                                                                                                                           |
+| `qa/interactions.mjs`                   | every goal by real pointer input, continuity sampling on every step entry, first/last frame                                                                                                                                                                       |
+
+## Steps
+
+| Step      | Reader does → goal                                                                | Notes                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bumps`   | taps a free electron → 5 hits after it                                            | entry: stand shot → the rail's timed travel −½ → 2 in 2.8 s (lens up, onto the wire, through the ring); from the stand (Назад): camera to the lens 0.9 s + rail 1.9 s; `sim.field` 9, `restart` 6.5, path bends every 3°; «удар» at the first hit (2 s), «опір» at the goal's hit                                                                                                                                           |
+| `heat`    | taps the switch open, closed again → 3 s closed                                   | from the rows: the rail's timed rise 2 → 0 in 2 s, then one camera move out to the step's own closer shot `resistance-heat` (1.2 s: lens, thermometer, switch, lamp); the lens glides to the right side of the loop as a window (between the switch and the lamp, so the switch stays free); thermometer at z = −0.62 on the same wire; `lattice.heat` = `trembleHeat(I)`, column one tick's height above the tick in ≈ 3 s |
+| `shape`   | drags the cyan grip toward the middle of the board → k = 40 («0,09 A»)            | lens to the holder, the frame onto the same wire where it comes down the left side (seen face-on, as in `flow/count`); the grip's board depth is the stretch (`stretchOf`), the snake follows within 0.06 s; on leaving it returns in 1.5 s                                                                                                                                                                                 |
+| `balance` | carries the lens round the loop → 1 s each on minus wire, plus wire, switch, lamp | strip 2 % / 4 % / full; frost over battery and lamp (the window shuts first, the frost comes as far as it is shut); over the lamp the lens rises to the globe (1.55×); «0,3 A» over the board at the takeaway; 3.5 s later the lens goes home                                                                                                                                                                               |
+
+## QA
+
+`node app/src/volumes/circuit/chapters/resistance/qa/interactions.mjs --port <port> --size 1280x720 [--touch] [--out <dir>]`
+(32 checks; frozen clock; starts on `flow/push`). Scratch tools and sheets: `/srv/electricity/qa/B-circuit-resistance/`
+(`look.mjs <scenario>`, `sheet.sh`, `sheets/`).

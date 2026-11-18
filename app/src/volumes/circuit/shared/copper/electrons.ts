@@ -27,6 +27,12 @@ export interface ElectronView {
   /** 0…1 dissolve; brightness of the unmarked crowd (1 = as styled). */
   fade: number;
   crowd: number;
+  /**
+   * The marked electron's path also bends: a point is kept wherever its direction has turned by more than this
+   * angle (radians) since the last one, so a flight curved by the field (`sim.field`) is drawn curved. Default 0 =
+   * off (only sharp turns are kept, as before).
+   */
+  bend: number;
   /** Position of electron e as drawn (local units). */
   positionOf(e: number, out: Vector3): Vector3;
   /** Forget the trails (after a jump of the whole state: deep link, reset). */
@@ -86,6 +92,8 @@ export function createElectronView(sim: ElectronSim): ElectronView {
   let primed = false;
   let lastMarked = -1;
   let clock = 0;
+  /** The marked electron's direction at the last point kept on its path. */
+  const kept = new Vector3();
   const p = new Vector3();
   const d = new Vector3();
   const glowAt = (at: number): number => Math.max(1 - (clock - at) / PATH_S, 0) ** 1.3;
@@ -95,6 +103,7 @@ export function createElectronView(sim: ElectronSim): ElectronView {
     marked: -1,
     fade: 1,
     crowd: 1,
+    bend: 0,
     positionOf: (e, out) => out.fromArray(sim.pos, 3 * e),
     cut: () => (primed = false),
     update(dt, face) {
@@ -116,6 +125,11 @@ export function createElectronView(sim: ElectronSim): ElectronView {
           if (f.speed > 0 && d.dot(f.dir) < 0.96) {
             f.corner.copy(f.prev);
             if (e === m) corners.push({ p: f.prev.clone(), at: clock - dt });
+            kept.copy(d);
+          } else if (e === m && view.bend > 0 && f.speed > 0 && d.dot(kept) < Math.cos(view.bend)) {
+            // a gentle bend: the path keeps the point, the short tail does not restart there
+            corners.push({ p: f.prev.clone(), at: clock - dt });
+            kept.copy(d);
           }
           f.dir.copy(d);
           f.speed = step / dt;

@@ -158,7 +158,10 @@ export function addMounts(b: Builder): string[] {
   const seat = b.part('seat', { at: [SEAT.x, 0, SEAT.z] });
   order.push('seat');
   seat.box(SEAT.width - 0.3, 0.15, 0.6, { r: 0.05, c: INK });
-  seat.box(SEAT.width - 0.36, 0.045, 0.2, { at: [0, 0.15, 0], r: 0.015, slot: 'metal', c: STEEL });
+  // the jumper is a part of its own (origin on the face under it), so that `flow/loop` can lift it out
+  const jumper = b.part('seatJumper', { at: [SEAT.x, 0, SEAT.z] });
+  order.push('seatJumper');
+  jumper.box(SEAT.width - 0.36, 0.045, 0.2, { at: [0, 0.15, 0], r: 0.015, slot: 'metal', c: STEEL });
   for (const s of [-1, 1] as const) {
     seat.cyl(0.055, 0.06, { at: [s * 0.1, 0.18, 0], seg: 12, slot: 'metal', c: 'mist', bevel: 0.015 });
     terminal(seat, s * (SEAT.width / 2), s);
@@ -213,6 +216,7 @@ export function mountX(name: string): number {
     switchBlock: SWITCH.x,
     lampPost: LAMP.x,
     seat: SEAT.x,
+    seatJumper: SEAT.x,
     lensHolder: LENS.holder.x,
   };
   return xs[name] ?? 0;

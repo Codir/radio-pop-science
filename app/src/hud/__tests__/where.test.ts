@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defineVolume, type ChapterManifest } from '@/engine/api';
-import { axisChipText, setWhere, whereFloor } from '../where';
+import { axisChipText, setWhere, setWhereBase, whereFloor } from '../where';
 
 const volume = defineVolume(
   {
@@ -19,7 +19,10 @@ const volume = defineVolume(
       ],
     },
     groups: [{ id: 'path', label: 'Шлях' }],
-    journey: [{ id: 'wire', group: 'path' }],
+    journey: [
+      { id: 'wire', group: 'path' },
+      { id: 'lamp', group: 'path' },
+    ],
   },
   {
     journey: {
@@ -41,6 +44,30 @@ describe('«де ми» in the header chip', () => {
     expect(whereFloor('pilot/wire')).toBe('rows');
     setWhere('pilot/wire', null);
     expect(axisChipText(wire, volume, {})).toBe('стенд');
+  });
+
+  it('names the floor once the reader is past the naming step: a later chapter or a later step (deep links)', () => {
+    setWhere('pilot/wire', 'rows');
+    expect(axisChipText(wire, volume, { 'pilot/lamp': ['inside'] })).toBe('ряди атомів');
+    const steps = [
+      { id: 'atoms', title: '', blurb: '' },
+      { id: 'outer', title: '', blurb: '' },
+    ] as unknown as ChapterManifest['steps'];
+    expect(axisChipText({ ...wire, steps }, volume, { 'pilot/wire': ['outer'] })).toBe('ряди атомів');
+    expect(axisChipText({ ...wire, steps }, volume, {})).toBe('ряди кульок');
+    setWhere('pilot/wire', null);
+  });
+
+  it('falls back to the floor the world reports, not the chapter’s own, when no ladder reports', () => {
+    const lamp = { ...wire, id: 'lamp', axisLabel: 'ряди атомів' } as ChapterManifest;
+    expect(axisChipText(lamp, volume, {})).toBe('ряди кульок');
+    setWhereBase('pilot/lamp', 'stand');
+    expect(whereFloor('pilot/lamp')).toBe(null);
+    expect(axisChipText(lamp, volume, {})).toBe('стенд');
+    setWhere('pilot/lamp', 'rows');
+    expect(axisChipText(lamp, volume, {})).toBe('ряди кульок');
+    setWhere('pilot/lamp', null);
+    setWhereBase('pilot/lamp', null);
   });
 
   it('keeps the axis label of a volume without named floors', () => {

@@ -26,6 +26,9 @@ export const AWAY_SHOT = {
   orbit: { azimuth: 0.12, polar: 0.08, zoom: [0.95, 1.1] as [number, number] },
 } satisfies Shot;
 
+/** The cold key light behind the board (`moon` of `prologue/map`): the room low, the lamp the only light. */
+export const AWAY_MOON = 0.3;
+
 /** The stand behind the board: calm — strongly out of focus, corners darker, less bloom. */
 export const AWAY_POST: PostOverrides = {
   dofAperture: 4.6,

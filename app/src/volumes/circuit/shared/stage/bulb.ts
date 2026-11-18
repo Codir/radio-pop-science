@@ -11,17 +11,24 @@ import {
   BufferAttribute,
   CatmullRomCurve3,
   Color,
+  FrontSide,
   type Group,
+  type Material,
   Mesh,
+  MeshBasicMaterial,
   Object3D,
   PlaneGeometry,
   ShaderMaterial,
   TubeGeometry,
+  type Vector2,
   Vector3,
 } from 'three';
 import { Builder, G } from '@/kit';
 import { K, col, type KGlassMaterial, type KGlowMaterial } from '@/style';
+import { supportPath } from './bulb-close';
+import type { BulbPrint } from './bulb-print';
 import { LAMP } from './layout';
+import { createLampCloseUp, type LampCloseUp } from './lamp-view';
 import { sheath } from './materials';
 
 /** Local heights: top of the thread, centre of the globe, the filament. */
@@ -57,6 +64,10 @@ export interface BulbModel {
   /** The coil mesh (close-ups, hotspots). */
   coil: Mesh;
   glass: Mesh;
+  /** The close-up level: fine coil, leads to the contact and the thread, the cut, the path, anchors. */
+  close: LampCloseUp;
+  /** «0,3 A» on the base (`bulb-print.ts`; laid by the stage's mount — text needs the fonts — null before). */
+  print: BulbPrint | null;
 }
 
 function coilGeometry(turns: number, radius: number, wire: number): TubeGeometry {
@@ -110,6 +121,30 @@ void main() {
   gl_FragColor = vec4( uColor * a, 1.0 );
 }`;
 
+/**
+ * The glass's place in the depth buffer. Glass is transparent and writes no depth, so the depth of field (and
+ * AO) of the post pipeline used to see straight through it: the globe took the blur of whatever lay behind it —
+ * a soft, smeared rim spilling out over the far, dark room, a sharp one over the table in focus, and a visible
+ * change where the two meet. This invisible copy of the glass's front faces writes only depth, after every
+ * other transparent thing of the frame (so nothing behind it is hidden), and the globe is focused like the
+ * solid lamp it belongs to.
+ */
+function depthShell(glass: Mesh, centreY: number): Mesh {
+  const shell = new Mesh(
+    glass.geometry,
+    new MeshBasicMaterial({ colorWrite: false, depthWrite: true, transparent: true, side: FrontSide }),
+  );
+  shell.name = 'bulb:glass-depth';
+  shell.renderOrder = 5000;
+  shell.raycast = () => {};
+  // a hair larger than the glass (about the globe's centre): the anti-aliased pixels of the silhouette, whose
+  // resolved depth would still be the background's, are covered too — no faint spray just outside the rim
+  const k = 1.012;
+  shell.scale.setScalar(k);
+  shell.position.y = centreY * (1 - k);
+  return shell;
+}
+
 export function createBulb(B: BulbDims = BULB): BulbModel {
   const b = new Builder('bulb', {
     glass: { color: 'sky', opacity: 0.05, edgeOpacity: 0.55, specular: 0.14 },
@@ -145,33 +180,48 @@ export function createBulb(B: BulbDims = BULB): BulbModel {
     const y = 0.125 + i * 0.05;
     thread.push([tr - 0.018, y], [tr, y + 0.014], [tr, y + 0.03], [tr - 0.018, y + 0.044]);
   }
-  thread.push([tr + 0.012, B.thread - 0.02], [tr + 0.012, B.thread], [0, B.thread]);
+  // collar: its top edge is rolled in over the glass neck and the brass goes on down inside (no flat cap: seen
+  // through the neck a brass disc read as a plate pasted over the thread)
+  thread.push(
+    [tr + 0.012, B.thread - 0.02],
+    [tr + 0.012, B.thread - 0.004],
+    [tr + 0.002, B.thread + 0.006],
+    [tr - 0.01, B.thread - 0.004],
+  );
   b.lathe(thread, { seg: 40, slot: 'metal', c: ['amber.dark', 'amber'], crease: 50 });
+  // the basing cement inside the collar, under the glass: the dark well the neck stands in
+  b.lathe(
+    [
+      [tr - 0.01, B.thread - 0.004],
+      [tr - 0.016, B.thread - 0.05],
+      [0.06, B.thread - 0.075],
+      [0, B.thread - 0.08],
+    ],
+    { seg: 32, c: 'ink' },
+  );
   // the two support wires rising from the glass stem bead (the bead itself is lit glass, added below)
-  for (const s of [-1, 1] as const) {
-    const path = [
-      new Vector3(s * 0.035, 0.6, 0),
-      new Vector3(s * 0.05, 0.8, 0),
-      new Vector3(s * (B.span + 0.012), B.filamentY - 0.06, 0),
-      new Vector3(s * (B.span + 0.004), B.filamentY + 0.02, 0),
-    ];
-    b.tube(G.roundPath(path, 0.08, 5), 0.011, { seg: 8, slot: 'metal', c: 'steel' });
-  }
+  for (const s of [-1, 1] as const) b.tube(supportPath(B, s), 0.011, { seg: 8, slot: 'metal', c: 'steel' });
   // globe: neck out of the base, sphere above
   const R = B.globe;
+  // the neck starts inside the collar, under its rolled edge, and flares out above it
   const globe: G.Pt[] = [
-    [tr + 0.004, B.thread - 0.015],
-    [tr + 0.02, B.thread + 0.07],
+    [tr - 0.022, B.thread - 0.045],
+    [tr - 0.012, B.thread + 0.004],
+    [tr + 0.004, B.thread + 0.05],
+    [tr + 0.03, B.thread + 0.1],
   ];
   for (let a = -52; a <= 90; a += 6) {
     const rad = (a * Math.PI) / 180;
     globe.push([Math.max(Math.cos(rad) * R, 0), B.globeY + Math.sin(rad) * R]);
   }
+  // close the crown (the 6° steps stop at 86°: a small hole at the top read as a dark spot on the glass)
+  globe.push([0, B.globeY + R]);
   b.lathe(globe, { seg: 64, slot: 'glass', c: 'white' });
   const model = b.build();
   const glass = model.group.getObjectByName('bulb:glass') as Mesh;
   const glassMaterial = model.mats.get('glass') as KGlassMaterial;
   (glassMaterial.uniforms.uGlass!.value as Vector3).y = 3.4; // thinner, crisper fresnel rim
+  glass.add(depthShell(glass, B.globeY));
   const edgeCold = col('sky').lerp(col('white'), 0.45);
   const edgeWarm = col('yellow.light').lerp(col('white'), 0.35);
 
@@ -197,21 +247,23 @@ export function createBulb(B: BulbDims = BULB): BulbModel {
   halo.position.y = B.globeY;
   halo.name = 'bulb:halo';
   halo.renderOrder = 1;
-  // glass stem bead (pinched glass): translucent, so that it never outshines the coil above it
+  // glass stem (pinched glass): a flare fused to the neck down in the collar, narrowing to the bead that holds
+  // the supports; open at the bottom (no flat disc). Translucent, so that it never outshines the coil above it
   const bead = new Mesh(
     G.lathe(
       G.fillet(
         [
-          [0, B.thread],
-          [0.1, B.thread],
+          [tr - 0.024, B.thread - 0.045],
+          [0.12, B.thread + 0.03],
+          [0.088, 0.47],
           [0.085, 0.52],
           [0.05, 0.68],
           [0, 0.7],
         ],
-        [0, 0.02, 0.05, 0.03, 0],
+        [0, 0.05, 0.03, 0.05, 0.03, 0],
         4,
       ),
-      { seg: 20 },
+      { seg: 24 },
     ),
     sheath({ color: col('mist').lerp(col('sky'), 0.3), opacity: 0.3, edgeOpacity: 0.8, gloss: 0.5 }),
   );
@@ -235,7 +287,24 @@ export function createBulb(B: BulbDims = BULB): BulbModel {
   glare.name = 'bulb:glare';
   model.group.add(coil, filament, halo, glare);
   const haloMaterial = halo.material as KGlowMaterial;
+  const close = createLampCloseUp(B, {
+    group: model.group,
+    coarse: coil,
+    cutMaterials: [
+      model.mats.get('metal'),
+      model.mats.get('toon'),
+      glassMaterial,
+      bead.material as Material,
+      (glass.getObjectByName('bulb:glass-depth') as Mesh).material as Material,
+    ],
+    shells: [model.mats.get('metal'), model.mats.get('toon')],
+  });
+  const fineMaterial = close.fineMaterial;
+  const fineTint = new Color();
+  const fineWarm = col('yellow.light');
   return {
+    close,
+    print: null,
     group: model.group,
     filament,
     coil,
@@ -245,10 +314,20 @@ export function createBulb(B: BulbDims = BULB): BulbModel {
       filamentMaterial.intensity = Math.max(emission, 0.55);
       // cold coil: the vertex colours' cooling must not darken an unlit wire
       filamentMaterial.whiten = 0.15 + 0.5 * glow;
+      // close up the coil keeps its colour and its turns: less whitening, a tighter bloom
+      // at the coil's own distance (`close.near` → 1) the hot coil must keep its turns: less light into the bloom,
+      // less whitening, and a darker limb on each turn (the gaps between turns stay a shade darker than the wire)
+      const near = close.near;
+      // close up the white-hot coil keeps a touch of yellow (VISUAL §5.3: «біла з yellow-ореолом»)
+      fineMaterial.setColor(fineTint.copy(color).lerp(fineWarm, 0.28 * near * glow));
+      fineMaterial.intensity = Math.max(emission * 0.45 * (1 - 0.22 * near), 0.55);
+      fineMaterial.whiten = (0.1 + 0.3 * glow) * (1 - 0.35 * near);
+      (fineMaterial.uniforms.uFalloff!.value as Vector2).set(0.5 + 1.3 * near * glow, 0.8 - 0.38 * near * glow);
       haloMaterial.color.copy(color);
       haloMaterial.intensity = 0.05 * glow ** 2;
       (glareMaterial.uniforms.uColor!.value as Color).copy(color).lerp(glareWarm, 0.45);
-      glareMaterial.uniforms.uPower!.value = 0.62 * glow ** 1.9;
+      // close up the glare steps back: the coil itself is the light (the close-up level fades it)
+      glareMaterial.uniforms.uPower!.value = 0.62 * glow ** 1.9 * (1 - 0.85 * close.near);
       glare.visible = glow > 0.05;
       // K.glass is unlit: in a dark room its rim must not shine by itself
       (glassMaterial.uniforms.uEdgeColor!.value as Color)

@@ -2,8 +2,12 @@
  * Moving between floors, on the dive rail (`dive.ts`). While the rail is engaged it owns the camera and `deep`
  * every frame: the frame is a function of the rail's position, whether the hand scrubs it, a click travels it, or
  * a step change flies it. Around the rail:
- * - down from the stand plan: the lens goes onto the wire and the camera to `lens` first (one camera move), then
- *   the rail engages at 0 — the same pose — and travels;
+ * - down from the stand plan in a step flight: the lens goes onto the wire and the camera to `lens` first (one
+ *   camera move), then the rail engages at 0 — the same pose — and travels;
+ * - the hand on the rail from the stand plan (`prologue/dive`): the rail's own lens leg (−½…0) is the take of the
+ *   lens — the lens param and the camera are functions of the position there too;
+ * - engaging never cuts: whatever separates the camera on screen from the rail's pose (the reader's orbit, the
+ *   idle drift, a camera move still under way) is carried as an offset that fades out in ≈ 0.5 s (`CATCH_UP`);
  * - at the end of a travel to a step whose camera is not the stop's own shot (`race`, `copper-gate`, …): the rail
  *   lets go and one camera move takes the frame there, the lens returning to the step's `lens` value.
  */
@@ -17,6 +21,8 @@ import { LEG } from './levels';
 const LENS_SHOT = new Vector3(...STAGE_SHOTS.lens.position);
 /** Shot names at the rail's stops (0 lens · 1 «жила» · 2 «ряди» · 3 «один атом»). */
 export const STOP_SHOTS = ['lens', 'handover', 'copper-rows', 'copper-atom'] as const;
+/** Rate (1/s) at which the offset between the camera on screen and the rail's pose fades after engaging. */
+const CATCH_UP = 6;
 
 export interface FlightPlan {
   /** Where to end: `deep` and the camera of the destination. */
@@ -32,15 +38,17 @@ export interface Flight {
    * Replaces any flight under way.
    */
   fly(plan: FlightPlan, lead?: number): void;
-  /** Lay the lens on the wire and bring the camera to `lens` (the dive step's «take the lens»). */
+  /** Glide the rail to 0: the lens onto the wire, the camera to the rail's start (from the stand: the lens leg). */
   takeLens(): void;
   /** The hand on the rail (engages it at once; the camera must already be on the rail's pose). */
   scrub(t: number): void;
-  travelTo(t: number): void;
+  travelTo(t: number, seconds?: number): void;
   /** Let the stage have the camera again (step entry). */
   release(): void;
   /** True while anything of a flight is still moving. */
   readonly flying: boolean;
+  /** True while the rail owns the camera and `deep` (from the first scrub / travel / flight until a step entry). */
+  readonly engaged: boolean;
   /** Every frame, before the world applies `deep`. */
   update(dt: number): void;
 }
@@ -59,10 +67,21 @@ export function createFlight(
   let pending: FlightPlan | null = null;
   /** The lens leg is running: engage and travel when it ends. */
   let afterLens: number | null = null;
+  /** The rail drives the stage param `lens` (its position is on the lens leg, or just left it). */
+  let lensDriven = false;
+  /** Engaged this frame at this position: measure the offset of the camera on screen from the rail's pose. */
+  let catchFrom: number | null = null;
+  /** The offset (camera position, look-at target) and its weight, fading to 0. */
+  const offPos = new Vector3();
+  const offTarget = new Vector3();
+  let offWeight = 0;
   const span = (d: number): number =>
     ctx.reducedMotion ? Math.min(d, Math.max(0.3, d * REDUCED_MOTION.camera)) : d;
   const engage = (): void => {
-    if (!engaged) rail.set(deepNow());
+    if (!engaged) {
+      rail.set(rail.positionOf(deepNow(), lensNow()));
+      catchFrom = rail.position;
+    }
     engaged = true;
   };
   /** The lens onto the wire and the camera to `lens`; `seconds` longer when the camera comes from far away. */
@@ -92,23 +111,30 @@ export function createFlight(
       rail.travelTo(plan.deep);
     },
     takeLens() {
-      if (lensNow() > 0.99 && atLens()) return;
-      lensLeg();
+      pending = null;
+      engage();
+      rail.travelTo(0);
     },
     scrub(t) {
       pending = null;
       engage();
       rail.scrub(t);
     },
-    travelTo(t) {
+    travelTo(t, seconds) {
       pending = null;
       engage();
-      rail.travelTo(t);
+      rail.travelTo(t, seconds);
+    },
+    get engaged() {
+      return engaged;
     },
     release() {
       engaged = false;
       pending = null;
       afterLens = null;
+      lensDriven = false;
+      catchFrom = null;
+      offWeight = 0;
     },
     update(dt) {
       if (busy > 0) {
@@ -122,8 +148,39 @@ export function createFlight(
       }
       if (!engaged) return;
       const t = rail.step(ctx.reducedMotion ? dt / REDUCED_MOTION.camera : dt);
-      stage.setParam('deep', t, { instant: true });
-      camera.go(rail.shotAt(t), { instant: true });
+      stage.setParam('deep', rail.deepAt(t), { instant: true });
+      // the lens leg: the lens is the rail's too; leaving it (or entering it) hands the param over once more
+      if (t < 0 || lensDriven) {
+        stage.setParam('lens', rail.lensAt(t), { instant: true });
+        lensDriven = t < 0;
+      }
+      if (catchFrom !== null) {
+        // the frame on screen now vs the rail's pose where it engaged: the difference fades out, never cuts
+        const was = camera.camera.position.clone();
+        const wasTarget = camera.target.clone();
+        camera.go(rail.shotAt(catchFrom), { instant: true });
+        offPos.subVectors(was, camera.camera.position);
+        offTarget.subVectors(wasTarget, camera.target);
+        offWeight = offPos.length() + offTarget.length() > 1e-4 ? 1 : 0;
+        catchFrom = null;
+      } else offWeight = offWeight * Math.exp(-CATCH_UP * dt);
+      if (offWeight < 1e-3) offWeight = 0;
+      const shot = rail.shotAt(t);
+      if (offWeight > 0) {
+        const p = shot.position as [number, number, number];
+        const g = shot.target as [number, number, number];
+        shot.position = [
+          p[0] + offPos.x * offWeight,
+          p[1] + offPos.y * offWeight,
+          p[2] + offPos.z * offWeight,
+        ];
+        shot.target = [
+          g[0] + offTarget.x * offWeight,
+          g[1] + offTarget.y * offWeight,
+          g[2] + offTarget.z * offWeight,
+        ];
+      }
+      camera.go(shot, { instant: true });
       if (pending && !rail.moving) {
         const plan = pending;
         pending = null;

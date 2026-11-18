@@ -27,8 +27,6 @@ import { buildSections, caption } from './step-sections';
 export const PANEL_WIDTH = 468;
 
 export interface StepPanel extends HudModule {
-  /** Extra nodes shown under the title (honesty chips of the current step). */
-  setBadges(nodes: readonly UiNode[]): void;
   /** Panel width and the height its scrolling body may take (the column decides both). */
   fit(width: number, maxScroll: number): void;
   /** Height of everything in the panel except the scrolling body (valid after a layout). */
@@ -49,7 +47,6 @@ export interface StepPanel extends HudModule {
 export function createStepPanel(hud: HudContext, popups: UiNode): StepPanel {
   const counter = caption('');
   const title = new Label('', { font: 'display', size: UI.text.h1, lineHeight: 1.14 }, { width: 'fill' });
-  const badges = new UiNode({ dir: 'row', wrap: true, gap: 8, width: 'fill', visible: false });
   const pager = new Pager({ onEnd: () => void hud.engine.nav.next() });
   const extra = new UiNode({ dir: 'col', gap: 12, width: 'fill' });
   const scroll = new ScrollView({ name: 'step-text', height: 'hug', gap: 14, children: [pager, extra] });
@@ -58,7 +55,7 @@ export function createStepPanel(hud: HudContext, popups: UiNode): StepPanel {
     name: 'step-panel',
     width: PANEL_WIDTH,
     gap: 12,
-    children: [counter, title, badges, scroll, pager.takeBar()],
+    children: [counter, title, scroll, pager.takeBar()],
   });
   let manifest: ChapterManifest | null = null;
   let content: ChapterContent | null = null;
@@ -156,12 +153,6 @@ export function createStepPanel(hud: HudContext, popups: UiNode): StepPanel {
 
   return {
     node,
-    setBadges(nodes) {
-      badges.clear();
-      for (const n of nodes) badges.add(n);
-      badges.visible = nodes.length > 0;
-      hud.relayout();
-    },
     onChapter(m) {
       manifest = m;
       stepId = hud.engine.store.get().stepId ?? m.steps[0]!.id;

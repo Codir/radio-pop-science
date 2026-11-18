@@ -130,6 +130,9 @@ export default defineChapter({
 ```ts
 interface SceneHooks {
   enterStep?(stepId: string, info: StepInfo): void;  // after ctx.stage applied the step; safe from ANY state
+  // leaving for another chapter: walk to the border frame; seconds, or a predicate «there» (≤ 12 s; not under ?freeze)
+  // null: no border shared with `to` (a map jump) → the platform's own transition
+  leaveChapter?(to: { volumeId: string; chapterId: string; stepId: string }): number | (() => boolean) | null;
   update?(dt: number, t: number): void;              // every engine update; engine-clock seconds
   dispose?(): void;                                  // extras only — see §13
 }
@@ -228,6 +231,10 @@ camera.focusOn(object, { padding: 1.4 });   // frame any object from the current
   `near`/`far` (auto from distance).
 - Moves arc around the target (direction slerp, log-distance) with the `cinematic` ease, default 1.8 s
   (`MOTION.camera`). A new `go()` mid-move starts from the pose on screen (including the user's orbit).
+- `camera.hold(shot?)`: stop on the pose on screen (a running move ends there, the user's orbit is baked in,
+  drift goes on); with `shot`, its settings (limits, `fit`, drift) apply while the camera stays. The next `go()`
+  leaves from that pose. For a scene that times its own camera move — never `go(…, { instant: true })` there,
+  which snaps the reader's view back to the shot.
 - **HUD-aware framing**: the safe frame (aspect × fov) is always fully visible inside the viewport area the
   HUD leaves free, at any window aspect ratio — compose the subject inside the safe frame and it will never
   hide under a panel. (Implementation: off-axis projection; `camera.camera` is a `PerspectiveCamera` subclass.)
@@ -832,5 +839,5 @@ APIs.
 ## 24. Path volumes in chapter code (M7)
 
 `StepUiSpec.goal?: When` — a path chapter's step goal (the panel shows «Висновок» once it holds).
-`floorLabel(volume, floor, visited)`, `floorValue(volume, id)` (`@/engine/api`) — floor names as the reader may see
+`floorLabel(volume, floor, visited, stepsOf?)`, `floorValue(volume, id)` (`@/engine/api`) — floor names as the reader may see
 them and their axis values. The journey map inside a step and the «де ми» ladder: UI_API §11a.

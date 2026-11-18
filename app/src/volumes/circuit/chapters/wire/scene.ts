@@ -40,7 +40,10 @@ export default defineScene((ctx) => {
   const ladder = floorLadder(ctx, { floor: () => (world.world.deep > 0.01 ? world.world.floorId : null) });
   // the chapter on screen while this one loads: from the prologue the reader arrives by the whole dive
   const before = ctx.store.get();
-  let flyIn = before.volumeId === ctx.manifest.volume && before.chapterId === 'prologue';
+  // the neighbour the reader comes from (null: a deep link) — the first frame is the border frame (shared/world/border.ts)
+  let from = before.volumeId === ctx.manifest.volume && before.chapterId !== ctx.manifest.id ? before.chapterId : null;
+  /** Walking to the border frame (`leaveChapter`): the step's own motion rests. */
+  let leaving = false;
 
   const chapter: Chapter = {
     ctx,
@@ -76,16 +79,26 @@ export default defineScene((ctx) => {
 
   return {
     enterStep(id, info) {
+      leaving = false;
       world.world.enterStep(id, info);
-      if (flyIn && id === 'atoms' && info.from === null) world.world.flyIn(id, info);
-      flyIn = false;
+      if (from === 'prologue' && id === 'atoms' && info.from === null) world.world.flyIn(id, info);
+      else if (info.from === null) {
+        const again = { ...info, instant: false };
+        world.world.border.arrive(id, from, { then: () => steps[id as StepId].enter?.(again) });
+      }
+      from = null;
       if (!info.instant) return;
       // a deep link opens the middle atom, as on a first visit (`wire/atoms` may have chosen another)
       copper.hero = 0;
       copper.snap();
     },
+    leaveChapter(to) {
+      steps[stage.current as StepId]?.leave?.();
+      leaving = true;
+      return world.world.border.leave(to.chapterId);
+    },
     update(dt, t) {
-      steps[stage.current as StepId]?.update?.(dt, t);
+      if (!leaving) steps[stage.current as StepId]?.update?.(dt, t);
       world.update(dt, t);
       ladder.update();
     },

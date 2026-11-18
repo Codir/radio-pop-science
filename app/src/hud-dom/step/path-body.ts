@@ -3,8 +3,8 @@
  * one reader — no «Просто | Докладно», no section tabs. Pages of the panel's pager:
  *   first step: the chapter's opening card («Питання з життя», «Що ми вже знаємо») → the step;
  *   every step: main text (new terms are links to their glossary cards), the action, hints for a stuck reader,
- *     the takeaway once the step's goal is reached, «Згадайте…» links, honesty chips and «Чесно про картинку»,
- *     one disclosure «Докладніше»;
+ *     the takeaway once the step's goal is reached, «Згадайте…» links, one disclosure
+ *     «Докладніше» (no honesty chips or «Чесно про картинку» — DECISIONS §60 x);
  *   last step: the step → the closing card («Що ми тепер знаємо», the bridge, «Далі: <next question>»).
  * Everything is real text (selectable, read by screen readers); reveals run on the engine clock.
  */
@@ -27,13 +27,13 @@ export interface PathBodyContext {
   readonly trail: RecallTrail;
   /** The step's goal from its `stepUi` (undefined: the takeaway shows at once). */
   readonly goal: When | undefined;
-  /** The reader's action is under way (`stepUi … acting`): chips marked `→` appear. */
-  readonly acting: When | undefined;
   /** Goals already reached this session (`volume/chapter/step`): the takeaway shows at once there. */
   readonly reached: Set<string>;
   readonly key: string;
-  /** Show page `i` of the panel's pager. */
-  readonly goPage: (i: number) => void;
+  /** Show page `i` of the panel's pager (`smooth`: a calm cross-fade of the panel's text). */
+  readonly goPage: (i: number, smooth?: boolean) => void;
+  /** The last step: the closing card takes the panel each time this starts to hold (stepUi `panel.closingWhen`). */
+  readonly closingWhen?: When;
 }
 
 export interface PathBody {
@@ -85,9 +85,22 @@ function openingPage(m: PathStepModel, go: () => void): HTMLElement | null {
   );
 }
 
-function closingPage(m: PathStepModel, hud: Hud): HTMLElement | null {
+function closingPage(m: PathStepModel, hud: Hud, back: () => void): HTMLElement | null {
   if (!m.closing) return null;
-  const { now, bridge, next } = m.closing;
+  const { now, bridge, next, restart } = m.closing;
+  // the way back to the step the card stands over (also the navigator's «back», ← — `pathEnd.back`)
+  const toStep = btn(`${L.back}: ${m.title}`, 'arrowLeft', 'ghost sm', back);
+  toStep.dataset.ui = 'path-closing-back';
+  // the end of a volume's journey: the journey map, where every chapter can be opened again
+  const map = next ? null : btn(L.map, 'map', 'primary', () => hud.open('map'));
+  if (map) map.dataset.ui = 'path-map';
+  // … and the way back to its very first step (the volume's first chapter in journey order)
+  const first = hud.engine.nav.chapters[0];
+  const again =
+    !next && restart && first
+      ? btn(restart, 'arrowLeft', 'ghost', () => void hud.engine.nav.goto(first.id, first.steps[0]?.id))
+      : null;
+  if (again) again.dataset.ui = 'path-restart';
   const built = next ? hud.engine.nav.chapter(next.id) : undefined;
   const go = next
     ? btn(`${L.next}: ${next.title}`, 'next', 'primary', () => void hud.engine.nav.goto(next.id))
@@ -100,11 +113,13 @@ function closingPage(m: PathStepModel, hud: Hud): HTMLElement | null {
   return h(
     'div.page.path-card.closing',
     { 'data-ui': 'path-closing' },
+    toStep,
     now.length
       ? block('path-sec', L.now, null, h('ol.path-now', null, ...now.map((t) => prose('li', '', t))))
       : null,
     bridge ? prose('p', 'path-p path-bridge', bridge) : null,
     go ?? h('p.path-end', null, L.end),
+    map || again ? h('div.path-actions', null, map, again) : null,
   );
 }
 
@@ -148,24 +163,6 @@ export function buildPathBody(m: PathStepModel, ctx: PathBodyContext): PathBody 
         return b;
       })) // prettier-ignore
     : null;
-  // chips marked `→` wait for the reader's action (`stepUi … acting`)
-  const later = m.honestyOnAction.map((c) => h('li.chip.honesty', { hidden: true }, icon('layers'), c));
-  const honest =
-    m.honesty.length || later.length || m.note
-      ? h(
-          'div.path-honest',
-          null,
-          m.honesty.length || later.length
-            ? h(
-                'ul.badges',
-                { 'aria-label': 'Чесність моделі' },
-                ...m.honesty.map((c) => h('li.chip.honesty', null, icon('layers'), c)),
-                ...later,
-              )
-            : null,
-          m.note ? h('p.path-note', null, h('span.path-note-k', null, `${L.note}. `), nbDash(m.note)) : null,
-        )
-      : null;
   let more: HTMLElement | null = null;
   if (m.more.length) {
     const body = h(
@@ -202,12 +199,13 @@ export function buildPathBody(m: PathStepModel, ctx: PathBodyContext): PathBody 
     hint,
     takeaway,
     recall,
-    honest,
     more,
   );
   const opening = openingPage(m, () => ctx.goPage(1));
-  const closing = closingPage(m, hud);
+  const closing = closingPage(m, hud, () => ctx.goPage(opening ? 1 : 0, true));
   const pages = [opening, main, closing].filter((p): p is HTMLElement => p !== null);
+  /** `closingWhen` held last frame (the card comes on its rising edge only). */
+  let ending = holds(ctx.closingWhen ?? false);
 
   const clock = hud.engine.clock;
   let entered = clock.time;
@@ -237,8 +235,11 @@ export function buildPathBody(m: PathStepModel, ctx: PathBodyContext): PathBody 
         back.hidden = !away;
         if (away) back.querySelector('span')!.textContent = `${L.back}: ${stepTitle(hud, origin!)}`;
       }
-      if (later.length && later[0]!.hidden && (done || (ctx.acting !== undefined && holds(ctx.acting))))
-        for (const c of later) presence(c).reveal({ dy: 4, scale: 1 });
+      if (closing && ctx.closingWhen !== undefined) {
+        const now = holds(ctx.closingWhen);
+        if (now && !ending) ctx.goPage(pages.length - 1, true);
+        ending = now;
+      }
       if (done) return;
       if (holds(ctx.goal)) return reveal();
       const due = hintsDue(m.hints, clock.time - entered);

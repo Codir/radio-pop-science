@@ -23,7 +23,7 @@ export function domStepPanel(): DomStepPanel | null {
 
 export function mount(dom: DomHud): void {
   const { hud, webgl } = dom;
-  const header = createDomHeader(hud);
+  const header = createDomHeader(hud, () => dom.root.querySelector<HTMLElement>('[data-region="system"]'));
   const panel = createDomStepPanel(hud);
   stepPanel = panel;
   const navigator = createDomNavigator(hud);
@@ -62,6 +62,7 @@ export function mount(dom: DomHud): void {
       el: navigator.el,
       onChapter: (m) => navigator.onChapter(m),
       onStep: () => navigator.sync(),
+      update: () => navigator.update(),
       onLayout: (m) => {
         navigator.onLayout(m);
       },

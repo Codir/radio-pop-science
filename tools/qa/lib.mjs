@@ -7,7 +7,8 @@
 //   --q <tier>      quality tier low|medium|high|ultra  (default high)
 //   --out <path>    output file or directory            (default /srv/electricity/qa/$QA_ID or .../misc)
 //   --hud dom|gl    interface renderer, passed as ?hud= (default: $QA_HUD, else none = the app's default;
-//                   docs/HUD_DOM.md §16). `openApp` reports the mode in effect (`gpu.hud`, one log line).
+//                   docs/HUD_DOM.md §16; the app default is dom since D9b, `--hud gl` runs the WebGL
+//                   one). `openApp` reports the mode in effect (`gpu.hud`, one log line).
 import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';

@@ -46,8 +46,8 @@ export const plugin: EnginePlugin = {
       if (theme) engine.mood(moodForTheme(theme.mood, theme.sky));
     });
     // direction +1 = zooming in (down in scale) → falling whoosh; −1 = zooming out → rising
-    const offTransition = app.runtime.on('transitionStart', ({ from, direction }) => {
-      if (from !== null) engine.play(direction > 0 ? 'whooshDown' : 'whooshUp', { gain: 0.8 });
+    const offTransition = app.runtime.on('transitionStart', ({ from, direction, seamless }) => {
+      if (from !== null && !seamless) engine.play(direction > 0 ? 'whooshDown' : 'whooshUp', { gain: 0.8 });
     });
     const onVisibility = (): void => engine.setSuspended(document.hidden);
     document.addEventListener('visibilitychange', onVisibility);

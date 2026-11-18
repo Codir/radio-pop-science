@@ -18,23 +18,20 @@ STEP_ID = re.compile(r'^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$')
 REF = re.compile(r'^`([^`\s]+)`$')
 
 SECTIONS = {'Питання з життя': 'hook', 'Що ми вже знаємо': 'know', 'Кроки': 'steps', 'Нитка глави': 'thread',
-            'Що ми тепер знаємо': 'now', 'Місток': 'bridge'}
+            'Що ми тепер знаємо': 'now', 'Місток': 'bridge', 'Підписи глави': 'labels'}
 ORDER = list(SECTIONS.values())
 # document field → export key; the practicum names two of them differently
 FIELDS = {'Думка': 'idea', 'Завдання': 'idea', 'Текст': 'text', 'Дія': 'action', 'Висновок': 'takeaway',
           'Перевірка': 'takeaway', 'Нові терміни': 'terms', 'Докладніше': 'more', 'Згадати': 'recall',
-          'Позначки': 'honesty', 'Бачимо': 'see', 'Ціль': 'goal', 'Підказки': 'hints', 'Підписи': 'labels',
-          'Чесно': 'note'}
+          'Бачимо': 'see', 'Ціль': 'goal', 'Підказки': 'hints', 'Підписи': 'labels',
+          'Позначки': '-honesty', 'Чесно': '-note'}
+# «-» fields are accepted and dropped: the honesty marks and «Чесно» note are not shown (DECISIONS §60 x)
 REQUIRED = ['idea', 'text', 'action', 'takeaway', 'goal', 'terms', 'more']
 COMMENT = re.compile(r'<!--.*?-->', re.S)
 CAPTION = re.compile(r'«([^«»]+)»')
 # «Підписи» items: «A» (all the time) · «A» → «B» (A until the takeaway, B from it) · → «B» (appears at the takeaway)
 CAPTION_ITEM = re.compile(r'^(?:«([^«»]+)»)?\s*(?:→\s*«([^«»]+)»)?$')
-# the factor of a slowed / sped-up picture: 1000, 1 000, 2,5, 10¹⁴, 5·10¹⁴
-FACTOR = r'×(?:\d+(?:[  ]\d{3})*(?:[,.]\d+)?(?:·10[⁰¹²³⁴⁵⁶⁷⁸⁹]+)?|10[⁰¹²³⁴⁵⁶⁷⁸⁹]+)'
 NONE = ('—', '-', '')
-HONESTY = re.compile(r'^(?:спрощена модель|не в масштабі|сповільнено ' + FACTOR + '|прискорено ' + FACTOR + '|'
-                     r'перебільшено|станом на \d{4}\s?р\.)$')
 
 
 def cells(line):
@@ -93,11 +90,11 @@ def split_list(value):
 
 
 def parse_chapter(text, cid):
-    """→ (chapter, problems). chapter = {id, title, hook, know, thread, now[], bridge, steps[], sections[]}."""
+    """→ (chapter, problems). chapter = {id, title, hook, know, thread, now[], bridge, labels[], steps[], sections[]}."""
     err = []
     # HTML comments are notes for reviewers (fact sources, «перевірити»): never content
     lines = COMMENT.sub('', text).splitlines()
-    ch = dict(id=cid, title='', hook='', know='', thread='', now=[], bridge='', steps=[], sections=[])
+    ch = dict(id=cid, title='', hook='', know='', thread='', now=[], bridge='', labels=[], steps=[], sections=[])
     first = next((ln for ln in lines if ln.strip()), '')
     m = H1.match(first)
     if not m or m.group(1) != cid:
@@ -123,6 +120,9 @@ def parse_chapter(text, cid):
                     ch['now'][-1] += ' ' + ln.strip()
                 elif ln.strip():
                     err.append('%s: «Що ми тепер знаємо» expects numbered lines, got «%s»' % (cid, ln.strip()[:40]))
+        elif section == 'labels':
+            # chapter-level captions of the closing card, «…» · «…» (the volume's end: «Почати з початку»)
+            ch['labels'] = re.findall(r'«([^»]+)»', ' '.join(paras))
         else:
             ch[section] = ' '.join(paras)
 
@@ -167,12 +167,8 @@ def finish_step(step, body, cid, err, ch):
     if any(s['id'] == step['id'] for s in ch['steps']):
         err.append('%s: duplicate step id' % where)
     f = parse_step_fields(body, where, err)
-    step.update(f)
+    step.update({k: v for k, v in f.items() if not k.startswith('-')})
     step['terms'] = split_list(f.get('terms', '—'))
-    # «→ прискорено ×20»: the chip appears with the reader's action (`stepUi … acting`), not with the step
-    chips = split_list(f.get('honesty', '—'))
-    step['honesty'] = [c for c in chips if not c.startswith('→')]
-    step['honestyOnAction'] = [c.lstrip('→').strip() for c in chips if c.startswith('→')]
     step['recall'] = split_list(f.get('recall', '—'))
     hints = f.get('hints', [])
     step['hints'] = hints if isinstance(hints, list) else ([] if hints.strip() in NONE else [hints])
@@ -187,8 +183,6 @@ def finish_step(step, body, cid, err, ch):
         if m.group(2):
             step['captions'].append(dict(text=m.group(2), at='takeaway'))
     step['labels'] = [c['text'] for c in step['captions']]
-    if isinstance(f.get('note'), list):
-        err.append('%s: «Чесно» is one paragraph' % where)
     step['missing'] = [k for k in REQUIRED if k not in f]
     ch['steps'].append(step)
 
