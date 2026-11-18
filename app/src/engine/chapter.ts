@@ -131,6 +131,14 @@ export interface StepInfo {
 export interface SceneHooks {
   /** Called after `ctx.stage` has applied the step's declarative state. Must be safe from ANY previous state. */
   enterStep?(stepId: string, info: StepInfo): void;
+  /**
+   * The reader is leaving for another chapter (`to`): bring the scene to its border frame and return the seconds
+   * that takes, or a predicate that holds once it is there (waited for at most 12 s). The runtime keeps
+   * this chapter on screen until then (while the next one loads) before it swaps; a navigation back here meanwhile
+   * re-enters the step on screen. Not waited for under `?freeze`. `null`: this chapter shares no border frame with
+   * `to` (a jump across the map) — the platform plays its own chapter transition.
+   */
+  leaveChapter?(to: { volumeId: string; chapterId: string; stepId: string }): number | (() => boolean) | null;
   /** Called every engine update while the chapter is active. `dt`/`t` are engine-clock seconds. */
   update?(dt: number, t: number): void;
   /** Extra cleanup (most resources are released automatically — see `ChapterContext.track`). */

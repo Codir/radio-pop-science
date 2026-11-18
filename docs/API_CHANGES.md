@@ -647,3 +647,29 @@ pixel identity checked). Under `?hud=dom` phones and tablets get the DOM sheet i
 - Sliders that scrub an animation: `SliderSpec.onInput?(value, how: 'drag' | 'jump' | 'step')` (DOM) and
   `ControlPatch.current` (the fill shows the animation's position, the thumb the target). UI_API §3.3.
 
+
+### F-circuit-seams (2026-11-17) — same-frame chapter borders
+- `SceneHooks.leaveChapter?(to): number | (() => boolean)` — the outgoing chapter walks to its border frame while the
+  next one loads; the runtime swaps once it is there (≤ 12 s); a navigation back meanwhile re-enters the step on
+  screen. Not waited for under `?freeze`. ENGINE_API §3.
+- `volume.json → seamless` / `VolumeManifest.seamless` — a chapter change inside the volume is a 0.3 s plain
+  cross-fade (no zoom, no chromatic aberration); the incoming director continues the outgoing idle drift
+  (`CameraDirector.followDrift`, internal) and keeps the outgoing free area for 0.8 s before following the HUD's
+  insets again (the incoming panel reports passing insets while it rebuilds). VOLUMES §7.
+- Camera director: the idle drift amplitude eases toward the shot's (rate 5/s) instead of switching in one frame
+  (the hitch at the end of every floor flight, `docs/requests/B-circuit-charge.md` §4). Affects every chapter by
+  ≤ 0.6 s of fading at a change between a drift-0 shot and a normal one.
+- `floorLabel(volume, floor, visited, stepsOf?)` — the named form also once a later chapter (or, with `stepsOf`, a
+  later step of the naming chapter) was opened: a deep link past `wire/atoms` reads «ряди атомів».
+- `@/hud/where`: `setWhereBase(key, floor)`, `baseFloor(key)` — the floor a composed world is on; the header's chip
+  text falls back to it (not the chapter's own floor) when no ladder report stands; `whereFloor` (reported) is
+  unchanged, so phone headers still swap the title for the chip only while a ladder reports.
+- `TransitionState.quiet` — a load inside a `seamless` volume: the DOM loading pill waits 3 s (and only while
+  the next chapter is still being built) instead of 0.25 s — the walk to the border frame is not «Завантаження…».
+  The runtime now also sets `transition.progress = 1` once the next chapter is built.
+- `drain`/`build` (circuit): `StepModule.finish?()` / `rewind?(play)` in `drain` (the battery swap as the chapter's
+  end and its way back); `build` walks back to the `drain` border in `leaveChapter`.
+- `RuntimeEvents.transitionStart` gains `seamless: boolean`: at a same-frame border the HUD keeps its chrome (no
+  hide/show of the panels for the zoom) and the audio plays no whoosh.
+- `SceneHooks.leaveChapter` may return `null`: no shared border with `to` (a jump across the map) — the runtime then
+  plays the platform's own transition (the zoom), not the same-frame cross-fade (F-circuit-seams round 2).

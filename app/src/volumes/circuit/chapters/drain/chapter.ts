@@ -41,6 +41,10 @@ export interface StepModule {
   update?(dt: number, t: number): void;
   /** Every frame after the world's update, for EVERY step (check `here`): what a step left fades out. */
   late?(dt: number, t: number): void;
+  /** Leaving the chapter from this step: bring it to the chapter's end state; returns «there» (`leaveChapter`). */
+  finish?(): () => boolean;
+  /** Arriving from the next chapter into this step: start from the chapter's end state and play back to the step. */
+  rewind?(play: boolean): void;
 }
 
 export type StepFactory = (chapter: Chapter) => StepModule;

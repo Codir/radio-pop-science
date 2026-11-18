@@ -11,6 +11,7 @@ const identity: VolumeIdentity = {
   accent: 'amber',
   status: 'published',
   format: 'path',
+  seamless: false,
   axis: {
     label: 'Поверх',
     unit: '',

@@ -29,6 +29,10 @@ const FACTORIES: Record<StepId, StepFactory> = {
 export default defineScene((ctx) => {
   const { stage } = ctx;
   const bw = createBatteryWorld(ctx);
+  // the neighbour the reader comes from (null: a deep link): the first frame is the border frame (shared/world/border.ts)
+  const before = ctx.store.get();
+  let from = before.volumeId === ctx.manifest.volume && before.chapterId !== ctx.manifest.id ? before.chapterId : null;
+  let leaving = false;
   const ui = stepUi(ctx) as StepUiApi<StepId>;
   const chapter: Chapter = {
     ctx,
@@ -69,14 +73,32 @@ export default defineScene((ctx) => {
 
   return {
     enterStep(id, info) {
+      leaving = false;
       bw.world.enterStep(id, info);
       if (info.instant) {
         bw.cut.shown = bw.cut.target;
         bw.scale.snap();
       }
+      // arriving across a border: the stand with the lens home and the meter off the table, then the step moves in
+      if (info.from === null && bw.world.border.arrive(id, from)) {
+        bw.lens.place('holder');
+        bw.gauge.shown = 0;
+      }
+      from = null;
+    },
+    leaveChapter(to) {
+      steps[stage.current as StepId]?.leave?.();
+      leaving = true;
+      // the cut closes, the lens goes home, the meter slides off with its probes
+      bw.cut.target = 0;
+      bw.lens.goTo('holder');
+      bw.meter.want = 0;
+      bw.meter.volts = 0;
+      const there = bw.world.border.leave(to.chapterId);
+      return there ? () => there() && bw.cut.shown < 0.01 && bw.gauge.shown < 0.01 : null;
     },
     update(dt, t) {
-      steps[stage.current as StepId]?.update?.(dt, t);
+      if (!leaving) steps[stage.current as StepId]?.update?.(dt, t);
       bw.update(dt, t);
       bw.late(dt);
     },

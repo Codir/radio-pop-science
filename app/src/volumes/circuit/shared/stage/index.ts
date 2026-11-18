@@ -17,6 +17,7 @@ import { createTools, type Tools } from './tools';
 import { createTorch, torchDims, type Torch } from './torch';
 import { bulbDims } from './bulb';
 import { temperatureOfHeat } from './bulb-heat';
+import { createBulbPrint } from './bulb-print';
 import { createLampView, type LampView } from './lamp-view';
 import { createThermal } from './bulb-thermal';
 import { UNFOLD_PLAY, createUnfold, type Unfold } from './unfold';
@@ -193,7 +194,12 @@ export function mountStage(ctx: ChapterContext, options: StageOptions = {}): Cir
 
   // on a phone the print on the battery would be under 14 px: the chapter labels it in the interface instead
   // (`stand.stand.battery.printAnchor`)
-  const phonePrint = (): void => void (stand.battery.printShown = ctx.device.formFactor !== 'phone');
+  // «0,3 A» on the lamp's base (`flow/count`): laid here, where the fonts are loaded
+  const bulbPrint = (stand.bulb.print = createBulbPrint(stand.bulb.group, bulb.threadRadius));
+  const phonePrint = (): void => {
+    stand.battery.printShown = ctx.device.formFactor !== 'phone';
+    bulbPrint.shown = ctx.device.formFactor !== 'phone';
+  };
   phonePrint();
   ctx.onResize(phonePrint);
   const light = createLight(ctx, stand.bulb.filament);
@@ -245,6 +251,8 @@ export function mountStage(ctx: ChapterContext, options: StageOptions = {}): Cir
     stand.bulb.setGlow(light.filament, light.emission * breath, glow, stage.moon);
     const room = Math.min(1, 0.25 + 0.75 * Math.max(stage.moon, glow ** 2));
     stand.battery.light = room;
+    bulbPrint.light = room;
+    bulbPrint.update(ctx.camera.camera);
     // the slider shows in the dark by its own faint glow and hands over to the room's light
     stand.setSliderGlow(1 - Math.max(stage.moon, light.output));
     stand.bulb.filament.getWorldPosition(lampWorld);

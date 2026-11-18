@@ -130,6 +130,9 @@ export default defineChapter({
 ```ts
 interface SceneHooks {
   enterStep?(stepId: string, info: StepInfo): void;  // after ctx.stage applied the step; safe from ANY state
+  // leaving for another chapter: walk to the border frame; seconds, or a predicate «there» (≤ 12 s; not under ?freeze)
+  // null: no border shared with `to` (a map jump) → the platform's own transition
+  leaveChapter?(to: { volumeId: string; chapterId: string; stepId: string }): number | (() => boolean) | null;
   update?(dt: number, t: number): void;              // every engine update; engine-clock seconds
   dispose?(): void;                                  // extras only — see §13
 }
@@ -836,5 +839,5 @@ APIs.
 ## 24. Path volumes in chapter code (M7)
 
 `StepUiSpec.goal?: When` — a path chapter's step goal (the panel shows «Висновок» once it holds).
-`floorLabel(volume, floor, visited)`, `floorValue(volume, id)` (`@/engine/api`) — floor names as the reader may see
+`floorLabel(volume, floor, visited, stepsOf?)`, `floorValue(volume, id)` (`@/engine/api`) — floor names as the reader may see
 them and their axis values. The journey map inside a step and the «де ми» ladder: UI_API §11a.

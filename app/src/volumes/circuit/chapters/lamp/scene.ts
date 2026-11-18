@@ -64,6 +64,11 @@ export default defineScene((ctx) => {
   });
   /** The rail rewinds to the stand plan, then hands the camera to this shot (null: none). */
   let homeTo: string | null | undefined;
+  // the neighbour the reader comes from (null: a deep link): the first frame is the border frame (shared/world/border.ts)
+  const before = ctx.store.get();
+  let from = before.volumeId === ctx.manifest.volume && before.chapterId !== ctx.manifest.id ? before.chapterId : null;
+  let leaving = false;
+  let arriving = false;
   /** A step's own flight (`chapter.fly`) and the shot it ends on. */
   let flight: { rail: CameraRail; to: string; step: string | null } | null = null;
 
@@ -148,7 +153,22 @@ export default defineScene((ctx) => {
 
   return {
     enterStep(id, info) {
+      leaving = false;
       world.world.enterStep(id, info);
+      if (info.from === null) {
+        const again = { ...info, instant: false };
+        const then = (): void => {
+          arriving = false;
+          steps[id as StepId].enter?.(again);
+        };
+        if (world.world.border.arrive(id, from, { then })) {
+          lens.snap(world.stand.tools.poses.holder);
+          // the step's own per-frame rule (the story's switch follows its slider) waits for the hold: the border's
+          // lamp stays as the neighbour left it until the step plays its entry
+          arriving = true;
+        }
+        from = null;
+      }
       homeTo = undefined;
       if (id !== 'inside' && door.rail.engaged) {
         const camera = steps[id as StepId].spec.camera;
@@ -159,9 +179,25 @@ export default defineScene((ctx) => {
         }
       }
     },
+    leaveChapter(to) {
+      steps[stage.current as StepId]?.leave?.();
+      leaving = true;
+      flight = null;
+      homeTo = undefined;
+      // below the glass: the door's rail rewinds to the stand plan first (then lets the camera go: `homeTo` null)
+      if (door.rail.engaged) {
+        door.rail.travelTo(-LENS_LEG, homeSeconds(door.rail.position + LENS_LEG));
+        homeTo = null;
+      }
+      lens.call = 0;
+      lens.to(world.stand.tools.poses.holder, 1.6);
+      world.lamp.cut = 0;
+      const there = world.world.border.leave(to.chapterId);
+      return there ? () => there() && !door.rail.moving && !lens.gliding : null;
+    },
     update(dt, t) {
       const current = stage.current as StepId;
-      steps[current]?.update?.(dt, t);
+      if (!leaving && !arriving) steps[current]?.update?.(dt, t);
       world.update(dt, t);
       door.rail.update(dt);
       if (homeTo !== undefined && !door.rail.moving) {

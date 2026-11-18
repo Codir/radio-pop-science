@@ -84,12 +84,53 @@ export default defineScene((ctx) => {
     moving: ctx.camera.moving,
   }));
 
+  // the neighbour the reader comes from (null: a deep link): the first frame is the border frame (shared/world/border.ts)
+  const before = ctx.store.get();
+  let from = before.volumeId === ctx.manifest.volume && before.chapterId !== ctx.manifest.id ? before.chapterId : null;
+  let leaving = false;
   return {
     enterStep(id, info) {
+      leaving = false;
       world.world.enterStep(id, info);
+      const again = { ...info, instant: false };
+      const back = from === 'build';
+      const then = (): void => {
+        steps[id as StepId].enter?.(again);
+        if (back) steps[id as StepId].rewind?.(true);
+      };
+      if (info.from === null && world.world.border.arrive(id, from, { then })) {
+        // the meter and the counter frame off the table, the cut closed; from the practicum: the new battery in
+        // the cradle, the swap plays back
+        world.gauge.shown = 0;
+        world.frame.shown = 0;
+        world.meter.want = 0;
+        world.meter.probes = 0;
+        world.counter.want = 0;
+        world.cut.shown = 0;
+        if (back) steps[id as StepId].rewind?.(false);
+      }
+      from = null;
+    },
+    leaveChapter(to) {
+      const step = steps[stage.current as StepId];
+      step?.leave?.();
+      leaving = true;
+      world.meter.want = 0;
+      world.meter.probes = 0;
+      world.counter.want = 0;
+      world.cut.target = 0;
+      // to the practicum: the chapter's end — the new battery in the cradle, the dead one on the shelf; back to the
+      // lamp: the battery fresh again (the hours run back to 0 — the border's battery is the fresh one)
+      const end = to.chapterId === 'build' ? step?.finish?.() : undefined;
+      if (to.chapterId === 'lamp') world.hours.target = 0;
+      const fresh = (): boolean => to.chapterId !== 'lamp' || world.hours.shown < 0.01;
+      const there = world.world.border.leave(to.chapterId);
+      return there
+        ? () => there() && (end?.() ?? true) && fresh() && world.gauge.shown < 0.01 && world.frame.shown < 0.01
+        : null;
     },
     update(dt, t) {
-      steps[stage.current as StepId]?.update?.(dt, t);
+      if (!leaving) steps[stage.current as StepId]?.update?.(dt, t);
       world.update(dt, t);
       for (const id of STEP_IDS) steps[id].late?.(dt, t);
       switcher.update(dt);

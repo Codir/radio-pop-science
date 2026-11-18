@@ -17,6 +17,9 @@ import { createHanger, type Hanger } from './parts/hanger';
 
 type Vec = [number, number, number];
 
+/** Seconds the props take to grow in or shrink away at a chapter border. */
+const PRESENCE_SECONDS = 0.8;
+
 /** Depth of field on the table: the props sharp, the stand behind them soft (VISUAL §5: «поза фокусом»). */
 export const TABLE_POST: PostOverrides = { dofAperture: 4.2, dofRange: 1.1, dofMaxBlur: 13 };
 
@@ -72,6 +75,15 @@ export interface Props {
   hanger: Hanger;
   /** Where the figure stands now: null = its own place; a step may send it aside (it walks there). */
   aside: Vector3 | null;
+  /**
+   * The props on the table at all (1) or not (0): at a chapter border they grow out of / shrink into their places
+   * (in 0.8 s, eased) — on a phone the stand shot shows the table in front, and the border frame has no props.
+   */
+  shown: number;
+  /** How far they are shown now (0…1). */
+  readonly presence: number;
+  /** Jump to `shown` (the border frame on arrival). */
+  snapPresence(): void;
 }
 
 export interface ChargeWorld {
@@ -110,7 +122,21 @@ export function createChargeWorld(ctx: ChapterContext): ChargeWorld {
   group.add(figure.group, balloon.group, hanger.group);
   ctx.root.add(group);
   tameAll(group);
-  const props: Props = { group, figure, balloon, hanger, aside: null };
+  let presence = 1;
+  const props: Props = {
+    group,
+    figure,
+    balloon,
+    hanger,
+    aside: null,
+    shown: 1,
+    get presence() {
+      return presence;
+    },
+    snapPresence() {
+      presence = props.shown;
+    },
+  };
   const spot = new Vector3();
   let stepping = 0;
   const nameOf = (c: string): string => (c in COPPER_SHOTS ? `copper-${c}` : c);
@@ -145,6 +171,14 @@ export function createChargeWorld(ctx: ChapterContext): ChargeWorld {
       fp.z += (spot.z - fp.z) * k;
       stepping = left > 0.02 ? stepping + dt : 0;
       fp.y = left > 0.02 ? 0.035 * Math.abs(Math.sin(stepping * 9)) * Math.min(left * 4, 1) : 0;
+      const step = dt / PRESENCE_SECONDS;
+      presence = props.shown > presence ? Math.min(props.shown, presence + step) : Math.max(props.shown, presence - step);
+      // every prop grows from its own origin (its foot on the table); never quite 0 (the figure divides by it)
+      const grown = Math.max(presence * presence * (3 - 2 * presence), 1e-3);
+      for (const child of group.children) {
+        child.scale.setScalar(grown);
+        child.visible = presence > 1e-3;
+      }
       figure.update(dt, t);
       balloon.update(dt, t);
       hanger.update(dt, t);

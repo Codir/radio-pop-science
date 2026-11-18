@@ -2,14 +2,20 @@
 // Playwright helpers of the chapter's QA scripts (production hooks only; positions in CSS px from
 // `__ui.locate` / `__app.locate`, so one script serves every size). Runs on the frozen engine clock (`?freeze`).
 
+import { sheetTab as openSheetTab } from '../../../../../../../tools/qa/sheet-tab.mjs';
 /** Advance the frozen engine clock by `seconds`, then a few single frames so HUD fades settle. */
 export async function advance(page, seconds) {
   await page.evaluate((n) => window.__app.step(1 / 60, n), Math.max(1, Math.round(seconds * 60)));
   for (let i = 0; i < 10; i++) await page.evaluate(() => window.__app.step(1 / 60, 1));
 }
 
-/** Rectangle { x, y, w, h } (centre + size) of the control `ctl-<id>`; throws when it is not on screen. */
+/**
+ * Rectangle { x, y, w, h } (centre + size) of the control `ctl-<id>`; throws when it is not on screen. In a narrow
+ * window the controls sit on the sheet's «Керування» tab: it is opened first, as a reader would (as `wire`'s).
+ */
 export async function locate(page, id) {
+  // the tab first: a control on the hidden tab still reports its last box (the reader would not see it)
+  await openSheetTab(page, 'controls', (p) => advance(p, 0.2));
   const rect = await page.evaluate((n) => window.__ui.locate(n), `ctl-${id}`);
   if (!rect) throw new Error(`control '${id}' is not on screen`);
   return rect;
@@ -105,11 +111,17 @@ export async function dragFrom(page, p, fx, fy, { settle = 0.5 } = {}) {
 }
 
 /** Is a panel element (CSS selector) on screen (present and not inside a hidden subtree)? */
-export const shown = (page, sel) =>
-  page.evaluate((s) => {
+export const shown = async (page, sel) => {
+  // a narrow window: the step's text (takeaway, «Докладніше») is on the sheet's «Опис» tab — the reader turns to it
+  if (sel.includes('path-')) await openSheetTab(page, 'text', (p) => advance(p, 0.2));
+  return page.evaluate((s) => {
     const el = document.querySelector(s);
     return !!el && !el.closest('[hidden]');
   }, sel);
+};
+
+/** The sheet's «Опис» tab in a narrow window (no-op elsewhere): before reading or pressing the step's text. */
+export const textTab = (page) => openSheetTab(page, 'text', (p) => advance(p, 0.2));
 
 /** Click a panel element by CSS selector. */
 export async function press(page, sel) {
@@ -215,6 +227,8 @@ export function jumps(xs) {
 
 /** The slider's range input of a control (centre, width; CSS px) — its track, whatever the marks' rows below. */
 export async function rangeOf(page, id) {
+  // a narrow window: the slider sits on the sheet's «Керування» tab — opened first, as a reader would
+  await openSheetTab(page, 'controls', (p) => advance(p, 0.2));
   const r = await page.evaluate((n) => {
     const el = document.querySelector(`[data-ui="ctl-${n}"] input[type="range"]`);
     if (!el) return null;

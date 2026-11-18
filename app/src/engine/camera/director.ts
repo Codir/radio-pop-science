@@ -80,6 +80,8 @@ export interface Insets {
 
 const DEFAULT_FOV = 32;
 const DEFAULT_FRAME_ASPECT = 1.5;
+/** Rate (1/s) at which the idle drift amplitude follows a new shot's (≈ 0.6 s to settle). */
+const DRIFT_EASE = 5;
 
 /**
  * Re-framing on phones and tablets (F5). When the area the HUD leaves free is narrower than a shot's safe
@@ -234,6 +236,12 @@ export class CameraDirector {
   private arriveDuration = 0;
   private readonly insetsTarget: Insets = { left: 0, right: 0, top: 0, bottom: 0 };
   private time = 0;
+  /**
+   * Idle drift amplitude in effect: eases toward the shot's own (`DRIFT_EASE`), so a change of shot — a rail's
+   * still frames (drift 0) handing over to a step's shot — never switches the drift on in one frame (a hitch of up to
+   * 0.016 rad, docs/requests/B-circuit-charge.md §4).
+   */
+  private driftAmount = -1;
 
   constructor() {
     this.shot = { position: [0, 2, 10], target: [0, 0, 0] };
@@ -407,6 +415,19 @@ export class CameraDirector {
     this.arriveDuration = duration;
   }
 
+  /**
+   * @internal Continue another director's idle drift (the drift is a function of the director's own time) and its
+   * re-framing zoom: at a same-frame chapter border the incoming camera then stands exactly where the outgoing one
+   * stood.
+   */
+  followDrift(other: CameraDirector): void {
+    this.time = other.time;
+    this.driftAmount = other.driftAmount;
+    // the phone re-framing's magnification too (eased here; it would otherwise ease from this director's own)
+    this.camera.frameZoom = other.camera.frameZoom;
+    this.zoomSnap = false;
+  }
+
   /** @internal Advance easing, orbit damping and drift; update the three.js camera. */
   update(dt: number): void {
     this.time += dt;
@@ -555,7 +576,12 @@ export class CameraDirector {
 
   private applyToCamera(dt: number): void {
     const cam = this.camera;
-    const drift = this.reducedMotion ? REDUCED_MOTION.drift : (this.shot.drift ?? 1);
+    const want = this.reducedMotion ? REDUCED_MOTION.drift : (this.shot.drift ?? 1);
+    // the first placement takes the shot's amplitude as it is; afterwards it follows at a calm rate — also when a
+    // rail places the camera every frame (its frames carry drift 0: the drift fades out instead of snapping)
+    const eased = damp(this.driftAmount, want, DRIFT_EASE, dt);
+    this.driftAmount = this.driftAmount < 0 || Math.abs(eased - want) < 1e-4 ? want : eased;
+    const drift = this.driftAmount;
     const t = this.time;
     // idle drift: slow incommensurate sines — the frame is never perfectly still (STYLE_GUIDE §5)
     const az = this.orbitAz + Math.sin(t * 0.21) * 0.016 * drift;

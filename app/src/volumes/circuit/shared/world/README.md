@@ -93,3 +93,34 @@ direction slerped, distance log-lerped), the lens, `deep`, every dissolve — is
   A depth slider: `onChange: travelTo`, `onInput: (v, how) => how === 'drag' && scrub(v)`, and patch `current` with
   `world.position` (UI_API §3.3). Step flights (`fly`, `flyIn`, a change of `deep` between steps) ride the same rail:
   lens leg → travel → (if the step's camera is not the stop's shot) one camera move. A step entry releases the rail.
+
+## Chapter borders (`border.ts`, F-circuit-seams 2026-11-17)
+
+VISUAL §3: the last frame of a chapter and the first of its neighbour are one picture. Every chapter of the volume:
+
+- `SceneHooks.leaveChapter(to)` → its step module's `leave()`, the chapter's own props off the table, then
+  `world.border.leave(to.chapterId)`: from below the stand a flight up through the lens (the switch moves once it
+  has landed), on the stand a 2.4 s move to the stand shot; the lens home, its window shut, the switch and the
+  wires' tint as `BORDERS` says; returns the predicate «there» (the runtime swaps only then).
+- `enterStep` with `info.from === null` → `world.border.arrive(id, from, { then })` where `from` is the chapter that
+  was on screen when this one was created (`ctx.store.get()` at create): the step entered instantly is put on the
+  border frame (camera, params, `stand.snap()`), held 0.5 s (the platform's cross-fade, `volume.json → seamless`),
+  then the step's params and camera (or the dive) move in, and `then` replays the step's own entry non-instantly.
+  A deep link (`from` null or not a neighbour) does nothing here.
+- `prologue | wire` is the «away» frame (`away: true`; `world.flyIn` arrives from it; `leave` to the prologue
+  flies up, then pulls back behind the board with the cold light low, `AWAY_MOON`).
+- While leaving, a chapter skips its step's `update` (the step's own motion must not fight the walk).
+- `world.update` reports the floor to the header's chip (`setWhereBase`: «стенд», or the floor of a dive); a floor
+  ladder's own report wins while it stands.
+
+## Files (index, 2026-11-17)
+
+- `away.ts` — «Away»: the stand pulled back, small and low behind a board, out of focus — the frame the prologue ends on (`prologue/map`, the map of the v…
+- `border.ts` — Chapter borders: the walk to the shared border frame (`leave`) and the arrival from it (`arrive`); the table of the volume's borders.
+- `dive.ts` — The dive as a position, not as a flight (DECISIONS §60 p, the owner's rule for every slider that drives an animation in this volume
+- `flight.ts` — Moving between floors, on the dive rail (`dive.ts`).
+- `index.ts` — The composed world of the volume `circuit`: the stand (`shared/stage`) and the copper world (`shared/copper`) in one scene, one number for t…
+- `levels.ts` — One number for "how deep the reader is" in the composed world (VISUAL §3), and what every part of the two world libraries shows at that dept…
+- `look.ts` — Who owns the environment and the post stack.
+- `params.ts` — The stage params every chapter of the composed world shares (names fixed, so steps of different chapters read alike).
+- `window.ts` — The lens as a window onto «ряди» lying over the place it shows (VISUAL §3).

@@ -98,7 +98,8 @@ describe('volumes in the repository', () => {
     expect(el.aside).toBe('Попередній том: Електроенергія (чернетка)');
     expect(el.listed).toBe(false);
     const circuit = volumes.find((v) => v.dir === 'circuit')!.manifest;
-    expect(circuit.emptyNote.length).toBeGreaterThan(0);
+    // all nine chapters are built: no «Том у роботі» line (F-circuit-seams)
+    expect(circuit.emptyNote).toBe('');
   });
 
   it('volume 1 keeps its names in volume.json only: the home headline is the subtitle', () => {

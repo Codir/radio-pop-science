@@ -40,7 +40,8 @@ export default defineScene((ctx) => {
   };
   // the chapter on screen while this one loads: from a neighbour the reader arrives by the dive from the stand
   const before = ctx.store.get();
-  let diveIn = before.volumeId === ctx.manifest.volume && before.chapterId !== ctx.manifest.id;
+  let from = before.volumeId === ctx.manifest.volume && before.chapterId !== ctx.manifest.id ? before.chapterId : null;
+  let leaving = false;
   const steps = Object.fromEntries(STEP_IDS.map((id) => [id, FACTORIES[id](chapter)])) as Record<
     StepId,
     StepModule
@@ -74,13 +75,35 @@ export default defineScene((ctx) => {
   }));
   return {
     enterStep(id, info) {
+      leaving = false;
       stand.world.enterStep(id, info);
       if (info.instant) stand.snap();
-      if (diveIn && id === 'bumps' && info.from === null) stand.diveIn();
-      diveIn = false;
+      // arriving across a border (shared/world/border.ts): the stand as the neighbour left it — dark, the lens home,
+      // nothing of this chapter on the table; then `bumps` dives in by itself, any other step plays its entry
+      const again = { ...info, instant: false };
+      const then = (): void => {
+        if (id === 'bumps') stand.diveIn();
+        else steps[id as StepId].enter?.(again);
+      };
+      if (info.from === null && stand.world.border.arrive(id, from, { camera: id !== 'bumps', then })) {
+        stand.thermoShown.set(0);
+        stand.frameShown.set(0);
+      }
+      from = null;
+    },
+    leaveChapter(to) {
+      steps[stage.current as StepId]?.leave?.();
+      leaving = true;
+      stand.thermoShown.go(0, 0.8);
+      stand.frameShown.go(0, 0.8);
+      stand.stretch.go(1, 1.2);
+      const there = stand.world.border.leave(to.chapterId);
+      return there
+        ? () => there() && stand.thermoShown.value < 0.005 && stand.frameShown.value < 0.005
+        : null;
     },
     update(dt, t) {
-      steps[stage.current as StepId]?.update?.(dt, t);
+      if (!leaving) steps[stage.current as StepId]?.update?.(dt, t);
       stand.update(dt, t);
     },
   };

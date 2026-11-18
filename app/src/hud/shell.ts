@@ -150,7 +150,8 @@ export class Hud implements HudContext {
       if (live && step && this.chapter)
         live.textContent = `${this.chapter.title}. ${step.title}. ${step.blurb}`;
     });
-    engine.runtime.on('transitionStart', ({ duration }) => this.transition(duration));
+    // a same-frame border of a `seamless` volume keeps the chrome: the panel simply turns to the next chapter
+    engine.runtime.on('transitionStart', ({ duration, seamless }) => !seamless && this.transition(duration));
     engine.input.on('action', (action) => {
       if (action === 'map') {
         // the lobby's volume has no journey to show yet

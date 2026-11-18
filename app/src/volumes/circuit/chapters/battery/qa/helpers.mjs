@@ -72,6 +72,9 @@ export async function tap(page, x, y) {
 
 /** Rectangle { x, y, w, h } (centre + size) of the control `ctl-<id>`; throws when it is not on screen. */
 export async function locate(page, id) {
+  // a narrow window: the controls sit on the sheet's «Керування» tab — opened first, as a reader would (a control
+  // on the hidden tab still reports its last box)
+  if (await sheetTab(page, 'controls')) await advance(page, 0.2);
   const rect = await page.evaluate((n) => window.__ui.locate(n), `ctl-${id}`);
   if (!rect) throw new Error(`control '${id}' is not on screen`);
   return rect;

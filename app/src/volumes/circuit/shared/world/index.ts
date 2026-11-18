@@ -26,7 +26,9 @@ import {
 import { createCopper, type Copper } from '@circuit/shared/copper/copper';
 import { mountAtHandover } from '@circuit/shared/copper/mount';
 import { copperShots } from '@circuit/shared/copper/shots';
-import { AWAY_POST, AWAY_SHOT } from './away';
+import { AWAY_MOON, AWAY_POST, AWAY_SHOT } from './away';
+import { setWhereBase } from '@/hud/where';
+import { HOLD, createBorders, type Borders } from './border';
 import { createDiveRail } from './dive';
 import { createFlight } from './flight';
 import { floorAt, floorValue, mixAt, type FloorId } from './levels';
@@ -37,8 +39,9 @@ import { registerParams, type WorldParam } from './params';
 export * from './levels';
 export { STOP_SHOTS } from './flight';
 export { LENS_LEG } from './dive';
-export { AWAY_FOCUS, AWAY_POST, AWAY_SHOT } from './away';
+export { AWAY_FOCUS, AWAY_MOON, AWAY_POST, AWAY_SHOT } from './away';
 export type { WorldParam } from './params';
+export { BORDERS, borderOf, type BorderState, type Borders } from './border';
 
 export interface WorldOptions {
   /** Radius of the lamp's globe (`mountStage` option; default = the stage's default). */
@@ -106,6 +109,8 @@ export interface CircuitWorld {
    * its holder, then fly down to the step's own floor and camera. Returns the seconds it takes.
    */
   flyIn(id: string, info?: Pick<StepInfo, 'scope'>): void;
+  /** Chapter borders: the walk to the shared border frame and the arrival from it (`border.ts`). */
+  border: Borders;
   /** Forward from the scene's `enterStep`. Re-choreographs a change of floor as a flight; snaps on deep links. */
   enterStep(id: string, info: StepInfo): void;
   /** Forward from the scene's `update`. */
@@ -157,13 +162,41 @@ export function mountWorld(ctx: ChapterContext, opts: WorldOptions = {}): Circui
     () => params.deep.value,
     () => params.lens.value,
   );
+  // the header's floor chip (`hud/where.ts`): the stand, or the floor of a dive — never the chapter's own floor
+  // while the camera is elsewhere (a floor ladder's report, where a chapter has one, wins over this)
+  const whereKey = `${ctx.manifest.volume}/${ctx.manifest.id}`;
+  ctx.onDispose(() => setWhereBase(whereKey, null));
   const specs: Record<string, StepSpec> = {};
+  /** `flyIn` waits out the border hold before it moves. */
+  let flyInAfter: { wait: number; go(): void } | null = null;
   const standPost = (): PostOverrides => specs[ctx.stage.current ?? '']?.post ?? STAGE_POST.stand;
+  const border = createBorders(ctx.manifest.id, {
+    ctx,
+    specs,
+    value: (name) => params.all.get(name as WorldParam)?.value ?? Number.NaN,
+    get deep() {
+      return params.deep.value;
+    },
+    get flying() {
+      return flight.flying;
+    },
+    release: () => flight.release(),
+    fly: (deep, camera, lens) => flight.fly({ deep, camera, lens }),
+    travel: (t, seconds) => flight.travelTo(t, seconds),
+    snap() {
+      rail.set(0);
+      iris = 0;
+      stand.snap();
+      apply();
+      look.assert(false, { instant: true, standPost: STAGE_POST.stand });
+    },
+  });
   const world: CircuitWorld = {
     stand,
     copper,
     scale,
     window: win,
+    border,
     lensPose: null,
     drift: opts.drift ?? 0.05,
     afterLens: null,
@@ -212,20 +245,26 @@ export function mountWorld(ctx: ChapterContext, opts: WorldOptions = {}): Circui
       // the reader leaves the prologue on the «away» frame (the stand behind the map board): start right there and
       // move on in one go — the focus pulls from the board's plane onto the stand while the camera comes in
       ctx.camera.go('away', { instant: true });
+      // the prologue's map left the room's cold light low: it comes back up with the move
+      ctx.stage.setParam('moon', AWAY_MOON, { instant: true });
       apply();
       look.assert(false, { instant: true, standPost: AWAY_POST });
-      ctx.post.apply(STAGE_POST.stand, { duration: ENTRY_LEAD * 0.8 });
       flight.release();
-      flight.fly(
-        {
-          deep: spec.params?.deep ?? 0,
-          camera: spec.camera as string,
-          lens: spec.params?.lens ?? 1,
+      // the border frame holds while the platform cross-fades the two equal frames (`border.ts` HOLD), then moves
+      flyInAfter = {
+        wait: HOLD,
+        go() {
+          ctx.stage.setParam('moon', (spec.params?.moon as number | undefined) ?? 1, { duration: ENTRY_LEAD });
+          ctx.post.apply(STAGE_POST.stand, { duration: ENTRY_LEAD * 0.8 });
+          flight.fly(
+            { deep: spec.params?.deep ?? 0, camera: spec.camera as string, lens: spec.params?.lens ?? 1 },
+            ENTRY_LEAD,
+          );
         },
-        ENTRY_LEAD,
-      );
+      };
     },
     enterStep(id, info) {
+      flyInAfter = null;
       const spec = specs[id];
       const to = spec?.params?.deep ?? 0;
       const from = info.instant ? to : params.deepBefore;
@@ -250,6 +289,12 @@ export function mountWorld(ctx: ChapterContext, opts: WorldOptions = {}): Circui
     },
     update(dt, t) {
       frameDt = dt;
+      if (flyInAfter && (flyInAfter.wait -= dt) <= 0) {
+        const { go } = flyInAfter;
+        flyInAfter = null;
+        go();
+      }
+      border.update(dt);
       flight.update(dt);
       stand.update(dt, t);
       const toPose = world.lensPose && params.deep.value < 0.01 && params.lens.value > 0.99 ? 1 : 0;
@@ -273,6 +318,7 @@ export function mountWorld(ctx: ChapterContext, opts: WorldOptions = {}): Circui
       }
       look.update(mixAt(params.deep.value).below, copper.depth, standPost());
       params.deepBefore = params.deep.value;
+      setWhereBase(whereKey, params.deep.value > 0.01 ? floorAt(params.deep.value) : 'stand');
     },
   };
   function apply(): void {

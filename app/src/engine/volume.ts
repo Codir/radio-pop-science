@@ -49,6 +49,11 @@ export interface VolumeIdentity {
   readonly emptyNote?: string;
   /** Chapter document format: `classic` (volume 1, default) or `path` (docs/PATH_FORMAT.md). */
   readonly format?: string;
+  /**
+   * The chapters share one world and every border is the same frame (the last of one chapter = the first of the
+   * next): a chapter change is a short plain cross-fade, never the scale-zoom. Default false.
+   */
+  readonly seamless?: boolean;
   readonly axis: {
     readonly label: string;
     readonly unit: string;
@@ -225,6 +230,8 @@ export interface VolumeManifest {
   };
   /** Chapter document format of the volume: `path` chapters use the one-reader step panel. */
   readonly format: 'classic' | 'path';
+  /** Borders are the same frame: chapter changes cross-fade instead of zooming (`volume.json` `seamless`). */
+  readonly seamless: boolean;
   /** What the glossary shows when opened inside this volume: its own terms, or the whole library's. */
   readonly glossary: { readonly scope: 'volume' | 'library' };
   /** Default environment of the volume: the look of its chapters unless a chapter chooses otherwise. */
@@ -345,6 +352,7 @@ export function defineVolume(identity: VolumeIdentity, spec: VolumeSpec): Volume
       planned: identity.journey,
     },
     format,
+    seamless: identity.seamless === true,
     glossary: spec.glossary ?? { scope: 'volume' },
     theme: { ...spec.theme, accent: spec.theme.accent ?? accent },
     fixtures: spec.fixtures,
@@ -357,17 +365,28 @@ export function floorValue(volume: VolumeManifest, floor: string | undefined): n
 }
 
 /**
- * The name of a floor as the reader may see it now: its `plain` name until the step that introduces the word
- * has been opened (`visited`: full chapter id `volume/chapter` → opened step ids, the store's progress).
+ * The name of a floor as the reader may see it now: its `plain` name until the reader is past the step that
+ * introduces the word (`visited`: full chapter id `volume/chapter` → opened step ids, the store's progress) —
+ * that step opened, or any step of a later chapter of the journey (a deep link into a later chapter, whose text
+ * already uses the word), or, when `stepsOf` gives the order of the steps of that step's own chapter, a later
+ * step of it.
  */
 export function floorLabel(
   volume: VolumeManifest,
   floor: AxisFloor,
   visited: Readonly<Record<string, readonly string[]>>,
+  stepsOf?: (chapterId: string) => readonly string[] | undefined,
 ): string {
   if (!floor.namedAt || floor.plain === undefined) return floor.label;
   const [chapter, step] = floor.namedAt.split('/') as [string, string];
-  return visited[`${volume.id}/${chapter}`]?.includes(step) ? floor.label : floor.plain;
+  const seen = (c: string): readonly string[] => visited[`${volume.id}/${c}`] ?? [];
+  if (seen(chapter).includes(step)) return floor.label;
+  const order = (volume.journey.planned ?? []).map((c) => c.id);
+  const at = order.indexOf(chapter);
+  if (at >= 0 && order.slice(at + 1).some((c) => seen(c).length > 0)) return floor.label;
+  const steps = stepsOf?.(chapter);
+  const i = steps?.indexOf(step) ?? -1;
+  return i >= 0 && seen(chapter).some((s) => steps!.indexOf(s) > i) ? floor.label : floor.plain;
 }
 
 /** Short on-screen name of a group of the volume (empty for an unknown group). */

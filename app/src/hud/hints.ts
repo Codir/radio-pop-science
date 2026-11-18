@@ -25,6 +25,7 @@ export function createLoading(hud: Hud): HudModule {
     children: [ring, text],
   });
   let active = false;
+  let loaded = false;
   let spin = 0;
   hud.engine.store.subscribe(
     (s) => s.transition,
@@ -35,9 +36,11 @@ export function createLoading(hud: Hud): HudModule {
         text.text = title ? `Завантаження: ${title}…` : 'Завантаження розділу…';
         ring.spin = 0;
         // quick loads (cached chunks) never flash the pill: it appears only after a moment
-        hud.host.tweens.delay(0.25, () => active && reveal(node, { dy: -10 }));
+        // a same-frame border (`quiet`): the pill only if the loading outlasts the walk to the border
+        hud.host.tweens.delay(t.quiet ? 3 : 0.25, () => active && !(t.quiet && loaded) && reveal(node, { dy: -10 }));
       } else if (!loading && active) conceal(node, { dy: -6 });
       active = loading;
+      loaded = loading && t.progress >= 1;
       if (loading && t.progress > 0.02) {
         ring.spin = null;
         ring.value = t.progress;

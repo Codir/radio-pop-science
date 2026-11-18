@@ -4,10 +4,9 @@
  * reader did inside a step lives in that step's module and is re-derived on entry.
  */
 import { Vector3 } from 'three';
-import { defineScene } from '@/engine/api';
+import { defineScene, type StepInfo } from '@/engine/api';
 import { stepUi, type StepUiApi } from '@/hud';
 import { floorLadder } from '@/hud-dom/journey';
-import { setWhere } from '@/hud/where';
 import {
   sessionGoals,
   STEP_IDS,
@@ -26,19 +25,19 @@ import { neutralStep } from './steps/04-neutral';
 import { fieldStep } from './steps/05-field';
 import { shiftStep } from './steps/06-shift';
 import { createChargeWorld } from './world';
-
-/** Seconds of the move from the stand shot (where chapter 1 ended) to the table. */
-const ARRIVE = 2.6;
+import { BALLOON_REST } from './layout';
 
 export default defineScene((ctx) => {
   const { stage } = ctx;
   const world = createChargeWorld(ctx);
   const ui = stepUi(ctx) as StepUiApi<StepId>;
   const ladder = floorLadder(ctx, { floor: () => (world.world.deep > 0.01 ? world.world.floorId : null) });
-  // the chapter on screen while this one loads: from chapter 1 the reader arrives from its last frame, the stand
+  // the chapter on screen while this one loads: the reader arrives from its last frame, the stand (border.ts)
   const before = ctx.store.get();
-  let fromWire = before.volumeId === ctx.manifest.volume && before.chapterId === 'wire';
-  const where = `${ctx.manifest.volume}/${ctx.manifest.id}`;
+  let from = before.volumeId === ctx.manifest.volume && before.chapterId !== ctx.manifest.id ? before.chapterId : null;
+  /** The step entered on arrival, to be played again from the border frame on the first frame on screen. */
+  let replay: { id: StepId; info: StepInfo } | null = null;
+  let leaving = false;
   const rub = createRubState(ctx, world.props);
   const keeper = createLensKeeper(world.world.stand);
   const view = createLensView(ctx, world.world.stand);
@@ -89,26 +88,54 @@ export default defineScene((ctx) => {
 
   return {
     enterStep(id, info) {
+      leaving = false;
       world.world.enterStep(id, info);
       // the lens leaves the chapter's own places for its holder when a step does not use it
       if (id !== 'charge') view.want = 0;
       if (id !== 'charge' && id !== 'shift') keeper.home(1.1, info.instant);
-      // chapter 1 ends on the stand shot: the first frame here is that frame, then the camera comes to the table
-      if (fromWire && id === 'rub' && info.from === null) {
-        ctx.camera.go('stand', { instant: true });
-        ctx.camera.go('charge-table', { duration: ARRIVE, ease: 'sine.inOut' });
-      }
-      fromWire = false;
+      // the neighbour ended on the border frame (the stand, the lens home): start there, then play the step's
+      // own entry (the camera to the table, the lens to its place) as a reader arriving from the previous step
+      const again = { id: id as StepId, info };
+      const then = (): void => {
+        replay = again;
+        world.props.shown = 1;
+      };
+      if (info.from === null && world.world.border.arrive(id, from, { camera: false, then })) {
+        keeper.home(0, true);
+        view.want = 0;
+        // the border frame has no props on the table: they grow into their places after the hold
+        world.props.shown = 0;
+        world.props.snapPresence();
+      } else world.props.shown = 1;
+      from = null;
+    },
+    leaveChapter(to) {
+      const id = stage.current as StepId;
+      steps[id]?.leave?.();
+      leaving = true;
+      // the lens to its holder, the balloon to its place on the table (outside the stand shot)
+      view.want = 0;
+      keeper.home(1.6);
+      rub.hand.drive(null);
+      rub.hand.home = BALLOON_REST;
+      world.props.shown = 0;
+      const there = world.world.border.leave(to.chapterId);
+      return there ? () => there() && !keeper.active && world.props.presence <= 1e-3 : null;
     },
     update(dt, t) {
       world.update(dt, t);
-      steps[stage.current as StepId]?.update?.(dt, t);
+      if (replay) {
+        const { id, info } = replay;
+        replay = null;
+        const { camera, cameraMove } = steps[id].spec;
+        if (camera !== undefined) ctx.camera.go(camera, { duration: cameraMove?.duration ?? 2.6, ease: 'sine.inOut' });
+        steps[id].enter?.({ ...info, instant: false });
+      }
+      if (!leaving) steps[stage.current as StepId]?.update?.(dt, t);
       for (const id of STEP_IDS) steps[id].tick?.(dt, t);
       rub.hand.update(dt);
       view.update(dt, t);
       ladder.update();
-      // on the table the header's floor chip says «стенд» (the ladder itself shows only below the stand)
-      if (world.world.deep <= 0.01) setWhere(where, 'stand');
     },
   };
 });

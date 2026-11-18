@@ -4,8 +4,8 @@
 //
 //   node app/src/volumes/circuit/chapters/resistance/qa/interactions.mjs --port 5315 [--size 1280x720] [--touch] [--out <dir>]
 //
-// The chapter is entered from its neighbour (`flow/push` on screen): its first frame is the stand shot with the lamp
-// on, then the dive. Every goal is reached by real pointer input (mouse, or touch with --touch): an electron
+// The chapter is entered from its neighbour (`flow/push` on screen): its first frame is the border frame — the stand
+// shot with the lamp on (`flow` lights it on its way to the border, shared/world/border.ts) — then the dive. Every goal is reached by real pointer input (mouse, or touch with --touch): an electron
 // tapped and five hits after it, the switch opened and closed, the snake's handle pulled to its end (and back on
 // the way: it scrubs), the lens carried round the loop. After each the panel must show «Висновок». Each step is
 // arrived at the way a reader arrives, and every travelling number is sampled frame by frame on the way in: its

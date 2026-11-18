@@ -26,6 +26,7 @@ import {
 import { Builder, G } from '@/kit';
 import { K, col, type KGlassMaterial, type KGlowMaterial } from '@/style';
 import { supportPath } from './bulb-close';
+import type { BulbPrint } from './bulb-print';
 import { LAMP } from './layout';
 import { createLampCloseUp, type LampCloseUp } from './lamp-view';
 import { sheath } from './materials';
@@ -65,6 +66,8 @@ export interface BulbModel {
   glass: Mesh;
   /** The close-up level: fine coil, leads to the contact and the thread, the cut, the path, anchors. */
   close: LampCloseUp;
+  /** «0,3 A» on the base (`bulb-print.ts`; laid by the stage's mount — text needs the fonts — null before). */
+  print: BulbPrint | null;
 }
 
 function coilGeometry(turns: number, radius: number, wire: number): TubeGeometry {
@@ -301,6 +304,7 @@ export function createBulb(B: BulbDims = BULB): BulbModel {
   const fineWarm = col('yellow.light');
   return {
     close,
+    print: null,
     group: model.group,
     filament,
     coil,

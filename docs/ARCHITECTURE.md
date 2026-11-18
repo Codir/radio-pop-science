@@ -179,6 +179,11 @@ Chrome must be launched with `--use-angle=vulkan --enable-gpu --ignore-gpu-block
 - `library-check.mjs` — the library level against the dev-only demo volume: library screen, entering a volume,
   cross-volume link, per-volume progress, glossary scope, legacy links, storage migration, and (against a
   production build) that no dev-volume code is requested without `?debug`.
+- `volume-walk.mjs <volume> [--touch]` — the whole volume as a reader walks it (fresh browser, plain address, real
+  clock, «Далі» only; a goal only where the navigator waits for it): every frame sampled (camera, mean light),
+  each chapter border crossed forward, back and forward again; the frame before the swap and the first after the
+  cross-fade compared, camera/light jumps and flashes near the swap fail, those elsewhere are listed. The
+  regression test of a `seamless` volume's borders (`walk-parts.mjs`; `--from chapter/step --until chapter`).
 
 Routes given to the tools are `<volume>/<chapter>/<step>` or the short `<chapter>/<step>`; `chapter-check`
 takes `<chapter>` or `<volume>/<chapter>`.

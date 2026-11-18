@@ -99,16 +99,29 @@ export default defineScene((ctx) => {
     camera: ctx.camera.camera.position.toArray().map((v) => Math.round(v * 100) / 100),
     reached: STEP_IDS.filter((s) => sessionGoals.has(s)),
   }));
+  /** Walking back to the border with `drain` (shared/world/border.ts): the step's own motion rests. */
+  let leaving = false;
   return {
     enterStep(id, info) {
+      leaving = false;
       bench.world.enterStep(id, info);
       if (info.instant) {
         bench.snap();
         bench.stage.snap();
       }
     },
+    leaveChapter(to) {
+      // «Назад» to `drain`: the stand as `drain` left it — every end home, the lamp lit, the dead battery on the shelf
+      steps[stage.current as StepId]?.leave?.();
+      leaving = true;
+      bench.restore(1.2);
+      bench.sw.closed = true;
+      bench.shelf = 1;
+      const there = bench.world.border.leave(to.chapterId);
+      return there ? () => there() && !bench.wiring.moving : null;
+    },
     update(dt, t) {
-      steps[stage.current as StepId]?.update?.(dt, t);
+      if (!leaving) steps[stage.current as StepId]?.update?.(dt, t);
       bench.update(dt, t);
       bench.world.update(dt, t);
       for (const id of STEP_IDS) steps[id].late?.(dt, t);

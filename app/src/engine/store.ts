@@ -75,6 +75,11 @@ export interface TransitionState {
   direction: 1 | -1;
   /** Loading progress 0…1 while `phase === 'loading'`, animation progress while `animating`. */
   progress: number;
+  /**
+   * A same-frame border of a `seamless` volume: the chapter on screen walks to the border frame while the next one
+   * loads, so the loading itself is no event for the reader (the HUD shows its pill only if it takes long).
+   */
+  quiet?: boolean;
 }
 
 export interface AppState {

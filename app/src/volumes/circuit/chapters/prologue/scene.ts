@@ -6,7 +6,7 @@
 import { defineScene } from '@/engine/api';
 import { stepUi } from '@/hud';
 import { floorLadder } from '@/hud-dom/journey';
-import { AWAY_POST, LENS_LEG, mountWorld } from '@circuit/shared/world';
+import { AWAY_MOON, AWAY_POST, LENS_LEG, borderOf, mountWorld } from '@circuit/shared/world';
 import content from './content';
 import { PROLOGUE_SHOTS } from './shots';
 import { diveStep } from './steps/dive';
@@ -65,7 +65,7 @@ export default defineScene((ctx) => {
     // cold light low, strongly out of focus (the focus is in front of it, `AWAY_FOCUS`), the corners darker
     map: {
       camera: 'map',
-      params: { closed: 1, moon: 0.3 },
+      params: { closed: 1, moon: AWAY_MOON },
       post: AWAY_POST,
     },
   });
@@ -135,6 +135,11 @@ export default defineScene((ctx) => {
       // the crawl arrives with `riddle` and leaves with every other step, as one motion (shared/stage README «Crawl»)
       if (id === 'riddle') riddle.enter(info);
       else world.stand.crawlScene.hide(info.instant);
+    },
+    // the map step is the border frame with `wire` already (the «away» frame, `world.flyIn` starts there); from any
+    // other step, or to another chapter, the platform's own transition
+    leaveChapter(to) {
+      return ctx.stage.current === 'map' && borderOf('prologue', to.chapterId) ? 0 : null;
     },
     update(dt, t) {
       world.update(dt, t);

@@ -241,6 +241,10 @@
           {
             "target": "circuit/flow/loop",
             "title": "Замкнена дорога"
+          },
+          {
+            "target": "circuit/battery/inside",
+            "title": "Дві речовини"
           }
         ],
         "hints": [
@@ -346,6 +350,10 @@
           {
             "target": "circuit/flow/together",
             "title": "Рушають усі разом"
+          },
+          {
+            "target": "circuit/charge/field",
+            "title": "Довкола заряду"
           }
         ],
         "hints": [

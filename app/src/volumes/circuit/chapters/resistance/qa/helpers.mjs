@@ -2,14 +2,20 @@
 // Playwright helpers of the chapter's QA scripts (production hooks only; positions in CSS px from
 // `__ui.locate` / `__app.locate`, so one script serves every size). Runs on the frozen engine clock (`?freeze`).
 
+import { sheetTab as openSheetTab } from '../../../../../../../tools/qa/sheet-tab.mjs';
 /** Advance the frozen engine clock by `seconds`, then a few single frames so HUD fades settle. */
 export async function advance(page, seconds) {
   await page.evaluate((n) => window.__app.step(1 / 60, n), Math.max(1, Math.round(seconds * 60)));
   for (let i = 0; i < 10; i++) await page.evaluate(() => window.__app.step(1 / 60, 1));
 }
 
-/** Rectangle { x, y, w, h } (centre + size) of the control `ctl-<id>`; throws when it is not on screen. */
+/**
+ * Rectangle { x, y, w, h } (centre + size) of the control `ctl-<id>`; throws when it is not on screen. In a narrow
+ * window the controls sit on the sheet's «Керування» tab: it is opened first, as a reader would (as `wire`'s).
+ */
 export async function locate(page, id) {
+  // the tab first: a control on the hidden tab still reports its last box (the reader would not see it)
+  await openSheetTab(page, 'controls', (p) => advance(p, 0.2));
   const rect = await page.evaluate((n) => window.__ui.locate(n), `ctl-${id}`);
   if (!rect) throw new Error(`control '${id}' is not on screen`);
   return rect;

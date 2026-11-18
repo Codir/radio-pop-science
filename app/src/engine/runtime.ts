@@ -38,6 +38,21 @@ import { Rng } from './random';
 import type { Library } from './library';
 import { Stage } from './stage';
 import { samePosition, type Position, type Store } from './store';
+
+/** Seconds of the plain cross-fade at a border of a `seamless` volume (two equal pictures; hides the heavy frames). */
+const SEAMLESS_FADE = 0.3;
+/** Longest wait (s) for a leaving chapter's border frame when it gives a predicate (`SceneHooks.leaveChapter`). */
+const LEAVE_MAX = 12;
+/** Seconds a same-frame border keeps the outgoing camera's free area before following the HUD's again. */
+const INSET_HOLD = 0.8;
+/** A chapter's predicate that throws counts as true (never hold navigation on a bug). */
+const safe = (fn: () => boolean): boolean => {
+  try {
+    return fn();
+  } catch {
+    return true;
+  }
+};
 import { EASE, type Tween, type Tweens, type TweenScope } from './tween';
 
 export interface RuntimeEvents {
@@ -47,7 +62,8 @@ export interface RuntimeEvents {
    * The scale-zoom between two chapters started. HUD: animate panels out/in here.
    * `from` / `to` are full chapter ids (`<volume>/<chapter>`), as in the store's `transition`.
    */
-  transitionStart: { from: string | null; to: string; direction: 1 | -1; duration: number };
+  /** `seamless`: a same-frame border (no zoom): the HUD keeps its chrome, no whoosh. */
+  transitionStart: { from: string | null; to: string; direction: 1 | -1; duration: number; seamless: boolean };
   transitionEnd: { from: string | null; to: string };
   /** A step became current (after its state was applied). `from` is the previous step id. */
   step: { volumeId: string; chapterId: string; stepId: string; from: string | null; instant: boolean };
@@ -159,12 +175,20 @@ export class ChapterRuntime {
     elapsed: number;
     duration: number;
     reduced: boolean;
+    /** Same-frame border of a `seamless` volume: a plain cross-fade, no chromatic aberration. */
+    seamless: boolean;
     from: string | null;
     to: string;
     direction: 1 | -1;
     /** Frames still to render before the animation starts (see `update`). */
     warmup: number;
   } | null = null;
+  /** The chapter on screen was asked to walk to its border frame (`leaveChapter`) for a pending load. */
+  private leaving = false;
+  /** The pending load crosses a shared border (the outgoing chapter walked to it): a same-frame swap. */
+  private border = false;
+  /** Seconds the director keeps the outgoing free area after a same-frame border (`swap`, `seamless`). */
+  private insetHold = 0;
   private transitionSpeed = 1;
   private settleWaiters: (() => void)[] = [];
   private readonly view: WorldView = {
@@ -185,7 +209,11 @@ export class ChapterRuntime {
         else if (m) m.needsUpdate = true;
       });
     });
-    deps.hud.onInsets((insets) => this.active?.director.setInsets(insets));
+    // a same-frame border holds the outgoing free area a moment: the incoming chapter's panel rebuilds and reports
+    // passing insets meanwhile (the frame would swim); afterwards it eases to whatever the HUD reports then
+    deps.hud.onInsets((insets) => {
+      if (this.insetHold <= 0) this.active?.director.setInsets(insets);
+    });
     // the device became a phone / tablet or a desktop (emulation, a mouse plugged in), or the reader chose
     // «Версія для комп'ютера» (`Settings.deskShell`): re-framing follows the form factor the HUD lays out for
     deps.hud.onResize((m) => {
@@ -266,6 +294,7 @@ export class ChapterRuntime {
   update(dt: number, t: number): void {
     const a = this.active;
     if (!a) return;
+    if (this.insetHold > 0 && (this.insetHold -= dt) <= 0) a.director.setInsets(this.deps.hud.insetFractions());
     a.hooks.update?.(dt, t);
     a.director.update(dt);
     const vp = this.deps.viewport();
@@ -288,6 +317,7 @@ export class ChapterRuntime {
           to: zoom.to,
           direction: zoom.direction,
           duration: zoom.duration,
+          seamless: zoom.seamless,
         });
       }
     } else if (zoom) {
@@ -295,7 +325,7 @@ export class ChapterRuntime {
       const p = zoom.duration <= 0 ? 1 : Math.min(zoom.elapsed / zoom.duration, 1);
       pipeline.transition.progress = EASE['sine.inOut'](p);
       // chromatic aberration only during transitions (STYLE_GUIDE §4)
-      pipeline.params.chroma = zoom.reduced ? 0 : Math.sin(p * Math.PI) * 0.014;
+      pipeline.params.chroma = zoom.reduced || zoom.seamless ? 0 : Math.sin(p * Math.PI) * 0.014;
       a.director.camera.freeCenter(pipeline.transition.center);
       if (p >= 1) {
         this.zoom = null;
@@ -338,7 +368,10 @@ export class ChapterRuntime {
         this.loadingChapter = null;
         this.setTransition('idle');
       }
-      if (a.stepId !== want.stepId) this.enterStep(a, want.stepId, this.wantedInstant);
+      // a chapter already walking to its border frame comes back to the step (even the same one) from there
+      const back = this.leaving;
+      this.leaving = false;
+      if (a.stepId !== want.stepId || back) this.enterStep(a, want.stepId, this.wantedInstant);
       this.checkSettled();
       return;
     }
@@ -367,8 +400,31 @@ export class ChapterRuntime {
       active ? { volumeId: active.volume, chapterId: active.id } : null,
       target,
     );
-    store.set({ transition: { phase: 'loading', from, to: key, direction, progress: 0 } });
+    const quiet =
+      active !== undefined && active.volume === volumeId && library.get(volumeId)?.seamless === true;
+    store.set({ transition: { phase: 'loading', from, to: key, direction, progress: 0, quiet } });
     this.events.emit('loading', { volumeId, chapterId, progress: 0 });
+    // the chapter on screen walks to its border frame while the next one loads (SceneHooks.leaveChapter)
+    let exitEnd = 0;
+    let exitDone: (() => boolean) | null = null;
+    const out = this.active;
+    if (out && !this.leaving) {
+      const stepId = this.wanted?.chapterId === chapterId ? this.wanted.stepId : manifest.steps[0]!.id;
+      let exit: number | (() => boolean) | null = null;
+      try {
+        exit = out.hooks.leaveChapter?.({ volumeId, chapterId, stepId }) ?? null;
+      } catch (error) {
+        console.error(`[runtime] ${out.manifest.id}: leaveChapter failed:`, error);
+      }
+      // null: no shared border with that chapter (a jump across the map) — the platform's own transition
+      this.leaving = exit !== null;
+      this.border = exit !== null;
+      if (!this.border && quiet) store.set((st) => ({ transition: { ...st.transition, quiet: false } }));
+      if (exit !== null && !this.deps.deterministic()) {
+        exitEnd = this.deps.clock.time + (typeof exit === 'number' ? exit : LEAVE_MAX);
+        if (typeof exit === 'function') exitDone = exit;
+      }
+    }
     let instance: Instance | null = null;
     try {
       const mod = await manifest.load();
@@ -407,6 +463,15 @@ export class ChapterRuntime {
         return;
       }
       this.events.emit('loading', { volumeId, chapterId, progress: 1 });
+      store.set((st) => ({ transition: { ...st.transition, progress: 1 } }));
+      // the outgoing chapter reaches its border frame first
+      while (this.deps.clock.time < exitEnd && !(exitDone && safe(exitDone))) {
+        await this.deps.nextFrame();
+        if (token !== this.loadToken) {
+          this.disposeInstance(instance);
+          return;
+        }
+      }
       // freeze the outgoing frame (one more frame of the old scene), then swap
       pipeline.requestFreeze();
       await this.deps.nextFrame();
@@ -420,6 +485,7 @@ export class ChapterRuntime {
       if (instance) this.disposeInstance(instance);
       if (token !== this.loadToken) return;
       this.loadingChapter = null;
+      this.leaving = false;
       this.setTransition('idle');
       console.error(`[runtime] failed to load chapter '${key}':`, error);
       this.events.emit('error', { volumeId, chapterId, error });
@@ -436,24 +502,42 @@ export class ChapterRuntime {
     const previous = this.active;
     this.active = next;
     this.loadingChapter = null;
+    this.leaving = false;
+    // the outgoing camera's free area (its panels' insets as they were in its last frame)
+    const framed = previous ? { ...previous.director.camera.insets } : null;
     if (previous) this.disposeInstance(previous);
     const reduced = this.deps.reducedMotion();
+    // a volume whose chapters meet on the same frame (`seamless`): no zoom — a short plain cross-fade between two
+    // equal pictures, which only hides the first heavy frames of the incoming scene
+    const seamless =
+      previous !== null &&
+      previous.manifest.volume === next.manifest.volume &&
+      this.border &&
+      this.deps.library.get(next.manifest.volume)?.seamless === true;
+    this.border = false;
     // deterministic (frozen clock) mode skips the animation: time only moves through explicit fixed steps
     const duration = this.deps.deterministic()
       ? 0
-      : MOTION.transition.duration * (reduced ? REDUCED_MOTION.transition : 1);
-    next.post.activate(Math.min(0.35, duration));
+      : seamless
+        ? SEAMLESS_FADE
+        : MOTION.transition.duration * (reduced ? REDUCED_MOTION.transition : 1);
+    next.post.activate(seamless ? 0 : Math.min(0.35, duration));
     const vp = this.deps.viewport();
     next.director.setViewport(vp.width, vp.height);
-    next.director.setInsets(this.deps.hud.insetFractions(), true);
+    // a same-frame border starts on the outgoing frame exactly, then eases to the free area the HUD asks for now
+    if (seamless && framed) {
+      next.director.followDrift(previous!.director);
+      next.director.setInsets(framed, true);
+      this.insetHold = INSET_HOLD;
+    } else next.director.setInsets(this.deps.hud.insetFractions(), true);
     // the incoming world really moves in depth: start farther (zoom in) or closer (zoom out) and settle
-    next.director.arrive(direction > 0 ? 1.9 : 0.55, duration * 1.15);
+    if (!seamless) next.director.arrive(direction > 0 ? 1.9 : 0.55, duration * 1.15);
     next.director.update(0);
     const tr = pipeline.transition;
     tr.active = true;
     tr.progress = 0;
     tr.direction = direction;
-    tr.simple = reduced;
+    tr.simple = reduced || seamless;
     col(next.manifest.theme.accent, tr.accent);
     next.director.camera.freeCenter(tr.center);
     this.animating = true;
@@ -474,6 +558,7 @@ export class ChapterRuntime {
         to,
         direction,
         progress: 1,
+        quiet: seamless,
       },
     });
     this.events.emit('chapter', { volumeId: here.volumeId, chapterId: here.chapterId, from });
@@ -484,9 +569,9 @@ export class ChapterRuntime {
       from: null,
       instant: true,
     });
-    if (duration <= 0) this.events.emit('transitionStart', { from, to, direction, duration });
+    if (duration <= 0) this.events.emit('transitionStart', { from, to, direction, duration, seamless });
     clock.resetReal();
-    this.zoom = { elapsed: 0, duration, reduced, from, to, direction, warmup: 3 };
+    this.zoom = { elapsed: 0, duration, reduced, seamless, from, to, direction, warmup: 3 };
     store.settle(here);
     this.visit(here);
     // a step change requested while loading

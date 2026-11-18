@@ -24,6 +24,10 @@ export const lifeStep: StepFactory = ({ ctx, world: dw, here, reached, reach }) 
   const carry = scrub(0, 0.3);
   let swapTo = 0;
   let held = false;
+  /** The chapter's end by itself (`finish`): the swap starts once the new battery is over the cradle. */
+  let finishing = false;
+  /** Arrived from the practicum (`rewind`): the carry glides back once the swap has played backwards. */
+  let backing = false;
   let k0 = 0;
   let p0 = 0;
   const on = (): boolean => here('life');
@@ -110,7 +114,33 @@ export const lifeStep: StepFactory = ({ ctx, world: dw, here, reached, reach }) 
       held = false;
       carry.drag = false;
     },
+    finish() {
+      held = false;
+      carry.drag = false;
+      carry.target = 1;
+      finishing = true;
+      return () => spare.swap >= 1 && carry.shown > 0.99;
+    },
+    rewind(play) {
+      // first the border frame (the swap done, held), then — `play` — the swap plays backwards
+      presence.shown = presence.target = 1;
+      if (!play) {
+        carry.shown = carry.target = 1;
+        spare.swap = swapTo = 1;
+        return;
+      }
+      swapTo = 0;
+      backing = true;
+    },
     late(dt) {
+      if (finishing && carry.shown > 0.98) {
+        finishing = false;
+        swapTo = 1;
+      }
+      if (backing && spare.swap <= 0) {
+        backing = false;
+        carry.target = 0;
+      }
       // away from `life` everything plays back: the swap, then the carry, then the new battery leaves the table
       if (!on()) {
         swapTo = 0;

@@ -9,7 +9,7 @@
 // camera and the magnifier through every step change and every slider sweep (no cut: the largest per-frame step
 // stays within a bound and within a multiple of the mean); console clean. Frozen engine clock. Exit 1 on failure.
 import { appErrors, appUrl, baseUrl, ensureDir, launch, openApp, parseArgs, parseSize, screenshot } from '../../../../../../../tools/qa/lib.mjs';
-import { advance, at, continuity, jumps, pointer, press, rangeOf, read, shown } from './helpers.mjs';
+import { advance, at, continuity, jumps, pointer, press, rangeOf, read, shown, textTab } from './helpers.mjs';
 import { nextChapter } from '../../../../../../../tools/qa/next-chapter.mjs';
 import { energy, glow, handover, hotSpot, story } from './steps-b.mjs';
 
@@ -67,7 +67,7 @@ async function inside(p) {
   await press(page, '[data-ui="path-opening"] .btn');
   check('«Згадайте» link', await shown(page, '[data-ui="path-recall"]'));
   check('no takeaway before the goal', !(await takeaway()));
-  let j = await sweep(p, 'depth', 0, 1, 60);
+  let j = await sweep(p, 'depth', 0, 1.04, 60);
   smooth('depth slider down: camera', j.camera, 0.5);
   smooth('depth slider down: lens', j.lens, 0.8);
   await advance(page, 1.2);
@@ -84,12 +84,13 @@ async function inside(p) {
   await hold.up();
   await advance(page, 1);
   check('takeaway once the mark reached the thread', await takeaway());
+  await textTab(page);
   await page.click('[data-ui="path-more"]');
   check('«Докладніше» opens', (await page.getAttribute('[data-ui="path-more"]', 'aria-expanded')) === 'true');
   await snap('inside-goal');
   j = await sweep(p, 'depth', 1, 0.2, 40);
   smooth('depth slider back up: camera', j.camera, 0.5);
-  j = await sweep(p, 'depth', 0.2, 1, 40);
+  j = await sweep(p, 'depth', 0.2, 1.04, 40);
   smooth('…and down again: camera', j.camera, 0.5);
   await advance(page, 1.2);
 }

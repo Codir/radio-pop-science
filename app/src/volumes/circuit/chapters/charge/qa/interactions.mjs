@@ -2,7 +2,7 @@
 /* global process, console, window, document */
 // Interaction test of chapter `circuit/charge` (lenovo; dev server or production preview up), default interface:
 //
-//   node app/src/volumes/circuit/chapters/charge/qa/interactions.mjs --port 5312 [--size 1280x720] [--touch] [--out <dir>]
+//   node app/src/volumes/circuit/chapters/charge/qa/interactions.mjs --port 5312 [--size 1280x720] [--touch | --mouse] [--out <dir>]
 //
 // The reader arrives from the last frame of `wire` (the stand shot). Every goal of the script is reached by real
 // pointer input — mouse, or touch through the DevTools protocol (`--touch`, implied at 390x844): rub the balloon
@@ -27,7 +27,8 @@ import { nextChapter } from '../../../../../../../tools/qa/next-chapter.mjs';
 
 const args = parseArgs();
 const [width, height] = parseSize(args.size, [1280, 720]);
-const touch = Boolean(args.touch) || width < 600;
+// `--mouse`: a narrow desktop window (a mouse at 390×844)
+const touch = !args.mouse && (Boolean(args.touch) || width < 600);
 const out = args.out ? ensureDir(String(args.out)) : null;
 const { browser, page } = await launch({ width, height, touch });
 const results = [];
@@ -60,8 +61,9 @@ const pointer = {
     }
     await frame();
   },
-  /** Move in `n` small moves, one engine frame each (the scene sees every position). */
-  async move(p, n = 12) {
+  /** Move in `n` small moves, one engine frame each (the scene sees every position); kept inside the window. */
+  async move(q, n = 12) {
+    const p = { x: Math.min(Math.max(q.x, 6), width - 6), y: Math.min(Math.max(q.y, 6), height - 6) };
     const a = last;
     for (let i = 1; i <= n; i++) {
       const x = a.x + ((p.x - a.x) * i) / n;
@@ -147,12 +149,14 @@ const steps = {
     check('three rubs and more, the balloon is charged', r.rubs >= 3 && r.charge >= 1, `${r.rubs} rubs`);
     check('no takeaway before the second balloon', !(await takeaway()));
     // slowly away: the hair reaches after it
-    await pointer.move({ x: h.x + 0.24 * height, y: h.y - 0.1 * height }, 30);
+    // the way away measured in the window's short side (a narrow window is taller than it is wide)
+    const unit = Math.min(width, height);
+    await pointer.move({ x: h.x + 0.24 * unit, y: h.y - 0.1 * unit }, 30);
     await advance(page, 0.8);
     r = await read(page, 'rub');
     check('the hair rose after the balloon', r.hairRose);
     const s = await at(page, 'second-balloon');
-    await pointer.move({ x: s.x + 0.12 * height, y: s.y }, 30);
+    await pointer.move({ x: s.x + 0.12 * unit, y: s.y }, 30);
     await advance(page, 1.5);
     r = await read(page, 'rub');
     check('the second balloon leans away', r.leaned, `lean ${r.lean.toFixed(2)} rad`);

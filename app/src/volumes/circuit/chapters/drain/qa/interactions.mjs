@@ -20,7 +20,7 @@ import {
   parseSize,
   screenshot,
 } from '../../../../../../../tools/qa/lib.mjs';
-import { advance, at, continuity, jumps, pointer, press, rangeOf, read, shown } from './helpers.mjs';
+import { advance, at, continuity, jumps, pointer, press, rangeOf, read, shown, textTab } from './helpers.mjs';
 import { nextChapter } from '../../../../../../../tools/qa/next-chapter.mjs';
 
 const args = parseArgs();
@@ -134,6 +134,7 @@ try {
     `${s.volts.toFixed(2)} V glow ${s.glow.toFixed(3)}`,
   );
   check('takeaway at «8 год» after 1 s', await takeaway());
+  await textTab(page);
   await page.click('[data-ui="path-more"]');
   check('«Докладніше» opens', (await page.getAttribute('[data-ui="path-more"]', 'aria-expanded')) === 'true');
   await snap('hours-3-goal');
