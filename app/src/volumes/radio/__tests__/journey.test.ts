@@ -1,6 +1,6 @@
 // The planned journey of the volume (docs/superpowers/specs/2026-11-17-radio-volume-design.md II §1, §3, §4):
-// entries, groups and the ruler come from the manifest; the raw volume.json is read only for the fields the
-// manifest normalises away (`status`, `seamless`, `emblem`).
+// entries, groups and the ruler come from the manifest; the raw volume.json is read only to show that `seamless`
+// and `emblem` are absent (the manifest fills in defaults for them) and that `status` is `draft`.
 import { describe, expect, it } from 'vitest';
 import volume from '../volume';
 import identity from '../volume.json';

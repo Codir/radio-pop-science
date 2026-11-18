@@ -6,7 +6,9 @@
 - **Сайт:** https://codir.github.io/radio-pop-science/ — показує лише цей том.
 - **Том у коді:** `app/src/volumes/radio/`. **Документи тому:** `docs/volumes/radio/` (задум — `VOLUME.md`,
   шлях — `PATH.md`). Проєкт тому і плани робіт — `docs/superpowers/`.
-- **Рушій** приходить із `tech`: `git fetch upstream && git merge upstream/main`. Каталоги рушія тут не редагуємо.
+- **Рушій** приходить із `tech`: `git fetch upstream && git merge upstream/main`. Каталоги рушія тут не редагуємо;
+  винятків лише два — рядок `"@radio/*"` в `app/tsconfig.json` і слово `'radio'` у переліку томів
+  `app/src/engine/__tests__/volumes.test.ts` (поправка П3, `docs/volumes/radio/VOLUME.md` §6).
 - **Зібрати сайт локально:** `node tools/site/build.mjs` (збірка лягає в `tools/site/dist`).
 
 Далі — опис рушія `tech` без змін.
