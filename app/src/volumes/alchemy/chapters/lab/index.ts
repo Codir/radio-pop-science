@@ -12,7 +12,7 @@ export default defineChapter({
   id: 'lab',
   order: meta.order,
   group: 'nucleus',
-  ...manifestText(meta),
+  ...manifestText(meta, { subtitle: 'Одинадцять квестів і вільна лабораторія' }),
   axisValue: -14,
   theme: { accent: 'violet', sky: 'micro', mood: 'micro' },
   load: () => import('./scene'),

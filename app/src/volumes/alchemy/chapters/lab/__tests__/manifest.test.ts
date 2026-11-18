@@ -14,6 +14,11 @@ describe('lab manifest', () => {
     expect(manifest).toMatchObject({ id: 'lab', group: 'nucleus', title: raw.title, axisValue: -14 });
     for (const step of manifest.steps) expect(step.blurb.length).toBeGreaterThan(10);
   });
+
+  it('has its own subtitle, not the title of the first step', () => {
+    expect(manifest.subtitle).toBe('Одинадцять квестів і вільна лабораторія');
+    expect(manifest.subtitle).not.toBe(raw.steps[0]?.title);
+  });
 });
 
 describe('lab labels', () => {
