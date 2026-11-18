@@ -1,0 +1,18 @@
+# Latin-script words that only the volume `alchemy` shows on screen (tools/content/terms_check.py).
+# Columns (TAB-separated): word, kind, explanation, reason. Words of tools/content/terms_allowlist.tsv are not repeated here.
+Be	symbol	—	символ хімічного елемента
+Mo	symbol	—	символ хімічного елемента
+Tc	symbol	—	символ хімічного елемента
+Ru	symbol	—	символ хімічного елемента
+Rb	symbol	—	символ хімічного елемента
+Zr	symbol	—	символ хімічного елемента
+Ba	symbol	—	символ хімічного елемента
+Ce	symbol	—	символ хімічного елемента
+Pr	symbol	—	символ хімічного елемента
+Po	symbol	—	символ хімічного елемента
+Rn	symbol	—	символ хімічного елемента
+Bi	symbol	—	символ хімічного елемента
+Np	symbol	—	символ хімічного елемента
+Cf	symbol	—	символ хімічного елемента
+Lv	symbol	—	символ хімічного елемента
+Og	symbol	—	символ хімічного елемента
