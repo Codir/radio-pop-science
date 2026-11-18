@@ -21,6 +21,10 @@ describe('nuclide table', () => {
       expect(x.branches.every((b) => b.share >= 1e-4)).toBe(true);
     }
   });
+  it('never decays a stable nucleus', () => {
+    expect(allNuclides().filter((x) => x.status === 'stable').every((x) => x.branches.length === 0)).toBe(true);
+    expect(getNuclide(48, 66)).toMatchObject({ status: 'stable', branches: [] });
+  });
   it('cleans the known quirks of the snapshot', () => {
     expect(getNuclide(79, 118)).toMatchObject({ a: 197, status: 'stable', abundance: 100, branches: [] });
     expect(getNuclide(1, 2)!.branches).toEqual([{ code: 'b-', share: 1 }]);

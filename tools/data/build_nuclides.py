@@ -55,6 +55,8 @@ def sig6(x):
 
 def branches(row, keys, dropped, stats):
     hl = half_life(row)
+    if hl == "stable":
+        return []
     if row["operator_hl"] in ("GT", "GE") and isinstance(hl, float) and hl > AGE_OF_UNIVERSE_S:
         return []
     z, n = int(row["z"]), int(row["n"])

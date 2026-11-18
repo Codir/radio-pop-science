@@ -29,12 +29,13 @@ python3 tools/data/build_nuclides.py [--src tools/data/iaea/ground_states-2026-1
 | `halfLife` | `half_life == 'STABLE'` gives `"stable"`; else `half_life_sec` as a number if present; else `null` |
 | codes | `B-`→`b-`, `EC+B+`→`ec/b+`, `EC`→`ec`, `B+`→`b+`, `A`→`a`, `P`→`p`, `2P`→`2p`, `N`→`n`, `2N`→`2n`, `B-N`→`b-n`, `B-2N`→`b-2n`, `B-3N`→`b-3n`, `B-4N`→`b-4n`, `B-P`→`b-p`, `B-A`→`b-a`, `ECP` and `B+P`→`b+p`, `EC2P` and `B+2P`→`b+2p`, `ECA` and `B+A`→`b+a`, `2B-`→`2b-`, `2EC` and `2B+`→`2b+`, `SF`→`sf`; everything else (`IT`, `ECSF`, `SF+EC+B+`, `B-SF`, `B-5N`…`B-7N`, cluster decays) is dropped |
 | repeats | the same source code twice in a row: keep the first; different source codes that map to one of our codes: add the shares |
+| stable | `half_life == 'STABLE'`: no branches (the source lists hypothetical modes for a few stable nuclides) |
 | lower limit | `operator_hl` in {`GT`, `GE`} and `half_life_sec` > 4.35e17 s: no branches |
 | daughter | a branch whose daughter nuclide is absent from the table is dropped (shifts per code are inside the script); `sf` is always kept |
 | shares | all empty: equal; some empty: empty = 0; normalise to 1; drop < 1e-4; normalise again; sort largest first; 6 significant digits |
 | rest | `abundance`, `massExcess`, `discovery`: a number or `null` |
 
-Order inside one row: repeated code, map code, daughter check, merge, lower-limit rule, shares.
+Order inside one row: stable / lower-limit rules first (no branches), then repeated code, map code, daughter check, merge, lower-limit rule, shares.
 
 ## Summary for this snapshot
 
