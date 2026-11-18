@@ -13,6 +13,9 @@ function doc(step: StepId, wording: string): string {
   return label;
 }
 
+/** The free lab's «Взяти як старт», also quoted by the hint of its start choice. */
+const TAKE = doc('free', 'Взяти як старт');
+
 export const L = {
   tools: {
     fire: doc('heavy-hydrogen', 'Вистрілити'),
@@ -25,6 +28,8 @@ export const L = {
   fission: {
     heavy: doc('fission', 'Продовжити з важким уламком'),
     light: doc('fission', 'Продовжити з легким уламком'),
+    /** The dock's note while a fission waits for the choice: the fragment is picked in the scene or with a button. */
+    hint: 'Оберіть уламок: клацніть його в сцені або натисніть кнопку нижче',
   },
   /**
    * The nuclide chart on the board (`parts/nuclide-chart.ts`, `parts/chart-model.ts`): its title, the tooltip,
@@ -55,13 +60,15 @@ export const L = {
    */
   free: {
     newStart: doc('free', 'Новий старт'),
-    take: doc('free', 'Взяти як старт'),
+    take: TAKE,
     cancel: doc('free', 'Скасувати'),
     startHere: doc('free', 'Почати звідси'),
     element: 'Елемент',
     isotope: 'Ізотоп',
     elementHint: '84 елементи, що трапляються в природі',
     isotopeHint: 'Природні ізотопи елемента та їхня частка в природі',
+    /** The dock's note while the start choice is open. */
+    hint: `Оберіть елемент та ізотоп, потім натисніть «${TAKE}»`,
   },
   /** Units of time and energy; `day` holds the three plural forms separated by `|`. */
   units: {

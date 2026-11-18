@@ -129,19 +129,25 @@ describe('lab text', () => {
     expect(statusLine(getNuclide(3, 1)!).text).not.toMatch(BAD);
     expect(statusLine(getNuclide(92, 146)!).tone).toBe('amber');
   });
-  it('keeps the card’s «Ядро» row short: half-life and main decay, the status word only when nothing else is said', () => {
-    const row = (z: number, n: number): string => s(cardRows(startGame(z, n))[2]![1]!);
-    expect(row(92, 146)).toBe('T½ 4,47 млрд р. · α-розпад');
-    expect(row(92, 143)).toBe('T½ 704 млн р. · α-розпад');
-    expect(row(6, 8)).toBe('T½ 5700 р. · β⁻-розпад');
-    expect(row(4, 4)).toMatch(/^T½ .+ · α-розпад$/);
+  it('orders the card’s «Ядро» row status · main decay · half-life, the half-life unbreakable', () => {
+    const row = (z: number, n: number): string => cardRows(startGame(z, n))[2]![1]!;
+    expect(s(row(92, 146))).toBe('Радіоактивне ядро · α-розпад · T½ 4,47 млрд р.');
+    expect(s(row(92, 143))).toBe('Радіоактивне ядро · α-розпад · T½ 704 млн р.');
+    expect(s(row(6, 8))).toBe('Радіоактивне ядро · β⁻-розпад · T½ 5700 р.');
+    expect(s(row(82, 123))).toMatch(/^Радіоактивне ядро · захоплення електрона · T½ .+ р\.$/);
+    expect(s(row(4, 4))).toMatch(/^Нетривке ядро · α-розпад · T½ .+ s$/);
     expect(row(79, 118)).toBe('Стабільне ядро');
     expect(row(82, 122)).toBe('Довгоживуче ядро · розпаду не спостерігали');
-    // the plate under the atom names the status: whenever the row has a half-life or a decay, it has no status word
-    const words = [L.status.longLived, L.status.radioactive, L.status.fleeting];
+    // every nuclide with a decay: the status word first, the main decay next, then «T½ …» with no breakable space
+    const words = { longLived: L.status.longLived, radioactive: L.status.radioactive, fleeting: L.status.fleeting } as const;
     for (const x of allNuclides()) {
-      const text = statusLine(x).text;
-      if (x.branches.length > 0) expect(words.some((w) => text.includes(w)), `${x.z}-${x.n}`).toBe(false);
+      if (x.branches.length === 0 || !(x.status in words)) continue;
+      const parts = statusLine(x).text.split(' · ');
+      const where = `${x.z}-${x.n}`;
+      expect(parts, where).toHaveLength(3);
+      expect(parts[0], where).toBe(words[x.status as keyof typeof words]);
+      expect(parts[1], where).toBe(L.modes[x.branches[0]!.code]);
+      expect(parts[2], where).toMatch(/^T½\u00a0[^ ]+$/);
     }
   });
   it('fills the card and the event line', () => {

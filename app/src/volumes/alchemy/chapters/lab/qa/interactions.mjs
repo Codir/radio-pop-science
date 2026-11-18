@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global process, console, window, document, location */
+/* global process, console, window, document, location, NodeFilter */
 // Interaction test of `alchemy/lab` (production preview or dev server up):
 //
 //   node app/src/volumes/alchemy/chapters/lab/qa/interactions.mjs --port 5351 --size 1280x720 --hud dom|gl
@@ -37,6 +37,8 @@ const out = typeof args.out === 'string' ? ensureDir(args.out) : null;
 const { browser, page } = await launch({ width, height });
 const results = [];
 let label = '';
+/** The interface renderer of the page (`dom` | `gl`), known once the app is open. */
+let hud;
 
 const check = (what, ok, detail = '') => {
   results.push({ label, what, ok: Boolean(ok) });
@@ -60,6 +62,13 @@ const STEPS = {
   'lead-gold': { tools: ['gamma-n', 'gamma-p', 'wait'], start: [82, 126] },
   superheavy: { tools: [...PROJECTILES, 'wait'], start: [98, 151] },
   free: { tools: [...PROJECTILES, 'gamma-n', 'gamma-p', 'wait'], start: [1, 0] },
+};
+/** How the card's «Ядро» row begins for each step's start nuclide: the status first, then the main decay. */
+const NUCLEUS_ROW = {
+  'heavy-hydrogen': 'Стабільне ядро', radiocarbon: 'Стабільне ядро', sun: 'Стабільне ядро', 'star-forge': 'Стабільне ядро',
+  'mercury-gold': 'Стабільне ядро', technetium: 'Стабільне ядро', plutonium: 'Радіоактивне ядро · α',
+  fission: 'Радіоактивне ядро · α', 'uranium-chain': 'Радіоактивне ядро · α', 'lead-gold': 'Стабільне ядро',
+  superheavy: 'Радіоактивне ядро · α', free: 'Стабільне ядро',
 };
 /** The 84 elements with a nuclide in nature (parts/start-picker.ts): the element slider's values index this. */
 const NATURAL_Z = [...Array.from({ length: 83 }, (_, i) => i + 1).filter((z) => z !== 43 && z !== 61), 90, 91, 92];
@@ -156,6 +165,47 @@ async function bodyAbove(button, ids) {
   return { ok, detail: `${button} from ${top.toFixed(0)}: ${parts.join(', ')}` };
 }
 
+/**
+ * DOM interface: the texts of the card where a line ends at a hyphen (a line break is a character placed clearly
+ * lower than the one before it; raised superscripts move up, not down).
+ */
+function hyphenBreaks() {
+  return page.evaluate(() => {
+    const card = document.querySelector('[data-ui="ctl-card"]');
+    if (!card) return ['no card'];
+    const bad = [];
+    for (const cell of card.querySelectorAll('td')) {
+      const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+      let prev = null;
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        for (let i = 0; i < node.data.length; i++) {
+          const range = document.createRange();
+          range.setStart(node, i);
+          range.setEnd(node, i + 1);
+          const r = range.getClientRects()[0];
+          if (!r || r.width === 0) continue;
+          if (prev && r.top > prev.top + r.height * 0.8 && prev.ch === '-') bad.push(cell.textContent);
+          prev = { ch: node.data[i], top: r.top };
+        }
+      }
+    }
+    return bad;
+  });
+}
+
+/** The dock's note `id` is on screen right under the card, so the card is not the last row of the dock. */
+async function noteUnderCard(id) {
+  const card = await box(page, 'ctl-card');
+  const note = await box(page, `ctl-${id}`);
+  if (!card || !note) return { ok: false, detail: `card ${card ? 'on' : 'off'}, ${id} ${note ? 'on' : 'off'}` };
+  const gap = note.y - note.h / 2 - (card.y + card.h / 2);
+  return { ok: gap >= -1 && gap < 40, detail: `card …${(card.y + card.h / 2).toFixed(0)}, ${id} from ${(note.y - note.h / 2).toFixed(0)}` };
+}
+
+/** A quest's result toast («Виконано за …») is on screen (not the board's status line). */
+const resultToast = () =>
+  page.evaluate(() => window.__ui.textSizes().some((x) => x.text.startsWith('Виконано за') && !x.name.startsWith('ctl-')));
+
 async function offscreen() {
   return page.evaluate(() => window.__ui.offscreen().map((o) => `${o.name} (${o.reason})`));
 }
@@ -214,6 +264,7 @@ async function reload(p) {
 let failed = true;
 try {
   await openApp(page, appUrl(baseUrl(args), { route: 'alchemy/lab/heavy-hydrogen', freeze: 1 }));
+  hud = await hudMode(page);
 
   // chart — the board's nuclide chart (task 13), while only ¹H is discovered: a click picks a cell and changes
   // nothing in the game; the window keeps its place at the corner of the table; «Уся карта» shows all of it
@@ -343,6 +394,9 @@ try {
   for (const id of ['fire', 'wait', 'electrons', 'neutral']) if (await shown(page, id)) hiddenWhilePending.push(id);
   check('no tool while the choice is pending', hiddenWhilePending.length === 0, hiddenWhilePending.join(', '));
   check('«Почати знову» stays', await shown(page, 'restart'));
+  const fragmentHint = await noteUnderCard('fragment-hint');
+  check('a note under the card says how to choose: in the scene or with a button',
+    fragmentHint.ok && (await controlText(page, 'fragment-hint')).startsWith('Оберіть уламок'), fragmentHint.detail);
   if (out) await screenshot(page, join(out, 'dock-fission-pending.jpg'));
   const pendingOff = await offscreen();
   const pendingFit = await dockFits();
@@ -363,7 +417,6 @@ try {
   check('console clean', quick.length === 0, errorsText(quick));
 
   // 9 — every step: the dock shows the step's tools, nothing else, and fits 1280×720 without scrolling
-  let cardHeight = null;
   for (const [id, step] of Object.entries(STEPS)) {
     label = `9 ${id}`;
     await enter(page, id);
@@ -393,11 +446,14 @@ try {
     check('the dock fits without scrolling', fit.ok, fit.detail);
     const win = windowOf(...step.start);
     check(`the chart's window ${win.n0}-${win.z0} stays on the table`, s.chart.n0 === win.n0 && s.chart.z0 === win.z0 && s.chart.cols === 15, JSON.stringify(s.chart));
-    // the card's rows are one line each, also «Ядро» of a heavy nucleus (it used to wrap at «α-» / «розпад»)
-    const card = await box(page, 'ctl-card');
-    cardHeight ??= card?.h ?? null;
-    check('the card is as tall as the first step’s: one line per row', card !== null && Math.abs(card.h - cardHeight) <= 1,
-      `card ${card ? card.h.toFixed(1) : '—'}, first ${cardHeight === null ? '—' : cardHeight.toFixed(1)}`);
+    // the card's «Ядро» row: the status first (for a screen reader, for a phone), then the main decay
+    const cardText = await controlText(page, 'card');
+    check(`the card's «Ядро» row begins «${NUCLEUS_ROW[id]}»`, cardText.includes(NUCLEUS_ROW[id]), cardText.slice(0, 160));
+    // DOM: no line of the card ends at a hyphen («α-» / «розпад»); the WebGL HUD reports no line breaks
+    if (hud === 'dom') {
+      const broken = await hyphenBreaks();
+      check('no line of the card breaks at a hyphen', broken.length === 0, broken.join(' | '));
+    }
     if (out) await screenshot(page, join(out, `dock-${id}.jpg`));
     // …and still fits once the status line has something to say (a decay or a refusal)
     await click(page, 'wait');
@@ -432,6 +488,17 @@ try {
   await advance(page, 2.2);
   s = await read(page);
   check('²H + ³He → ⁵Li → ⁴He: done in 2 moves', s.z === 2 && s.n === 2 && s.moves === 2 && s.done, at(s));
+  // the 6-s result toast does not hang over the volume home: the reader leaves within a second of the win
+  label = '11 toast home';
+  const resultUp = await resultToast();
+  await page.evaluate(() => window.__ui.open('home'));
+  await advance(page, 0.6);
+  const overlayNow = await page.evaluate(() => window.__ui.overlay());
+  const resultLeft = await resultToast();
+  check('the result toast is up; on the volume home it is gone', resultUp && overlayNow === 'home' && !resultLeft,
+    `up ${resultUp}, overlay ${overlayNow}, still ${resultLeft}`);
+  await page.evaluate(() => window.__ui.close());
+  await advance(page, 0.6);
 
   // 12 — waiting on a stable nucleus is refused with a reason, and nothing changes
   label = '12 refusal';
@@ -583,6 +650,18 @@ try {
   };
   await walk('radiocarbon', ['fire', 'fire', 'wait'], { text: '¹⁴N', test: (x) => x.z === 7 && x.n === 7 });
   await walk('star-forge', ['fire', 'fire'], { text: '¹²C in 2 moves', test: (x) => x.z === 6 && x.n === 6 && x.moves === 2 });
+  // …and its result toast does not hang over the journey map either
+  label = 'walk toast map';
+  await advance(page, 0.6);
+  const mapUp = await resultToast();
+  await page.evaluate(() => window.__ui.open('map'));
+  await advance(page, 0.6);
+  const mapNow = await page.evaluate(() => window.__ui.overlay());
+  const mapLeft = await resultToast();
+  check('the result toast is up; on the journey map it is gone', mapUp && mapNow === 'map' && !mapLeft,
+    `up ${mapUp}, overlay ${mapNow}, still ${mapLeft}`);
+  await page.evaluate(() => window.__ui.close());
+  await advance(page, 0.6);
   await walk('technetium', ['projectile:d', 'fire'], { text: 'technetium', test: (x) => x.z === 43 });
   await walk('plutonium', ['fire', 'wait', 'wait'], { text: '²³⁹Pu', test: (x) => x.z === 94 && x.n === 145 });
   await walk('fission', ['fire', 'pick-heavy', 'wait', 'wait', 'wait'], { text: 'stable ¹⁴¹Pr', test: (x) => x.z === 59 && x.n === 82 });
@@ -610,6 +689,9 @@ try {
     s.picking && wrong.length === 0, wrong.join(', '));
   check('…the choice opens on the current nuclide ²H, the card stays',
     s.choice === '1-1' && (await textShown(page, '²H · 0,0145')) && (await shown(page, 'card')), `choice ${s.choice}`);
+  const startHint = await noteUnderCard('start-hint');
+  check('…a note under the card says what to do', startHint.ok && (await controlText(page, 'start-hint')).startsWith('Оберіть елемент'),
+    startHint.detail);
   let fit = await dockFits();
   let off = await offscreen();
   check('…the dock fits without scrolling, nothing off screen', fit.ok && off.length === 0, `${fit.detail} ${off.join(', ')}`);

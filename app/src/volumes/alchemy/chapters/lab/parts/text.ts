@@ -114,25 +114,27 @@ export function modeName(mode: PlayedMode): string {
 export const codeName = (code: DecayCode): string => L.modes[code];
 
 /**
- * The nucleus in the card's «Ядро» row, and the tone of the plate's status badge. The text gives the half-life and
- * the main decay («T½ 4,47 млрд р. · α-розпад»); the status word stays only where there is nothing else to say
- * («Стабільне ядро», «Довгоживуче ядро · розпаду не спостерігали», «Даних замало»). The plate under the atom names
- * the status in its tone anyway, and with the word the row of a heavy nucleus wrapped at «α-» / «розпад».
+ * The nucleus in the card's «Ядро» row, and the tone of the plate's status badge. The row reads in this order:
+ * status, main decay, half-life — «Радіоактивне ядро · α-розпад · T½ 704 млн р.», «Стабільне ядро». The status
+ * word is there for a screen reader and for a phone, where the plate under the atom is small. The order keeps a
+ * hyphenated decay name («α-розпад») in the middle of the first line, and the half-life is one unbreakable piece:
+ * a row that has to wrap breaks at a space before «T½», never at «α-» / «розпад» or inside «млрд р.».
  */
 export function statusLine(x: Nuclide): { readonly text: string; readonly tone: Tone } {
   const S = L.status;
-  const half = typeof x.halfLife === 'number' ? `${S.halfLife} ${halfLifeText(x.halfLife)}` : S.halfLifeUnknown;
+  const half = (typeof x.halfLife === 'number' ? `${S.halfLife} ${halfLifeText(x.halfLife)}` : S.halfLifeUnknown)
+    .replaceAll(' ', NBSP);
   const main = x.branches[0] ? codeName(x.branches[0].code) : null;
   const join = (...parts: (string | null)[]): string => parts.filter((p): p is string => p !== null).join(SEP);
   switch (x.status) {
     case 'stable':
       return { text: S.stable, tone: 'green' };
     case 'longLived':
-      return { text: main === null ? join(S.longLived, S.notObserved) : join(half, main), tone: 'green' };
+      return { text: main === null ? join(S.longLived, S.notObserved) : join(S.longLived, main, half), tone: 'green' };
     case 'radioactive':
-      return { text: join(half, main), tone: 'amber' };
+      return { text: join(S.radioactive, main, half), tone: 'amber' };
     case 'fleeting':
-      return { text: join(half, main), tone: 'red' };
+      return { text: join(S.fleeting, main, half), tone: 'red' };
     case 'incomplete':
       return { text: S.incomplete, tone: 'mist' };
   }

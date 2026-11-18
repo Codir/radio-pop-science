@@ -1,21 +1,26 @@
 import { Object3D } from 'three';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { NBSP } from '@/content';
 import type { ChapterContext } from '@/engine/api';
 import type {
   ButtonSpec, ControlSpec, CustomSpec, HonestySpec, NoteSpec, ReadoutSpec, SegmentedSpec, SliderSpec, StatsSpec, StepUiApi,
   StepUiSpec,
 } from '@/hud';
+import type * as HudModule from '@/hud';
 import type { UiNode } from '@/ui3d';
 import { ALL_TOOLS, EMPTY_PROGRESS, PROJECTILES, questById } from '@alchemy/sim/lab';
 import { STEP_IDS, type StepId } from '../chapter';
 import { L } from '../labels';
 import type { AtomView } from '../parts/atom-view';
-import { announce, chartState, stepSpec, type Lab } from '../parts/dock';
+import { announce, chartState, dismissWhenLeft, stepSpec, type Lab } from '../parts/dock';
 import { Session } from '../parts/session';
 import { NATURAL_Z } from '../parts/start-picker';
 
 interface Toast { readonly text: string; readonly tone?: string; readonly icon?: string; hidden: boolean }
+
+/** The running HUD as the dock sees it (`hud()` of `@/hud`): only which overlay is open. */
+const shell = vi.hoisted(() => ({ overlay: null as string | null }));
+vi.mock('@/hud', async (importOriginal) => ({ ...(await importOriginal<typeof HudModule>()), hud: () => shell }));
 
 /** A lab with a real session and a step UI that only records what it is asked to do. */
 function makeLab() {
@@ -41,10 +46,14 @@ function makeLab() {
   const session = new Session({ random: () => 0.5, load: () => EMPTY_PROGRESS, save: () => undefined });
   const fission = { anchors: { heavy: anchor, light: anchor }, middle: anchor, choosing: false, label: () => '' };
   const fx = { emitter: anchor, fission };
-  const lab: Lab = { ctx: { onDispose: () => undefined } as unknown as ChapterContext, ui, session, atom, fx };
+  const disposers: (() => void)[] = [];
+  const ctx = { onDispose: (fn: () => void) => disposers.push(fn) } as unknown as ChapterContext;
+  const lab: Lab = { ctx, ui, session, atom, fx };
   session.on((e) => announce(lab, e));
   const specs = Object.fromEntries(STEP_IDS.map((id) => [id, stepSpec(lab, id)])) as Record<StepId, StepUiSpec>;
-  return { lab, session, toasts, values, specs };
+  /** The chapter is left: what the engine does on dispose. */
+  const dispose = (): void => disposers.forEach((fn) => fn());
+  return { lab, session, toasts, values, specs, dispose };
 }
 
 const holds = (c: ControlSpec): boolean => (typeof c.visible === 'function' ? c.visible() : c.visible !== false);
@@ -203,9 +212,14 @@ describe('lab dock', () => {
     expect(shownButtons(spec)).toEqual(['pick-heavy', 'pick-light', 'restart']);
     expect(holds(control(spec, 'electrons')!)).toBe(false);
     expect(holds(control(spec, 'card')!)).toBe(true);
+    // what to do, under the card (which is then never the last row of the dock)
+    const shownBody = (): string[] => (spec.controls ?? []).filter((c) => c.type !== 'button' && holds(c)).map((c) => c.id);
+    expect(shownBody()).toEqual(['card', 'fragment-hint']);
+    expect((control(spec, 'fragment-hint') as { text: string }).text).toBe(L.fission.hint);
     buttons(spec).find((b) => b.id === 'pick-heavy')!.onClick();
     expect(session.state).toMatchObject({ z: 56, n: 85, moves: 1, pending: null });
     expect(shownButtons(spec)).toEqual(['fire', 'wait', 'restart']);
+    expect(shownBody()).toEqual(['card', 'electrons']);
   });
 
   it('never shows more than six buttons in the free lab: three rows of the action row at 1280×720', () => {
@@ -284,6 +298,38 @@ describe('lab dock', () => {
     expect(statusOf(spec)).toBeNull();
   });
 
+  it('takes its toasts away when a full-screen view covers the scene or the chapter is left', () => {
+    const win = (): ReturnType<typeof makeLab> => {
+      const made = makeLab();
+      made.session.enter('heavy-hydrogen');
+      made.session.fire('n');
+      made.session.fire('n');
+      made.session.wait(); // ³H → ³He: won, the 6-s result toast is up
+      expect(made.toasts.at(-1)).toMatchObject({ icon: 'star', hidden: false });
+      return made;
+    };
+    const open = (t: readonly Toast[]): number => t.filter((x) => !x.hidden).length;
+    try {
+      const { lab, toasts } = win();
+      shell.overlay = null;
+      dismissWhenLeft(lab); // the scene on screen: they stay
+      shell.overlay = 'glossary';
+      dismissWhenLeft(lab); // a panel over the scene: they stay
+      expect(open(toasts)).toBe(2);
+      for (const view of ['home', 'map']) {
+        const made = view === 'home' ? { lab, toasts } : win();
+        shell.overlay = view;
+        dismissWhenLeft(made.lab); // the volume home, the journey map: gone
+        expect(open(made.toasts), view).toBe(0);
+      }
+    } finally {
+      shell.overlay = null;
+    }
+    const { toasts, dispose } = win();
+    dispose();
+    expect(open(toasts)).toBe(0);
+  });
+
   it('puts one nuclide chart on every board, then the picked line, the switch with the energy, the collection and the readouts', () => {
     const { specs } = makeLab();
     const chart = specs['heavy-hydrogen'].board!.children[0];
@@ -309,7 +355,8 @@ describe('lab dock', () => {
     for (const step of STEP_IDS) if (step !== 'free') expect(control(specs[step], 'new-start'), step).toBeUndefined();
     session.enter('free');
     const idle = ['card', 'projectile', 'electrons', 'fire', 'gamma-n', 'gamma-p', 'wait', 'restart', 'new-start'];
-    const choice = ['card', 'pick-element', 'pick-isotope', 'take-start', 'cancel-start'];
+    // (the card is never the last row of the dock: a note follows it)
+    const choice = ['card', 'pick-element', 'pick-isotope', 'start-hint', 'take-start', 'cancel-start'];
     expect(shownControls()).toEqual(idle);
     session.setElectrons(0); // a charged atom: «Нейтралізувати» takes the place of «Почати знову» (six buttons fit)…
     expect(shownControls()).toEqual([...idle.slice(0, 7), 'neutral', 'new-start']);

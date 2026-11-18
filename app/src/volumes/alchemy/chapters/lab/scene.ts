@@ -21,7 +21,7 @@ import { isFleeting, nextVisit, type GameState } from '@alchemy/sim/lab';
 import { STEP_IDS, type StepId } from './chapter';
 import { createAtomView } from './parts/atom-view';
 import { createDecayFx } from './parts/decay-fx';
-import { announce, chartState, hasEmitter, loaded, stepSpec, type Lab } from './parts/dock';
+import { announce, chartState, dismissWhenLeft, hasEmitter, loaded, stepSpec, type Lab } from './parts/dock';
 import { createEmitter, type EventFx } from './parts/emitter';
 import { createFissionView } from './parts/fission-view';
 import { FLEETING_DELAY_S, Session, type SessionEvent } from './parts/session';
@@ -189,6 +189,7 @@ export default defineScene(async (ctx) => {
   return {
     update(dt, t) {
       session.update(dt);
+      dismissWhenLeft(lab);
       emitter.load(loaded(lab));
       emitter.nucleusRadius = fission.nucleusRadius = atom.coreRadius;
       for (const fx of fxs) fx.update(dt, t);

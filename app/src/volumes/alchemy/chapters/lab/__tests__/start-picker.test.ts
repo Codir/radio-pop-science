@@ -3,6 +3,7 @@ import { NBSP } from '@/content';
 import type { ButtonSpec, ControlSpec, SliderSpec, StepUiApi } from '@/hud';
 import { EMPTY_PROGRESS } from '@alchemy/sim/lab';
 import type { StepId } from '../chapter';
+import { L } from '../labels';
 import type { Lab } from '../parts/dock';
 import { Session } from '../parts/session';
 import {
@@ -80,13 +81,15 @@ describe('start picker', () => {
     expect(isNatural({ z: 43, n: 55 })).toBe(false);
   });
 
-  it('offers «Новий старт» outside the mode, then only the two sliders, «Взяти як старт» and «Скасувати»', () => {
+  it('offers «Новий старт» outside the mode, then only the two sliders, the note, «Взяти як старт» and «Скасувати»', () => {
     const { lab, controls, press } = makeLab();
-    expect(controls.map((c) => c.id)).toEqual(['pick-element', 'pick-isotope', 'new-start', 'take-start', 'cancel-start']);
+    expect(controls.map((c) => c.id)).toEqual(['pick-element', 'pick-isotope', 'start-hint', 'new-start', 'take-start', 'cancel-start']);
     expect(shown(controls)).toEqual(['new-start']);
     press('new-start');
     expect(picking(lab)).toBe(true);
-    expect(shown(controls)).toEqual(['pick-element', 'pick-isotope', 'take-start', 'cancel-start']);
+    expect(shown(controls)).toEqual(['pick-element', 'pick-isotope', 'start-hint', 'take-start', 'cancel-start']);
+    // the note says what to do, quoting the button
+    expect((controls.find((c) => c.id === 'start-hint') as { text: string }).text).toContain(`«${L.free.take}»`);
     press('cancel-start');
     expect(picking(lab)).toBe(false);
     expect(shown(controls)).toEqual(['new-start']);

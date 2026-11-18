@@ -5,10 +5,14 @@
  * session's events into messages: a toast per event, the status line, a sound.
  *
  * A step shows only the tools its quest allows (the same list `Session.tools` gives: `quests.ts`). While a
- * fission waits for the fragment choice, the tools give way to the two fragment buttons and «Почати знову».
+ * fission waits for the fragment choice, the tools give way to a note («Оберіть уламок: …» — in the scene or with a
+ * button) and the two fragment buttons and «Почати знову».
  * The free lab adds «Новий старт» (`start-picker.ts`): while its choice is open, only the choice is offered — the
  * tools, the projectile choice, the electron counter, «Нейтралізувати» and «Почати знову» give way to the two
- * sliders, «Взяти як старт» and «Скасувати». Its board adds «Почати звідси» for a natural nuclide picked on the chart.
+ * sliders, a note, «Взяти як старт» and «Скасувати». Its board adds «Почати звідси» for a natural nuclide picked on
+ * the chart. In both choices the note keeps the card from being the dock's last row: the platform's DOM table
+ * reaches 2 units below its row (`.dk-table` margin), and as the last row it made the dock scroll by 2 px at
+ * 1920×1080.
  * Seven buttons would take a fourth row of the action row and make the dock scroll at 1280×720, so in the free lab
  * «Нейтралізувати» takes the place of «Почати знову» while the atom is charged.
  *
@@ -32,7 +36,7 @@ import type { Object3D } from 'three';
 import { audio } from '@/audio';
 import { fmtUnit, NBSP } from '@/content';
 import type { ChapterContext } from '@/engine/api';
-import { domKit } from '@/hud';
+import { domKit, hud } from '@/hud';
 import type {
   ButtonSpec, CalloutSpec, ControlSpec, CustomSpec, HonestySpec, HotspotSpec, StepUiApi, StepUiSpec,
 } from '@/hud';
@@ -234,6 +238,8 @@ function dockOf(lab: Lab): Dock {
     },
   });
   lab.ctx.onDispose(() => chart.dispose());
+  // the toasts belong to this chapter: none outlives it (the result's lasts 6 s)
+  lab.ctx.onDispose(() => hideToasts(dock));
   // the picked line changes only with the pick and the collection
   let lineOf: { readonly ref: NuclideRef; readonly view: ChartView } | null = null;
   let line = '';
@@ -265,6 +271,28 @@ function dockOf(lab: Lab): Dock {
   };
   docks.set(lab, dock);
   return dock;
+}
+
+/** Hides the toast of the latest event and the toast of the result, if they are still on screen. */
+function hideToasts(dock: Dock): void {
+  dock.hideEventToast?.();
+  dock.hideResultToast?.();
+  dock.hideEventToast = dock.hideResultToast = null;
+}
+
+/**
+ * The platform's full-screen views: the volume home, the journey map, the library. The chapter stays loaded (and
+ * updating) under them, but the reader has left the scene.
+ */
+const FULL_SCREEN: ReadonlySet<string> = new Set(['home', 'map', 'library']);
+
+/**
+ * Called every frame: once a full-screen view covers the scene, the chapter's toasts go — a desktop HUD keeps
+ * toasts over those views (a touch HUD clears them itself), and the 6-s result would hang over the volume home.
+ */
+export function dismissWhenLeft(lab: Lab): void {
+  const dock = dockOf(lab);
+  if ((dock.hideEventToast || dock.hideResultToast) && FULL_SCREEN.has(hud()?.overlay ?? '')) hideToasts(dock);
 }
 
 /** What QA reads of the chart (`__app.read('lab')`): the window on screen and the picked nuclide's key. */
@@ -371,7 +399,12 @@ export function stepSpec(lab: Lab, step: StepId): StepUiSpec {
       visible: ready,
     });
   }
-  controls.push(dock.electrons, ...buttons);
+  controls.push(
+    dock.electrons,
+    // while a fission waits: what to do, under the card (never the card as the dock's last row, see the header)
+    { type: 'note', id: 'fragment-hint', text: L.fission.hint, icon: 'info', color: 'mist', visible: () => pending(lab) && !choosing() },
+    ...buttons,
+  );
   // the free lab: «Новий старт» after «Почати знову»; its sliders go to the top of the dock (UI_API §3)
   if (step === 'free') controls.push(...pickerControls(lab));
 
@@ -449,9 +482,7 @@ export function announce(lab: Lab, e: SessionEvent): void {
       dock.picked = null;
       dock.sawFleeting = isFleeting(e.state);
       dock.sawFission = e.state.fissioned;
-      dock.hideEventToast?.();
-      dock.hideResultToast?.();
-      dock.hideEventToast = dock.hideResultToast = null;
+      hideToasts(dock);
       dock.releaseCounter();
       return;
     case 'done': {

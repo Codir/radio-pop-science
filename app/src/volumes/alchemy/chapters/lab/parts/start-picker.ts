@@ -110,8 +110,10 @@ export function pickerState(lab: Lab): { readonly picking: boolean; readonly cho
 }
 
 /**
- * The controls of the choice for the free lab's dock: the two sliders (the dock puts sliders first) and the
- * buttons «Новий старт», «Взяти як старт», «Скасувати» (after the step's own in the action row).
+ * The controls of the choice for the free lab's dock: the two sliders (the dock puts sliders first), a note under
+ * the card that says what to do, and the buttons «Новий старт», «Взяти як старт», «Скасувати» (after the step's
+ * own in the action row). The note also keeps the card from being the last row of the dock: the platform's DOM
+ * table reaches 2 units below its row, and as the last row it made the dock scroll by 2 px at 1920×1080.
  */
 export function pickerControls(lab: Lab): readonly ControlSpec[] {
   const { session, ui } = lab;
@@ -162,6 +164,7 @@ export function pickerControls(lab: Lab): readonly ControlSpec[] {
       visible: on,
       disabled: () => naturalIsotopes(chosenZ(lab)).length < 2,
     },
+    { type: 'note', id: 'start-hint', text: L.free.hint, icon: 'info', color: 'mist', visible: on },
     {
       type: 'button',
       id: 'new-start',
