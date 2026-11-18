@@ -108,7 +108,7 @@ describe('radio: подорож тому', () => {
   it('назви: питання всюди, крім практикумів; без U+0027 і U+00B5', () => {
     for (const c of planned) {
       expect(c.title!.endsWith('?')).toBe(layerOf(c.group) !== 'practicum');
-      expect(c.title).not.toMatch(/['µ]|^Практикум/);
+      expect(c.title).not.toMatch(/['\u00b5]|^Практикум/);
     }
   });
   it('чернетка з рядком вестибюля; без seamless та emblem', () => {
