@@ -208,6 +208,23 @@ describe('Session', () => {
       expect(session.state).toMatchObject({ z: 6, n: 6, moves: 0 });
     });
 
+    it('delivers turn and done to every listener even if one throws, then rethrows', () => {
+      const { session } = make();
+      const first: string[] = [];
+      const second: string[] = [];
+      session.on((e) => { first.push(e.type); if (e.type === 'turn' && e.event.type === 'decay') throw new Error('boom'); });
+      session.on((e) => second.push(e.type));
+      session.enter('heavy-hydrogen'); session.fire('n'); session.fire('n');
+      first.length = 0; second.length = 0;
+      expect(() => session.wait()).toThrow('boom');
+      expect(first).toEqual(['turn', 'done']);
+      expect(second).toEqual(['turn', 'done']);
+      session.restart();
+      second.length = 0;
+      session.fire('n'); // still usable
+      expect(second).toEqual(['turn']);
+    });
+
     it('does not call a listener removed during delivery', () => {
       const { session } = make();
       let second = 0;

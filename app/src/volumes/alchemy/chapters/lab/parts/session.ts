@@ -188,8 +188,9 @@ export class Session {
       next = recorded;
     }
     this.store(next);
-    this.emit({ type: 'turn', event: turn.event, before, after });
-    if (done) this.emit(done);
+    const turnEvent: SessionEvent = { type: 'turn', event: turn.event, before, after };
+    if (done) this.emit(turnEvent, done);
+    else this.emit(turnEvent);
   }
 
   /** Runs only while a fleeting nucleus can really fall apart; a changed nuclide restarts the full delay. */
@@ -212,9 +213,14 @@ export class Session {
     }
   }
 
-  /** Events go out in order: one raised from inside a listener waits until the current one is delivered. */
-  private emit(event: SessionEvent): void {
-    this.queue.push(event);
+  /**
+   * Events go out in order: one raised from inside a listener waits until the current one is delivered, and
+   * the events of one call are queued together, so a throwing listener cannot drop a later one. For a queued
+   * (delayed) event `session.state`, `done` and `best` may already be newer than the event's own `after`:
+   * listeners must use the event's payload.
+   */
+  private emit(...events: SessionEvent[]): void {
+    this.queue.push(...events);
     if (this.delivering) return;
     this.delivering = true;
     let failure: { readonly error: unknown } | null = null;
