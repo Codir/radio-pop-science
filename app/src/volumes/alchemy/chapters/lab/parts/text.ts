@@ -36,48 +36,50 @@ function sciText(value: number): string {
 
 const sciOrZero = (value: number, u: string): string => unit(sciText(value), u);
 
+/** Rounds to three significant digits as a number (never by parsing formatted text). */
+const round3 = (value: number): number => Number(value.toPrecision(3));
+
+interface TimeUnit { readonly size: number; readonly start: number; readonly name: string }
+/** Ascending. `start` is where the unit begins: below a second half a unit (0,58 ms, but 163 μs), 10 тис. р. at 10⁴ years. */
+const TIME_UNITS: readonly TimeUnit[] = [
+  { size: 1e-9, start: 5e-10, name: L.units.nano }, { size: 1e-6, start: 5e-7, name: L.units.micro },
+  { size: 1e-3, start: 5e-4, name: L.units.milli }, { size: 1, start: 1, name: L.units.second },
+  { size: 60, start: 60, name: L.units.minute }, { size: 3600, start: 3600, name: L.units.hour },
+  { size: DAY_S, start: DAY_S, name: L.units.day }, { size: YEAR_S, start: YEAR_S, name: L.units.year },
+  { size: 1e3 * YEAR_S, start: 1e4 * YEAR_S, name: L.units.kiloYear },
+  { size: 1e6 * YEAR_S, start: 1e6 * YEAR_S, name: L.units.megaYear },
+  { size: 1e9 * YEAR_S, start: 1e9 * YEAR_S, name: L.units.gigaYear },
+];
+const SCI_START = 1e12 * YEAR_S;
+const reached = (shown: number, size: number, start: number): boolean => shown * size >= start * (1 - 1e-9);
+
 /**
- * Time in the unit that reads best (below a second a unit starts at half of it: 0,58 ms, but 163 μs); `0` → «0 s»; anything not a finite non-negative number → «—».
+ * Time in the unit that reads best. One rule everywhere: the unit is chosen from the value rounded to three
+ * significant digits, so nothing shows as 1000 (or 24 h, 60 min) in a unit below the next one.
+ * `0` → «0 s»; not a finite non-negative number → «—»; beyond the table of units → scientific notation.
  */
 export function halfLifeText(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return NONE;
-  const U = L.units;
-  if (seconds === 0) return unit('0', U.second);
-  if (seconds >= YEAR_S) {
-    const years = seconds / YEAR_S;
-    const tiers: readonly (readonly [limit: number, divisor: number, name: string])[] = [
-      [1e4, 1, U.year], [1e6, 1e3, U.kiloYear], [1e9, 1e6, U.megaYear], [1e12, 1e9, U.gigaYear],
-    ];
-    for (let i = 0; i < tiers.length; i++) {
-      const [limit, divisor, name] = tiers[i]!;
-      if (years >= limit) continue;
-      const rounded = Number(sig3(years / divisor));
-      // 9999,9 р. rounds to 10 000: that reads better as the next tier.
-      if (rounded * divisor >= limit && i + 1 < tiers.length) return unit(sig3(years / tiers[i + 1]![1]), tiers[i + 1]![2]);
-      return unit(sig3(years / divisor), name);
-    }
-    return sciOrZero(years, U.year);
+  if (seconds === 0) return unit('0', L.units.second);
+  let i = -1;
+  for (let k = 0; k < TIME_UNITS.length; k++) if (seconds >= TIME_UNITS[k]!.start) i = k;
+  if (i < 0) i = reached(round3(seconds / 1e-9), 1e-9, TIME_UNITS[0]!.start) ? 0 : -1;
+  while (i >= 0 && i + 1 < TIME_UNITS.length) {
+    const here = TIME_UNITS[i]!;
+    if (!reached(round3(seconds / here.size), here.size, TIME_UNITS[i + 1]!.start)) break;
+    i += 1;
   }
-  if (seconds >= DAY_S) {
-    const days = seconds / DAY_S;
-    const text = sig3(days);
-    return Number.isInteger(Number(text)) && Number(text) === days
-      ? unit(text, plural(days, forms(U.day)))
-      : unit(text, forms(U.day)[1]);
+  const top = TIME_UNITS[TIME_UNITS.length - 1]!;
+  if (i < 0 || (i === TIME_UNITS.length - 1 && reached(round3(seconds / top.size), top.size, SCI_START))) {
+    return sciOrZero(seconds / (i < 0 ? 1 : YEAR_S), i < 0 ? L.units.second : L.units.year);
   }
-  const scaled: readonly (readonly [min: number, per: number, name: string])[] = [
-    [3600, 3600, U.hour], [60, 60, U.minute], [1, 1, U.second], [5e-4, 1e-3, U.milli], [5e-7, 1e-6, U.micro], [5e-10, 1e-9, U.nano],
-  ];
-  for (let i = 0; i < scaled.length; i++) {
-    const [min, per, name] = scaled[i]!;
-    if (seconds < min) continue;
-    const value = seconds / per;
-    // 59,99 s rounds to 60: show it as 1 min instead.
-    const up = scaled[i - 1];
-    if (up && Number(sig3(value)) * per >= up[1]) return unit(sig3(seconds / up[1]), up[2]);
-    return unit(sig3(value), name);
+  const chosen = TIME_UNITS[i]!;
+  const shown = round3(seconds / chosen.size);
+  if (chosen.name === L.units.day) {
+    const word = Number.isInteger(shown) ? plural(shown, forms(chosen.name)) : forms(chosen.name)[1];
+    return unit(sig3(shown), word);
   }
-  return sciOrZero(seconds, U.second);
+  return unit(sig3(shown), chosen.name);
 }
 
 /** Elapsed game time reads exactly like a half-life. */
@@ -92,7 +94,7 @@ export function energyText(q: number | null): string {
   const abs = Math.abs(q);
   let value: string;
   let u: string;
-  if (abs >= 1000) {
+  if (round3(abs) >= 1000) {
     const mev = abs / 1000;
     value = Math.round(mev * 10) / 10 >= 100 ? fmtNumber(mev, { digits: 0, group: false }) : fmtNumber(mev, { digits: 1 });
     u = L.units.mev;
@@ -148,7 +150,7 @@ export function cardRows(state: GameState): string[][] {
     [C.atom, `${ionSymbol(z, n, electrons)}${SEP}${nuclideName(z, n)}`],
     [C.makeup, `Z = ${z}${SEP}N = ${n}${SEP}A = ${z + n}`],
     [C.nucleus, x ? statusLine(x).text : L.status.notInTable],
-    [C.chargeAndBinding, binding === null || !Number.isFinite(binding)
+    [C.chargeAndBinding, binding === null || !Number.isFinite(binding) || z + n < 2
       ? charge
       : `${charge}${SEP}${C.binding} ${unit(fmtNumber(binding / 1000, { maxDigits: 2 }), `${L.units.mev} ${C.perNucleon}`)}`],
   ];
@@ -159,7 +161,7 @@ const capital = (text: string): string =>
   /^[\p{Script=Cyrillic}a-z]/u.test(text) ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 const sym = (x: NuclideRef): string => nuclideSymbol(x.z, x.n);
 const projectileSymbol = (id: ProjectileId): string => PROJECTILES.find((p) => p.id === id)?.symbol ?? id;
-const neutrons = (k: number): string => `${k} ${plural(k, forms(L.events.neutron))}`;
+const neutronCount = (k: number): string => (k === 1 ? 'n' : `${k}n`);
 const withEnergy = (text: string, q: number | null): string => {
   const energy = energyText(q);
   return energy === NONE ? text : `${text}${SEP}${energy}`;
@@ -186,7 +188,7 @@ export function eventLine(e: GameEvent): Line {
   switch (e.type) {
     case 'capture': {
       if (e.pp) return { text: withEnergy(`${E.fusion}: ${sym(e.from)} + ${projectileSymbol(e.projectile)} → ${sym(e.to)}`, e.q), tone: 'ok' };
-      const evaporated = e.evaporated > 0 ? `, ${E.evaporated} ${neutrons(e.evaporated)}` : '';
+      const evaporated = e.evaporated > 0 ? ` + ${neutronCount(e.evaporated)}` : '';
       return {
         text: withEnergy(`${E.capture}: ${sym(e.from)} + ${projectileSymbol(e.projectile)} → ${sym(e.to)}${evaporated}`, e.q),
         tone: 'ok',
@@ -199,16 +201,23 @@ export function eventLine(e: GameEvent): Line {
       return { text: withEnergy(`${E.knock} ${what}: ${sym(e.from)} → ${sym(e.to)}`, e.q), tone: 'ok' };
     }
     case 'decay': {
-      const head = e.auto ? `${E.autoDecay}: ` : '';
-      const body = `${modeName(e.mode)}: ${sym(e.from)} → ${sym(e.to)}${SEP}${E.elapsed} ${elapsedText(e.seconds)}`;
-      return { text: head + (e.auto ? withEnergy(body, e.q) : capital(withEnergy(body, e.q))), tone: 'ok' };
+      const path = `${sym(e.from)} → ${sym(e.to)}`;
+      const time = `${E.elapsed} ${elapsedText(e.seconds)}`;
+      const body = e.auto
+        ? `${E.autoDecay}: ${path} (${modeName(e.mode)})${SEP}${time}`
+        : capital(`${modeName(e.mode)}: ${path}${SEP}${time}`);
+      return { text: withEnergy(body, e.q), tone: 'ok' };
     }
     case 'fission': {
       const f = e.fission;
-      const parts = `${sym(f.heavy)} + ${sym(f.light)}${f.neutrons > 0 ? ` + ${neutrons(f.neutrons)}` : ''}`;
+      const n = projectileSymbol('n');
+      const parts = `${sym(f.heavy)} + ${sym(f.light)}${f.neutrons > 0 ? ` + ${f.neutrons === 1 ? n : `${f.neutrons}${n}`}` : ''}`;
+      const time = `${E.elapsed} ${elapsedText(e.seconds)}`;
       const head = e.induced
-        ? `${E.fission}: ${sym(e.from)} + n → ${parts}`
-        : `${e.auto ? `${E.autoDecay}: ${modeName('sf')}` : capital(modeName('sf'))}: ${sym(e.from)} → ${parts}${SEP}${E.elapsed} ${elapsedText(e.seconds)}`;
+        ? `${E.fission}: ${sym(e.from)} + ${n} → ${parts}`
+        : e.auto
+          ? `${E.autoDecay}: ${sym(e.from)} → ${parts} (${modeName('sf')})${SEP}${time}`
+          : `${capital(modeName('sf'))}: ${sym(e.from)} → ${parts}${SEP}${time}`;
       return { text: `${withEnergy(head, f.q)}. ${E.chooseFragment}`, tone: 'ok' };
     }
     case 'fragment':

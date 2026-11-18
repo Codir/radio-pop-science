@@ -44,6 +44,53 @@ describe('lab text', () => {
     expect(s(halfLifeText(59.99))).toBe('1 min');
     expect(s(halfLifeText(9999.9 * 31557600))).toBe('10 тис. р.');
   });
+  it('agrees the day word with the displayed number', () => {
+    expect(s(halfLifeText(138.376 * 86400))).toBe('138 діб');
+    expect(s(halfLifeText(1.001 * 86400))).toBe('1 доба');
+    expect(s(halfLifeText(5.001 * 86400))).toBe('5 діб');
+    expect(s(halfLifeText(2.001 * 86400))).toBe('2 доби');
+    expect(s(halfLifeText(2.5 * 86400))).toBe('2,5 доби');
+    expect(s(halfLifeText(311.6 * 86400))).toBe('312 діб');
+  });
+  it('carries over at every unit border', () => {
+    expect(s(halfLifeText(86399))).toBe('1 доба');
+    expect(s(halfLifeText(3599.9))).toBe('1 h');
+    expect(s(halfLifeText(31557599))).toBe('365 діб');
+    expect(s(halfLifeText(31557600 * 0.9999e4))).toBe('10 тис. р.');
+    expect(s(halfLifeText(31557600 * 999.6e3))).toBe('1 млн р.');
+    expect(s(halfLifeText(999.6e9 * 31557600))).toBe('1,0×10¹² р.');
+    expect(s(halfLifeText(999.6e6 * 31557600))).toBe('1 млрд р.');
+    expect(s(halfLifeText(4.9996e-4))).toBe('0,5 ms');
+    expect(s(halfLifeText(5e-4))).toBe('0,5 ms');
+    expect(s(halfLifeText(4.9999e-10))).toBe('0,5 ns');
+    expect(s(halfLifeText(5e-10))).toBe('0,5 ns');
+    expect(s(halfLifeText(4.9e-10))).toBe('4,9×10⁻¹⁰ s');
+    expect(s(halfLifeText(0.9996))).toBe('1 s');
+    expect(s(energyText(999.6))).toBe('виділилось ≈ 1,0 MeV');
+    for (const v of [59.99, 3599.9, 86399, 3.15e7, 3.1e14, 0.9999, 9.9999e-7]) expect(halfLifeText(v)).not.toMatch(/(^|\D)1\d{3}\D|\d{4,}/);
+  });
+  it('writes evaporated neutrons as a formula and keeps colons single', () => {
+    const cap = { type: 'capture', projectile: 'd', from: { z: 5, n: 14 }, to: { z: 6, n: 14 }, q: 1000, pp: false } as const;
+    expect(s(eventLine({ ...cap, evaporated: 1 }).text)).toContain('→ ²⁰C + n');
+    expect(s(eventLine({ ...cap, evaporated: 3 }).text)).toContain('→ ²⁰C + 3n');
+    expect(eventLine({ ...cap, evaporated: 3 }).text).not.toContain('вилетіл');
+    const fis = eventLine(fireAt(startGame(92, 143), 'n').event).text;
+    expect(fis).toContain('+ 3n');
+    expect(fis).not.toContain('нейтрони');
+    const auto = eventLine(autoDecay(startGame(4, 4), 0.5, 0).event).text;
+    expect(auto.split(':').length - 1).toBe(1);
+    const sf = eventLine({ type: 'fission', from: REF, induced: false, seconds: 5, auto: true,
+      fission: { heavy: { z: 56, n: 85 }, light: { z: 36, n: 56 }, neutrons: 3, q: null, preset: false } }).text;
+    expect(sf.split(':').length - 1).toBe(1);
+    expect(sf).toContain('спонтанний поділ');
+    expect(modeName('sf')).toBe('спонтанний поділ');
+  });
+  it('words the gamma refusal truthfully and drops binding for a lone proton', () => {
+    const line = eventLine(knock(startGame(1, 0), 'n').event).text;
+    expect(line).not.toContain('такого ядра немає');
+    expect(cardRows(startGame(1, 0))[3]![1]).not.toContain('зв’язок');
+    expect(cardRows(startGame(79, 118))[3]![1]).toContain('зв’язок');
+  });
   it('never prints a broken number', () => {
     for (const v of [0, 1e-30, 1, 1e30, 1e300, Number.MAX_VALUE, NaN, Infinity, -1])
       for (const text of [halfLifeText(v), elapsedText(v)]) expect(text).not.toMatch(/NaN|Infinity|e\+|e-|undefined/);
@@ -128,7 +175,7 @@ describe('lab text', () => {
     expect(plain.tone).toBe('ok');
     expect(s(plain.text)).toContain('²H');
     const evap = eventLine({ ...cap, evaporated: 2, pp: false });
-    expect(evap.text).toContain('2 нейтрони');
+    expect(evap.text).toContain('+ 2n');
     expect(eventLine({ ...cap, projectile: 'p', evaporated: 0, pp: true }).text).not.toBe(plain.text);
     expect(eventLine({ type: 'bounce', projectile: 'n' }).tone).toBe('warning');
     expect(eventLine({ type: 'electrons', from: 3, to: 2 }).tone).toBe('info');
