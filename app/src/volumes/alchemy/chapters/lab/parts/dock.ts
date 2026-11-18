@@ -20,7 +20,7 @@ import type { ButtonSpec, ControlSpec, CustomSpec, HonestySpec, HotspotSpec, Ste
 import { SEMANTIC } from '@/style';
 import { Label, UiNode } from '@/ui3d';
 import { maxElectrons } from '@alchemy/sim/core';
-import { ALL_TOOLS, PROJECTILES, questById } from '@alchemy/sim/lab';
+import { ALL_TOOLS, PROJECTILES, isFleeting, questById } from '@alchemy/sim/lab';
 import type { GameState, ProjectileId, ToolId } from '@alchemy/sim/lab';
 import { createCountStepper } from '@alchemy/shared/count-stepper';
 import type { StepId } from '../chapter';
@@ -48,6 +48,9 @@ interface Dock {
   /** The status line: the latest event, or the quest's result once it is won (until the next run). */
   status: { readonly text: string; readonly tone: Tone } | null;
   won: boolean;
+  /** This run has met a fleeting nucleus / a fission: the chips that explain them stay until the next run. */
+  sawFleeting: boolean;
+  sawFission: boolean;
   /** Hide the toast of the latest event (a newer event replaces it) and the toast of the result. */
   hideEventToast: (() => void) | null;
   hideResultToast: (() => void) | null;
@@ -57,9 +60,12 @@ interface Dock {
 const docks = new WeakMap<Lab, Dock>();
 
 const TONE_COLOR = { ok: 'ui.ok', info: 'ui.info', warning: 'ui.warning' } as const;
-/** Steps whose quest meets a fleeting nucleus: it lives 2 s instead of its real half-life. */
+/**
+ * Steps whose quest is about a fleeting nucleus (it lives 2 s instead of its real half-life) and steps about a
+ * fission (an illustrative split): their chip is always on. Every other step can still reach one with its own
+ * tools (⁴H after three shots in `heavy-hydrogen`, ²³⁹Pu split in `plutonium`), so there the chip appears with it.
+ */
 const FLEETING_STEPS: readonly StepId[] = ['sun', 'star-forge', 'uranium-chain', 'superheavy', 'free'];
-/** Steps where something is shown by an illustrative rule (the fission split). */
 const ILLUSTRATIVE_STEPS: readonly StepId[] = ['fission', 'superheavy', 'free'];
 /** The main button of a step: the first of these that the step has. */
 const PRIMARY_ORDER = ['fire', 'wait', 'gamma-p'] as const;
@@ -83,7 +89,10 @@ function electronCounter(lab: Lab, caption: () => string): Pick<Dock, 'electrons
     get: () => session.state.electrons,
     min: () => 0,
     max: () => maxElectrons(session.state.z),
-    onStep: (delta) => session.setElectrons(session.state.electrons + delta),
+    // hidden while a fragment choice is pending; a «+» still held then must not raise 8 refusals a second
+    onStep: (delta) => {
+      if (!pending(lab)) session.setElectrons(session.state.electrons + delta);
+    },
   });
   const line = new Label('', { size: CAPTION_SIZE, color: 'mist' }, { width: 'fill' });
   const node = new UiNode({ dir: 'col', gap: 4, width: 'fill', children: [counter.node, line] });
@@ -142,6 +151,8 @@ function dockOf(lab: Lab): Dock {
     ...electronCounter(lab, chargeAndBinding),
     status: null,
     won: false,
+    sawFleeting: false,
+    sawFission: false,
     hideEventToast: null,
     hideResultToast: null,
   };
@@ -154,14 +165,16 @@ function toolsOf(step: StepId): readonly ToolId[] {
   return questById(step)?.tools ?? ALL_TOOLS;
 }
 
-/** In this order the chips pack into the fewest rows of the step panel. */
-function honestyOf(step: StepId): HonestySpec[] {
-  const chips: HonestySpec[] = ['simplified', 'notToScale', { text: L.honesty.waitSkipped }];
-  if (ILLUSTRATIVE_STEPS.includes(step)) chips.push('illustrative');
-  if (FLEETING_STEPS.includes(step)) {
-    chips.push({ slowed: 1e15, text: `${L.honesty.fleeting} ${fmtUnit(FLEETING_DELAY_S, L.units.second)}` });
-  }
-  return chips;
+/** Every step has all five chips; in this order they pack into the fewest rows of the step panel. */
+function honestyOf(step: StepId, dock: Dock): HonestySpec[] {
+  const slowed = { slowed: 1e15, text: `${L.honesty.fleeting} ${fmtUnit(FLEETING_DELAY_S, L.units.second)}` };
+  return [
+    'simplified',
+    'notToScale',
+    { text: L.honesty.waitSkipped },
+    ILLUSTRATIVE_STEPS.includes(step) ? 'illustrative' : { kind: 'illustrative', visible: () => dock.sawFission },
+    FLEETING_STEPS.includes(step) ? slowed : { ...slowed, visible: () => dock.sawFleeting },
+  ];
 }
 
 export function stepSpec(lab: Lab, step: StepId): StepUiSpec {
@@ -230,7 +243,7 @@ export function stepSpec(lab: Lab, step: StepId): StepUiSpec {
         },
       ],
     },
-    honesty: honestyOf(step),
+    honesty: honestyOf(step, dock),
     hotspots,
     // every entry starts a new run: the projectile choice returns to the step's first projectile
     reset: true,
@@ -248,6 +261,8 @@ export function announce(lab: Lab, e: SessionEvent): void {
     case 'reset':
       dock.status = null;
       dock.won = false;
+      dock.sawFleeting = isFleeting(e.state);
+      dock.sawFission = e.state.fissioned;
       dock.hideEventToast?.();
       dock.hideResultToast?.();
       dock.hideEventToast = dock.hideResultToast = null;
@@ -263,6 +278,9 @@ export function announce(lab: Lab, e: SessionEvent): void {
       return;
     }
     case 'turn': {
+      if (isFleeting(e.after)) dock.sawFleeting = true;
+      if (e.after.fissioned || e.after.pending !== null) dock.sawFission = true;
+      if (e.after.pending !== null) dock.releaseCounter();
       const line = eventLine(e.event);
       if (!dock.won) dock.status = line;
       // the counter shows its own number: a toast per electron (8 a second while «+» is held) would be noise

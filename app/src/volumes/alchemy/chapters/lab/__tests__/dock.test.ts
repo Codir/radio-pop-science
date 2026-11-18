@@ -1,7 +1,10 @@
 import { Object3D } from 'three';
 import { describe, expect, it } from 'vitest';
 import type { ChapterContext } from '@/engine/api';
-import type { ButtonSpec, ControlSpec, NoteSpec, ReadoutSpec, SegmentedSpec, StepUiApi, StepUiSpec } from '@/hud';
+import type {
+  ButtonSpec, ControlSpec, CustomSpec, HonestySpec, NoteSpec, ReadoutSpec, SegmentedSpec, StepUiApi, StepUiSpec,
+} from '@/hud';
+import type { UiNode } from '@/ui3d';
 import { ALL_TOOLS, EMPTY_PROGRESS, PROJECTILES, questById } from '@alchemy/sim/lab';
 import { STEP_IDS, type StepId } from '../chapter';
 import { L } from '../labels';
@@ -40,8 +43,20 @@ function makeLab() {
 const holds = (c: ControlSpec): boolean => (typeof c.visible === 'function' ? c.visible() : c.visible !== false);
 const control = <T extends ControlSpec>(spec: StepUiSpec, id: string): T | undefined =>
   [...(spec.controls ?? []), ...(spec.board?.children ?? [])].find((c) => c.id === id) as T | undefined;
-const buttons = (spec: StepUiSpec): ButtonSpec[] => (spec.controls ?? []).filter((c): c is ButtonSpec => c.type === 'button');
+const buttons = (spec: StepUiSpec): ButtonSpec[] =>
+  (spec.controls ?? []).filter((c): c is ButtonSpec => c.type === 'button');
 const shownButtons = (spec: StepUiSpec): string[] => buttons(spec).filter(holds).map((b) => b.id);
+/** A chip by what it says: its kind, `slowed …`, or its own text. */
+const chipName = (h: HonestySpec): string =>
+  typeof h === 'string' ? h : 'slowed' in h ? `slowed ${h.slowed.toExponential()}` : 'kind' in h ? h.kind : (h.text ?? '');
+/** The step's «сповільнено» or «ілюстративно» chip. */
+const chip = (spec: StepUiSpec, which: 'slowed' | 'illustrative'): HonestySpec =>
+  spec.honesty!.find((h) => chipName(h).startsWith(which))!;
+const alwaysOn = (h: HonestySpec): boolean => typeof h === 'string' || h.visible === undefined;
+const chipShown = (spec: StepUiSpec, which: 'slowed' | 'illustrative'): boolean => {
+  const h = chip(spec, which);
+  return alwaysOn(h) || (typeof h !== 'string' && (typeof h.visible === 'function' ? h.visible() : h.visible === true));
+};
 const statusOf = (spec: StepUiSpec): string | null => {
   const note = control<NoteSpec>(spec, 'status')!;
   return holds(note) ? (note.text as () => string)() : null;
@@ -60,7 +75,8 @@ describe('lab dock', () => {
       ];
       expect(buttons(specs[step]).map((b) => b.id), step).toEqual(want);
       const choice = control<SegmentedSpec>(specs[step], 'projectile');
-      if (projectiles.length > 1) expect(choice?.items, step).toEqual(projectiles.map((p) => ({ id: p.id, label: p.symbol })));
+      const items = projectiles.map((p) => ({ id: p.id, label: p.symbol }));
+      if (projectiles.length > 1) expect(choice?.items, step).toEqual(items);
       else expect(choice, step).toBeUndefined();
     }
   });
@@ -74,16 +90,83 @@ describe('lab dock', () => {
     for (const step of STEP_IDS) expect(primary(step)).toHaveLength(1);
   });
 
-  it('carries the honesty chips of every step', () => {
+  it('carries all five chips in every step; «сповільнено», «ілюстративно» always on where the quest is about them', () => {
     const { specs } = makeLab();
-    const texts = (step: StepId) =>
-      (specs[step].honesty ?? []).map((h) => (typeof h === 'string' ? h : 'slowed' in h ? `slowed ${h.slowed.toExponential()}` : h.text));
-    expect(texts('heavy-hydrogen')).toEqual(['simplified', 'notToScale', L.honesty.waitSkipped]);
-    expect(texts('fission')).toEqual(['simplified', 'notToScale', L.honesty.waitSkipped, 'illustrative']);
-    expect(texts('star-forge')).toEqual(['simplified', 'notToScale', L.honesty.waitSkipped, 'slowed 1e+15']);
-    expect(texts('free')).toEqual(['simplified', 'notToScale', L.honesty.waitSkipped, 'illustrative', 'slowed 1e+15']);
-    const slowed = specs.sun.honesty!.find((h) => typeof h !== 'string' && 'slowed' in h) as { text: string };
-    expect(slowed.text).toBe(`${L.honesty.fleeting} 2\u00a0s`);
+    const all = ['simplified', 'notToScale', L.honesty.waitSkipped, 'illustrative', 'slowed 1e+15'];
+    const fleeting: StepId[] = ['sun', 'star-forge', 'uranium-chain', 'superheavy', 'free'];
+    const fission: StepId[] = ['fission', 'superheavy', 'free'];
+    for (const step of STEP_IDS) {
+      expect(specs[step].honesty!.map(chipName), step).toEqual(all);
+      const on = (c: string): boolean =>
+        c === 'illustrative' ? fission.includes(step) : c.startsWith('slowed') ? fleeting.includes(step) : true;
+      expect(specs[step].honesty!.filter(alwaysOn).map(chipName), step).toEqual(all.filter(on));
+    }
+    expect((chip(specs.sun, 'slowed') as { text: string }).text).toBe(`${L.honesty.fleeting} 2\u00a0s`);
+  });
+
+  it('shows «сповільнено» in heavy-hydrogen once ⁴H has appeared, until the next run', () => {
+    const { session, specs } = makeLab();
+    const slowed = () => chipShown(specs['heavy-hydrogen'], 'slowed');
+    session.enter('heavy-hydrogen');
+    expect(slowed()).toBe(false);
+    session.fire('n');
+    session.fire('n');
+    expect(slowed()).toBe(false); // ³H is radioactive, not fleeting
+    session.fire('n');
+    expect(session.state).toMatchObject({ z: 1, n: 3 }); // ⁴H
+    expect(slowed()).toBe(true);
+    session.update(2.1); // it falls apart by itself…
+    expect(session.state).not.toMatchObject({ z: 1, n: 3 });
+    expect(slowed()).toBe(true); // …and the chip still explains why
+    session.restart();
+    expect(slowed()).toBe(false);
+    for (const step of ['sun', 'star-forge', 'uranium-chain', 'superheavy', 'free'] as const) {
+      expect(chipShown(specs[step], 'slowed'), step).toBe(true);
+    }
+  });
+
+  it('shows «ілюстративно» in plutonium once a fission has happened', () => {
+    const { session, specs } = makeLab();
+    const illustrative = () => chipShown(specs.plutonium, 'illustrative');
+    session.enter('plutonium');
+    expect(illustrative()).toBe(false);
+    session.fire('n'); // ²³⁹U
+    session.wait(); // ²³⁹Np
+    session.wait(); // ²³⁹Pu
+    expect(session.state).toMatchObject({ z: 94, n: 145 });
+    expect(illustrative()).toBe(false);
+    session.fire('n'); // ²³⁹Pu splits into the fixed pair
+    expect(session.state.pending).not.toBeNull();
+    expect(illustrative()).toBe(true);
+    session.pickFragment('light');
+    expect(illustrative()).toBe(true);
+    session.restart();
+    expect(illustrative()).toBe(false);
+    for (const step of ['fission', 'superheavy', 'free'] as const) {
+      expect(chipShown(specs[step], 'illustrative'), step).toBe(true);
+    }
+  });
+
+  it('lets go of a held «+» when a fission choice appears, and changes nothing while it is pending', () => {
+    const { session, specs, toasts } = makeLab();
+    const counter = control<CustomSpec>(specs.fission, 'electrons')!;
+    let plus: UiNode | null = null;
+    counter.node.walk((n) => {
+      if (n.name === 'ctl-electrons:plus') plus = n;
+    });
+    session.enter('fission');
+    counter.update!(0);
+    (plus as UiNode | null)!.handlers!.press!({} as never); // «+» goes down and stays down
+    session.fire('n');
+    expect(session.state.pending).not.toBeNull();
+    const shown = toasts.length;
+    for (let t = 0.1; t <= 2; t += 0.1) counter.update!(t); // a held «+» would repeat 8 times a second
+    expect(toasts.length).toBe(shown);
+    expect(toasts.some((t) => t.text === L.refusal.pending)).toBe(false);
+    session.pickFragment('heavy');
+    expect(session.state.electrons).toBe(56);
+    for (let t = 2.1; t <= 4; t += 0.1) counter.update!(t); // and it does not come back after the choice
+    expect(session.state.electrons).toBe(56);
   });
 
   it('fires the chosen projectile, or the only one of the step', () => {

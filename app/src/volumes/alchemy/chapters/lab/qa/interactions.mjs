@@ -21,7 +21,7 @@ import {
   parseSize,
   screenshot,
 } from '../../../../../../../tools/qa/lib.mjs';
-import { advance, box, click, controlText, enter, pick, read, shown } from './helpers.mjs';
+import { advance, box, click, controlText, enter, pick, read, shown, textShown } from './helpers.mjs';
 
 const args = parseArgs();
 const [width, height] = parseSize(args.size, [1280, 720]);
@@ -131,6 +131,18 @@ try {
   await advance(page, 2.2);
   s = await read(page);
   check('…falls back to ⁴He, still 1 move', s.z === 2 && s.n === 2 && s.moves === 1, at(s));
+
+  // 5b — the boundary: a shot 1.9 s after ⁸Be appeared still finds it (the countdown has 0.1 s left), and wins
+  label = '5b star-forge 1.9 s';
+  await click(page, 'restart');
+  await click(page, 'fire', 0);
+  await advance(page, 1.9);
+  s = await read(page);
+  check('after 1.9 s still ⁸Be, 0.1 s left', s.z === 4 && s.n === 4 && s.countdown !== null && Math.abs(s.countdown - 0.1) < 1e-6, `${at(s)}, countdown ${s.countdown}`);
+  await click(page, 'fire', 0);
+  s = await read(page);
+  check('the second α makes ¹²C in 2 moves before the countdown runs out', s.z === 6 && s.n === 6 && s.moves === 2 && s.done, at(s));
+  await advance(page, 0.4);
 
   // 6 — leaving a step mid-countdown: the new step starts clean and the old timer never fires (Review Focus 3)
   label = '6 jump mid-countdown';
@@ -243,6 +255,21 @@ try {
   check('¹H stays, 0 moves', s.z === 1 && s.n === 0 && s.moves === 0, at(s));
   const status = await controlText(page, 'status');
   check('the status line gives the reason', (await shown(page, 'status')) && status.includes('Стабільне ядро не розпад'), status);
+
+  // a fleeting nucleus the step's own tools reach (⁴H after three shots) brings the «сповільнено» chip with it
+  label = 'chips heavy-hydrogen';
+  const SLOWED = 'нетривке ядро сповільн';
+  check('no «сповільнено» chip at the start', !(await textShown(page, SLOWED)));
+  for (let i = 0; i < 3; i++) await click(page, 'fire');
+  s = await read(page);
+  const offChip = await offscreen();
+  const fitChip = await dockFits();
+  check('⁴H: the chip is on screen, the dock fits, nothing off screen', s.z === 1 && s.n === 3 && (await textShown(page, SLOWED)) && offChip.length === 0 && fitChip.ok, `${at(s)}; ${fitChip.detail} ${offChip.join(', ')}`);
+  await advance(page, 2.2);
+  s = await read(page);
+  check('…it stays after ⁴H fell apart by itself', !(s.z === 1 && s.n === 3) && (await textShown(page, SLOWED)), at(s));
+  await click(page, 'restart');
+  check('…and goes with «Почати знову»', !(await textShown(page, SLOWED)));
 
   // every quest can be won from the dock (routes of the solver, sim/lab/solver.ts)
   const walk = async (id, actions, goal) => {

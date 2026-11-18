@@ -6,16 +6,24 @@
 //   HUD controls   `__ui.locate('ctl-<id>')`, segmented items and parts of a custom control `ctl-<id>:<item>`
 //   chapter state  `__app.read('lab')`      (the chapter's `ctx.qa.expose`)
 
+/** Frames rendered one by one at the end of every `advance` (HUD fades ease per rendered frame). */
+const SETTLE_FRAMES = 14;
+
 /** Run `n` single frames of the frozen engine clock (1/60 s each); each one is rendered. */
 export async function frames(page, n = 1) {
   for (let i = 0; i < n; i++) await page.evaluate(() => window.__app.step(1 / 60, 1));
 }
 
-/** Advance the frozen engine clock by `seconds` (QA runs with ?freeze, so nothing moves by itself). */
+/**
+ * Advance the frozen engine clock by exactly `seconds` (rounded to 1/60 s; QA runs with ?freeze, so nothing
+ * moves by itself). The last frames are rendered one by one so the HUD's fades settle in the picture; they are
+ * part of `seconds`, not extra time.
+ */
 export async function advance(page, seconds) {
-  await page.evaluate((n) => window.__app.step(1 / 60, n), Math.max(1, Math.round(seconds * 60)));
-  // HUD fades ease per *rendered* frame: render a few single frames so they settle in the picture
-  await frames(page, 14);
+  const n = Math.round(seconds * 60);
+  const bulk = Math.max(0, n - SETTLE_FRAMES);
+  if (bulk > 0) await page.evaluate((k) => window.__app.step(1 / 60, k), bulk);
+  await frames(page, n - bulk);
 }
 
 /** CSS rectangle { x, y, w, h } (centre + size) of a named HUD node, or null when it is not on screen. */
@@ -34,15 +42,18 @@ export const shown = async (page, id) => (await box(page, `ctl-${id}`)) !== null
 /** State published by the chapter with `ctx.qa.expose('lab', …)`. */
 export const read = (page) => page.evaluate(() => window.__app.read('lab'));
 
-/** Click a button by its id, then let `settle` seconds of engine time pass (0: the clock does not move). */
-export async function click(page, id, settle = 0.2) {
+/** Click a button by its id, then let exactly `settle` seconds of engine time pass (0: the clock does not move). */
+export async function click(page, id, settle = 0.4) {
   const r = await locate(page, id);
   await page.mouse.click(r.x, r.y);
   if (settle > 0) await advance(page, settle);
 }
 
-/** Click item `item` of the segmented control `id` (`ctl-<id>:<item>`), or a part of a custom control. */
-export async function pick(page, id, item, settle = 0.2) {
+/**
+ * Click item `item` of the segmented control `id` (`ctl-<id>:<item>`), or a part of a custom control, then let
+ * exactly `settle` seconds of engine time pass.
+ */
+export async function pick(page, id, item, settle = 0.4) {
   const r = await box(page, `ctl-${id}:${item}`);
   if (!r) throw new Error(`'${id}:${item}' is not on screen`);
   await page.mouse.click(r.x, r.y);
@@ -65,8 +76,12 @@ export function controlText(page, id) {
   }, `ctl-${id}`);
 }
 
-/** Open a step of the chapter by deep link (instant) and let the picture settle. */
+/** Open a step of the chapter by deep link (instant) and let the picture settle (the `?freeze` hold, then 0.5 s). */
 export async function enter(page, step) {
   await page.evaluate((s) => window.__app.goto(`alchemy/lab/${s}`, undefined, { instant: true }), step);
   await advance(page, 0.5);
 }
+
+/** A piece of interface text starting with `prefix` is on screen (any interface; `__ui.textSizes` cuts at 24). */
+export const textShown = (page, prefix) =>
+  page.evaluate((p) => window.__ui.textSizes().some((t) => t.text.startsWith(p)), prefix);
