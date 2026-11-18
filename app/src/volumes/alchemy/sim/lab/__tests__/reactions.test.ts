@@ -48,6 +48,14 @@ describe('reactions', () => {
       expect(hasNuclide(f!.heavy.z, f!.heavy.n) && hasNuclide(f!.light.z, f!.light.n)).toBe(true);
     }
   });
+  it('never invents nucleons in a spontaneous split of any nuclide', () => {
+    for (const x of allNuclides()) {
+      const f = spontaneousFission(x);
+      if (f === null) continue;
+      expect(f.neutrons, `${x.z}-${x.n}`).toBeGreaterThanOrEqual(0);
+      expect(f.heavy.z + f.light.z, `${x.z}-${x.n}`).toBe(x.z);
+    }
+  });
   it('knocks nucleons out, but never below hydrogen or off the table', () => {
     expect(knockOut({ z: 82, n: 126 }, 'p')).toMatchObject({ product: { z: 81, n: 126 } });
     expect(knockOut({ z: 82, n: 126 }, 'p')!.q).toBeCloseTo(-8003, 0);

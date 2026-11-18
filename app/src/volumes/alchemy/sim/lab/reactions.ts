@@ -115,5 +115,6 @@ export function spontaneousFission(parent: NuclideRef): Fission | null {
   const light = nearest(zLight, ap - aHeavy - zLight);
   if (!heavy || !light) return null;
   const neutrons = a - (heavy.z + heavy.n) - (light.z + light.n);
+  if (neutrons < 0) return null; // the N search overshot: fragments would hold more nucleons than the parent
   return { heavy, light, neutrons, q: fissionQ(massExcessOf(parent), heavy, light, neutrons, 0), preset: false };
 }
