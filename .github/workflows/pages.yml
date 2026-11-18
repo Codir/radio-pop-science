@@ -1,0 +1,87 @@
+# .github/workflows/pages.yml
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # manual re-run from the Actions tab
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      # pnpm comes from corepack; its version is pinned in app/package.json → "packageManager": "pnpm@12.18.0".
+      # Every pnpm call runs in app/ (there is no package.json at the repository root).
+      - name: pnpm
+        run: corepack enable
+
+      - name: Install
+        working-directory: app
+        run: pnpm install --frozen-lockfile
+
+      # Checks on the full tree
+      - name: Types
+        working-directory: app
+        run: pnpm typecheck
+
+      - name: Lint
+        working-directory: app
+        run: pnpm lint
+
+      - name: Unit tests
+        working-directory: app
+        run: pnpm test
+
+      - name: Documents
+        run: |
+          python3 tools/content/doccheck.py --all
+          python3 docs/volumes/radio/test_check.py
+          python3 docs/volumes/radio/check.py
+
+      - name: Pages settings
+        id: pages
+        uses: actions/configure-pages@v6
+
+      # Site profile: pruned copy → tsc → vite build → served under the Pages base path → browser check
+      - name: Site profile
+        env:
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+        run: |
+          export QA_CHROME="$(command -v google-chrome)"
+          node tools/site/build.mjs --volume radio --out "$RUNNER_TEMP/site" --sub "${BASE_PATH#/}"
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: ${{ runner.temp }}/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5

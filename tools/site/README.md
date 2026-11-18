@@ -142,3 +142,55 @@ cd <робоча копія> && <корінь репозиторію>/app/node_m
 | том лишився чернеткою (`"status": "draft"`) | `Library: default volume 'radio' is not registered` |
 
 Тому збірка без перевірки в браузері (`--no-smoke`) ще не доводить, що сайт працює.
+
+## Публікація
+
+Сайт тому: https://codir.github.io/radio-pop-science/. Його збирає й публікує потік GitHub Actions `pages`
+(`.github/workflows/pages.yml`).
+
+**Одноразова дія власника:** Settings → Pages → Build and deployment → Source: **GitHub Actions**. Доки цього не
+зроблено, падає крок `Pages settings`: `actions/configure-pages` сам Pages не вмикає, бо для цього потрібен інший
+ключ, ніж `GITHUB_TOKEN`.
+
+**Коли запускається:** на кожне надсилання в `main` і вручну (Actions → pages → Run workflow). Запуск, що вже йде,
+новий не перериває, а чекає на нього.
+
+**Що робить.** Робота `build` (`ubuntu-24.04`, Node 24, pnpm 12.18 через corepack) перевіряє повне дерево і збирає
+сайт, робота `deploy` публікує зібране. Лише `deploy` має право писати в Pages (`pages: write`, `id-token: write`);
+`build` тільки читає репозиторій. Кроки `build` по черзі:
+
+| Крок | Що робить |
+|---|---|
+| `pnpm` | `corepack enable` (версію pnpm закріплено в `app/package.json`) |
+| `Install` | `pnpm install --frozen-lockfile` в `app/` |
+| `Types`, `Lint`, `Unit tests` | `pnpm typecheck`, `pnpm lint`, `pnpm test` в `app/` |
+| `Documents` | `python3 tools/content/doccheck.py --all`, `python3 docs/volumes/radio/test_check.py`, `python3 docs/volumes/radio/check.py` |
+| `Pages settings` | `actions/configure-pages`: перевіряє, що Pages увімкнено, і дає підшлях сайту (`/radio-pop-science`) для `--sub` наступного кроку |
+| `Site profile` | `node tools/site/build.mjs --volume radio --out "$RUNNER_TEMP/site" --sub radio-pop-science` (підшлях — з `Pages settings`): збірка з перевіркою в браузері |
+| `actions/upload-pages-artifact` | пакує `$RUNNER_TEMP/site` для `deploy`; дерево репозиторію лишається чистим |
+
+Ні `.nojekyll`, ні `404.html`, ні `--base` сайтові не потрібні: маршрути застосунку живуть лише після `#`, тож
+сервер дістає тільки запити `/radio-pop-science/` і статичних файлів під ним, а Vite збирає з `base: './'`.
+
+### Якщо потік упав
+
+Дивимося, який крок упав, і робимо рівно один запасний хід:
+
+| Що впало | Що це означає | Що робимо |
+|---|---|---|
+| `Pages settings` | Власник іще не ввімкнув Pages. Це не дефект | Просимо власника ввімкнути Pages (див. вище) і натиснути «Re-run all jobs» на сторінці запуску. Порожніх комітів, щоб перезапустити потік, не робимо. Чергу закривають ворота без перевірки живого сайту, з відкритим рядком у звіті (`docs/superpowers/plans/2026-11-18-radio-pilot/batch-1.md`, A9, крок 6) |
+| `Site profile`, а кроки до нього зелені | На машині GitHub не працює Chrome або WebGL2 | У команді кроку додаємо `--no-smoke`, а в цей розділ — рядок, що перевірка в браузері лишилася локальними воротами (див. правило нижче) |
+| `actions/upload-pages-artifact@v5` або робота `deploy` | Найновіші версії дій Pages не працюють разом | Повертаємо попередні: `actions/configure-pages@v5`, `actions/upload-pages-artifact@v4`, `actions/deploy-pages@v4` |
+| `Install`, `Types`, `Lint`, `Unit tests` або `Documents` | Дерево на чистій машині поводиться інакше, ніж тут | Відтворюємо в чистому клоні (`git clone . "$(mktemp -d)"`), знаходимо причину й виправляємо її |
+
+**Правило для `--no-smoke`.** Якщо в кроці `Site profile` стоїть `--no-smoke`, потік лише збирає сайт, а перевірка в
+браузері лишається локальними воротами: перед надсиланням — `node tools/site/build.mjs --volume radio` (останній
+рядок `PASS site smoke`), а після публікації — перевірка опублікованого сайту:
+
+```bash
+node tools/site/smoke.mjs --url https://codir.github.io/radio-pop-science/ --volume radio
+```
+
+**Чого в потоці немає.** Дві перевірки зразків еталона, що з’являться з чергою 2
+(`tools/ref-models/radio/fm_chain.py --check …` і `tools/ref-models/radio/link_budget.py … --check …`), потребують
+numpy і scipy. У потоці їх немає: вони стоять лише в локальних воротах черг.
