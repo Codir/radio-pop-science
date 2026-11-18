@@ -255,9 +255,9 @@ export COREPACK_ENABLE_DOWNLOAD_PROMPT=0` або `source tools/site/qa-env.sh`);
 `quality`, `store`, `nav`, `hud`, `random`, `viewport`, `device`, `renderer`, `reducedMotion`, `track`, `onDispose`,
 `onResize`, `progress`, `breathe`, `qa`. Ознаки `freeze` і фонового потоку немає. § 4; ф. §2.
 
-**Керування й цілі.** `stepUi(ctx)` — одне на главу; `ui.define({ <крок>: { controls, callouts, board, goal, nav,
-panel, reset } })`. `goal` опитується щокадру; щойно справдилася, панель показує «Висновок». Повзунок, що веде
-анімацію, перемотує: `onInput(value, 'drag' | 'jump' | 'step')` і `ui.patch(id, { current })`. `docs/UI_API.md` §3–4.
+**Керування й цілі.** `stepUi(ctx)` — одне на главу; `ui.define({ <крок>: { controls, callouts, board, goal, nav, panel,
+reset } })`. `goal` опитується щокадру; щойно справдилася, панель показує «Висновок». Повзунок, що веде анімацію,
+перемотує: `onInput(value, 'drag' | 'jump' | 'step')` і `ui.patch(id, { current })`. § 24, `docs/UI_API.md` §3–4; ф. §3.
 
 **Камера й стадія.** Кожен крок дає `camera`, кожен знімок — `fit` (за ним телефон переобрамлює кадр). Рух за
 сценарієм — з пози на екрані: `ctx.camera.hold()`, потім `go`, ніколи `go(…, { instant: true })`. Чого крок не згадав
