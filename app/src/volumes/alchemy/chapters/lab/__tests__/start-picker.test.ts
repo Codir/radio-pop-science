@@ -152,6 +152,24 @@ describe('start picker', () => {
     expect(pickerState(lab)).toEqual({ picking: false, choice: null });
   });
 
+  it('ignores «Взяти як старт» and «Скасувати» pressed outside the choice (a scripted press skips `visible`)', () => {
+    const { lab, session, press, chooseElement } = makeLab();
+    session.fire('n');
+    session.fire('n'); // ³H, 2 moves
+    const before = session.state;
+    const progress = session.progress;
+    press('take-start'); // the sliders still hold ¹H: a take now would wipe the run
+    press('cancel-start');
+    expect(session.state).toBe(before);
+    expect(session.progress).toBe(progress);
+    expect(picking(lab)).toBe(false);
+    press('new-start');
+    chooseElement(79);
+    press('cancel-start');
+    press('take-start'); // closed again: the gold still on the sliders is not taken
+    expect(session.state).toBe(before);
+  });
+
   it('is not offered while a fission waits for the fragment choice', () => {
     const { session, controls } = makeLab();
     session.startFrom(92, 143); // ²³⁵U

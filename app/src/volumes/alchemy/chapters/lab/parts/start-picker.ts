@@ -125,9 +125,14 @@ export function pickerControls(lab: Lab): readonly ControlSpec[] {
     showIsotopes(lab, x);
     choosing.add(lab);
   };
+  // a scripted press (`ui.press`) does not look at `visible`: outside the choice the sliders hold stale values
   const take = (): void => {
+    if (!on()) return;
     const x = chosen(lab);
     session.startFrom(x.z, x.n); // a new run: the dock's `reset` closes the choice
+  };
+  const cancel = (): void => {
+    if (on()) endPicking(lab);
   };
   return [
     {
@@ -165,6 +170,6 @@ export function pickerControls(lab: Lab): readonly ControlSpec[] {
       visible: () => !on() && session.state.pending === null,
     },
     { type: 'button', id: 'take-start', label: L.free.take, onClick: take, visible: on },
-    { type: 'button', id: 'cancel-start', label: L.free.cancel, onClick: () => endPicking(lab), visible: on },
+    { type: 'button', id: 'cancel-start', label: L.free.cancel, onClick: cancel, visible: on },
   ];
 }
