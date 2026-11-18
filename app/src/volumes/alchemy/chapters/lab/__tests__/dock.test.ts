@@ -33,9 +33,11 @@ function makeLab() {
     },
   } as unknown as StepUiApi<StepId>;
   const anchor = new Object3D();
-  const atom = { anchors: { nucleus: anchor, shells: anchor, plate: anchor } } as unknown as AtomView;
+  const atom = { anchors: { nucleus: anchor, shells: anchor, plate: anchor, countdown: anchor }, counting: false } as unknown as AtomView;
   const session = new Session({ random: () => 0.5, load: () => EMPTY_PROGRESS, save: () => undefined });
-  const lab: Lab = { ctx: { onDispose: () => undefined } as unknown as ChapterContext, ui, session, atom };
+  const fission = { anchors: { heavy: anchor, light: anchor }, middle: anchor, choosing: false, label: () => '' };
+  const fx = { emitter: anchor, fission };
+  const lab: Lab = { ctx: { onDispose: () => undefined } as unknown as ChapterContext, ui, session, atom, fx };
   session.on((e) => announce(lab, e));
   const specs = Object.fromEntries(STEP_IDS.map((id) => [id, stepSpec(lab, id)])) as Record<StepId, StepUiSpec>;
   return { lab, session, toasts, values, specs };

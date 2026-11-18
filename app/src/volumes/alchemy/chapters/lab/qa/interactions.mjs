@@ -3,12 +3,16 @@
 // Interaction test of `alchemy/lab` (production preview or dev server up):
 //
 //   node app/src/volumes/alchemy/chapters/lab/qa/interactions.mjs --port 5351 --size 1280x720 --hud dom|gl
-//        [--out <dir>]   (saves the dock of every step and the fission choice as JPEG there)
+//        [--out <dir>]   (saves the dock of every step, the fission choice and pictures in mid-action as JPEG there)
 //
 // Every tool of the dock is used with real pointer input (`__ui.locate('ctl-<id>')`), and the game state is read
 // only from `__app.read('lab')`. The checks are numbered as in the plan (task 12); «chart» checks (task 13) run
-// first, while the collection is still empty; «walk» checks then win every quest from the dock. Frozen engine
-// clock (`?freeze`); a fresh browser context has empty storage, so the dice fall the same way on every run.
+// first, while the collection is still empty; «fx» checks (task 14) follow the animations of the events (a
+// fragment is picked in the scene through the `lab.fragment.*` probes); «walk» checks then win every quest from
+// the dock. The model changes at the click; the status line, the toasts and the chips speak when the scene shows
+// the change (a shot reaches the nucleus ≈ 0.45 s later), so checks of those give the clock time to get there.
+// Frozen engine clock (`?freeze`); a fresh browser context has empty storage, so the dice fall the same way on
+// every run.
 // Exit code 1 if any check fails or the console reports an error or warning.
 import { join } from 'node:path';
 import {
@@ -121,6 +125,27 @@ async function offscreen() {
   return page.evaluate(() => window.__ui.offscreen().map((o) => `${o.name} (${o.reason})`));
 }
 
+/** What `read('lab')` says about the game itself (not the animations): it must not move while a shot is shown. */
+const MODEL_KEYS = ['step', 'z', 'n', 'electrons', 'moves', 'elapsed', 'done', 'best', 'pending', 'countdown', 'discovered', 'symbol', 'chart'];
+
+/** Right edge of the board (CSS px). */
+async function boardEdge() {
+  const board = await box(page, 'board');
+  return board ? board.x + board.w / 2 : 0;
+}
+
+/** The two fission fragments in the scene (QA probes; `shown` is false while there is nothing to pick). */
+async function fragments() {
+  const [heavy, light] = await page.evaluate(() => ['lab.fragment.heavy', 'lab.fragment.light'].map((n) => window.__app.locate(n)));
+  return { heavy, light };
+}
+const fragOnScreen = (p, boardRight) => p !== null && p.shown && p.visible && p.x > boardRight;
+const fragText = ({ heavy, light }) =>
+  ['heavy', 'light'].map((k, i) => {
+    const p = i === 0 ? heavy : light;
+    return `${k} ${p ? `${p.x.toFixed(0)},${p.y.toFixed(0)}${p.shown ? '' : ' hidden'}` : '—'}`;
+  }).join(', ');
+
 let failed = true;
 try {
   await openApp(page, appUrl(baseUrl(args), { route: 'alchemy/lab/heavy-hydrogen', freeze: 1 }));
@@ -142,7 +167,8 @@ try {
   check('…its line says it is not discovered yet', (await shown(page, 'picked')) && /[²2]H · ще не відкрито/.test(line), line);
   check('…and the game is untouched', s.z === 1 && s.n === 0 && s.moves === 0 && s.discovered === 1, at(s));
   const before = s;
-  await click(page, 'fire');
+  // (the status line speaks when the shot reaches the nucleus: 1 s of clock)
+  await click(page, 'fire', 1);
   s = await read(page);
   check('after «Вистрілити»: the same window, one more nuclide discovered',
     s.z === 1 && s.n === 1 && s.chart.n0 === before.chart.n0 && s.chart.z0 === before.chart.z0 && s.discovered === before.discovered + 1,
@@ -350,6 +376,8 @@ try {
   const SLOWED = 'нетривке ядро сповільн';
   check('no «сповільнено» chip at the start', !(await textShown(page, SLOWED)));
   for (let i = 0; i < 3; i++) await click(page, 'fire');
+  // the chip comes with ⁴H on stage: the third shot lands after the first two (≈ 1 s more of clock)
+  await advance(page, 1);
   s = await read(page);
   const offChip = await offscreen();
   const fitChip = await dockFits();
@@ -359,6 +387,115 @@ try {
   check('…it stays after ⁴H fell apart by itself', !(s.z === 1 && s.n === 3) && (await textShown(page, SLOWED)), at(s));
   await click(page, 'restart');
   check('…and goes with «Почати знову»', !(await textShown(page, SLOWED)));
+
+  // fx — every transformation is shown (task 14): the model changes at the click, the scene catches up and
+  // changes nothing; a fission's fragments hang in the scene and are picked there (twin of the dock buttons)
+  label = 'fx heavy-hydrogen';
+  await enter(page, 'heavy-hydrogen');
+  await click(page, 'fire', 0);
+  const atClick = await read(page);
+  check('the model changes at the click while the shot is still shown', atClick.z === 1 && atClick.n === 1 && atClick.moves === 1 && atClick.busy === true,
+    `${at(atClick)}, busy ${atClick.busy}`);
+  await advance(page, 3);
+  s = await read(page);
+  const changed = MODEL_KEYS.filter((k) => JSON.stringify(s[k]) !== JSON.stringify(atClick[k]));
+  check('3 s later: the same state as right after the click, nothing playing', changed.length === 0 && s.busy === false,
+    `${changed.join(', ')}${changed.length ? ' changed' : ''}; busy ${s.busy}`);
+
+  label = 'fx fission (scene)';
+  await enter(page, 'fission');
+  await click(page, 'fire', 0);
+  let frags = await fragments();
+  check('no fragment in the scene before the split', !frags.heavy?.shown && !frags.light?.shown, fragText(frags));
+  await advance(page, 2.5);
+  frags = await fragments();
+  const boardRight = await boardEdge();
+  s = await read(page);
+  check('the two fragments hang in the free area, nothing playing', fragOnScreen(frags.heavy, boardRight) && fragOnScreen(frags.light, boardRight) && s.pending && s.busy === false,
+    `${fragText(frags)}, board right ${boardRight.toFixed(0)}, busy ${s.busy}`);
+  if (out) await screenshot(page, join(out, 'fx-fission-choice.jpg'));
+  if (frags.heavy) await page.mouse.click(frags.heavy.x, frags.heavy.y);
+  await advance(page, 0.4);
+  s = await read(page);
+  check('a click on the heavy fragment in the scene: ¹⁴¹Ba, no extra move', s.z === 56 && s.n === 85 && !s.pending && s.moves === 1, at(s));
+  check('…the dock’s fragment buttons are gone, the tools are back',
+    !(await shown(page, 'pick-heavy')) && !(await shown(page, 'pick-light')) && (await shown(page, 'fire')));
+  await advance(page, 1.5);
+  frags = await fragments();
+  s = await read(page);
+  check('…and the fragments have left the scene', !frags.heavy?.shown && !frags.light?.shown && s.busy === false, `${fragText(frags)}, busy ${s.busy}`);
+
+  label = 'fx fission (dock)';
+  await click(page, 'restart', 0.5); // (still in `fission`: an entry of the same step changes nothing)
+  await click(page, 'fire', 2.5);
+  await click(page, 'pick-light', 1.5);
+  s = await read(page);
+  frags = await fragments();
+  check('the dock’s «легкий уламок» → ⁹²Kr, and the scene’s fragments go with it',
+    s.z === 36 && s.n === 56 && !s.pending && !frags.heavy?.shown && !frags.light?.shown && s.busy === false, `${at(s)}; ${fragText(frags)}`);
+
+  // leaving a step while its fission tears: nothing of it survives into the new step (Review Focus 3)
+  label = 'fx jump mid-fission';
+  await click(page, 'restart', 0.5);
+  await click(page, 'fire', 1.1);
+  await page.evaluate(() => {
+    location.hash = '#/alchemy/lab/heavy-hydrogen';
+  });
+  await page.waitForFunction(() => window.__app.position().stepId === 'heavy-hydrogen');
+  await page.evaluate(() => window.__app.settled());
+  await advance(page, 2.5);
+  s = await read(page);
+  frags = await fragments();
+  check('the new step starts clean: ¹H, nothing playing, no fragment, no late message',
+    s.step === 'heavy-hydrogen' && s.z === 1 && s.n === 0 && s.moves === 0 && s.busy === false && !frags.heavy?.shown && !frags.light?.shown && !(await shown(page, 'status')),
+    `${at(s)}, busy ${s.busy}; ${fragText(frags)}`);
+
+  // ten quick shots at ¹H in the free lab, no clock between them: the model takes six (⁷H is the end of the
+  // line, the rest bounce), the scene skips to the end instead of falling behind (Review Focus 2)
+  label = 'fx free ×10';
+  await enter(page, 'free');
+  await click(page, 'restart', 0.5);
+  for (let i = 0; i < 10; i++) await click(page, 'fire', 0);
+  s = await read(page);
+  const tenErrors = await appErrors(page);
+  check('ten «Вистрілити» in one frame → ⁷H in 6 moves, console clean', s.z === 1 && s.n === 6 && s.moves === 6 && tenErrors.length === 0,
+    `${at(s)}; ${errorsText(tenErrors)}`);
+  await advance(page, 5);
+  s = await read(page);
+  check('…5 s later nothing plays and ⁷H stays', s.busy === false && s.z === 1 && s.n === 6 && s.moves === 6, `${at(s)}, busy ${s.busy}`);
+  await click(page, 'restart', 0.5); // the free lab remembers where it stopped: back to ¹H for «walk free»
+
+  // reduced motion: the final picture at once
+  label = 'fx reduced motion';
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await enter(page, 'heavy-hydrogen');
+  await click(page, 'fire', 0);
+  s = await read(page);
+  check('a shot is shown at once: nothing plays', s.z === 1 && s.n === 1 && s.busy === false, `${at(s)}, busy ${s.busy}`);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+  // the emitter: in every step that shoots, left of the atom and clear of the board (smallest and largest atom)
+  for (const step of ['superheavy', 'heavy-hydrogen', 'lead-gold', 'uranium-chain']) {
+    label = `fx emitter ${step}`;
+    await enter(page, step);
+    const [em, nucleus] = await page.evaluate(() => ['lab.emitter', 'lab.nucleus'].map((n) => window.__app.locate(n)));
+    const edge = await boardEdge();
+    if (step === 'uranium-chain') check('no emitter: the step only waits', em !== null && !em.shown);
+    else {
+      check('the emitter is on screen, between the board and the atom', em !== null && em.shown && em.visible && em.x > edge && em.x < nucleus.x,
+        `emitter ${em ? `${em.x.toFixed(0)},${em.y.toFixed(0)}` : '—'}, board right ${edge.toFixed(0)}, nucleus x ${nucleus.x.toFixed(0)}`);
+    }
+  }
+
+  // mid-action pictures (0.3 s of clock after the click; the fission when it tears)
+  if (out) {
+    for (const [step, after, file] of [['star-forge', 0.3, 'fx-star-forge.jpg'], ['mercury-gold', 0.3, 'fx-mercury-gold.jpg'], ['fission', 1.2, 'fx-fission.jpg']]) {
+      await enter(page, step);
+      await click(page, 'fire', 0);
+      await advance(page, after);
+      await screenshot(page, join(out, file));
+    }
+  }
 
   // every quest can be won from the dock (routes of the solver, sim/lab/solver.ts)
   const walk = async (id, actions, goal) => {

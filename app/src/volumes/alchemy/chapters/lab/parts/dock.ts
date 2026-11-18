@@ -12,16 +12,23 @@
  * `free` and `superheavy`, so the status line (passive, like the readouts) joins them on the board and the
  * projectile choice carries its caption as a tooltip.
  *
+ * Hotspots and callouts of the scene are bound here too: the nucleus, the shells and the emitter in the first
+ * step, the countdown ring in `star-forge`, the fission fragments in `fission`; in every step, while a fission
+ * waits for the choice, callouts name the two fragments hanging in the scene (picked there or with the buttons).
+ *
  * The board is «Карта нуклідів» (plan decision 10): the chart (`nuclide-chart.ts`), the line of a picked cell, the
  * «Уся карта» switch and the collection counters, then the readouts and the status line. The energy readout has a
  * row of its own under the status line: consecutive readouts share a row, and its «виділилось ≈ 18,6 keV» does
  * not fit beside the other two on a 520-unit board.
  */
+import type { Object3D } from 'three';
 import { audio } from '@/audio';
 import { fmtUnit, NBSP } from '@/content';
 import type { ChapterContext } from '@/engine/api';
 import { domKit } from '@/hud';
-import type { ButtonSpec, ControlSpec, CustomSpec, HonestySpec, HotspotSpec, StepUiApi, StepUiSpec } from '@/hud';
+import type {
+  ButtonSpec, CalloutSpec, ControlSpec, CustomSpec, HonestySpec, HotspotSpec, StepUiApi, StepUiSpec,
+} from '@/hud';
 import { SEMANTIC } from '@/style';
 import { Label, UiNode } from '@/ui3d';
 import { MAX_Z, NUCLIDE_COUNT, maxElectrons, nuclideKey, type NuclideRef } from '@alchemy/sim/core';
@@ -32,6 +39,8 @@ import type { StepId } from '../chapter';
 import { L } from '../labels';
 import type { AtomView } from './atom-view';
 import { pickedLine, type ChartView } from './chart-model';
+import type { Loaded } from './emitter';
+import type { FissionView } from './fission-view';
 import { createNuclideChart, type ChartFrame, type NuclideChart } from './nuclide-chart';
 import { FLEETING_DELAY_S, type Session, type SessionEvent } from './session';
 import { cardRows, elapsedText, energyText, eventLine, questDoneLine } from './text';
@@ -41,6 +50,11 @@ export interface Lab {
   readonly ui: StepUiApi<StepId>;
   readonly session: Session;
   readonly atom: AtomView;
+  /** What the dock binds to the event animations: the emitter's hotspot anchor and the fission fragments. */
+  readonly fx: {
+    readonly emitter: Object3D;
+    readonly fission: Pick<FissionView, 'anchors' | 'middle' | 'choosing' | 'label'>;
+  };
 }
 
 type Tone = 'ok' | 'info' | 'warning';
@@ -253,6 +267,27 @@ function toolsOf(step: StepId): readonly ToolId[] {
   return questById(step)?.tools ?? ALL_TOOLS;
 }
 
+const projectilesOf = (step: StepId): ProjectileId[] =>
+  PROJECTILES.filter((p) => toolsOf(step).includes(p.id)).map((p) => p.id);
+const knocksOut = (step: StepId): boolean => toolsOf(step).some((t) => t === 'gamma-n' || t === 'gamma-p');
+
+/** The projectile «Вистрілити» sends in `step`: the only one of the step, or the one chosen in the dock. */
+function chosenProjectile(lab: Lab, step: StepId): ProjectileId | null {
+  const projectiles = projectilesOf(step);
+  if (projectiles.length === 0) return null;
+  const chosen = projectiles.length > 1 ? lab.ui.value<string>('projectile') : projectiles[0];
+  return projectiles.find((p) => p === chosen) ?? projectiles[0]!;
+}
+
+/** The step shoots or knocks out nucleons: it has the emitter. */
+export const hasEmitter = (step: StepId): boolean => projectilesOf(step).length > 0 || knocksOut(step);
+
+/** What the emitter holds ready now: the projectile to fire, a γ source where the step only knocks out, or nothing. */
+export function loaded(lab: Lab): Loaded {
+  const step = lab.session.step;
+  return chosenProjectile(lab, step) ?? (knocksOut(step) ? 'gamma' : null);
+}
+
 /** Every step has all five chips; in this order they pack into the fewest rows of the step panel. */
 function honestyOf(step: StepId, dock: Dock): HonestySpec[] {
   const slowed = { slowed: 1e15, text: `${L.honesty.fleeting} ${fmtUnit(FLEETING_DELAY_S, L.units.second)}` };
@@ -267,15 +302,11 @@ function honestyOf(step: StepId, dock: Dock): HonestySpec[] {
 
 export function stepSpec(lab: Lab, step: StepId): StepUiSpec {
   const dock = dockOf(lab);
-  const { session, ui, atom } = lab;
+  const { session, atom, fx } = lab;
   const tools = toolsOf(step);
-  const projectiles = PROJECTILES.filter((p) => tools.includes(p.id)).map((p) => p.id);
+  const projectiles = projectilesOf(step);
   const free = (): boolean => !pending(lab);
-  /** The projectile to fire: the only one of the step, or the one chosen in the dock. */
-  const projectile = (): ProjectileId => {
-    const chosen = projectiles.length > 1 ? ui.value<string>('projectile') : projectiles[0];
-    return projectiles.find((p) => p === chosen) ?? projectiles[0]!;
-  };
+  const projectile = (): ProjectileId => chosenProjectile(lab, step)!;
 
   const buttons: ButtonSpec[] = [];
   const button = (id: string, label: string, onClick: () => void, visible: () => boolean): void => {
@@ -305,13 +336,22 @@ export function stepSpec(lab: Lab, step: StepId): StepUiSpec {
   }
   controls.push(dock.electrons, ...buttons);
 
-  const hotspots: HotspotSpec[] =
-    step === 'heavy-hydrogen'
-      ? [
-          { anchor: atom.anchors.nucleus, content: 'nucleus' },
-          { anchor: atom.anchors.shells, content: 'shells' },
-        ]
-      : [];
+  const HOTSPOTS: Partial<Record<StepId, HotspotSpec[]>> = {
+    'heavy-hydrogen': [
+      { anchor: atom.anchors.nucleus, content: 'nucleus' },
+      { anchor: atom.anchors.shells, content: 'shells' },
+      { anchor: fx.emitter, content: 'emitter' },
+    ],
+    'star-forge': [{ anchor: atom.anchors.countdown, content: 'countdown', visible: () => atom.counting }],
+    fission: [{ anchor: fx.fission.middle, content: 'fragments', visible: () => fx.fission.choosing }],
+  };
+  // a fission can happen in several steps (plutonium, superheavy, free): its fragments are named in every one
+  const callouts: CalloutSpec[] = (['heavy', 'light'] as const).map((which) => ({
+    anchor: fx.fission.anchors[which],
+    text: () => fx.fission.label(which),
+    side: which === 'heavy' ? 'up' : 'down',
+    visible: () => fx.fission.choosing,
+  }));
   return {
     controls,
     board: {
@@ -345,7 +385,8 @@ export function stepSpec(lab: Lab, step: StepId): StepUiSpec {
       ],
     },
     honesty: honestyOf(step, dock),
-    hotspots,
+    hotspots: HOTSPOTS[step] ?? [],
+    callouts,
     // every entry starts a new run: the projectile choice returns to the step's first projectile
     reset: true,
   };

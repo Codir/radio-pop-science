@@ -1,8 +1,10 @@
 /**
  * The atom on stage: the nucleus of Z protons and N neutrons, the electron shells around it, the name plate to
  * its right, and the wordless stability display — a stable (or practically stable) nucleus rests, a radioactive
- * one is restless, a fleeting one trembles inside a red halo while the countdown ring runs out. The view only
- * shows a `GameState`; it never changes the game.
+ * one is restless, a fleeting one trembles inside a red halo while the countdown ring runs out. While a fission
+ * waits for the fragment choice the atom steps aside — nucleus, shells and plate fade out, and the fission view
+ * (`fission-view.ts`) has the stage; the chosen fragment's atom then builds up again. The view only shows a
+ * `GameState`; it never changes the game.
  *
  * Units: atom-local units are those of the shell model (K shell at 1.25, the seventh at 6.17). `zoom` maps them
  * to the world so that small atoms are not lost in a frame made for the largest ones: the element's neutral
@@ -23,9 +25,21 @@ import { statusLine } from './text';
 
 export interface AtomView {
   readonly group: Group;
-  readonly anchors: { readonly nucleus: Object3D; readonly shells: Object3D; readonly plate: Object3D };
+  readonly anchors: {
+    readonly nucleus: Object3D;
+    readonly shells: Object3D;
+    readonly plate: Object3D;
+    /** On the countdown ring, upper right (hotspot `countdown`). */
+    readonly countdown: Object3D;
+  };
+  /** World radius of the nucleus as drawn now (what a shot flies at, what a fission drop grows from). */
+  readonly coreRadius: number;
+  /** The countdown ring is on (a fleeting nucleus is on stage). */
+  readonly counting: boolean;
   /** Nucleus, shells and plate for `state`; `instant` skips every easing (deep links, chapter entry). */
   show(state: GameState, instant: boolean): void;
+  /** Draw `count` electrons fewer than the state shown has, until the next `show`: they are falling into the nucleus. */
+  lendElectrons(count: number): void;
   /** 1 → 0: the red countdown ring around the nucleus runs out; `null` hides it. */
   setCountdown(fraction: number | null): void;
   update(dt: number, t: number): void;
@@ -54,6 +68,8 @@ const RING_MARGIN = 0.22;
 const RING_MAX = 1.1;
 /** Where on the outer shell the `shells` anchor sits: upper left, away from the plate. */
 const SHELL_ANCHOR_DIR = new Vector3(-Math.SQRT1_2, Math.SQRT1_2, 0);
+/** Where on the countdown ring its anchor sits: upper right, toward the plate. */
+const RING_ANCHOR_DIR = new Vector3(Math.SQRT1_2, Math.SQRT1_2, 0);
 
 const BADGE: Record<NuclideStatus, string> = {
   stable: L.status.stable,
@@ -111,7 +127,9 @@ export function createAtomView(ctx: ChapterContext): AtomView {
 
   const shellAnchor = new Object3D();
   shellAnchor.name = 'shells-anchor';
-  atom.group.add(shellAnchor);
+  const ringAnchor = new Object3D();
+  ringAnchor.name = 'countdown-anchor';
+  atom.group.add(shellAnchor, ringAnchor);
 
   // the name plate: ion symbol, nuclide name, status badge — on the overlay layer, never blurred
   const plate = new Group();
@@ -131,20 +149,37 @@ export function createAtomView(ctx: ChapterContext): AtomView {
   group.add(plate);
 
   // targets set by `show`, eased toward in `update` (or taken at once when `show` is instant)
-  // (`core`: the nucleus's radius on its shells — sizes the halo and the ring)
-  const target = { unrest: 0, alarm: 0, scale: 0.3, core: 0.3, zoom: 1, reach: shellRadius(0), shell: shellRadius(0) };
+  // (`core`: the nucleus's radius on its shells — sizes the halo and the ring; `presence` of the nucleus and
+  // `plate`: 0 while a fission choice is pending — the atom steps aside)
+  const target = {
+    unrest: 0, alarm: 0, scale: 0.3, core: 0.3, zoom: 1, reach: shellRadius(0), shell: shellRadius(0), presence: 1, plate: 1,
+  };
   const now = { ...target };
   let countdown: number | null = null;
   let ringShown = 0;
   let ringFraction = 1;
+  /** An instant `show` sets the ring at once on the next update (it knows the new countdown only then). */
+  let snapRing = false;
+  let shown: GameState | null = null;
   const eye = new Vector3();
+
+  /** The shells of `state` (none while a fission choice is pending), `lent` electrons fewer. */
+  const shellsOf = (state: GameState, lent: number): number[] =>
+    state.pending !== null ? [] : shellCounts(state.z, Math.max(0, state.electrons - lent));
 
   return {
     group,
-    anchors: { nucleus: nucleus.group, shells: shellAnchor, plate },
+    anchors: { nucleus: nucleus.group, shells: shellAnchor, plate, countdown: ringAnchor },
+    get coreRadius() {
+      return now.core * now.zoom * now.presence;
+    },
+    get counting() {
+      return countdown !== null;
+    },
 
     show(state, instant) {
-      const shells = shellCounts(state.z, state.electrons);
+      shown = state;
+      const shells = shellsOf(state, 0);
       atom.set(state.z, state.n, shells, instant);
       const x = getNuclide(state.z, state.n);
       const status = x?.status ?? null;
@@ -159,9 +194,18 @@ export function createAtomView(ctx: ChapterContext): AtomView {
       target.zoom = atomRadiusFor(neutral.length) / reachOf(neutral, NUCLEUS_FIT);
       target.reach = reachOf(shells, target.core);
       target.shell = shells.length > 0 ? shellRadius(shells.length - 1) : target.core;
-      target.unrest = unrest(status);
-      target.alarm = status === 'fleeting' ? 1 : 0;
-      if (instant) Object.assign(now, target);
+      const pending = state.pending !== null;
+      target.unrest = pending ? 0 : unrest(status);
+      target.alarm = status === 'fleeting' && !pending ? 1 : 0;
+      target.presence = target.plate = pending ? 0 : 1;
+      if (instant) {
+        Object.assign(now, target);
+        snapRing = true;
+      }
+    },
+
+    lendElectrons(count) {
+      if (shown) atom.set(shown.z, shown.n, shellsOf(shown, count), false);
     },
 
     setCountdown(fraction) {
@@ -176,27 +220,35 @@ export function createAtomView(ctx: ChapterContext): AtomView {
       now.zoom = damp(now.zoom, target.zoom, 4, dt);
       now.reach = damp(now.reach, target.reach, 6, dt);
       now.shell = damp(now.shell, target.shell, 6, dt);
+      // the fission drop takes the nucleus's place at once; the next atom builds up
+      now.presence = target.presence === 0 ? 0 : damp(now.presence, target.presence, 6, dt);
+      now.plate = damp(now.plate, target.plate, 8, dt);
 
       // reduced motion: no shake (STYLE_GUIDE §5) — the halo and the badge still tell the state
       const reduced = ctx.reducedMotion;
       nucleus.jiggle = 1 + 4 * now.unrest * (reduced ? REDUCED_UNREST : 1);
       atom.update(dt, t);
-      nucleus.group.scale.setScalar(now.scale);
+      nucleus.group.scale.setScalar(Math.max(now.scale * now.presence, 1e-4));
       atom.group.scale.setScalar(now.zoom);
       shellAnchor.position.copy(SHELL_ANCHOR_DIR).multiplyScalar(now.shell);
       plate.position.set(now.zoom * now.reach + PLATE.gap, 0, 0);
+      symbol.fade = name.fade = badge.fade = now.plate;
+      plate.visible = now.plate > 0.01;
 
       const core = now.core;
       halo.intensity = now.alarm * (1.1 + (reduced ? 0 : 0.6 * Math.sin(t * 9)));
       halo.visible = halo.intensity > 0.02;
       halo.size = 4.2 * core;
 
-      ringShown = damp(ringShown, countdown === null ? 0 : 1, 12, dt);
+      const ringTarget = countdown === null ? 0 : 1;
+      ringShown = snapRing ? ringTarget : damp(ringShown, ringTarget, 12, dt);
+      snapRing = false;
       if (countdown !== null) ringFraction = countdown;
-      const shown = ringShown > 0.01;
-      arc.visible = track.visible = shown;
-      if (shown) {
-        const radius = Math.min(core + RING_MARGIN, RING_MAX) * (0.75 + 0.25 * ringShown);
+      const radius = Math.min(core + RING_MARGIN, RING_MAX) * (0.75 + 0.25 * ringShown);
+      ringAnchor.position.copy(RING_ANCHOR_DIR).multiplyScalar(radius);
+      const ringOn = ringShown > 0.01;
+      arc.visible = track.visible = ringOn;
+      if (ringOn) {
         const lit = Math.ceil(ringFraction * RING_SEGMENTS);
         arcGeometry.setDrawRange(0, 6 * lit);
         trackGeometry.setDrawRange(6 * lit, 6 * (RING_SEGMENTS - lit));
