@@ -37,6 +37,8 @@ function energyOf(event: GameEvent): number | null | undefined {
 export class Session {
   private readonly deps: SessionDeps;
   private readonly listeners = new Set<(e: SessionEvent) => void>();
+  private readonly queue: SessionEvent[] = [];
+  private delivering = false;
   private _step: StepId = 'free';
   private _quest: Quest | null = null;
   private _state: GameState;
@@ -128,9 +130,9 @@ export class Session {
     if (this._countdown > 0) return;
     const uTime = this.deps.random();
     const uBranch = this.deps.random();
-    const before = this._state;
-    this.apply(autoDecay(before, uTime, uBranch));
-    if (this._state === before) this._countdown = null; // cannot decay: do not retry every frame
+    // cleared first: a refusal must not leave a spent countdown (or retry every frame); a decay restarts it
+    this._countdown = null;
+    this.apply(autoDecay(this._state, uTime, uBranch));
   }
 
   on(listener: (e: SessionEvent) => void): () => void {
@@ -159,6 +161,10 @@ export class Session {
     this.emit({ type: 'reset', state });
   }
 
+  /**
+   * Everything that follows from a turn (state, countdown, collection, goal, best) is settled first; only then
+   * are the events delivered, so a listener always sees the final values.
+   */
   private apply(turn: Turn): void {
     const before = this._state;
     const after = turn.state;
@@ -171,19 +177,19 @@ export class Session {
     const moved = before.z !== after.z || before.n !== after.n;
     if (moved) next = discover(next, after.z, after.n);
     if (!this._quest && (moved || before.electrons !== after.electrons)) next = saveFree(next, after);
+
+    let done: SessionEvent | null = null;
+    if (!this._done && this._quest && reached(this._quest.goal, after)) {
+      this._done = true;
+      const recorded = recordBest(next, this._quest.id, after.moves);
+      done = {
+        type: 'done', moves: after.moves, best: recorded.best[this._quest.id] ?? after.moves, improved: recorded !== next,
+      };
+      next = recorded;
+    }
     this.store(next);
     this.emit({ type: 'turn', event: turn.event, before, after });
-    this.checkGoal();
-  }
-
-  private checkGoal(): void {
-    if (this._done || !this._quest || !reached(this._quest.goal, this._state)) return;
-    this._done = true;
-    const moves = this._state.moves;
-    const next = recordBest(this._progress, this._quest.id, moves);
-    const improved = next !== this._progress;
-    this.store(next);
-    this.emit({ type: 'done', moves, best: this._progress.best[this._quest.id] ?? moves, improved });
+    if (done) this.emit(done);
   }
 
   /** Runs only while a fleeting nucleus can really fall apart; a changed nuclide restarts the full delay. */
@@ -206,7 +212,26 @@ export class Session {
     }
   }
 
+  /** Events go out in order: one raised from inside a listener waits until the current one is delivered. */
   private emit(event: SessionEvent): void {
-    for (const listener of [...this.listeners]) listener(event);
+    this.queue.push(event);
+    if (this.delivering) return;
+    this.delivering = true;
+    let failure: { readonly error: unknown } | null = null;
+    try {
+      for (let e = this.queue.shift(); e !== undefined; e = this.queue.shift()) {
+        for (const listener of [...this.listeners]) {
+          if (!this.listeners.has(listener)) continue; // unsubscribed meanwhile
+          try {
+            listener(e);
+          } catch (error) {
+            failure ??= { error };
+          }
+        }
+      }
+    } finally {
+      this.delivering = false;
+    }
+    if (failure) throw failure.error;
   }
 }

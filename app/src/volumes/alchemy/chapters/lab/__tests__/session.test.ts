@@ -158,4 +158,120 @@ describe('Session', () => {
     session.restart();
     expect(session.lastQ).toBeNull();
   });
+
+  describe('re-entrant listeners', () => {
+    it('delivers every event in order when a listener acts', () => {
+      const { session } = make();
+      const a: string[] = [];
+      const b: string[] = [];
+      const name = (e: SessionEvent) => (e.type === 'turn' ? e.event.type : e.type);
+      session.on((e) => { a.push(name(e)); if (e.type === 'turn' && e.event.type === 'fission') session.pickFragment('heavy'); });
+      session.on((e) => b.push(name(e)));
+      session.enter('fission'); session.fire('n');
+      expect(a).toEqual(['reset', 'fission', 'fragment']);
+      expect(b).toEqual(a);
+    });
+
+    it('emits done once and records the best even if a listener fires on the completing turn', () => {
+      const { session, stored } = make();
+      const seen: SessionEvent[] = [];
+      let fired = false;
+      session.on((e) => {
+        seen.push(e);
+        if (e.type === 'turn' && e.after.z === 2 && e.after.n === 1 && !fired) { fired = true; session.fire('n'); }
+      });
+      session.enter('heavy-hydrogen'); session.fire('n'); session.fire('n'); session.wait();
+      expect(seen.filter((e) => e.type === 'done')).toEqual([{ type: 'done', moves: 3, best: 3, improved: true }]);
+      expect(stored().best).toEqual({ 'heavy-hydrogen': 3 });
+    });
+
+    it('shows final values to a listener of the completing turn', () => {
+      const { session } = make();
+      const seen: [boolean, number | null][] = [];
+      session.on((e) => { if (e.type === 'turn' && e.after.z === 2 && e.after.n === 1) seen.push([session.done, session.best]); });
+      session.enter('heavy-hydrogen'); session.fire('n'); session.fire('n'); session.wait();
+      expect(seen).toEqual([[true, 3]]);
+    });
+
+    it('queues events when a listener changes the step', () => {
+      const { session } = make();
+      const seen: string[] = [];
+      let jumped = false;
+      session.on((e) => {
+        seen.push(e.type);
+        if (e.type === 'turn' && !jumped) { jumped = true; session.enter('radiocarbon'); }
+      });
+      session.enter('heavy-hydrogen'); seen.length = 0;
+      session.fire('n');
+      expect(seen).toEqual(['turn', 'reset']);
+      expect(session.step).toBe('radiocarbon');
+      expect(session.state).toMatchObject({ z: 6, n: 6, moves: 0 });
+    });
+
+    it('does not call a listener removed during delivery', () => {
+      const { session } = make();
+      let second = 0;
+      let off = (): void => {};
+      session.on(() => off());
+      off = session.on(() => { second++; });
+      session.enter('free'); session.fire('n');
+      expect(second).toBe(0);
+    });
+  });
+
+  it('throws no dice for a refused wait and two, lifetime first, for a real one', () => {
+    const calls: number[] = [];
+    const roll = (values: number[]) => { let i = 0; return () => { const v = values[i++ % values.length]!; calls.push(v); return v; }; };
+    const refused = new Session({ random: roll([0.5, 0]), load: () => EMPTY_PROGRESS, save: () => {} });
+    refused.enter('heavy-hydrogen');
+    refused.wait();
+    expect(calls).toEqual([]);
+    const og = new Session({ random: roll([0.5, 0.95]), load: () => EMPTY_PROGRESS, save: () => {} });
+    og.enter('superheavy'); og.fire('ca48');
+    og.wait();
+    expect(calls).toEqual([0.5, 0.95]);
+    expect(og.state.pending).not.toBeNull();   // 0.95 picked the fission branch, so the order was not swapped
+  });
+
+  it('emits reset for entry, restart and a successful startFrom only', () => {
+    const { session } = make();
+    const seen: string[] = [];
+    session.on((e) => seen.push(e.type));
+    session.enter('free');
+    session.startFrom(79, 118);
+    session.startFrom(43, 56);
+    session.restart();
+    expect(seen).toEqual(['reset', 'reset', 'reset']);
+  });
+
+  it('reports improved only when the best gets smaller', () => {
+    const { session } = make();
+    const done: SessionEvent[] = [];
+    session.on((e) => { if (e.type === 'done') done.push(e); });
+    for (let run = 0; run < 2; run++) {
+      session.enter('heavy-hydrogen'); session.fire('n'); session.fire('n'); session.wait();
+    }
+    expect(done).toEqual([
+      { type: 'done', moves: 3, best: 3, improved: true },
+      { type: 'done', moves: 3, best: 3, improved: false },
+    ]);
+    expect(session.best).toBe(3);
+  });
+
+  it('saves an electron change in the free lab', () => {
+    const { session, stored } = make();
+    session.enter('free');
+    session.setElectrons(0);
+    expect(stored().free?.electrons).toBe(0);
+  });
+
+  it('leaves the state alone when a tool is fired during a fission choice', () => {
+    const { session } = make();
+    session.enter('fission'); session.fire('n');
+    const state = session.state;
+    session.fire('n');
+    session.wait();
+    expect(session.state).toBe(state);
+    expect(session.state.moves).toBe(1);
+  });
 });
