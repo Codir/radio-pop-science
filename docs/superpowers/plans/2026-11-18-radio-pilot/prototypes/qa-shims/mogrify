@@ -1,0 +1,7 @@
+#!/usr/bin/python3
+"""Stand-in for `mogrify -resize <W>x -quality <q> <file>`."""
+import sys
+from PIL import Image
+a = sys.argv[1:]
+w = int(a[a.index('-resize') + 1].split('x')[0]); q = int(a[a.index('-quality') + 1]) if '-quality' in a else 88
+im = Image.open(a[-1]); im.resize((w, round(im.height * w / im.width))).save(a[-1], quality=q)
