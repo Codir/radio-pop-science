@@ -5,7 +5,8 @@ import { defineChapter } from '@/engine/api';
  * `@radio/shared/**` in a real browser, with the measurements of `qa/measure.mjs`. Batch 2 grows it step by step;
  * B1b: the camera's eye (decision 24) feeding a floating screen, from two director shots, and a second screen in
  * front of the eye that `hide()` keeps out of its frame; B13: all of it on the real yard (`@radio/shared/yard`), and
- * the yard itself from its eight shots, at any dusk, with the monitor anywhere on its route (step `yard`).
+ * the yard itself from its eight shots, at any dusk, with the monitor anywhere on its route (step `yard`); B15: the
+ * miniature «where are we» with the route and nudge sliders, as a chapter sets them (step `where`).
  * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
@@ -24,6 +25,11 @@ export const SANDBOX = {
       blurb:
         'Подвір’я з восьми ракурсів: сутінки від раннього вечора до ночі, монітор будь-де на маршруті, хвіртка, ворота гаража й деко.',
     },
+    where: {
+      title: 'Де ми',
+      blurb:
+        'Мініатюра «де ми», як у главі: план подвір’я й дому з маршрутом монітора, цятка там, де він зараз, а поруч — повзунки маршруту й антени.',
+    },
   },
   labels: {
     eye: 'Око камери',
@@ -36,7 +42,14 @@ export const SANDBOX = {
     wicket: 'Хвіртка',
     gate: 'Ворота гаража',
     tray: 'Деко',
-    metre: 'м',
+    centimetre: 'см',
+    depth: 'Глибина',
+    /** The miniature «where are we» (`@radio/shared/whereami`): its title, the five stops, the three depths. */
+    whereami: {
+      title: 'Де ми',
+      stops: ['подвір’я', 'кухня', 'коридор', 'дальня кімната', 'льох'],
+      depth: ['подвір’я', 'стенд', 'під лупою'],
+    },
   },
   /** The eight shots of the yard, in the order of the control. */
   shots: {

@@ -17,6 +17,10 @@
 //           frame (the cat's body against the gravel, pickets against gaps) at dusk 0.2 and 1; the monitor's screen in
 //           clear view in `screen` and `route` along the route; the cellar's floor through the cut; no grain and
 //           `both` within four hue families at dusk 0, 0.5 and 1; every control on screen; the console.
+//   whereami — the miniature «where are we» (B15) in step `where`, with the controls a chapter has: a DOM widget, not
+//           the platform's placeholder; the monitor's dot where `whereAt` puts it, the name of the nearest stop, the
+//           hollow dot in the cellar; the tick of the nudge scale; the current depth mark; with `--touch`, the plan
+//           and the route and nudge sliders whole in the phone's sheet; the console. Snapshot `where-<size>.jpg`.
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-radio-link — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -672,9 +676,180 @@ async function yard(context) {
   await page.close();
 }
 
+/* ---------------------------------------------------------------------------------- section whereami */
+
+/**
+ * The names of the five stops the sandbox gives the miniature (`SANDBOX.labels.whereami.stops` of its index.ts, the
+ * one place of its words) — the tree Block Q has just built; null if they are not found there.
+ */
+function stopNames() {
+  const src = readFileSync(join(import.meta.dirname, '../index.ts'), 'utf8');
+  const m = /whereami:\s*\{[^}]*?stops:\s*\[([^\]]*)\]/.exec(src);
+  const names = m ? [...m[1].matchAll(/'([^']*)'/g)].map((x) => x[1]) : [];
+  return names.length === 5 ? names : null;
+}
+
+/**
+ * What the DOM dock writes instead of a `custom` control that has no `dom` widget, after the control's name
+ * (`hud-dom/dock/build.ts`, the platform's own words); null if it is not found there.
+ */
+function placeholderText() {
+  const src = readFileSync(join(import.meta.dirname, '../../../../../hud-dom/dock/build.ts'), 'utf8');
+  const m = /h\('p\.dk-fallback', null, `([^`]*)`\)/.exec(src);
+  const tail = m
+    ? m[1]
+        .split('${c.id}')
+        .pop()
+        .replace(/^[»\s]+/, '')
+    : '';
+  return tail === '' ? null : tail;
+}
+
+/** Box `a` lies wholly within box `b` (both centre + size, CSS px), to half a pixel. */
+const within = (a, b) =>
+  a.x - a.w / 2 >= b.x - b.w / 2 - 0.5 &&
+  a.x + a.w / 2 <= b.x + b.w / 2 + 0.5 &&
+  a.y - a.h / 2 >= b.y - b.h / 2 - 0.5 &&
+  a.y + a.h / 2 <= b.y + b.h / 2 + 0.5;
+const boxText = (b) =>
+  b
+    ? `${round(b.x - b.w / 2)}…${round(b.x + b.w / 2)} × ${round(b.y - b.h / 2)}…${round(b.y + b.h / 2)}`
+    : '—';
+
+// One page: step `where` on the frozen clock, the miniature with the route and nudge sliders and the depth choice.
+async function whereami(context) {
+  const n = (report.sections.whereami = {});
+  const page = await context.newPage();
+  const pos = await open(page, 'where', 1).catch((err) => ({ error: String(err) }));
+  if (!check('opened', at(pos, 'where'), where(pos))) {
+    await page.close();
+    return;
+  }
+  const set = async (id, v) => {
+    await page.evaluate(([i, x]) => window.__ui.set(i, x, true), [id, v]);
+    await held(page);
+  };
+  /** What the plan shows, from its DOM: the dot and the tick are SVG, which `__ui.locate` does not name. */
+  const plan = () =>
+    page.evaluate(() => {
+      const q = (name) => document.querySelector(`[data-ui="${name}"]`);
+      const root = q('ctl-whereami');
+      const dot = q('ctl-whereami:dot');
+      return {
+        root: root !== null,
+        text: root?.textContent ?? '',
+        dot: dot && {
+          cx: Number(dot.getAttribute('cx')),
+          cy: Number(dot.getAttribute('cy')),
+          below: dot.getAttribute('data-below'),
+        },
+        stop: q('ctl-whereami:stop')?.textContent ?? null,
+        nudge: q('ctl-whereami:nudge')?.getAttribute('data-value') ?? null,
+        depth: [0, 1, 2].map((i) => q(`ctl-whereami:depth-${i}`)?.getAttribute('aria-current') ?? null),
+      };
+    });
+  await held(page);
+
+  // dom: the chapter's widget, not the platform's placeholder for a control without one
+  const placeholder = placeholderText();
+  let p = await plan();
+  n.start = p;
+  check(
+    'dom',
+    p.root && placeholder !== null && !p.text.includes(placeholder),
+    placeholder === null
+      ? 'the placeholder text is not found in hud-dom/dock/build.ts'
+      : `root ${p.root ? 'found' : 'MISSING'}; text «${p.text.slice(0, 80)}»`,
+  );
+
+  // dot: where `whereAt` puts the monitor for the slider's value, the nearest stop's name; hollow in the cellar
+  const names = stopNames();
+  await set('route', 3);
+  p = await plan();
+  const at3 = (await read(page, 'radio-sandbox')).where;
+  await set('route', 4);
+  const p4 = await plan();
+  n.dot = { route3: { plan: p.dot, stop: p.stop, where: at3 }, route4: { plan: p4.dot, stop: p4.stop } };
+  check(
+    'dot',
+    names !== null &&
+      p.dot &&
+      Math.abs(p.dot.cx - at3.x) <= 1e-6 &&
+      Math.abs(p.dot.cy + at3.y) <= 1e-6 &&
+      p.stop === names[3] &&
+      p.dot.below === null &&
+      p4.dot?.below === 'true',
+    names === null
+      ? 'the stop names are not found in the sandbox index.ts'
+      : `route 3: dot (${p.dot?.cx}, ${p.dot?.cy}), whereAt (${at3.x}, ${at3.y}), stop «${p.stop}» ` +
+          `(want «${names[3]}»), below ${p.dot?.below}; route 4: below ${p4.dot?.below}`,
+  );
+
+  // nudge: the scale's tick follows the slider, and the dot moves along the nudge axis
+  await set('nudge', 0.15);
+  p = await plan();
+  n.nudge = { tick: p.nudge, cx: [p4.dot?.cx, p.dot?.cx] };
+  check(
+    'nudge',
+    p.nudge === '0.150' && p.dot && p4.dot && p.dot.cx !== p4.dot.cx,
+    `tick ${p.nudge}; dot cx ${p4.dot?.cx} → ${p.dot?.cx}`,
+  );
+
+  // depth: the current mark, and only it
+  await set('depth', '2');
+  p = await plan();
+  n.depth = p.depth;
+  check(
+    'depth',
+    p.depth[2] === 'true' && p.depth[0] === null && p.depth[1] === null,
+    `aria-current ${p.depth.map((v, i) => `${i}: ${v ?? '—'}`).join(', ')}`,
+  );
+
+  // phone: the controls tab of the sheet at full height shows the plan and both sliders whole
+  if (touch) {
+    await page.evaluate(() => window.__ui.setSheet({ tab: 'controls', snap: 'full' }));
+    await page.evaluate(() => window.__app.step(1 / 60, 40));
+    const ui = await page.evaluate(() => ({
+      plan: window.__ui.locate('ctl-whereami'),
+      sheet: window.__ui.locate('sheet'),
+      state: window.__ui.sheet(),
+      view: {
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+        w: window.innerWidth,
+        h: window.innerHeight,
+      },
+      cut: window.__ui
+        .offscreen({ clipped: true, partial: true })
+        .map((o) => o.name)
+        .filter((name) => name.startsWith('ctl-route') || name.startsWith('ctl-nudge')),
+    }));
+    n.phone = ui;
+    check(
+      'phone',
+      ui.plan && ui.sheet && within(ui.plan, ui.view) && within(ui.plan, ui.sheet) && ui.cut.length === 0,
+      `sheet ${ui.state?.tab}/${ui.state?.snap} ${boxText(ui.sheet)}, plan ${boxText(ui.plan)} in a ` +
+        `${ui.view.w} × ${ui.view.h} window; cut or off screen: ${ui.cut.join(', ') || 'none of route, nudge'}`,
+    );
+  }
+  await screenshot(page, join(out, `where-${width}x${height}.jpg`));
+
+  // console: nothing at all, the warning «has no 'dom' widget» included
+  const errors = await appErrors(page);
+  n.errors = errors;
+  check(
+    'console',
+    errors.length === 0,
+    errors.length
+      ? `${errors.length}: ${errors[0].level} ${errors[0].message.slice(0, 160)}`
+      : 'console clean',
+  );
+  await page.close();
+}
+
 /* ---------------------------------------------------------------------------------------------- run */
 
-const SECTIONS = { eye, yard };
+const SECTIONS = { eye, yard, whereami };
 const only =
   typeof args.only === 'string'
     ? args.only

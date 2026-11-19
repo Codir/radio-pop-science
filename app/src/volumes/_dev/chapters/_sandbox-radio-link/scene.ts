@@ -9,13 +9,17 @@
  *   eye  — the sandbox's own shot: the pole with the camera and the floating screen;
  *   far  — the same scene and state from above (shot `top`): the eye must see exactly the same;
  *   yard — the yard from its eight shots (`screen` follows the monitor), at any dusk, with the monitor anywhere on
- *          its route, the wicket, the garage gate and the tray; the floating and the second screen are hidden here.
+ *          its route, the wicket, the garage gate and the tray; the floating and the second screen are hidden here;
+ *   where — the controls a chapter has (B15): the miniature «where are we» (`@radio/shared/whereami`) with the route
+ *          and nudge sliders of `routeSlider` and `nudgeSlider` — the same two control objects as in `yard` — and a
+ *          choice of the depth it marks, from shot `route`; the floating and the second screen are hidden here too.
  * Toggles (`eye`, `far`): `eye` stops the pass (the screens keep their last frame), for the draw-call and frame-time
  * checks of `qa/measure.mjs`; `inner` takes the second screen away and `hiding` empties `hide()`, for its check of
  * `hide()` (`hiding` is on again whenever a step is entered, so a hand left on it never shows `yard.hidden` to the eye).
  * Readers: `radio-eye` (the pass, what the eye sees of the shed's wall, the nook, the wicket and the cat's spot, which
  * of its cells the second screen covers), `radio-luma` (its frame), `radio-yard` (dusk, lantern, shot, grain, where the
- * anchors must be, whether the monitor's screen and the cellar's floor are in clear view); probes
+ * anchors must be, whether the monitor's screen and the cellar's floor are in clear view), `radio-sandbox` (where
+ * `whereAt` puts the monitor on the plan for the sliders' values); probes
  * `eye:<mark>-on-screen` (where the cell of the wall or the nook lies on the floating screen) and the yard's own
  * `yard:<anchor>`.
  */
@@ -24,6 +28,7 @@ import { type Shot, defineScene } from '@/engine/api';
 import { stepUi } from '@/hud';
 import { MONITOR_SCREEN } from '@radio/shared/models';
 import { EYE_COLS, EYE_ROWS, createEye, createScreen, lumaAround } from '@radio/shared/screen';
+import { nudgeSlider, routeSlider, whereAt, whereami } from '@radio/shared/whereami';
 import {
   LAYOUT,
   LENS,
@@ -108,18 +113,24 @@ export default defineScene((ctx) => {
         ctx.camera.go(shotOf(lastShot), { instant: info.instant });
       },
     },
+    where: { camera: 'route', enter: entered },
   });
   const lab = [
     { type: 'toggle', id: 'eye', label: SANDBOX.labels.eye, value: true },
     { type: 'toggle', id: 'inner', label: SANDBOX.labels.inner, value: true },
     { type: 'toggle', id: 'hiding', label: SANDBOX.labels.hiding, value: true },
   ] as const;
-  const slider = (
-    id: 'dusk' | 'route' | 'wicket' | 'gate' | 'tray',
-    min: number,
-    max: number,
-    value: number,
-  ) => ({ type: 'slider', id, label: SANDBOX.labels[id], min, max, step: 0.01, digits: 2, value }) as const;
+  const slider = (id: 'dusk' | 'wicket' | 'gate' | 'tray', min: number, max: number, value: number) =>
+    ({ type: 'slider', id, label: SANDBOX.labels[id], min, max, step: 0.01, digits: 2, value }) as const;
+  // the route and the nudge: one pair of control objects for `yard` and `where`, their limits from `whereami`
+  const routeCtl = routeSlider({ label: SANDBOX.labels.route, stops: SANDBOX.labels.whereami.stops });
+  const nudgeCtl = nudgeSlider({ label: SANDBOX.labels.nudge, unit: SANDBOX.labels.centimetre });
+  const where = whereami(ctx, {
+    labels: SANDBOX.labels.whereami,
+    route: () => ui.value<number>('route'),
+    nudge: () => ui.value<number>('nudge'),
+    depth: () => Number(ui.value<string>('depth')) as 0 | 1 | 2,
+  });
   ui.define({
     eye: { controls: lab },
     far: { controls: lab },
@@ -133,21 +144,25 @@ export default defineScene((ctx) => {
           value: 'both',
         },
         slider('dusk', 0, 1, yard.dusk),
-        slider('route', 0, 4, 1),
-        {
-          type: 'slider',
-          id: 'nudge',
-          label: SANDBOX.labels.nudge,
-          unit: SANDBOX.labels.metre,
-          min: -0.15,
-          max: 0.15,
-          step: 0.005,
-          digits: 3,
-          value: 0,
-        },
+        routeCtl,
+        nudgeCtl,
         slider('wicket', -1, 1, 0),
         slider('gate', 0, 1, 0),
         slider('tray', 0, 1, 0),
+      ],
+    },
+    where: {
+      controls: [
+        where,
+        routeCtl,
+        nudgeCtl,
+        {
+          type: 'segmented',
+          id: 'depth',
+          label: SANDBOX.labels.depth,
+          items: SANDBOX.labels.whereami.depth.map((label, i) => ({ id: String(i), label })),
+          value: '0',
+        },
       ],
     },
   });
@@ -280,14 +295,19 @@ export default defineScene((ctx) => {
       cellarSeen: cellarSeen(),
     };
   });
+  ctx.qa.expose('radio-sandbox', () => ({
+    where: whereAt(ui.value<number>('route'), ui.value<number>('nudge')),
+  }));
   ctx.qa.probe('eye:light-on-screen', () => onScreen('light'));
   ctx.qa.probe('eye:dark-on-screen', () => onScreen('dark'));
 
   return {
     update(dt, t) {
       const inYard = ctx.stage.current === 'yard';
-      screen.object.visible = !inYard;
-      inner.object.visible = !inYard && ui.value<boolean>('inner');
+      // in `yard` and `where` the yard is as a chapter shows it: no floating screen, no second screen
+      const plain = inYard || ctx.stage.current === 'where';
+      screen.object.visible = !plain;
+      inner.object.visible = !plain && ui.value<boolean>('inner');
       hiding = ui.value<boolean>('hiding');
       yard.dusk = ui.value<number>('dusk');
       yard.wicket = ui.value<number>('wicket');
