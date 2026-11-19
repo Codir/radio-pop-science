@@ -23,7 +23,13 @@ export const SANDBOX = {
       blurb: 'Усе, з чого складено подвір’я, по одному: виберіть предмет, і камера наблизиться до нього.',
     },
   },
-  labels: { eye: 'Око камери', inner: 'Екран перед оком', hiding: 'Ховати екрани від ока', prop: 'Предмет' },
+  labels: {
+    eye: 'Око камери',
+    inner: 'Екран перед оком',
+    hiding: 'Ховати екрани від ока',
+    prop: 'Предмет',
+    shown: 'Показати предмет',
+  },
   /** The names of the objects of step `props`, in the order of the control. */
   props: {
     camera1: 'Камера',

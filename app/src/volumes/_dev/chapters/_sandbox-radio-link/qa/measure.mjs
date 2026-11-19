@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global process, console, window, document, requestAnimationFrame */
+/* global process, console, window, document, requestAnimationFrame, Buffer */
 // Browser check and measurements of the sandbox `_dev/_sandbox-radio-link` (preview or dev server up; batch 2,
 // Block Q builds the full tree, serves it on 5377 and runs this):
 //
@@ -12,7 +12,9 @@
 //           front of the eye stays out of its frame), its cost on a live frame (the gate of decision 24), leaks and
 //           the console; snapshots `eye-<size>.jpg` and `far-<size>.jpg` (the same scene from step `far`).
 //   props — the objects of the yard (B12), one by one: the object on show is the one asked for, the frame stays
-//           within 350 draw calls and four hue families; a snapshot `props-<name>.jpg` of each; the console.
+//           within 350 draw calls and four hue families, and the object's own pixels (the frame without it masks the
+//           sky out) have no strong hue family but the yard's `blue` and `yellow`; a snapshot `props-<name>.jpg` of
+//           each; the console.
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-radio-link — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -459,9 +461,58 @@ const PROPS = [
 ];
 const MAX_DRAW_CALLS = 350;
 const MAX_HUES = 4;
+/**
+ * The hue families the yard may paint with (VISUAL.md §4: `blue` — sky, dusk, shadows, rim light; `yellow` — lantern,
+ * neighbour's window, headlight); everything else on an object must stay under `hueFamilies`' 8 %.
+ */
+const YARD_HUES = ['blue', 'yellow'];
+/** A pixel belongs to the object when the frame with it and the frame without it differ by more than this (R+G+B). */
+const OWN_DIFF = 12;
+
+/**
+ * The object's own pixels of a frame: those where the frame `withIt` differs from the same frame `without` the object;
+ * everything else is made black (so `hueFamilies` skips it). The sky makes up most of the coloured pixels of a
+ * frame, so the families of the whole frame say little about the object itself.
+ */
+function ownPixels(withIt, without) {
+  const data = Buffer.alloc(withIt.data.length);
+  let pixels = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const d =
+      Math.abs(withIt.data[i] - without.data[i]) +
+      Math.abs(withIt.data[i + 1] - without.data[i + 1]) +
+      Math.abs(withIt.data[i + 2] - without.data[i + 2]);
+    data[i + 3] = 255;
+    if (d <= OWN_DIFF) continue;
+    data[i] = withIt.data[i];
+    data[i + 1] = withIt.data[i + 1];
+    data[i + 2] = withIt.data[i + 2];
+    pixels++;
+  }
+  return { png: { width: withIt.width, height: withIt.height, data }, pixels };
+}
+
+/**
+ * Hue families of the object on show alone: the held frame without the interface, once with the object and once
+ * without it (toggle `shown`), then `hueFamilies` of its own pixels. Leaves the object and the interface shown.
+ */
+async function ownHues(page) {
+  await page.evaluate(() => window.__ui.setVisible(false));
+  await held(page);
+  const withIt = decodePng(await page.screenshot({ type: 'png' }));
+  await page.evaluate(() => window.__ui.set('shown', false, true));
+  await held(page);
+  const without = decodePng(await page.screenshot({ type: 'png' }));
+  await page.evaluate(() => window.__ui.set('shown', true, true));
+  await page.evaluate(() => window.__ui.setVisible(true));
+  await held(page);
+  const own = ownPixels(withIt, without);
+  return { pixels: own.pixels, ...hueFamilies(own.png) };
+}
 
 // One page: step `props` on the frozen clock. For each object: pick it (as a gesture), 2 s of engine time for the
-// director to frame it, then the object on show, the frame's draw calls, its hue families and a snapshot.
+// director to frame it, then the object on show, the frame's draw calls, its hue families and a snapshot, and the
+// hue families of the object's own pixels (only `YARD_HUES` may be strong there).
 async function props(context) {
   const n = (report.sections.props = { objects: {} });
   const page = await context.newPage();
@@ -477,12 +528,22 @@ async function props(context) {
     const calls = (await stats(page)).drawCalls;
     const hues = hueFamilies(decodePng(await page.screenshot({ type: 'png' })));
     await screenshot(page, join(out, `props-${name}.jpg`));
-    n.objects[name] = { ...shown, frameDrawCalls: calls, ...hues };
+    const own = await ownHues(page);
+    n.objects[name] = { ...shown, frameDrawCalls: calls, ...hues, own };
+    const foreign = own.families.filter((f) => !YARD_HUES.includes(f));
     check(
       name,
-      shown?.name === name && calls <= MAX_DRAW_CALLS && hues.families.length <= MAX_HUES,
+      shown?.name === name &&
+        calls <= MAX_DRAW_CALLS &&
+        hues.families.length <= MAX_HUES &&
+        own.coloured > 0 &&
+        foreign.length === 0,
       `on show ${shown?.name ?? '—'} (${shown?.triangles ?? 0} triangles, ${shown?.drawCalls ?? 0} meshes); ` +
-        `frame ${calls} draw calls; hues ${hues.families.join(', ') || 'none'} of ${hues.coloured} coloured`,
+        `frame ${calls} draw calls; hues ${hues.families.join(', ') || 'none'} of ${hues.coloured} coloured; ` +
+        `own ${own.families.join(', ') || 'none'} of ${own.coloured} coloured` +
+        (foreign.length
+          ? ` (${foreign.map((f) => `${f} ${own.shares[f]}`).join(', ')}: not a yard hue)`
+          : ''),
     );
   }
   const errors = await appErrors(page);

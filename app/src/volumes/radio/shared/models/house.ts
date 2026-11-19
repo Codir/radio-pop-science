@@ -17,7 +17,7 @@ export const mix = (a: ColorLike, b: ColorLike, k: number): Color => col(a).lerp
 
 /** Colour and material slot of each wall look; `slab` is also the gravel, the skirt and the floors. */
 export const SURFACE: Readonly<Record<WallLook, { readonly c: Color; readonly slot: Slot }>> = {
-  brick: { c: mix('coral', 'mist', 0.7), slot: 'matte' },
+  brick: { c: mix('coral', 'mist', 0.8), slot: 'matte' },
   wood: { c: mix('wireBrown', 'mist', 0.6), slot: 'toon' },
   glass: { c: col('ink'), slot: 'glass' },
   slab: { c: mix('steel', 'mist', 0.5), slot: 'matte' },

@@ -91,6 +91,7 @@ export interface YardPlan {
   };
 }
 
+export { bicycle } from './bicycle';
 export { CAMERA, cameraModel } from './camera';
 export { CAT, cat } from './cat';
 export { picketFence } from './fence';

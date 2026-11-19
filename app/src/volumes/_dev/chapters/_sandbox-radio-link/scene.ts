@@ -13,7 +13,8 @@
  *         the side that shows it best. The yard of `eye` and `far`, its screens and the eye are hidden here, and the
  *         eye makes no pass.
  * Toggles: `eye` stops the pass (the screens keep their last frame), for the draw-call and frame-time checks of
- * `qa/measure.mjs`; `inner` takes the second screen away and `hiding` empties `hide()`, for its check of `hide()`.
+ * `qa/measure.mjs`; `inner` takes the second screen away and `hiding` empties `hide()`, for its check of `hide()`;
+ * `shown` (step `props`) hides the object on show, so that its check can tell the object's own pixels from the sky.
  * Readers: `radio-eye` (the pass, what the eye sees of the marks, which of its cells the second screen covers),
  * `radio-luma` (its frame) and `radio-props` (the object on show: name, triangles, draw calls); probes
  * `eye:<mark>-on-screen`: where the cell of a mark lies on the floating screen.
@@ -47,7 +48,12 @@ const PROPS = Object.keys(SANDBOX.props) as Prop[];
 /**
  * Where the director looks at each object from (`focusOn` direction: from the object toward the camera): the
  * cameras from in front (they look along −Z), the monitor at its frame (+Z), the cat at its face (−Z), the small props
- * at their +X side, the house from the south and above (into its cut), the shed from the camera's side (north, −Z).
+ * at their +X side, the shed from the camera's side (north, −Z). The house from the north-east and above, into its
+ * cut: the hole in the far room's slab lies 0.5 m from the inner faces of `shell-s` and `inner`, so from here the
+ * view through it meets those two brick walls of the cellar and the corner between them, with the cellar floor at
+ * their foot. The cellar floor and the room floor round the hole are lit alike (the dusk key light, 9° high, reaches
+ * neither; only the sky's fill does), so the cellar reads by its walls: from the south the far wall of the cellar is
+ * 3.1 m past the hole, and the view through it meets only the cellar floor, the same tone as the room's.
  */
 const VIEW: Readonly<Record<Prop, readonly [number, number, number]>> = {
   camera1: [-0.7, 0.45, -1],
@@ -63,7 +69,7 @@ const VIEW: Readonly<Record<Prop, readonly [number, number, number]>> = {
   cat: [0.35, 0.4, -1],
   tray: [0.6, 1, 0.8],
   phone: [0.5, 1.2, 0.6],
-  house: [0.2, 1.1, 1],
+  house: [0.6, 1.3, -1],
   neighbour: [1, 0.25, 0.45],
 };
 /** The big objects fill the frame more tightly than `focusOn`'s default 1.35 (their insides are what matters). */
@@ -189,6 +195,7 @@ export default defineScene((ctx) => {
           items: PROPS.map((id) => ({ id, label: SANDBOX.props[id] })),
           value: PROPS[0],
         },
+        { type: 'toggle', id: 'shown', label: SANDBOX.labels.shown, value: true },
       ],
     },
   });
@@ -276,9 +283,13 @@ export default defineScene((ctx) => {
           props[name].group.visible = true;
           shown = name;
           ctx.camera.focusOn(props[name].group, { direction: VIEW[name], padding: PADDING[name] });
-          ctx.env.fitShadow(props[name].group); // the house's cellar reads as a cellar only in its own shade
+          ctx.env.fitShadow(props[name].group); // the buildings (x 19…32) lie outside the default shadow frustum
         }
-        if (shown) props[shown].update(dt, t);
+        if (shown) {
+          // toggle `shown` off: the same frame without the object, the mask of its own pixels for `qa/measure.mjs`
+          props[shown].group.visible = ui.value<boolean>('shown');
+          props[shown].update(dt, t);
+        }
         return;
       }
       if (shown) {
