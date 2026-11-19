@@ -288,47 +288,62 @@ async function eye(context) {
   // hide() in the browser: the second screen hangs in front of the eye and shows its frame. Hidden from the pass,
   // it leaves the eye's frame as it is with that screen taken away (toggle `inner`); with `hide()` emptied (toggle
   // `hiding`) the eye does see it where `project` puts it — at least a quarter of the cells it covers change — so it
-  // really lies in the eye's view, in front of everything else. Back to hiding, the frame is the first one again
+  // really lies in the eye's view, in front of everything else. Back to hiding, the frame is the first one again.
+  // A scene without that screen (no `radio-eye.inner`) fails this check by name and the section goes on
   const frame = async () => {
     await held(pz);
     await held(pz);
     return { luma: await read(pz, 'radio-luma'), inner: (await read(pz, 'radio-eye')).inner };
   };
   const hiddenF = await frame();
-  await pz.evaluate(() => window.__ui.set('inner', false, true));
-  const withoutF = await frame();
-  await pz.evaluate(() => {
-    window.__ui.set('inner', true, true);
-    window.__ui.set('hiding', false, true);
-  });
-  const seenF = await frame();
-  await pz.evaluate(() => window.__ui.set('hiding', true, true));
-  const backF = await frame();
-  const rect = hiddenF.inner.rect;
-  const cells = rect ? (rect.col1 - rect.col0 + 1) * (rect.row1 - rect.row0 + 1) : 0;
-  n.hide = {
-    rect,
-    cells,
-    hiddenDiff: lumaDiff(hiddenF.luma, withoutF.luma),
-    seenDiff: rect ? lumaDiffIn(seenF.luma, withoutF.luma, rect) : 0,
-    seenDiffAll: lumaDiff(seenF.luma, withoutF.luma),
-    backDiff: lumaDiff(backF.luma, hiddenF.luma),
-  };
-  const toggled =
-    hiddenF.inner.shown &&
-    hiddenF.inner.hiding &&
-    !withoutF.inner.shown &&
-    seenF.inner.shown &&
-    !seenF.inner.hiding &&
-    backF.inner.shown &&
-    backF.inner.hiding;
-  check(
-    'hide',
-    toggled && cells > 0 && n.hide.hiddenDiff <= 12 && n.hide.seenDiff >= cells / 4 && n.hide.backDiff <= 12,
-    `second screen over ${cells} cells ${JSON.stringify(rect)}; differ from the frame without it: ` +
-      `hidden ${n.hide.hiddenDiff}, not hidden ${n.hide.seenDiff} of its ${cells} ` +
-      `(${n.hide.seenDiffAll} in all); hidden again, from the first frame: ${n.hide.backDiff}`,
-  );
+  if (!hiddenF.inner) {
+    n.hide = null;
+    check(
+      'hide',
+      false,
+      'radio-eye.inner is missing: the scene must hang a second screen in front of the eye (a child of its camera, ' +
+        'in the hide set) with the toggles `inner` and `hiding`, and expose `radio-eye.inner` = { shown, hiding, rect }',
+    );
+  } else {
+    await pz.evaluate(() => window.__ui.set('inner', false, true));
+    const withoutF = await frame();
+    await pz.evaluate(() => {
+      window.__ui.set('inner', true, true);
+      window.__ui.set('hiding', false, true);
+    });
+    const seenF = await frame();
+    await pz.evaluate(() => window.__ui.set('hiding', true, true));
+    const backF = await frame();
+    const rect = hiddenF.inner.rect;
+    const cells = rect ? (rect.col1 - rect.col0 + 1) * (rect.row1 - rect.row0 + 1) : 0;
+    n.hide = {
+      rect,
+      cells,
+      hiddenDiff: lumaDiff(hiddenF.luma, withoutF.luma),
+      seenDiff: rect ? lumaDiffIn(seenF.luma, withoutF.luma, rect) : 0,
+      seenDiffAll: lumaDiff(seenF.luma, withoutF.luma),
+      backDiff: lumaDiff(backF.luma, hiddenF.luma),
+    };
+    const toggled =
+      hiddenF.inner.shown &&
+      hiddenF.inner.hiding &&
+      withoutF.inner?.shown === false &&
+      seenF.inner?.shown &&
+      seenF.inner?.hiding === false &&
+      backF.inner?.shown &&
+      backF.inner?.hiding;
+    check(
+      'hide',
+      toggled &&
+        cells > 0 &&
+        n.hide.hiddenDiff <= 12 &&
+        n.hide.seenDiff >= cells / 4 &&
+        n.hide.backDiff <= 12,
+      `second screen over ${cells} cells ${JSON.stringify(rect)}; differ from the frame without it: ` +
+        `hidden ${n.hide.hiddenDiff}, not hidden ${n.hide.seenDiff} of its ${cells} ` +
+        `(${n.hide.seenDiffAll} in all); hidden again, from the first frame: ${n.hide.backDiff}`,
+    );
+  }
 
   // the cost of a held pass (it also redraws the shadow map): a number for the report, not a gate
   const heldSamples = [];
