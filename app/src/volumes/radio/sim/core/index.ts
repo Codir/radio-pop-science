@@ -11,3 +11,4 @@ export * from './interferers';
 export * from './rf';
 export * from './spectrum';
 export * from './probe';
+export * from './fm-link';
