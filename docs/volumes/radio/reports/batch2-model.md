@@ -169,11 +169,26 @@
 звірено з відкритими джерелами — `tools/ref-models/radio/README.md`. Сітка 2414 / 2432 / 2450 / 2468 MHz збігається
 з побутовими передавачами відео; випромінена потужність на 1,1 dB вища за опубліковану межу — друге питання нижче.
 
+Швидкість моделі (завдання B10, `__tests__/fm-link.bench.ts`, `vitest bench` 5.1, прогін 19.11.2026): Node 24, `step`,
+увесь діапазон: 60 кадрів моделі за секунду (16,6 ms на кадр); процесор Intel Core i9-13900KS (24 ядра, 32 потоки,
+до 6 GHz), модель рахує в одному потоці, відеокарта в цьому вимірі участі не бере. У п’яти прогонах по 3 с —
+59,9…60,3 кадру за секунду (16,6…16,7 ms на кадр), відносна похибка середнього в кожному — не більш як ± 0,3 %.
+Межа виміру — 16 кадрів за секунду (62,5 ms на кадр, запас під мірило `modelMs ≤ 100` фонового потоку), тож жоден
+крок прискорення плану не знадобився: модулі моделі не мінялися, `INPUT_FILTER` лишається на 47 відводах,
+`CHAIN_DELAY` — 33 відліки каналу, відставання `rx.shifted` від `camera.video` — 18. Де минає кадр (пробні виміри
+окремих блоків тим самим способом): вхідний фільтр, 47 відводів над 144 000 пар, — 7,4 ms (орієнтир плану —
+6,5 ms); увесь приймач до фільтра каналу разом із ним — 10,1 ms; камера, модулятор і розміщення на каналі — 2,8 ms;
+промені й шум антени — 3,0 ms; решта (обмежувач, детектор, фільтр відеосигналу, складання рядків) — близько 0,7 ms.
+Жоден цикл за відліками не читає імпорт: попередження vitest
+`Benchmark Warning … accessed module export getters too many times` у виводі немає. Числа в браузері (фоновий потік і
+основний потік під чотирикратним сповільненням) знімає завдання B16.
+
 Як перевірити:
 
 ```bash
 (cd app && pnpm test src/volumes/radio/sim/core/__tests__/emerges.test.ts)   # Tests  7 passed (7)
 (cd app && pnpm test src/volumes/radio/sim/core/__tests__/oracle.test.ts)    # Tests  2 passed (2)
+(cd app && pnpm exec vitest bench src/volumes/radio/sim --run --reporter verbose)   # hz рядка fm-link step ≥ 16
 python3 tools/ref-models/radio/fm_chain.py --check app/src/volumes/radio/sim/core/__fixtures__
 python3 tools/ref-models/radio/link_budget.py --site app/src/volumes/radio/sim/core/site.json \
         --check app/src/volumes/radio/sim/core/__fixtures__
