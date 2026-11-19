@@ -1,8 +1,40 @@
 /**
  * Helpers shared by the tests of the model. They are written apart from the model (only the size of the screen
- * comes from the standard), so a test compares the model with an independent calculation.
+ * comes from the standard, and the test frame comes from the reference model), so a test compares the model with
+ * an independent calculation.
  */
-import { COLS } from '../standard';
+import frame from '../__fixtures__/test-frame.json';
+import { COLS, ROWS } from '../standard';
+
+if (frame.cols !== COLS || frame.rows !== ROWS || frame.luma.length !== COLS * ROWS)
+  throw new Error(`test-frame.json is not a frame of ${COLS} × ${ROWS} cells`);
+
+/**
+ * The test frame of the reference model (tools/ref-models/radio/fm_chain.py writes it): brightness 0…255 of
+ * 128 × 96 cells, row 0 on top, cell (c, r) at `r * 128 + c`.
+ */
+export const FRAME: Uint8Array = Uint8Array.from(frame.luma);
+
+/**
+ * Where the parts of the test frame are. `wall` (255), `nook` (0), `pickets` (one cell wide: even columns 255, odd
+ * ones 0) and `ramp` (grey, 0 on the left … 255 on the right) are [first column, first row, last column, last row],
+ * both ends inside; `spot` (255 on the forehead of the cat, which is 90) is one cell, [column, row].
+ */
+export const PLACES = frame.places;
+
+/**
+ * 1 for a flat cell of the test frame, 0 for the rest. A cell is flat when both its neighbours in the row differ
+ * from it by 8 at most; the first and the last column are never flat.
+ */
+export const FLAT: Uint8Array = (() => {
+  const flat = new Uint8Array(COLS * ROWS);
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 1; c < COLS - 1; c++) {
+      const i = r * COLS + c;
+      if (Math.abs(FRAME[i]! - FRAME[i - 1]!) <= 8 && Math.abs(FRAME[i]! - FRAME[i + 1]!) <= 8) flat[i] = 1;
+    }
+  return flat;
+})();
 
 /** Gain of a filter at the frequency `f` (a fraction of the sample rate), dB: 20·lg|Σ h[k]·e^(−j2πfk)|. */
 export function gainDb(h: ArrayLike<number>, f: number): number {
