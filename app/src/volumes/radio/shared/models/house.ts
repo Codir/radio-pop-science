@@ -183,7 +183,8 @@ function slab(
  * them by name): `floor` — the rooms' floor and the slab over the cellar in one, `slabY…0` over the bounding
  * rectangle of the wall lines with the hole `slabCut` (its edge a light 1 cm band, like the cut of the walls);
  * `cellarFloor` — 0.05 m of the darker `DARK_FLOOR` with its top at the lowest `y0` of the walls; `skirt` — the
- * gravel frame round the house (`HOUSE_SKIRT`), which hides the ragged edge of the island's pit.
+ * frame round the house in the rooms' concrete (`SURFACE.slab`, `HOUSE_SKIRT`), which hides the ragged edge of the
+ * island's pit.
  * Anchors: `sill` (top of the window board the monitor stands on), `microwave` (the middle of the oven door, from the
  * kitchen block), `phone` — each at the plan's point.
  */
