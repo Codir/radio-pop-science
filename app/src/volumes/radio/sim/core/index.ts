@@ -4,3 +4,4 @@ export * from './units';
 export * from './rng';
 export * from './dsp';
 export * from './video';
+export * from './fm';
