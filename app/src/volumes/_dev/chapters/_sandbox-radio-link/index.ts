@@ -4,8 +4,8 @@ import { defineChapter } from '@/engine/api';
  * Sandbox of the radio volume's world (P7: a chapter of `_dev`, never on the site): the shared pieces of
  * `@radio/shared/**` in a real browser, with the measurements of `qa/measure.mjs`. Batch 2 grows it step by step;
  * B1b: the camera's eye (decision 24) feeding a floating screen, from two director shots, and a second screen in
- * front of the eye that `hide()` keeps out of its frame. All the text of the sandbox is here; the scene has no
- * words of its own.
+ * front of the eye that `hide()` keeps out of its frame; B12: the objects of the yard one by one (step `props`).
+ * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
   steps: {
@@ -18,8 +18,30 @@ export const SANDBOX = {
       title: 'Той самий кадр здалеку',
       blurb: 'Та сама сцена з іншого боку: картинка на екрані не залежить від того, звідки дивиться читач.',
     },
+    props: {
+      title: 'Предмети подвір’я',
+      blurb: 'Усе, з чого складено подвір’я, по одному: виберіть предмет, і камера наблизиться до нього.',
+    },
   },
-  labels: { eye: 'Око камери', inner: 'Екран перед оком', hiding: 'Ховати екрани від ока' },
+  labels: { eye: 'Око камери', inner: 'Екран перед оком', hiding: 'Ховати екрани від ока', prop: 'Предмет' },
+  /** The names of the objects of step `props`, in the order of the control. */
+  props: {
+    camera1: 'Камера',
+    camera2: 'Друга камера',
+    pole: 'Стовп',
+    monitor: 'Монітор',
+    wicket: 'Хвіртка',
+    fence: 'Паркани',
+    shed: 'Сарай',
+    garage: 'Гараж',
+    swing: 'Гойдалка',
+    bicycle: 'Велосипед',
+    cat: 'Кіт',
+    tray: 'Деко',
+    phone: 'Телефон',
+    house: 'Дім у розрізі',
+    neighbour: 'Вікно сусіда',
+  },
 } as const;
 
 export default defineChapter({

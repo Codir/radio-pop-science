@@ -7,10 +7,12 @@
 //        [--only eye,…] [--size 1280x720] [--touch]
 //
 // Sections (`--only`, default all):
-//   eye — the camera's eye (B1b): the extra renderer pass, the orientation of its frame, the floating screen, its
-//         independence of the director's camera and of the engine's draw-call counter, `hide()` (a screen in front
-//         of the eye stays out of its frame), its cost on a live frame (the gate of decision 24), leaks and the
-//         console.
+//   eye   — the camera's eye (B1b): the extra renderer pass, the orientation of its frame, the floating screen, its
+//           independence of the director's camera and of the engine's draw-call counter, `hide()` (a screen in
+//           front of the eye stays out of its frame), its cost on a live frame (the gate of decision 24), leaks and
+//           the console; snapshots `eye-<size>.jpg` and `far-<size>.jpg` (the same scene from step `far`).
+//   props — the objects of the yard (B12), one by one: the object on show is the one asked for, the frame stays
+//           within 350 draw calls and four hue families; a snapshot `props-<name>.jpg` of each; the console.
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-radio-link — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -59,10 +61,13 @@ const out = ensureDir(args.out);
 /** One held frame: the frozen clock does not move, the engine updates once with dt = 0 and draws the frame. */
 const held = (page) => page.evaluate(() => window.__app.step(1 / 60, 0));
 
-/** How many cells of two eye frames (`radio-luma`) differ by more than 2 levels (all of them if sizes differ). */
+/**
+ * How many cells of two eye frames (`radio-luma`) differ by more than 2 levels: all of them if the sizes differ, and
+ * Infinity (never «the same frame») if either is not a frame at all — not an array, or empty.
+ */
 function lumaDiff(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length)
-    return Math.max(a?.length ?? 0, b?.length ?? 0, 1);
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length === 0 || b.length === 0) return Infinity;
+  if (a.length !== b.length) return Math.max(a.length, b.length);
   let n = 0;
   for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 2) n++;
   return n;
@@ -204,6 +209,7 @@ async function eye(context) {
   const posZ = await open(pz, 'eye', 1).catch((err) => ({ error: String(err) }));
   const posD = await open(pd, 'far', 1).catch((err) => ({ error: String(err) }));
   if (!check('opened', at(posZ, 'eye') && at(posD, 'far'), `З ${where(posZ)}, Д ${where(posD)}`)) {
+    await pz.close();
     await pd.close();
     return;
   }
@@ -212,6 +218,7 @@ async function eye(context) {
   await pd.evaluate(() => window.__app.step(1 / 60, 30));
   await held(pd);
   const lumaD = await read(pd, 'radio-luma');
+  await screenshot(pd, join(out, `far-${width}x${height}.jpg`));
   errors.push(...(await appErrors(pd)).map((m) => ({ page: 'Д', ...m })));
   await pd.close();
 
@@ -430,9 +437,67 @@ async function eye(context) {
   );
 }
 
+/* ------------------------------------------------------------------------------------- section props */
+
+/** The objects of step `props`, in the order of its control (`SANDBOX.props` of the sandbox's index.ts). */
+const PROPS = [
+  'camera1',
+  'camera2',
+  'pole',
+  'monitor',
+  'wicket',
+  'fence',
+  'shed',
+  'garage',
+  'swing',
+  'bicycle',
+  'cat',
+  'tray',
+  'phone',
+  'house',
+  'neighbour',
+];
+const MAX_DRAW_CALLS = 350;
+const MAX_HUES = 4;
+
+// One page: step `props` on the frozen clock. For each object: pick it (as a gesture), 2 s of engine time for the
+// director to frame it, then the object on show, the frame's draw calls, its hue families and a snapshot.
+async function props(context) {
+  const n = (report.sections.props = { objects: {} });
+  const page = await context.newPage();
+  const pos = await open(page, 'props', 1).catch((err) => ({ error: String(err) }));
+  if (!check('opened', at(pos, 'props'), where(pos))) {
+    await page.close();
+    return;
+  }
+  for (const name of PROPS) {
+    await page.evaluate((v) => window.__ui.set('prop', v, true), name);
+    await page.evaluate(() => window.__app.step(1 / 60, 120));
+    const shown = await read(page, 'radio-props');
+    const calls = (await stats(page)).drawCalls;
+    const hues = hueFamilies(decodePng(await page.screenshot({ type: 'png' })));
+    await screenshot(page, join(out, `props-${name}.jpg`));
+    n.objects[name] = { ...shown, frameDrawCalls: calls, ...hues };
+    check(
+      name,
+      shown?.name === name && calls <= MAX_DRAW_CALLS && hues.families.length <= MAX_HUES,
+      `on show ${shown?.name ?? '—'} (${shown?.triangles ?? 0} triangles, ${shown?.drawCalls ?? 0} meshes); ` +
+        `frame ${calls} draw calls; hues ${hues.families.join(', ') || 'none'} of ${hues.coloured} coloured`,
+    );
+  }
+  const errors = await appErrors(page);
+  n.errors = errors;
+  check(
+    'console',
+    errors.length === 0,
+    errors.length ? `${errors.length}: ${errors[0].level} ${errors[0].message.slice(0, 160)}` : 'clean',
+  );
+  await page.close();
+}
+
 /* ---------------------------------------------------------------------------------------------- run */
 
-const SECTIONS = { eye };
+const SECTIONS = { eye, props };
 const only =
   typeof args.only === 'string'
     ? args.only
