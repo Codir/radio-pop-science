@@ -401,10 +401,19 @@ def line_above(levels, clean):
 
 
 @functools.lru_cache(maxsize=None)
+def snr_points():
+    """{level: (cleanliness, share of lost lines)} at every level of the curve and of the five stops."""
+    return {dbm: measure(dbm) for dbm in sorted(set(CURVE_LEVELS) | set(STOP_LEVELS), reverse=True)}
+
+
 def snr_curve():
     """The curve of cleanliness against the level at the antenna, its slope above the threshold, the knee, and the
     same measure at the levels of the five stops."""
-    points = {dbm: measure(dbm) for dbm in sorted(set(CURVE_LEVELS) | set(STOP_LEVELS), reverse=True)}
+    return curve_of(snr_points())
+
+
+def curve_of(points):
+    """The curve, the slope and the knee from the measured points {level: (cleanliness, share of lost lines)}."""
     clean = [points[dbm][0] for dbm in CURVE_LEVELS]
     slope, intercept = line_above(CURVE_LEVELS, clean)
     below = [dbm for dbm, c in zip(CURVE_LEVELS, clean) if slope * dbm + intercept - c > KNEE_DB]
@@ -504,7 +513,11 @@ FIXTURES = {'standard.json': fx_standard, 'test-frame.json': fx_test_frame, 'vid
 
 
 # --check compares these numbers of snr-curve.json (at its top and under `stops`) within a tolerance, and the rest of
-# that file, the knee too, byte for byte: cleanliness ± 0.5 dB, the share of lost lines ± 0.03.
+# that file, the knee too, byte for byte: cleanliness ± 0.5 dB, the share of lost lines ± 0.03. The rest includes
+# slopeAbove (the plan: the rest byte for byte), and slopeAbove is a least-squares line through the seven points
+# −62…−74 dBm. So the tolerance absorbs a move of cleanliness at the other levels only; at those seven it absorbs a
+# move shared by all of them, while one of them moved by 1e-4 dB (bar −68, the middle, which the slope ignores)
+# already changes the sixth digit of the slope and the file differs. The self-test pins both cases.
 CURVE_TOLERANCE = {'clean': 0.5, 'syncLost': 0.03}
 
 
@@ -707,7 +720,8 @@ def selftest():
 
     # --check on snr-curve.json: cleanliness ± 0.5 dB, lost lines ± 0.03, the rest byte for byte.
     def changed(part, key, by):
-        """The written curve with `by` added to `key` (to every number of a list), at the top or under `stops`."""
+        """The written curve with `by` added to `key` (to every number of a list), at the top or under `stops`: one
+        number of the file edited, everything else as written (the slope and the knee too)."""
         data = json.loads(text)
         place = data[part] if part else data
         place[key] = [v + by for v in place[key]] if isinstance(place[key], list) else place[key] + by
@@ -724,6 +738,23 @@ def selftest():
             part, key, by)
     assert not same_curve(text.replace(',', ', ', 1).encode('utf-8'), text), 'a curve not in the written form'
     assert not same_curve(b'{}', text) and not same_curve(b'\xff', text), 'a broken curve'
+
+    # The same against a fresh run whose cleanliness moved (another numpy or scipy rounding a cell otherwise): such a
+    # run computes the slope and the knee again from its own points. The slope is a line through −62…−74 dBm and stays
+    # byte for byte, so a move shared by all levels passes, a move at a level off that line passes, and one point of
+    # the line moved by 0.3 dB, or even by 1e-4 dB, makes the file differ.
+    def rerun(by, at=None):
+        """snr-curve.json as a run would write it whose cleanliness is `by` dB higher at the level `at` (at every
+        level when None), on the curve and at the stops alike."""
+        moved = {dbm: (clean + by if at in (None, dbm) else clean, lost) for dbm, (clean, lost) in snr_points().items()}
+        return dump(sig6(curve_of(moved))).encode('utf-8')
+
+    assert rerun(0) == text.encode('utf-8'), 'the curve from its own points'
+    for by, at, same in ((0.45, None, True), (-0.45, None, True), (0.3, -84, True), (-0.45, -54, True),
+                         (0.3, -62, False), (1e-4, -62, False), (1e-4, -66, False)):
+        assert same_curve(rerun(by, at), text) is same, (
+            '--check of snr-curve.json against a fresh run with cleanliness %+g dB at %s dBm: expected %s' % (
+                by, 'every level' if at is None else at, 'up to date' if same else 'differs'))
     print('fm_chain selftest: OK')
 
 
