@@ -7,3 +7,6 @@ export * from './video';
 export * from './fm';
 export * from './site';
 export * from './channel';
+export * from './interferers';
+export * from './rf';
+export * from './spectrum';
