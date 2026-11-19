@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { Color, Object3D, Scene, Vector3, type WebGLRenderTarget } from 'three';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Color, DataUtils, Object3D, Scene, Vector3, type WebGLRenderTarget } from 'three';
 import type { ChapterContext } from '@/engine/api';
 import { kGlobals } from '@/style';
 import { autoExposure, createEye, EYE_SAMPLES, lumaAround, lumaFromPixels } from '../eye';
@@ -29,6 +29,8 @@ function fake(o: FakeOptions = {}) {
   const tracked: WebGLRenderTarget[] = [];
   const read: { buf: Uint8Array | Uint16Array | null } = { buf: null };
   const during: During = { autoUpdate: false, hidden: [], rim: new Color() };
+  /** Milliseconds the fake spends: render 3, read 2 (read by `fakeClock`). */
+  const clock = { now: 0 };
   let badLeft = o.badRead ?? false;
   let glError = false;
   const r = {
@@ -49,6 +51,7 @@ function fake(o: FakeOptions = {}) {
     render() {
       log.push('render');
       r.info.render.calls += 7;
+      clock.now += 3;
       during.autoUpdate = r.shadowMap.autoUpdate;
       during.hidden = hidden.map((h) => h.visible);
       during.rim = kGlobals.uKRimColor.value.clone();
@@ -63,6 +66,7 @@ function fake(o: FakeOptions = {}) {
       buf: Uint8Array | Uint16Array,
     ) {
       log.push('read');
+      clock.now += 2;
       buf.fill(o.fill ?? 0);
       read.buf = buf;
       if (badLeft && buf instanceof Uint16Array) {
@@ -86,7 +90,20 @@ function fake(o: FakeOptions = {}) {
     track: (x: WebGLRenderTarget) => (tracked.push(x), x),
     env: { rig: { rimColor: new Color(1, 0, 0), rimDir: new Vector3(0, 1, 0), lookScale: 2 } },
   } as unknown as ChapterContext;
-  return { ctx, r, log, hidden, tracked, during, read };
+  return { ctx, r, log, hidden, tracked, during, read, clock };
+}
+
+/**
+ * The wall clock moves only with the fake renderer (render 3 ms, read 2 ms) and with the CPU luma conversion after
+ * the pass (1 ms per half float), so `lastMs` shows which of them it spans.
+ */
+function fakeClock(f: ReturnType<typeof fake>): void {
+  const fromHalf = DataUtils.fromHalfFloat;
+  vi.spyOn(performance, 'now').mockImplementation(() => f.clock.now);
+  vi.spyOn(DataUtils, 'fromHalfFloat').mockImplementation((h: number) => {
+    f.clock.now += 1;
+    return fromHalf(h);
+  });
 }
 
 function expectRestored(f: ReturnType<typeof fake>, rim: Color, dir: Vector3): void {
@@ -99,6 +116,10 @@ function expectRestored(f: ReturnType<typeof fake>, rim: Color, dir: Vector3): v
 }
 
 describe('eye', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('стан після capture — як до нього', () => {
     const f = fake();
     const rim = kGlobals.uKRimColor.value.clone();
@@ -119,12 +140,13 @@ describe('eye', () => {
   it('один прохід: один clear, один render, одне читання', () => {
     const f = fake();
     const eye = createEye(f.ctx, { hide: () => f.hidden });
+    fakeClock(f);
     eye.capture();
     expect(f.log).toEqual(['target:eye', 'clear', 'render', 'read', 'target:main']);
     expect(f.during.hidden).toEqual([false, false]);
     expect(f.during.rim.equals(new Color(1, 0, 0))).toBe(true);
     expect([eye.passes, eye.lastCalls]).toEqual([1, 7]);
-    expect(eye.lastMs).toBeGreaterThanOrEqual(0);
+    expect(eye.lastMs).toBe(5); // render and read; the luma conversion after the pass is not timed
   });
 
   it('capture: середнє → витримка → яскравість, той самий масив', () => {
@@ -164,10 +186,12 @@ describe('eye', () => {
     // the device promised half-float read-back and refused it
     const c = fake({ badRead: true });
     const bad = createEye(c.ctx);
+    fakeClock(c);
     bad.capture();
     expect(bad.format).toBe('byte');
     expect(c.read.buf).toBeInstanceOf(Uint8Array);
     expect(c.tracked).toHaveLength(2);
+    expect(bad.lastMs).toBe(5); // the repeated byte pass only, not the refused half pass before it
   });
 
   it('lumaFromPixels: рядки перевернуто, витримка, гама', () => {

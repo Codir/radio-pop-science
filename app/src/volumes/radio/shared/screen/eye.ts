@@ -51,7 +51,10 @@ export interface Eye {
   readonly format: 'half' | 'byte';
   /** Renderer passes so far. */
   readonly passes: number;
-  /** Wall-clock milliseconds of the last `capture()` (pass, read-back and luma) — for the report only. */
+  /**
+   * Wall-clock milliseconds of the last pass, from saving the renderer state to the end of its restore (render and
+   * read-back included, the CPU luma conversion after it not) — for the report only.
+   */
   readonly lastMs: number;
   /** Draw calls of the last pass. */
   readonly lastCalls: number;
@@ -182,6 +185,7 @@ export function createEye(ctx: ChapterContext, opts: EyeOptions = {}): Eye {
 
   /** One pass into the eye's target and the read-back; true when the device reported an error on the read. */
   const pass = (checkRead: boolean): boolean => {
+    const t0 = performance.now();
     const gl = checkRead ? renderer.getContext() : null;
     const prevTarget = renderer.getRenderTarget();
     const prevFace = renderer.getActiveCubeFace();
@@ -219,6 +223,7 @@ export function createEye(ctx: ChapterContext, opts: EyeOptions = {}): Eye {
       kGlobals.uKRimDir.value.copy(savedDir);
       kGlobals.uKLookScale.value = savedLookScale;
     }
+    lastMs = performance.now() - t0;
     return failed;
   };
 
@@ -237,7 +242,6 @@ export function createEye(ctx: ChapterContext, opts: EyeOptions = {}): Eye {
       return lastCalls;
     },
     capture(): Uint8Array {
-      const t0 = performance.now();
       if (readChecked) {
         pass(false);
       } else {
@@ -252,7 +256,6 @@ export function createEye(ctx: ChapterContext, opts: EyeOptions = {}): Eye {
         }
       }
       lumaFromPixels(pixels, format, autoExposure(meanLuminance(pixels, format)), luma);
-      lastMs = performance.now() - t0;
       return luma;
     },
     project(world: Vector3): { col: number; row: number } | null {
