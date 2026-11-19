@@ -1,0 +1,9 @@
+{ "tx": [0, 0, 3.0], "route": [[19.0, 6.0, 1.2], [19.8, 0, 1.2], [23.2, 0, 1.2], [27.2, 0, 1.2], [26.6, 0, -1.5]], "nudgeAxis": [0.866025, -0.5],
+  "walls": [
+    { "id": "shell-w", "a": [19.2, -3], "b": [19.2, 3], "material": "brick" }, { "id": "shell-s", "a": [19.2, -3], "b": [28.6, -3], "material": "brick" },
+    { "id": "shell-n", "a": [19.2, 3], "b": [28.6, 3], "material": "brick" },  { "id": "shell-e", "a": [28.6, -3], "b": [28.6, 3], "material": "brick" },
+    { "id": "partition", "a": [21.4, -3], "b": [21.4, 3], "material": "wood" }, { "id": "cupboard", "a": [21.7, -3], "b": [21.7, 3], "material": "wood" },
+    { "id": "inner", "a": [25.0, -3], "b": [25.0, 3], "material": "brick" }, { "id": "wardrobe-doors", "a": [21.7, -2.4], "b": [25.0, -2.4], "material": "wood" },
+    { "id": "wardrobe-back", "a": [21.7, -2.7], "b": [25.0, -2.7], "material": "wood" } ],
+  "slabZ": -0.2, "gateLeaf": { "a": [27.25, -4.8], "b": [25.8, -6.75] },
+  "router": { "at": [12, 14, 2], "mw": 10 }, "oven": { "at": [19.8, 0.6, 1.0], "leakMw": 0.1 } }
