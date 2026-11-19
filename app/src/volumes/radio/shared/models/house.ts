@@ -38,10 +38,21 @@ export const GLASS: GlassParams = {
 };
 
 /**
- * The darker concrete of the cellar's floor and the trodden gravel of the back yard (B13, VISUAL.md §4): under the
- * slab the cellar reads as a pit through the cut, and the cat's body and the white wall stand out in the camera's frame.
+ * The trodden gravel of the back yard, darker than the rooms' concrete (B13, VISUAL.md §4): the cat's body and the
+ * white wall stand out against it in the camera's frame.
  */
 export const DARK_FLOOR: Color = mix('steel', 'slate', 0.5);
+
+/**
+ * The cellar (B16, VISUAL.md §4): the foundation of the walls under the slab and the cellar's floor, near black. The
+ * light of the sky reaches every surface of the scene unshadowed, so the dark under the slab has to be in the
+ * surfaces themselves; with it the screen at the cellar stop is the light in the dark, and through the cut in the
+ * slab the cellar still reads as a pit.
+ */
+export const CELLAR: { readonly wall: Color; readonly floor: Color } = {
+  wall: mix(SURFACE.brick.c, 'ink', 0.9),
+  floor: mix(DARK_FLOOR, 'ink', 0.85),
+};
 
 /** The skirt round the house: from the outer face of its outer walls `width` outward, its top `top` above ground, m. */
 export const HOUSE_SKIRT = { width: 1.4, top: 0.03 } as const;
@@ -74,14 +85,22 @@ function corner(p: P2, w: WallPlan, all: readonly WallPlan[]): boolean {
 export interface WallOptions {
   /** Where a cut wall stops. Default 0.6 (above the ground). */
   cutTop?: number;
+  /** Below height `y` a wall takes the colour `c` instead of its look's (the house: the foundation in the cellar). */
+  below?: { y: number; c: Color };
 }
 
 /** Draw the walls of a plan (scene axes, current frame of `b`). */
 export function addWalls(b: Builder, walls: readonly WallPlan[], o: WallOptions = {}): void {
-  for (const w of walls) addWall(b, w, walls, o.cutTop ?? CUT_ABOVE);
+  for (const w of walls) addWall(b, w, walls, o.cutTop ?? CUT_ABOVE, o.below);
 }
 
-function addWall(b: Builder, w: WallPlan, all: readonly WallPlan[], cutTop: number): void {
+function addWall(
+  b: Builder,
+  w: WallPlan,
+  all: readonly WallPlan[],
+  cutTop: number,
+  below?: WallOptions['below'],
+): void {
   const dx = w.b[0] - w.a[0];
   const dz = w.b[1] - w.a[1];
   const len = Math.hypot(dx, dz);
@@ -93,13 +112,20 @@ function addWall(b: Builder, w: WallPlan, all: readonly WallPlan[], cutTop: numb
   if (top <= w.y0) return;
   const { c, slot } = SURFACE[w.look];
   const band = mix(c, 'white', 0.65);
-  /** One box of the wall: `s0…s1` along it, `y0…y1` up. */
+  /** One box of the wall: `s0…s1` along it, `y0…y1` up (the part under `below.y` a box of its own). */
   const piece = (s0: number, s1: number, y0: number, y1: number): void => {
     if (s1 - s0 < 1e-6 || y1 - y0 < 1e-6) return;
     const s = (s0 + s1) / 2;
     const at = (y: number) => [w.a[0] + ux * s, y, w.a[1] + uz * s] as const;
-    const body = w.cut && y1 >= top - 1e-9 ? Math.max(y0, y1 - CUT_BAND) : y1;
-    if (body - y0 > 1e-6) b.box(s1 - s0, body - y0, THICK, { r: 0, c, slot, at: at(y0), rot });
+    let lo = y0;
+    if (below && lo < below.y - 1e-9) {
+      const y = Math.min(y1, below.y);
+      b.box(s1 - s0, y - lo, THICK, { r: 0, c: below.c, slot, at: at(lo), rot });
+      if (y1 - y < 1e-6) return;
+      lo = y;
+    }
+    const body = w.cut && y1 >= top - 1e-9 ? Math.max(lo, y1 - CUT_BAND) : y1;
+    if (body - lo > 1e-6) b.box(s1 - s0, body - lo, THICK, { r: 0, c, slot, at: at(lo), rot });
     if (body < y1) b.box(s1 - s0, y1 - body, THICK, { r: 0, c: band, slot, at: at(body), rot });
   };
   const s0 = corner(w.a, w, all) ? -HALF : 0;
@@ -182,7 +208,8 @@ function slab(
  * The house cut open: walls from the plan, no roof. Parts (they do not move; tests and `cellarSeen` of B13 find
  * them by name): `floor` — the rooms' floor and the slab over the cellar in one, `slabY…0` over the bounding
  * rectangle of the wall lines with the hole `slabCut` (its edge a light 1 cm band, like the cut of the walls);
- * `cellarFloor` — 0.05 m of the darker `DARK_FLOOR` with its top at the lowest `y0` of the walls; `skirt` — the
+ * `cellarFloor` — 0.05 m of the near-black `CELLAR.floor` with its top at the lowest `y0` of the walls (the walls
+ * under the slab are `CELLAR.wall`, the foundation round the cellar); `skirt` — the
  * frame round the house in the rooms' concrete (`SURFACE.slab`, `HOUSE_SKIRT`), which hides the ragged edge of the
  * island's pit.
  * Anchors: `sill` (top of the window board the monitor stands on), `microwave` (the middle of the oven door, from the
@@ -193,7 +220,7 @@ export function house(plan: YardPlan['house']): KitModel {
   const box = wallBox(plan.walls);
   const cellar = Math.min(...plan.walls.map((w) => w.y0));
   const grey = SURFACE.slab.c;
-  addWalls(b, plan.walls, { cutTop: plan.slabY + CUT_ABOVE });
+  addWalls(b, plan.walls, { cutTop: plan.slabY + CUT_ABOVE, below: { y: plan.slabY, c: CELLAR.wall } });
 
   const floor = b.part('floor');
   // the slab round the hole, and the hole's own edge: a light band 1 cm wide, like the cut of the walls, so that
@@ -215,7 +242,7 @@ export function house(plan: YardPlan['house']): KitModel {
 
   b.part('cellarFloor').box(box.x1 - box.x0, CELLAR_FLOOR, box.z1 - box.z0, {
     r: 0,
-    c: DARK_FLOOR,
+    c: CELLAR.floor,
     slot: 'matte',
     at: [(box.x0 + box.x1) / 2, cellar - CELLAR_FLOOR, (box.z0 + box.z1) / 2],
   });
