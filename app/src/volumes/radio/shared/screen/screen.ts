@@ -13,10 +13,8 @@ import {
   ShaderMaterial,
   UnsignedByteType,
 } from 'three';
-
-/** The model's frame: COLS × ROWS of `sim/core/standard.ts`. */
-const COLS = 128;
-const ROWS = 96;
+// the model's frame: the screen shows what the model computed, so its size comes from there
+import { COLS, ROWS } from '@radio/sim/core';
 
 const VERTEX = /* glsl */ `
 varying vec2 vUv;

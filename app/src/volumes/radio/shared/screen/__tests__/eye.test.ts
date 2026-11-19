@@ -236,6 +236,17 @@ describe('eye', () => {
     expect(eye.project(new Vector3(100, 0, -10))).toBeNull();
   });
 
+  it('project: камера там, куди її батька посунули після останнього кадру', () => {
+    // mountWorld makes the eye's camera a child of the lens; nothing updates the lens's matrices between frames
+    const eye = createEye(fake().ctx);
+    const lens = new Object3D();
+    lens.add(eye.camera);
+    expect(eye.project(new Vector3(0, 0, -10))).toEqual({ col: 64, row: 48 });
+    lens.position.set(1, -1, 0);
+    // the point is now (−1, 1, −10) from the camera, as in the test above
+    expect(eye.project(new Vector3(0, 0, -10))).toEqual({ col: 50, row: 34 });
+  });
+
   it('dispose звільняє текстуру', () => {
     const f = fake();
     const eye = createEye(f.ctx);

@@ -259,7 +259,8 @@ export function createEye(ctx: ChapterContext, opts: EyeOptions = {}): Eye {
       return luma;
     },
     project(world: Vector3): { col: number; row: number } | null {
-      camera.updateMatrixWorld();
+      // the parents first: the camera rides on the lens, which may have moved since the last render
+      camera.updateWorldMatrix(true, false);
       const p = point.copy(world).project(camera);
       if (Math.abs(p.x) > 1 || Math.abs(p.y) > 1 || p.z < -1 || p.z > 1) return null;
       return {
