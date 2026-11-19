@@ -472,8 +472,8 @@ export interface WhereAmIOptions {
   route: () => number; nudge: () => number; depth: () => 0 | 1 | 2;     // подвір'я · стенд · під лупою
 }
 export function whereami(ctx: ChapterContext, opts: WhereAmIOptions): CustomSpec;    // лише вид плану (П21)
-export function routeSlider(o: { label: string; stops: readonly string[]; from?: 0 | 1; value?: number }): SliderSpec;   // id 'route', from…4, крок 0,01
-export function nudgeSlider(o: { label: string; unit: string }): SliderSpec;                                              // id 'nudge', −0,15…0,15, крок 0,005
+export function routeSlider(o: { label: string; stops: readonly string[]; from?: 0 | 1; value?: number }): SliderSpec;   // id 'route', from…4, крок 0,01; значення — назва найближчої зупинки (B15, крок 3)
+export function nudgeSlider(o: { label: string; unit: string }): SliderSpec;                                              // id 'nudge', −0,15…0,15, крок 0,005; значення — fmtUnit(цілі см, unit)
 export function whereAt(route: number, nudge: number): { x: number; y: number };                                          // місце монітора на плані
 ```
 
