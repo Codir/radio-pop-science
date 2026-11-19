@@ -1,10 +1,12 @@
 /**
  * The shots of the yard (B13, VISUAL.md §7), in scene axes, each with its `fit` (the subject sphere a phone keeps in
  * frame): `both` — the pole with the camera, the cat and the kitchen window with the monitor together («the original
- * and the copy»); `yard` — the whole yard; `pole` — over the camera's shoulder: the cat on the fence, the wicket, the
- * white wall and the nook; `window` — the kitchen window from outside; `screen` — the monitor close up wherever it
- * is (`screenShot`); `antenna` — the monitor's whip; `route` — the house cut open with all five stops; `top` — the
- * plan from above. `both` and `window` look past the monitor but keep it sharp (`focus`, VISUAL.md §5 «Різкість»).
+ * and the copy»); `yard` — the whole yard (both from the south-west, behind the pole, toward the west wall of the
+ * kitchen: a 9 cm pole and an 18 cm camera read on a 320 px thumbnail only from near, and the window only face on);
+ * `pole` — over the camera's shoulder: the cat on the fence, the wicket, the white wall and the nook; `window` — the
+ * kitchen window from outside; `screen` — the monitor close up wherever it is (`screenShot`); `antenna` — the
+ * monitor's whip; `route` — the house cut open with all five stops; `top` — the plan from above. `both` and `window`
+ * look past the monitor but keep it sharp (`focus`, VISUAL.md §5 «Різкість»).
  */
 import type { Shot, Vec3Like } from '@/engine/api';
 import { MONITOR_SCREEN } from '../models';
@@ -72,8 +74,11 @@ const shot = (position: V3, target: V3, center: V3, radius: number, more: Partia
 export const YARD_SHOTS: Readonly<
   Record<'both' | 'yard' | 'pole' | 'window' | 'screen' | 'antenna' | 'route' | 'top', Shot>
 > = {
-  both: shot([-2.0, -24.0, 12.0], [8.4, -0.2, 2.0], [9.6, -0.6, 2.0], 11.2, { focus: screenPlace(1) }),
-  yard: shot([14, -45, 23], [14, -1, 1], [14, -1, 1], 21),
+  // from the south-west, along the road of the picture: the pole with both cameras 15 m off (the camera ≈ 12 px long
+  // on a 720-row frame), the cat on the cross fence, the kitchen window 30 m off, face on
+  both: shot([-8.5, -10.5, 6.5], [7.2, 0.3, 1.8], [9.6, -0.6, 2.0], 11.2, { focus: screenPlace(1) }),
+  // the whole yard from the south-west, the pole 25 m off against the grass and the west wall with the window facing
+  yard: shot([-16, -12, 14], [10, 0, 0], [14, -1, 1], 21),
   pole: shot([3.0, 3.2, 4.4], [-0.2, -5.5, 1.0], [0.5, -4.5, 1.5], 6.5),
   window: shot([14.0, -4.5, 2.4], [19.2, -1.0, 1.4], [19.3, -0.8, 1.4], 1.6, { focus: screenPlace(1) }),
   screen: screenShot(1),

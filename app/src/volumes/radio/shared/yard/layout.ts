@@ -124,9 +124,10 @@ const PLACES: Record<
   swing: place([8.0, 5.0, 0], 0),
   // on the skirt of the house, 0.5 m from the face of the west wall, north of the window
   bicycle: place([18.6, 1.6, 0], 90),
-  // by the cross fence, east of the cat: it lights the cat's face, the pickets and the shed wall, and stands out of
-  // the eye's frame and of the shot `pole`
-  lantern: place([4.4, -3.2, 0], 0),
+  // north of the cross fence, east of its end: it lights the cat's face, the pickets and the shed wall; it stands
+  // outside the eye's frame (≈ 65° off its axis) and outside the shot `pole` on a desktop and on a phone (≈ 47° off
+  // that shot's axis, where the desktop's frame reaches ≈ 27° and the phone's ≈ 32°)
+  lantern: place([6.0, -2.8, 0], 0),
   // the tray on the worktop of the kitchen block (the middle of its bottom; the worktop's top is 0.86, B12)
   trayRest: place([19.7, 1.5, 0.86], 0),
 };
@@ -211,12 +212,14 @@ const PLAN: YardPlan = {
     },
     { route: [toScene2([4.6, -3.9]), toScene2([4.6, -9])], height: 1.1, picket: 0.08, gap: 0, board: false },
   ] satisfies FenceRun[],
+  // the fifth stands in the north-west corner beyond the fence, next to the fourth: west of the pole it would stand
+  // between the pole and the shots `yard` and `both` from the south-west
   trees: [
     toScene2([4, 10]),
     toScene2([15, 10.5]),
     toScene2([24, 10.5]),
     toScene2([-3.5, 6]),
-    toScene2([-3.5, -1]),
+    toScene2([-3.5, 9.5]),
   ],
   house: {
     walls: HOUSE_WALLS,

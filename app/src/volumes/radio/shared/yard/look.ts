@@ -27,8 +27,8 @@ export const LANTERN_LIGHT = 3.5;
  */
 export const KITCHEN_LIGHT = 0.8;
 /**
- * The lights' range and decay: the lantern's light reaches across the back yard with a soft fall-off (the cat 4.4 m
- * from the bulb, the pickets by the wicket 6.0 m, the shed's wall 7.2 m), the kitchen's stays in the kitchen.
+ * The lights' range and decay: the lantern's light reaches across the back yard with a soft fall-off (the cat's spot
+ * 5.9 m from the bulb, the pickets by the wicket 7.6 m, the shed's wall 8.4 m), the kitchen's stays in the kitchen.
  */
 const LANTERN_REACH = { distance: 16, decay: 0.7 } as const;
 const KITCHEN_REACH = { distance: 5, decay: 1.6, ahead: 0.5 } as const;

@@ -131,6 +131,13 @@ export type YardProps = Record<
 /** Grass of the yard and the leaves of its trees (VISUAL.md §4). */
 const GRASS: Color = mix('green', 'steel', 0.85);
 /**
+ * The lantern's globe (B13): the kit's own colour at 0.4 of its brightness. The kit's lamp glows at 0.5 of its
+ * colour while the lamp is off and at 3.4 when on, so its 0.68 m globe was the brightest thing in the early evening
+ * yard, over the camera on the pole in `both`; now it is a dim glass ball until `lanternLevel` lights it (at night
+ * 1.36: still a bright yellow light).
+ */
+const LANTERN_GLASS: Color = mix('yellow', 'white', 0.35).multiplyScalar(0.4);
+/**
  * The pit under the house: the bounding rectangle of the wall lines grown by this much on every side, down to
  * `PIT_BELOW` under the cellar floor. The margin comes from the island's grid (step 5 of B12): on an island of
  * radius 23 round (14; −1) of the plan the largest triangle under the rooms has a 0.70 m side, so every triangle
@@ -182,6 +189,7 @@ export function buildYardProps(plan: YardPlan, rng: Rng): YardProps {
     ],
   });
   levelGrass(land);
+  muteFlank(land, plan.radius);
   return {
     island: land,
     fence: picketFence(plan.fences),
@@ -189,7 +197,7 @@ export function buildYardProps(plan: YardPlan, rng: Rng): YardProps {
       plan.trees.map(([x, z]) => ({ x, y: 0, z, tint: GRASS })),
       { rng },
     ),
-    lantern: streetLamp({ kind: 'park', height: 3.2 }),
+    lantern: streetLamp({ kind: 'park', height: 3.2, light: LANTERN_GLASS }),
     pole: pole(),
     camera1: cameraModel(),
     camera2: cameraModel({ on: false }),
@@ -220,6 +228,36 @@ function levelGrass(model: KitModel): void {
     if (!p || !n) return;
     for (let i = 0; i < p.count; i++) if (p.getY(i) === 0) n.setXYZ(i, 0, 1, 0);
     n.needsUpdate = true;
+  });
+}
+
+/**
+ * The island's flank (B13): the kit paints the side of a `slab` island in strata — a green lip, red-brown, bright
+ * violet, plum, indigo — and they show along the rim in `yard` and on a phone. The yard's own colours are only `blue`
+ * and `yellow`, bright `violet` is the Q shadow's alone, and red only in small spots (VISUAL.md §4); the flank is no
+ * such spot. So its vertex colours keep their tone but lose `FLANK_MUTE` of their colour, toward the grey of the same
+ * luminance: the strata stay as darker and lighter bands. A flank vertex faces sideways or down (its normal's y below
+ * ½, or below −½ under the bottom) and, unless it is under the bottom, lies in the outer quarter of the radius — the
+ * walls of the pit under the house face sideways too, but end 16 m from the island's middle.
+ */
+const FLANK_MUTE = 0.9;
+
+function muteFlank(model: KitModel, radius: number): void {
+  model.group.traverse((o) => {
+    if (!(o instanceof Mesh)) return;
+    const p = o.geometry.getAttribute('position');
+    const n = o.geometry.getAttribute('normal');
+    const c = o.geometry.getAttribute('color');
+    if (!p || !n || !c) return;
+    for (let i = 0; i < p.count; i++) {
+      const ny = n.getY(i);
+      const outer = Math.hypot(p.getX(i), p.getZ(i)) > 0.75 * radius;
+      if (!(ny < -0.5 || (outer && ny < 0.5))) continue;
+      const [r, g, b] = [c.getX(i), c.getY(i), c.getZ(i)];
+      const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      c.setXYZ(i, r + (y - r) * FLANK_MUTE, g + (y - g) * FLANK_MUTE, b + (y - b) * FLANK_MUTE);
+    }
+    c.needsUpdate = true;
   });
 }
 

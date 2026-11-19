@@ -5,12 +5,14 @@
  * the route to put them on the other side), square posts stand at its ends, corners and on both sides of every
  * `open` stretch, and `board` lays a flat board 0.10 m wide along the whole run with its top at `height` — the cat
  * walks on it. Inside `open` there are no pickets, rails or board (the wicket hangs there). Nothing reaches past the
- * ends of the route or above `height`. White (VISUAL.md §4). The kit's `fence` has one picket size, rounded routes
- * and no board (`kit/env/props.ts:24-35`).
+ * ends of the route or above `height`. White (VISUAL.md §4), except the two posts of every `open` stretch: they are
+ * iron, the wicket's dark posts (B13: in the camera's frame they and the wicket's iron frame tell the wicket from the
+ * fence). The kit's `fence` has one picket size, rounded routes and no board (`kit/env/props.ts:24-35`).
  */
 import { type BufferGeometry } from 'three';
-import { Builder, G, type KitModel } from '@/kit';
+import { Builder, G, type KitModel, type Slot } from '@/kit';
 import { col } from '@/style';
+import { SURFACE } from './house';
 import type { FenceRun, P2 } from './index';
 
 const PICKET_THICK = 0.02;
@@ -93,16 +95,17 @@ function addRun(b: Builder, run: FenceRun): void {
   const open = (run.open ?? []).map(([o0, o1]) => [Math.max(0, o0), Math.min(total, o1)] as const);
   const topOfPosts = run.board ? h - BOARD.thick : h;
 
-  // posts: at the ends, at the corners, on both sides of every open stretch
-  const posts: [number, number][] = [
-    [0, POST],
-    [total - POST, total],
+  // posts: at the ends, at the corners, on both sides of every open stretch (those are the wicket's posts: iron)
+  const posts: [number, number, boolean][] = [
+    [0, POST, false],
+    [total - POST, total, false],
   ];
-  for (const s of segs.slice(1)) posts.push([s.s0 - POST / 2, s.s0 + POST / 2]);
-  for (const [o0, o1] of open) posts.push([o0 - POST, o0], [o1, o1 + POST]);
+  for (const s of segs.slice(1)) posts.push([s.s0 - POST / 2, s.s0 + POST / 2, false]);
+  for (const [o0, o1] of open) posts.push([o0 - POST, o0, true], [o1, o1 + POST, true]);
   const kept = posts
-    .map(([p0, p1]) => [Math.max(0, p0), Math.min(total, p1)] as [number, number])
+    .map(([p0, p1, gate]) => [Math.max(0, p0), Math.min(total, p1), gate] as [number, number, boolean])
     .filter(([p0, p1]) => p1 - p0 > 1e-6 && !open.some(([o0, o1]) => p0 < o1 - 1e-6 && p1 > o0 + 1e-6));
+  const spans = kept.map(([p0, p1]) => [p0, p1] as [number, number]);
 
   for (const seg of segs) {
     const rot = [0, Math.atan2(-seg.u[1], seg.u[0]), 0] as const;
@@ -110,16 +113,26 @@ function addRun(b: Builder, run: FenceRun): void {
       seg.a[0] + seg.u[0] * (s - seg.s0) + seg.u[1] * side,
       seg.a[1] + seg.u[1] * (s - seg.s0) - seg.u[0] * side,
     ];
-    const box = (s0: number, s1: number, y0: number, tall: number, deep: number, side: number, c = white) => {
+    const box = (
+      s0: number,
+      s1: number,
+      y0: number,
+      tall: number,
+      deep: number,
+      side: number,
+      c = white,
+      slot: Slot = 'toon',
+    ) => {
       const [x, z] = point((s0 + s1) / 2, side);
-      b.box(s1 - s0, tall, deep, { r: 0, c, slot: 'toon', at: [x, y0, z], rot });
+      b.box(s1 - s0, tall, deep, { r: 0, c, slot, at: [x, y0, z], rot });
     };
     const solid = minus(seg.s0, seg.s1, open);
     // posts whose middle lies on this segment (a corner post belongs to the segment it starts)
-    for (const [p0, p1] of kept) {
+    for (const [p0, p1, gate] of kept) {
       const m = (p0 + p1) / 2;
       if (m >= seg.s0 - 1e-9 && (m < seg.s1 - 1e-9 || seg === segs[segs.length - 1]))
-        box(p0, p1, 0, topOfPosts, POST, 0, shade);
+        if (gate) box(p0, p1, 0, topOfPosts, POST, 0, SURFACE.iron.c, SURFACE.iron.slot);
+        else box(p0, p1, 0, topOfPosts, POST, 0, shade);
     }
     // rails on the left side and the board on top
     const side = PICKET_THICK / 2 + RAIL.thick / 2;
@@ -142,7 +155,7 @@ function addRun(b: Builder, run: FenceRun): void {
     // pickets between the posts
     const pointed = !run.board && run.gap > 0;
     const tall = topOfPosts - CLEAR;
-    for (const [f0, f1] of minus(seg.s0, seg.s1, [...open, ...kept])) {
+    for (const [f0, f1] of minus(seg.s0, seg.s1, [...open, ...spans])) {
       const len = f1 - f0;
       let n: number;
       let wide: number;
