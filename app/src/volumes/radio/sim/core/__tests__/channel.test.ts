@@ -102,6 +102,8 @@ describe('channel', () => {
     // the reflected ray comes in without a jump: just past 0.3 the level is still that of the shut gate
     expect(Math.abs(at(0.31).rxDbm - at(0).rxDbm)).toBeLessThan(0.01);
     for (const [gate, level] of Object.entries(notches.gate)) {
+      // at worst, as the plan reads; and at the point where the fixture defines these levels, like with like
+      expect(Math.abs(at(Number(gate)).rxDbm - level)).toBeLessThanOrEqual(0.3);
       const a = air({ route: notches.route, nudge: notches.worstNudge, gate: Number(gate) });
       expect(Math.abs(a.rxDbm - level)).toBeLessThanOrEqual(0.3);
     }
