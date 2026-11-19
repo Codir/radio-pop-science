@@ -2,11 +2,13 @@ import { defineChapter } from '@/engine/api';
 
 /**
  * Sandbox of the radio volume's world (P7: a chapter of `_dev`, never on the site): the shared pieces of
- * `@radio/shared/**` in a real browser, with the measurements of `qa/measure.mjs`. Batch 2 grows it step by step;
- * B1b: the camera's eye (decision 24) feeding a floating screen, from two director shots, and a second screen in
- * front of the eye that `hide()` keeps out of its frame; B13: all of it on the real yard (`@radio/shared/yard`), and
- * the yard itself from its eight shots, at any dusk, with the monitor anywhere on its route (step `yard`); B15: the
- * miniature «where are we» with the route and nudge sliders, as a chapter sets them (step `where`).
+ * `@radio/shared/**` in a real browser, with the measurements of `qa/measure.mjs`. Batch 2 grew it step by step;
+ * B1b: the camera's eye (decision 24) feeding a floating screen, from two director shots; B13: all of it on the real
+ * yard (`@radio/shared/yard`), and the yard itself from its eight shots, at any dusk, with the monitor anywhere on its
+ * route (step `yard`); B15: the miniature «where are we» with the route and nudge sliders, as a chapter sets them
+ * (step `where`); B16: the whole of it on the world (`@radio/shared/world`) — the monitor shows only what the line to
+ * the signal model returned — with every knob of the line on a live screen (step `live`) and the stops of the route
+ * on a held page (step `still`).
  * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
@@ -14,7 +16,7 @@ export const SANDBOX = {
     eye: {
       title: 'Око камери',
       blurb:
-        'Камера на стовпі дивиться на подвір’я окремим проходом, і її кадр одразу йде на плаваючий екран. Другий екран висить просто перед нею, але на її кадрі його немає.',
+        'Камера на стовпі дивиться на подвір’я окремим проходом. Плаваючий екран показує її кадр, а монітор на кухні — те, що дійшло до нього крізь лінію.',
     },
     far: {
       title: 'Той самий кадр згори',
@@ -30,11 +32,18 @@ export const SANDBOX = {
       blurb:
         'Мініатюра «де ми», як у главі: план подвір’я й дому з маршрутом монітора, цятка там, де він зараз, а поруч — повзунки маршруту й антени.',
     },
+    live: {
+      title: 'Живий екран',
+      blurb:
+        'Монітор показує те, що модель лінії порахувала з кадру камери. Несіть його крізь дім: за стінами картинка береться зерном, у льоху сніжить. Тут усі ручки лінії.',
+    },
+    still: {
+      title: 'Сходинки маршруту',
+      blurb:
+        'Зупинений кадр: камера йде за монітором, а модель рахує один кадр на кожне його місце. Від подвір’я до льоху — чиста картинка, зерно, іскри, сніг.',
+    },
   },
   labels: {
-    eye: 'Око камери',
-    inner: 'Екран перед оком',
-    hiding: 'Ховати екрани від ока',
     shot: 'Ракурс',
     dusk: 'Сутінки',
     route: 'Маршрут',
@@ -50,6 +59,24 @@ export const SANDBOX = {
       stops: ['подвір’я', 'кухня', 'коридор', 'дальня кімната', 'льох'],
       depth: ['подвір’я', 'стенд', 'під лупою'],
     },
+    /** The knobs of the line (steps `live`, `still`) and its meters. */
+    on: 'Монітор увімкнено',
+    power: 'Сила передавача',
+    channel: 'Канал',
+    router: 'Роутер сусіда',
+    oven: 'Мікрохвильова піч',
+    sync: 'Синхроімпульси камери',
+    line: 'Довжина рядка монітора',
+    samples: 'відліків',
+    detector: 'Детектор',
+    detectors: { slope: 'на схилі', angle: 'кута' },
+    limiter: 'Обмежувач',
+    rxDbm: 'Рівень на антені',
+    cnrDb: 'Хвиля над шумом',
+    syncLost: 'Зірвано рядків',
+    fps: 'Кадрів моделі за секунду',
+    /** Units of the knobs and meters (international symbols). */
+    units: { mW: 'mW', dBm: 'dBm', dB: 'dB', percent: '%' },
   },
   /** The eight shots of the yard, in the order of the control. */
   shots: {

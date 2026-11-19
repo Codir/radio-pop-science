@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global process, console, window, document, requestAnimationFrame */
+/* global process, console, window, document, requestAnimationFrame, performance */
 // Browser check and measurements of the sandbox `_dev/_sandbox-radio-link` (preview or dev server up; batch 2,
 // Block Q builds the full tree, serves it on 5377 and runs this):
 //
@@ -10,7 +10,13 @@
 //   eye   — the camera's eye (B1b): the extra renderer pass, the orientation of its frame, the floating screen, its
 //           independence of the director's camera and of the engine's draw-call counter, `hide()` (a screen in
 //           front of the eye stays out of its frame), its cost on a live frame (the gate of decision 24), leaks and
-//           the console; snapshots `eye-<size>.jpg` and `far-<size>.jpg` (the same scene from step `far`).
+//           the console; snapshots `eye-<size>.jpg` and `far-<size>.jpg` (the same scene from step `far`). On a
+//           page with the reader `radio-world` (the sandbox on the world, B16) the checks `drawCalls`, `hide`,
+//           `budget` and `leaks` are left out: the world never switches the eye off and has no second screen in
+//           front of it, and on a held page it takes an eye frame only when the line, the probe, the dusk or the
+//           wicket changed, so the toggles of a second screen would never reach `radio-luma` (nor would held frames
+//           time a pass: `heldMs` is not taken either); `hide()` on the same yard and the pass's cost there are B13's,
+//           the leaks are section `leaks`.
 //   yard  — the yard of the volume (B13) from its eight shots: draw calls, triangles and hue families of each, a
 //           snapshot `yard-<shot>.jpg`; the camera's antenna and the monitor's antenna and screen where the model's
 //           numbers put them; what the eye sees of the white wall, the nook and the cat's spot and the tones of its
@@ -21,6 +27,20 @@
 //           the platform's placeholder; the monitor's dot where `whereAt` puts it, the name of the nearest stop, the
 //           hollow dot in the cellar; the tick of the nudge scale; the current depth mark; with `--touch`, the plan
 //           and the route and nudge sliders whole in the phone's sheet; the console. Snapshot `where-<size>.jpg`.
+//   ladder — the stops of the route on a held page (B16, step `still`, `?freeze=1`): the line synchronous (П11);
+//           at each of the five stops a new `still` frame of the model, the monitor's screen in view and clear,
+//           the level within ± 1.5 dB of −54 / −62 / −70 / −78 / −88 dBm, and the screen snowing more and more from
+//           the kitchen to the cellar (`screenNoise` strictly up from stop 1 to 4); the console; snapshots
+//           `still-route-<r>.jpg`.
+//   repeat — the same held page opened twice: the model in the browser depends only on the seed, the state and the
+//           frame (`stillHash` of a frame made by formula), the eye repeats itself, and the monitor shows the same.
+//   live  — step `live` on the live clock: the model in a background thread within 5 s, its frames on the monitor;
+//           the gate of a computer — the mean `modelMs` of 20 of the thread's replies ≤ 100 ms; the console;
+//           snapshot `live-<size>.jpg`.
+//   bench — the model's frame on the main thread (`radio-bench`) as it is and under a 4× CPU slowdown — the gate
+//           of a phone, `frameMs` ≤ 250 (П10: the slowdown does not reach the background thread).
+//   leaks — three visits to another chapter from step `live`: no geometry, texture or program left behind, the
+//           thread made and stopped each time (one left within 5 s), the console.
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-radio-link — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -286,6 +306,30 @@ async function eye(context) {
   n.shotsDiff = lumaDiff(lumaZ, lumaD);
   check('shots', n.shotsDiff <= 12, `${n.shotsDiff} of ${lumaZ.length} cells differ by more than 2`);
 
+  // the sandbox on the world (B16): `drawCalls`, `hide`, `budget` and `leaks` are left out, see the header
+  n.world = (await read(pz, 'radio-world')) != null;
+  if (n.world) n.skipped = ['drawCalls', 'hide', 'budget', 'leaks'];
+  else await eyeAlone(pz, n);
+  const logZ = await appErrors(pz);
+  n.visitMessages = logZ.filter(visitWarning);
+  errors.push(...logZ.filter((m) => !visitWarning(m)).map((m) => ({ page: 'З', ...m })));
+  await pz.close();
+
+  if (!n.world) errors.push(...(await eyeBudget(context, n)));
+
+  n.errors = errors;
+  check(
+    'console',
+    errors.length === 0,
+    (errors.length
+      ? `${errors.length}: [${errors[0].page}] ${errors[0].level} ${errors[0].message.slice(0, 160)}`
+      : `pages ${n.world ? 'З, Д' : 'З, Д, Ж'} clean`) +
+      `; left out: ${n.visitMessages.length} × the known '_sandbox-ui' warning`,
+  );
+}
+
+/** Page З without the world: the draw-call counter, `hide()`, the cost of a held pass and the leaks. */
+async function eyeAlone(pz, n) {
   // the engine's draw-call counter does not see the pass (P9)
   await held(pz);
   const callsOn = (await stats(pz)).drawCalls;
@@ -387,12 +431,11 @@ async function eye(context) {
     at(await position(pz), 'eye') && grew.length === 0,
     `after the 1st return ${JSON.stringify(memory[0])}, after the 3rd ${JSON.stringify(memory[2])}`,
   );
-  const logZ = await appErrors(pz);
-  n.visitMessages = logZ.filter(visitWarning);
-  errors.push(...logZ.filter((m) => !visitWarning(m)).map((m) => ({ page: 'З', ...m })));
-  await pz.close();
+}
 
-  // Ж: the live clock; the gate of decision 24
+/** Ж: step `eye` on the live clock, the gate of decision 24. Returns the page's console messages. */
+async function eyeBudget(context, n) {
+  const errors = [];
   const pl = await context.newPage();
   const posL = await open(pl, 'eye', null).catch((err) => ({ error: String(err) }));
   if (at(posL, 'eye')) {
@@ -434,15 +477,7 @@ async function eye(context) {
   }
   if (!posL.error) errors.push(...(await appErrors(pl)).map((m) => ({ page: 'Ж', ...m })));
   await pl.close();
-
-  n.errors = errors;
-  check(
-    'console',
-    errors.length === 0,
-    (errors.length
-      ? `${errors.length}: [${errors[0].page}] ${errors[0].level} ${errors[0].message.slice(0, 160)}`
-      : 'pages З, Д, Ж clean') + `; left out: ${n.visitMessages.length} × the known '_sandbox-ui' warning`,
-  );
+  return errors;
 }
 
 /* -------------------------------------------------------------------------------------- section yard */
@@ -847,9 +882,339 @@ async function whereami(context) {
   await page.close();
 }
 
+/* -------------------------------------------------------------------------- the world's live screen */
+
+/** The levels of the five stops at 10 mW with the gate shut (the plan's table), dBm, and their tolerance. */
+const LADDER_DBM = [-54, -62, -70, -78, -88];
+const LADDER_TOLERANCE_DB = 1.5;
+/** The gate of a computer: the mean `modelMs` of the background thread over this many replies. */
+const DESKTOP_REPLIES = 20;
+const DESKTOP_MAX_MS = 100;
+/** The gate of a phone: one frame of the model on the main thread under a 4× CPU slowdown (П10). */
+const PHONE_SLOWDOWN = 4;
+const PHONE_MAX_MS = 250;
+/** How long the live page has to show the model's first frame, and to stop the threads of the visits. */
+const LIVE_WITHIN_MS = 5000;
+
+const locateOn = (page, name) => page.evaluate((x) => window.__app.locate(x), name);
+const consoleText = (errors, clean = 'console clean') =>
+  errors.length ? `${errors.length}: ${errors[0].level} ${errors[0].message.slice(0, 160)}` : clean;
+
+/**
+ * On a held page: held frames until `radio-world.frames` is above `from` (the world computes a `still` frame on the
+ * first held frame after a change), at most `limit` of them; returns the reader then.
+ */
+async function grown(page, from, limit = 120) {
+  let w = await read(page, 'radio-world');
+  for (let i = 0; i < limit && !(w?.frames > from); i++) {
+    await held(page);
+    w = await read(page, 'radio-world');
+  }
+  return w;
+}
+
+/** The largest difference of two eye frames over all cells (Infinity when either is not a frame of the same size). */
+function maxCellDiff(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length === 0 || a.length !== b.length) return Infinity;
+  let m = 0;
+  for (let i = 0; i < a.length; i++) m = Math.max(m, Math.abs(a[i] - b[i]));
+  return m;
+}
+
+// One page: step `still` on the frozen clock. The monitor goes from the yard to the cellar; at each stop the world
+// computes one `still` frame on the main thread, and the director's camera follows the monitor (`screenShot`).
+async function ladder(context) {
+  const n = (report.sections.ladder = { stops: [] });
+  const page = await context.newPage();
+  const pos = await open(page, 'still', 1).catch((err) => ({ error: String(err) }));
+  if (!check('opened', at(pos, 'still'), where(pos))) {
+    await page.close();
+    return;
+  }
+  const w0 = await read(page, 'radio-world');
+  n.mode = w0?.mode;
+  check('mode', w0?.mode === 'sync', `mode ${w0?.mode} (a held page needs no background thread, П11)`);
+
+  for (const r of [0, 1, 2, 3, 4]) {
+    const before = (await read(page, 'radio-world')).frames;
+    await page.evaluate((v) => window.__ui.set('route', v, true), r);
+    await page.evaluate(() => window.__app.step(1 / 60, 60));
+    const w = await grown(page, before);
+    const s = await locateOn(page, 'yard:monitorScreen');
+    const y = await read(page, 'radio-yard');
+    await screenshot(page, join(out, `still-route-${r}.jpg`));
+    n.stops.push({
+      route: r,
+      want: LADDER_DBM[r],
+      frames: [before, w.frames],
+      visible: s?.visible === true,
+      clear: y.screenClear,
+      meters: w.meters,
+      screenMean: round(w.screenMean),
+      screenNoise: round(w.screenNoise, 3),
+      screenHash: w.screenHash,
+    });
+  }
+  const stops = n.stops;
+  check(
+    'frames',
+    stops.every((s) => s.frames[1] > s.frames[0]),
+    stops.map((s) => `${s.route}: ${s.frames[0]} → ${s.frames[1]}`).join('; '),
+  );
+  check(
+    'screen',
+    stops.every((s) => s.visible && s.clear === true),
+    stops
+      .map((s) => `${s.route}: ${s.visible ? 'in view' : 'OUT'}, ${s.clear ? 'clear' : 'BLOCKED'}`)
+      .join('; '),
+  );
+  const off = (s) => Math.abs((s.meters?.rxDbm ?? NaN) - s.want);
+  check(
+    'levels',
+    stops.every((s) => off(s) <= LADDER_TOLERANCE_DB),
+    stops
+      .map((s) => `${s.route}: ${round(s.meters?.rxDbm)} dBm (want ${s.want} ± ${LADDER_TOLERANCE_DB})`)
+      .join('; '),
+  );
+  const noise = stops.map((s) => s.screenNoise);
+  check(
+    'snow',
+    noise[1] < noise[2] && noise[2] < noise[3] && noise[3] < noise[4],
+    `screenNoise ${noise.join(' / ')} at stops 0…4 (strictly up from 1 to 4)`,
+  );
+  const errors = await appErrors(page);
+  n.errors = errors;
+  check('console', errors.length === 0, consoleText(errors));
+  await page.close();
+}
+
+// The page of `ladder` (step `still`, `?freeze=1`) opened twice, one after the other: 1 s of hold and 60 steps, then
+// what the world computed and what the eye saw on each.
+async function repeat(context) {
+  const n = (report.sections.repeat = {});
+  const visit = async () => {
+    const page = await context.newPage();
+    const pos = await open(page, 'still', 1).catch((err) => ({ error: String(err) }));
+    if (!at(pos, 'still')) {
+      await page.close();
+      return { pos };
+    }
+    const before = (await read(page, 'radio-world')).frames;
+    await page.evaluate(() => window.__app.step(1 / 60, 60));
+    const w = await grown(page, before);
+    const sandbox = await read(page, 'radio-sandbox');
+    const luma = await read(page, 'radio-luma');
+    const errors = await appErrors(page);
+    await page.close();
+    return { pos, w, sandbox, luma, errors };
+  };
+  const a = await visit();
+  const b = await visit();
+  if (!check('opened', at(a.pos, 'still') && at(b.pos, 'still'), `1 ${where(a.pos)}, 2 ${where(b.pos)}`))
+    return;
+
+  const pick = (v) => ({
+    lumaHash: v.sandbox.lumaHash,
+    stillHash: v.sandbox.stillHash,
+    screenHash: v.w.screenHash,
+    screenMean: v.w.screenMean,
+    screenNoise: v.w.screenNoise,
+    frames: v.w.frames,
+  });
+  n.pages = [pick(a), pick(b)];
+  n.lumaDiff = lumaDiff(a.luma, b.luma);
+  n.maxCellDiff = maxCellDiff(a.luma, b.luma);
+  const [p, q] = n.pages;
+  check(
+    'model',
+    typeof p.stillHash === 'string' && p.stillHash === q.stillHash,
+    `stillHash ${p.stillHash} / ${q.stillHash}`,
+  );
+  check(
+    'eye',
+    n.lumaDiff <= 12,
+    `${n.lumaDiff} of ${a.luma.length} cells differ by more than 2; the largest difference ${n.maxCellDiff}; ` +
+      `lumaHash ${p.lumaHash} / ${q.lumaHash}`,
+  );
+  const sameLuma = p.lumaHash === q.lumaHash;
+  n.screenMeanDiff = Math.abs(p.screenMean - q.screenMean);
+  n.screenNoiseDiff = Math.abs(p.screenNoise - q.screenNoise);
+  check(
+    'screen',
+    sameLuma ? p.screenHash === q.screenHash : n.screenMeanDiff <= 1 && n.screenNoiseDiff <= 0.5,
+    sameLuma
+      ? `same eye frame → screenHash ${p.screenHash} / ${q.screenHash}`
+      : `eye frames differ → |Δ screenMean| ${round(n.screenMeanDiff, 3)} (≤ 1), |Δ screenNoise| ` +
+          `${round(n.screenNoiseDiff, 3)} (≤ 0.5); screenHash ${p.screenHash} / ${q.screenHash}`,
+  );
+  const errors = [...a.errors, ...b.errors];
+  n.errors = errors;
+  check('console', errors.length === 0, consoleText(errors, 'both pages clean'));
+}
+
+// Step `live` on the live clock: the background thread, its replies, the gate of a computer.
+async function live(context) {
+  const n = (report.sections.live = {});
+  const page = await context.newPage();
+  const pos = await open(page, 'live', null).catch((err) => ({ error: String(err) }));
+  if (!check('opened', at(pos, 'live'), where(pos))) {
+    await page.close();
+    return;
+  }
+  // the first frame of the model on the monitor, within LIVE_WITHIN_MS of the page being open
+  const first = await page.evaluate(async (limit) => {
+    const t0 = performance.now();
+    let w = window.__app.read('radio-world');
+    while (!(w.mode === 'worker' && w.frames > 0 && w.meters !== null) && performance.now() - t0 < limit) {
+      await new Promise((r) => requestAnimationFrame(r));
+      w = window.__app.read('radio-world');
+    }
+    return { w, ms: performance.now() - t0 };
+  }, LIVE_WITHIN_MS);
+  const s = await locateOn(page, 'yard:monitorScreen');
+  n.first = { mode: first.w.mode, frames: first.w.frames, meters: first.w.meters, afterMs: round(first.ms) };
+  n.screenVisible = s?.visible === true;
+  check(
+    'worker',
+    first.w.mode === 'worker' && first.w.frames > 0 && first.w.meters !== null && n.screenVisible,
+    `mode ${first.w.mode}, ${first.w.frames} frames, meters ${first.w.meters ? 'in' : 'null'} after ` +
+      `${round(first.ms)} ms; monitor's screen ${n.screenVisible ? 'in view' : 'OUT'}`,
+  );
+
+  // the gate of a computer: `modelMs` of each new reply of the thread, read once per animation frame
+  await page.evaluate(() => window.__app.resetStats());
+  const replies = await page.evaluate(
+    async ({ count, limit }) => {
+      const out = [];
+      let last = window.__app.read('radio-world').frames;
+      const t0 = performance.now();
+      while (out.length < count && performance.now() - t0 < limit) {
+        await new Promise((r) => requestAnimationFrame(r));
+        const w = window.__app.read('radio-world');
+        if (w.frames > last) {
+          out.push({ frames: w.frames, modelMs: w.modelMs, fps: w.fps, mode: w.mode });
+          last = w.frames;
+        }
+      }
+      return out;
+    },
+    { count: DESKTOP_REPLIES, limit: 30_000 },
+  );
+  const w = await read(page, 'radio-world');
+  const st = await stats(page);
+  const ms = replies.map((x) => x.modelMs);
+  Object.assign(n, {
+    modelMs: round(mean(ms)),
+    modelMsMin: round(Math.min(...ms)),
+    modelMsMax: round(Math.max(...ms)),
+    samples: ms.map((v) => round(v)),
+    modes: [...new Set(replies.map((x) => x.mode))],
+    fps: round(w.fps),
+    frames: w.frames,
+    eye: w.eye,
+    intervalAvg: round(st.intervalAvg),
+    cpuAvg: round(st.cpuAvg),
+    renderer: report.gpu?.renderer ?? null,
+  });
+  check(
+    'desktop',
+    replies.length === DESKTOP_REPLIES &&
+      n.modes.length === 1 &&
+      n.modes[0] === 'worker' &&
+      n.modelMs <= DESKTOP_MAX_MS,
+    `modelMs ${n.modelMs} (${n.modelMsMin}…${n.modelMsMax}) over ${replies.length} replies of the ` +
+      `${n.modes.join('/') || '—'} thread (limit ${DESKTOP_MAX_MS}); fps ${n.fps}; scene frame ${n.intervalAvg} ms`,
+  );
+  await screenshot(page, join(out, `live-${width}x${height}.jpg`));
+  const errors = await appErrors(page);
+  n.errors = errors;
+  check('console', errors.length === 0, consoleText(errors));
+  await page.close();
+}
+
+// Step `live`: `radio-bench` (ten `still` frames on the main thread) as it is, then under a 4× CPU slowdown.
+async function bench(context) {
+  const n = (report.sections.bench = {});
+  const page = await context.newPage();
+  const pos = await open(page, 'live', null).catch((err) => ({ error: String(err) }));
+  if (!check('opened', at(pos, 'live'), where(pos))) {
+    await page.close();
+    return;
+  }
+  await frames(page, 30);
+  n.normal = await read(page, 'radio-bench');
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: PHONE_SLOWDOWN });
+  try {
+    n.slow = await read(page, 'radio-bench');
+  } finally {
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+  }
+  await cdp.detach();
+  n.slowdown = PHONE_SLOWDOWN;
+  check(
+    'phone',
+    Number.isFinite(n.slow?.frameMs) && n.slow.frameMs <= PHONE_MAX_MS,
+    `frameMs ${round(n.slow?.frameMs)} under a ${PHONE_SLOWDOWN}× slowdown (limit ${PHONE_MAX_MS}), ` +
+      `${round(n.normal?.frameMs)} without it; stillMs ${round(n.slow?.stillMs)} / ${round(n.normal?.stillMs)}`,
+  );
+  await page.close();
+}
+
+// Step `live` on the live clock: three visits to `_sandbox-ui` and back. Every message logged meanwhile counts,
+// except the one known warning of `_sandbox-ui` itself, see VISIT_WARNING.
+async function leaks(context) {
+  const n = (report.sections.leaks = {});
+  const page = await context.newPage();
+  const pos = await open(page, 'live', null).catch((err) => ({ error: String(err) }));
+  if (!check('opened', at(pos, 'live'), where(pos))) {
+    await page.close();
+    return;
+  }
+  const memory = [];
+  for (let i = 0; i < 3; i++) {
+    await page.evaluate(() => window.__app.goto('_sandbox-ui'));
+    await page.evaluate((c) => window.__app.goto(c, 'live'), CHAPTER);
+    await frames(page, 10);
+    const s = await stats(page);
+    memory.push({ geometries: s.geometries, textures: s.textures, programs: s.programs });
+  }
+  n.memory = memory;
+  const grew = ['geometries', 'textures', 'programs'].filter((k) => memory[2][k] > memory[0][k]);
+  check(
+    'memory',
+    at(await position(page), 'live') && grew.length === 0,
+    `after the 1st return ${JSON.stringify(memory[0])}, after the 3rd ${JSON.stringify(memory[2])}`,
+  );
+  // the threads of the visits are stopped: one left, the current mount's, within LIVE_WITHIN_MS
+  const t0 = Date.now();
+  let workers = page.workers().length;
+  while (workers !== 1 && Date.now() - t0 < LIVE_WITHIN_MS) {
+    await sleep(100);
+    workers = page.workers().length;
+  }
+  const w = await read(page, 'radio-world');
+  Object.assign(n, { workers, afterMs: Date.now() - t0, mode: w?.mode });
+  check(
+    'worker',
+    w?.mode === 'worker' && workers === 1,
+    `mode ${w?.mode}; ${workers} worker(s) on the page after ${n.afterMs} ms`,
+  );
+  const log = await appErrors(page);
+  n.visitMessages = log.filter(visitWarning);
+  const errors = log.filter((m) => !visitWarning(m));
+  n.errors = errors;
+  check(
+    'console',
+    errors.length === 0,
+    consoleText(errors) + `; left out: ${n.visitMessages.length} × the known '_sandbox-ui' warning`,
+  );
+  await page.close();
+}
+
 /* ---------------------------------------------------------------------------------------------- run */
 
-const SECTIONS = { eye, yard, whereami };
+const SECTIONS = { eye, yard, whereami, ladder, repeat, live, bench, leaks };
 const only =
   typeof args.only === 'string'
     ? args.only
