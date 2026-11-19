@@ -149,15 +149,20 @@ export function createDecoder(seed: number): VideoDecoder {
   const weight = new Float64Array(COLS); // Σ cover
   const stats: DecodeStats = { pulses: 0, lost: 0, lines: 0, lineOffset: 0, lineDrift: 0, lineRow: 0 };
   let rng = createRng(seed);
-  let ph = 0; // phase of the rhythm, samples since its line began
-  let line = 0; // the line of the frame the rhythm is on, 0…99
-  let run = 0; // samples in a row below the threshold
-  let marks = 0; // frame marks in a row, 3 at most
-  let wander = 0; // what the wander adds to the line length now
-  let prev: number = BLACK; // the sample before
   let n = 0; // samples since the reset, modulo the camera's line
-  let frac = 0.5; // where between two samples the signal went below the threshold
-  let found = false; // has the line being drawn found its pulse
+  // The state of the stream between calls. `process` copies it into locals of the same names without `last`,
+  // the fractional numbers through a unary plus, and writes them back after its loop. V8 stores such a number
+  // in a closure variable as a new heap number every time, and a plain copy of one has no type the compiler
+  // can see, so the loop would keep the copy boxed as well. Either way `ph` and `prev`, which change at every
+  // sample, would allocate about 0.9 MB a frame; with the plus the loop keeps them unboxed (Node 24, measured).
+  let lastPh = 0; // phase of the rhythm, samples since its line began
+  let lastLine = 0; // the line of the frame the rhythm is on, 0…99
+  let lastRun = 0; // samples in a row below the threshold
+  let lastMarks = 0; // frame marks in a row, 3 at most
+  let lastWander = 0; // what the wander adds to the line length now
+  let lastPrev: number = BLACK; // the sample before
+  let lastFrac = 0.5; // where between two samples the signal went below the threshold
+  let lastFound = false; // has the line being drawn found its pulse
 
   return {
     process(video, p, screen) {
@@ -180,6 +185,15 @@ export function createDecoder(seed: number): VideoDecoder {
       const black = BLACK;
       const levels = 255 / (WHITE - BLACK);
       const count = video.length;
+      // the plus is not redundant: it gives the compiler a number to start the loop from (see above)
+      let ph = +lastPh;
+      let line = lastLine;
+      let run = lastRun;
+      let marks = lastMarks;
+      let wander = +lastWander;
+      let prev = +lastPrev;
+      let frac = +lastFrac;
+      let found = lastFound;
       const n0 = n;
       const ph0 = ph;
       const line0 = line;
@@ -266,6 +280,14 @@ export function createDecoder(seed: number): VideoDecoder {
           period = lineLength + wander;
         }
       }
+      lastPh = ph;
+      lastLine = line;
+      lastRun = run;
+      lastMarks = marks;
+      lastWander = wander;
+      lastPrev = prev;
+      lastFrac = frac;
+      lastFound = found;
 
       // the monitor's line nearest to the start of the camera's line 0 is k lines after the one it was on
       const behind = (n0 % samples) - ph0 - delay;
@@ -283,15 +305,15 @@ export function createDecoder(seed: number): VideoDecoder {
       acc.fill(0);
       weight.fill(0);
       rng = createRng(seed);
-      ph = 0;
-      line = 0;
-      run = 0;
-      marks = 0;
-      wander = 0;
-      prev = BLACK;
       n = 0;
-      frac = 0.5;
-      found = false;
+      lastPh = 0;
+      lastLine = 0;
+      lastRun = 0;
+      lastMarks = 0;
+      lastWander = 0;
+      lastPrev = BLACK;
+      lastFrac = 0.5;
+      lastFound = false;
     },
   };
 }
