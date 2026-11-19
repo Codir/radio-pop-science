@@ -3,3 +3,4 @@ export * from './standard';
 export * from './units';
 export * from './rng';
 export * from './dsp';
+export * from './video';
