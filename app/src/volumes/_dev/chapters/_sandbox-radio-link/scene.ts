@@ -4,13 +4,16 @@
  *         fence; the park lamp stands off its frame) and two marks, a white cube on its left and a dark one on its
  *         right, set mirror-wise about its axis; every engine update (`dt = 0` included) its frame goes straight
  *         to a floating screen beside the yard. The director's shot keeps that screen in frame and taller than
- *         96 px (about 2,5 px per cell at 1280 × 720), so its cells stay sharp;
+ *         96 px (about 2,5 px per cell at 1280 × 720), so its cells stay sharp. A second, smaller screen hangs
+ *         3,5 m in front of the eye (a child of its camera), above the dark cube, and shows the same frame: the eye
+ *         would see itself in it, were both screens not in `hide()`;
  *   far — the same scene and state from the other side and farther: the eye must see exactly the same.
- * The toggle `eye` stops the pass (the screen keeps its last frame), for the draw-call and frame-time checks of
- * `qa/measure.mjs`. Readers: `radio-eye` (the pass and what the eye sees of the marks) and `radio-luma` (its frame);
- * probes `eye:<mark>-on-screen`: where the cell of a mark lies on the floating screen.
+ * Toggles: `eye` stops the pass (the screens keep their last frame), for the draw-call and frame-time checks of
+ * `qa/measure.mjs`; `inner` takes the second screen away and `hiding` empties `hide()`, for its check of `hide()`.
+ * Readers: `radio-eye` (the pass, what the eye sees of the marks, which of its cells the second screen covers) and
+ * `radio-luma` (its frame); probes `eye:<mark>-on-screen`: where the cell of a mark lies on the floating screen.
  */
-import { Vector3 } from 'three';
+import { type Object3D, Vector3 } from 'three';
 import { defineScene } from '@/engine/api';
 import { stepUi } from '@/hud';
 import { Builder, fence, house, island, streetLamp } from '@/kit';
@@ -25,6 +28,14 @@ const MARK_SIZE = 0.6;
 const EYE_AT = new Vector3(0, 2.6, 9);
 const EYE_LOOK = new Vector3(0, 1, 0);
 const SCREEN = { width: 1.6, height: 1.2, at: new Vector3(4.5, 2.2, 5) } as const;
+/**
+ * The second screen, in the eye camera's own axes: 3,5 m ahead, up and to the right of the axis, facing the eye
+ * (a plane faces its +Z, the camera looks down its −Z). In the world it hangs at about (1,2; 2,5; 5,5), 0,7 m
+ * above the dark cube, with nothing between it and the eye; it covers about 31 × 24 cells of the eye's upper right
+ * quarter, in front of the house and clear of the marks.
+ */
+const INNER = { width: 0.8, height: 0.6, at: new Vector3(1.2, 0.5, -3.5) } as const;
+const NOTHING: readonly Object3D[] = [];
 
 export default defineScene((ctx) => {
   ctx.env.setScale(14, { adaptFrom: LOOK_SCALE.diorama });
@@ -62,10 +73,17 @@ export default defineScene((ctx) => {
   screen.object.position.copy(SCREEN.at);
   screen.power = 1;
   ctx.root.add(screen.object);
-  const hidden = [screen.object] as const;
-  const eye = createEye(ctx, { hide: () => hidden });
+  const inner = createScreen({ width: INNER.width, height: INNER.height });
+  inner.power = 1;
+  const hidden = [screen.object, inner.object] as const;
+  /** Toggle `hiding`: off, `hide()` gives nothing, and the eye sees the second screen (its check's control). */
+  let hiding = true;
+  const eye = createEye(ctx, { hide: () => (hiding ? hidden : NOTHING) });
+  ctx.root.add(eye.camera);
   eye.camera.position.copy(EYE_AT);
   eye.camera.lookAt(EYE_LOOK);
+  eye.camera.add(inner.object);
+  inner.object.position.copy(INNER.at);
   eye.camera.updateMatrixWorld();
   /** The eye's last frame (zeros until the first pass). */
   let luma: Uint8Array = new Uint8Array(EYE_COLS * EYE_ROWS);
@@ -77,7 +95,11 @@ export default defineScene((ctx) => {
   });
   ctx.stage.define({ eye: { camera: 'eye' }, far: { camera: 'far' } });
   const ui = stepUi(ctx);
-  const controls = [{ type: 'toggle', id: 'eye', label: SANDBOX.labels.eye, value: true }] as const;
+  const controls = [
+    { type: 'toggle', id: 'eye', label: SANDBOX.labels.eye, value: true },
+    { type: 'toggle', id: 'inner', label: SANDBOX.labels.inner, value: true },
+    { type: 'toggle', id: 'hiding', label: SANDBOX.labels.hiding, value: true },
+  ] as const;
   ui.define({ eye: { controls }, far: { controls } });
 
   /* ------------------------------------------------------------------------------------- QA hooks */
@@ -100,6 +122,29 @@ export default defineScene((ctx) => {
       ),
     );
   };
+  /**
+   * The cells of the eye's frame the second screen covers (inclusive; it faces the eye squarely, so its picture is
+   * a rectangle), or null unless all four of its corners are in the frame.
+   */
+  const innerRect = (): { col0: number; row0: number; col1: number; row1: number } | null => {
+    eye.camera.updateMatrixWorld();
+    const cells = [-1, 1].flatMap((sx) =>
+      [-1, 1].map((sy) =>
+        eye.project(
+          inner.object.localToWorld(new Vector3((sx * INNER.width) / 2, (sy * INNER.height) / 2, 0)),
+        ),
+      ),
+    );
+    if (cells.some((c) => c === null)) return null;
+    const cols = cells.map((c) => c!.col);
+    const rows = cells.map((c) => c!.row);
+    return {
+      col0: Math.min(...cols),
+      row0: Math.min(...rows),
+      col1: Math.max(...cols),
+      row1: Math.max(...rows),
+    };
+  };
   ctx.qa.expose('radio-eye', () => {
     let lumaMin = 255;
     let lumaMax = 0;
@@ -116,6 +161,7 @@ export default defineScene((ctx) => {
       lumaMin,
       lumaMax,
       seen: { light: seen('light'), dark: seen('dark') },
+      inner: { shown: inner.object.visible, hiding, rect: innerRect() },
     };
   });
   ctx.qa.expose('radio-luma', () => Array.from(luma));
@@ -124,9 +170,12 @@ export default defineScene((ctx) => {
 
   return {
     update() {
+      inner.object.visible = ui.value<boolean>('inner');
+      hiding = ui.value<boolean>('hiding');
       if (!ui.value<boolean>('eye')) return;
       luma = eye.capture();
       screen.show(luma);
+      inner.show(luma);
     },
   };
 });

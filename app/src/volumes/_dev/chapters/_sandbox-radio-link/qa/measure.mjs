@@ -8,8 +8,9 @@
 //
 // Sections (`--only`, default all):
 //   eye — the camera's eye (B1b): the extra renderer pass, the orientation of its frame, the floating screen, its
-//         independence of the director's camera and of the engine's draw-call counter, its cost on a live frame
-//         (the gate of decision 24), leaks and the console.
+//         independence of the director's camera and of the engine's draw-call counter, `hide()` (a screen in front
+//         of the eye stays out of its frame), its cost on a live frame (the gate of decision 24), leaks and the
+//         console.
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-radio-link — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -34,6 +35,13 @@ const CHAPTER = '_sandbox-radio-link';
 const route = (step) => `_dev/${CHAPTER}/${step}`;
 /** A page that has not opened within this time counts as not opened (an unknown route may never settle). */
 const OPEN_TIMEOUT_MS = 180_000;
+/**
+ * The one console message the check `console` leaves out: `leaks` visits `_dev/_sandbox-ui`, which shows a
+ * WebGL-only custom control on purpose (`_sandbox-ui/parts/dom-widgets.ts`, id 'legacy'), and the DOM interface warns
+ * about it on every visit (`hud-dom/custom/index.ts`). Only this warning is left out; everything else counts.
+ */
+const VISIT_WARNING = "hud-dom: custom control 'legacy' has no 'dom' widget";
+const visitWarning = (m) => m.level === 'warn' && m.message.startsWith(VISIT_WARNING);
 
 const args = parseArgs();
 if (typeof args.out !== 'string') {
@@ -57,6 +65,14 @@ function lumaDiff(a, b) {
     return Math.max(a?.length ?? 0, b?.length ?? 0, 1);
   let n = 0;
   for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 2) n++;
+  return n;
+}
+
+/** `lumaDiff` over the cells of `rect` only (`{ col0, row0, col1, row1 }`, inclusive; frames 128 cells wide). */
+function lumaDiffIn(a, b, rect, cols = 128) {
+  let n = 0;
+  for (let r = rect.row0; r <= rect.row1; r++)
+    for (let c = rect.col0; c <= rect.col1; c++) if (Math.abs(a[r * cols + c] - b[r * cols + c]) > 2) n++;
   return n;
 }
 
@@ -269,6 +285,51 @@ async function eye(context) {
   n.drawCallsOff = callsOff;
   check('drawCalls', !off.on && callsOn === callsOff, `with the eye ${callsOn}, without ${callsOff}`);
 
+  // hide() in the browser: the second screen hangs in front of the eye and shows its frame. Hidden from the pass,
+  // it leaves the eye's frame as it is with that screen taken away (toggle `inner`); with `hide()` emptied (toggle
+  // `hiding`) the eye does see it where `project` puts it — at least a quarter of the cells it covers change — so it
+  // really lies in the eye's view, in front of everything else. Back to hiding, the frame is the first one again
+  const frame = async () => {
+    await held(pz);
+    await held(pz);
+    return { luma: await read(pz, 'radio-luma'), inner: (await read(pz, 'radio-eye')).inner };
+  };
+  const hiddenF = await frame();
+  await pz.evaluate(() => window.__ui.set('inner', false, true));
+  const withoutF = await frame();
+  await pz.evaluate(() => {
+    window.__ui.set('inner', true, true);
+    window.__ui.set('hiding', false, true);
+  });
+  const seenF = await frame();
+  await pz.evaluate(() => window.__ui.set('hiding', true, true));
+  const backF = await frame();
+  const rect = hiddenF.inner.rect;
+  const cells = rect ? (rect.col1 - rect.col0 + 1) * (rect.row1 - rect.row0 + 1) : 0;
+  n.hide = {
+    rect,
+    cells,
+    hiddenDiff: lumaDiff(hiddenF.luma, withoutF.luma),
+    seenDiff: rect ? lumaDiffIn(seenF.luma, withoutF.luma, rect) : 0,
+    seenDiffAll: lumaDiff(seenF.luma, withoutF.luma),
+    backDiff: lumaDiff(backF.luma, hiddenF.luma),
+  };
+  const toggled =
+    hiddenF.inner.shown &&
+    hiddenF.inner.hiding &&
+    !withoutF.inner.shown &&
+    seenF.inner.shown &&
+    !seenF.inner.hiding &&
+    backF.inner.shown &&
+    backF.inner.hiding;
+  check(
+    'hide',
+    toggled && cells > 0 && n.hide.hiddenDiff <= 12 && n.hide.seenDiff >= cells / 4 && n.hide.backDiff <= 12,
+    `second screen over ${cells} cells ${JSON.stringify(rect)}; differ from the frame without it: ` +
+      `hidden ${n.hide.hiddenDiff}, not hidden ${n.hide.seenDiff} of its ${cells} ` +
+      `(${n.hide.seenDiffAll} in all); hidden again, from the first frame: ${n.hide.backDiff}`,
+  );
+
   // the cost of a held pass (it also redraws the shadow map): a number for the report, not a gate
   const heldSamples = [];
   for (let i = 0; i < 20; i++) {
@@ -278,15 +339,12 @@ async function eye(context) {
   n.heldMs = round(mean(heldSamples));
   n.heldSamples = heldSamples.map((v) => round(v));
 
-  // three visits to another chapter: no geometry, texture or program stays behind. What the console gets while
-  // `_sandbox-ui` is being opened is that chapter's own (it shows a WebGL-only control under the DOM interface on
-  // purpose, and the DOM interface warns about it): it is kept apart from this chapter's messages
+  // three visits to another chapter: no geometry, texture or program stays behind. Every message logged meanwhile
+  // counts (this chapter's teardown and re-entry included), except the one known warning of `_sandbox-ui` itself,
+  // see VISIT_WARNING
   const memory = [];
-  const visiting = []; // [from, to) indices of `__app.errors()` logged while `_sandbox-ui` was being opened
   for (let i = 0; i < 3; i++) {
-    const from = (await appErrors(pz)).length;
     await pz.evaluate(() => window.__app.goto('_sandbox-ui'));
-    visiting.push([from, (await appErrors(pz)).length]);
     await pz.evaluate((c) => window.__app.goto(c, 'eye'), CHAPTER);
     await held(pz);
     const s = await stats(pz);
@@ -300,9 +358,8 @@ async function eye(context) {
     `after the 1st return ${JSON.stringify(memory[0])}, after the 3rd ${JSON.stringify(memory[2])}`,
   );
   const logZ = await appErrors(pz);
-  const visit = (k) => visiting.findIndex(([from, to]) => k >= from && k < to);
-  n.visitMessages = logZ.flatMap((m, k) => (visit(k) < 0 ? [] : [{ visit: visit(k) + 1, ...m }]));
-  errors.push(...logZ.flatMap((m, k) => (visit(k) < 0 ? [{ page: 'З', ...m }] : [])));
+  n.visitMessages = logZ.filter(visitWarning);
+  errors.push(...logZ.filter((m) => !visitWarning(m)).map((m) => ({ page: 'З', ...m })));
   await pz.close();
 
   // Ж: the live clock; the gate of decision 24
@@ -354,8 +411,7 @@ async function eye(context) {
     errors.length === 0,
     (errors.length
       ? `${errors.length}: [${errors[0].page}] ${errors[0].level} ${errors[0].message.slice(0, 160)}`
-      : 'pages З, Д, Ж clean') +
-      `; ${n.visitMessages.length} message(s) of _sandbox-ui while it was opened kept apart`,
+      : 'pages З, Д, Ж clean') + `; left out: ${n.visitMessages.length} × the known '_sandbox-ui' warning`,
   );
 }
 
