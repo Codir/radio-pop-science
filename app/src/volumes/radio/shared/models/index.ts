@@ -20,7 +20,7 @@ import { cameraModel } from './camera';
 import { cat } from './cat';
 import { picketFence } from './fence';
 import { garage } from './garage';
-import { SURFACE, house, mix, neighbourWindow, wallBox } from './house';
+import { DARK_FLOOR, house, mix, neighbourWindow, wallBox } from './house';
 import { monitor } from './monitor';
 import { phone } from './phone';
 import { pole } from './pole';
@@ -129,7 +129,7 @@ export type YardProps = Record<
 >;
 
 /** Grass of the yard and the leaves of its trees (VISUAL.md §4). */
-const GRASS: Color = mix('green', 'steel', 0.7);
+const GRASS: Color = mix('green', 'steel', 0.85);
 /**
  * The pit under the house: the bounding rectangle of the wall lines grown by this much on every side, down to
  * `PIT_BELOW` under the cellar floor. The margin comes from the island's grid (step 5 of B12): on an island of
@@ -167,7 +167,7 @@ export function buildYardProps(plan: YardPlan, rng: Rng): YardProps {
         d: Math.abs(gb[1] - ga[1]),
         corner: 0,
         blend: 0.05,
-        color: SURFACE.slab.c,
+        color: DARK_FLOOR,
       },
       {
         type: 'pad',

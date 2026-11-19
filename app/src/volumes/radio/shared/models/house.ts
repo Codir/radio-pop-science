@@ -15,7 +15,7 @@ import { KITCHEN, addKitchenBlock } from './kitchen';
 /** `mix(a, b, k)` = `col(a).lerp(col(b), k)` (VISUAL.md §4). */
 export const mix = (a: ColorLike, b: ColorLike, k: number): Color => col(a).lerp(col(b), k);
 
-/** Colour and material slot of each wall look; `slab` is also the gravel, the skirt and the floors. */
+/** Colour and material slot of each wall look; `slab` is also the skirt and the rooms' floor. */
 export const SURFACE: Readonly<Record<WallLook, { readonly c: Color; readonly slot: Slot }>> = {
   brick: { c: mix('coral', 'mist', 0.8), slot: 'matte' },
   wood: { c: mix('wireBrown', 'mist', 0.6), slot: 'toon' },
@@ -36,6 +36,12 @@ export const GLASS: GlassParams = {
   edgeColor: 'slate',
   specular: 0.3,
 };
+
+/**
+ * The darker concrete of the cellar's floor and the trodden gravel of the back yard (B13, VISUAL.md §4): under the
+ * slab the cellar reads as a pit through the cut, and the cat's body and the white wall stand out in the camera's frame.
+ */
+export const DARK_FLOOR: Color = mix('steel', 'slate', 0.5);
 
 /** The skirt round the house: from the outer face of its outer walls `width` outward, its top `top` above ground, m. */
 export const HOUSE_SKIRT = { width: 1.4, top: 0.03 } as const;
@@ -176,8 +182,8 @@ function slab(
  * The house cut open: walls from the plan, no roof. Parts (they do not move; tests and `cellarSeen` of B13 find
  * them by name): `floor` — the rooms' floor and the slab over the cellar in one, `slabY…0` over the bounding
  * rectangle of the wall lines with the hole `slabCut` (its edge a light 1 cm band, like the cut of the walls);
- * `cellarFloor` — 0.05 m with its top at the lowest `y0` of the walls; `skirt` — the gravel frame round the house
- * (`HOUSE_SKIRT`), which hides the ragged edge of the island's pit.
+ * `cellarFloor` — 0.05 m of the darker `DARK_FLOOR` with its top at the lowest `y0` of the walls; `skirt` — the
+ * gravel frame round the house (`HOUSE_SKIRT`), which hides the ragged edge of the island's pit.
  * Anchors: `sill` (top of the window board the monitor stands on), `microwave` (the middle of the oven door, from the
  * kitchen block), `phone` — each at the plan's point.
  */
@@ -208,7 +214,7 @@ export function house(plan: YardPlan['house']): KitModel {
 
   b.part('cellarFloor').box(box.x1 - box.x0, CELLAR_FLOOR, box.z1 - box.z0, {
     r: 0,
-    c: grey,
+    c: DARK_FLOOR,
     slot: 'matte',
     at: [(box.x0 + box.x1) / 2, cellar - CELLAR_FLOOR, (box.z0 + box.z1) / 2],
   });

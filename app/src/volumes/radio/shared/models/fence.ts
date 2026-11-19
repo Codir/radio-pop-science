@@ -14,7 +14,12 @@ import { col } from '@/style';
 import type { FenceRun, P2 } from './index';
 
 const PICKET_THICK = 0.02;
-const RAIL = { thick: 0.03, tall: 0.08, low: 0.25, high: 0.3 } as const;
+/**
+ * Rails: the lower 0.25 m above the ground, the upper at 0.65 of the fence's height (1.17 m on the 1.8 m fence): the
+ * row of the cat's body in the camera's frame crosses the west fence between 1.27 and 1.8 m, and a rail there would
+ * fill the gaps between its pickets (B13, the tones of VISUAL.md §2 «Кадр камери»).
+ */
+const RAIL = { thick: 0.03, tall: 0.08, low: 0.25, high: 0.65 } as const;
 const POST = 0.09;
 const BOARD = { wide: 0.1, thick: 0.025 } as const;
 /** Pickets stop this far above the ground. */
@@ -119,7 +124,7 @@ function addRun(b: Builder, run: FenceRun): void {
     // rails on the left side and the board on top
     const side = PICKET_THICK / 2 + RAIL.thick / 2;
     for (const [r0, r1] of solid) {
-      for (const y of [RAIL.low, h - RAIL.high])
+      for (const y of [RAIL.low, RAIL.high * h])
         box(r0, r1, y - RAIL.tall / 2, RAIL.tall, RAIL.thick, side, shade);
       if (run.board) {
         const atStart = Math.abs(r0 - seg.s0) < 1e-6 && seg !== segs[0];

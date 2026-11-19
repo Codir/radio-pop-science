@@ -13,7 +13,8 @@ const TALL = 1.8;
 const PICKET = 0.14;
 const THICK = 0.02;
 const CLEAR = 0.02;
-const RAIL = { thick: 0.03, tall: 0.08, low: 0.25, high: 1.5 } as const;
+/** The rails, as on the fence round the yard (`fence.ts`): 0.25 m and 0.65 of the leaf's height. */
+const RAIL = { thick: 0.03, tall: 0.08, low: 0.25, high: 0.65 * TALL } as const;
 
 export function wicket(): KitModel {
   const b = new Builder('wicket');

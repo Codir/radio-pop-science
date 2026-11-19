@@ -4,7 +4,8 @@ import { defineChapter } from '@/engine/api';
  * Sandbox of the radio volume's world (P7: a chapter of `_dev`, never on the site): the shared pieces of
  * `@radio/shared/**` in a real browser, with the measurements of `qa/measure.mjs`. Batch 2 grows it step by step;
  * B1b: the camera's eye (decision 24) feeding a floating screen, from two director shots, and a second screen in
- * front of the eye that `hide()` keeps out of its frame; B12: the objects of the yard one by one (step `props`).
+ * front of the eye that `hide()` keeps out of its frame; B13: all of it on the real yard (`@radio/shared/yard`), and
+ * the yard itself from its eight shots, at any dusk, with the monitor anywhere on its route (step `yard`).
  * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
@@ -12,41 +13,41 @@ export const SANDBOX = {
     eye: {
       title: 'Око камери',
       blurb:
-        'Камера дивиться на подвір’я окремим проходом, і її кадр одразу йде на плаваючий екран. Другий екран висить просто перед нею, але на її кадрі його немає.',
+        'Камера на стовпі дивиться на подвір’я окремим проходом, і її кадр одразу йде на плаваючий екран. Другий екран висить просто перед нею, але на її кадрі його немає.',
     },
     far: {
-      title: 'Той самий кадр здалеку',
-      blurb: 'Та сама сцена з іншого боку: картинка на екрані не залежить від того, звідки дивиться читач.',
+      title: 'Той самий кадр згори',
+      blurb: 'Та сама сцена згори: картинка на екрані не залежить від того, звідки дивиться читач.',
     },
-    props: {
-      title: 'Предмети подвір’я',
-      blurb: 'Усе, з чого складено подвір’я, по одному: виберіть предмет, і камера наблизиться до нього.',
+    yard: {
+      title: 'Подвір’я',
+      blurb:
+        'Подвір’я з восьми ракурсів: сутінки від раннього вечора до ночі, монітор будь-де на маршруті, хвіртка, ворота гаража й деко.',
     },
   },
   labels: {
     eye: 'Око камери',
     inner: 'Екран перед оком',
     hiding: 'Ховати екрани від ока',
-    prop: 'Предмет',
-    shown: 'Показати предмет',
-  },
-  /** The names of the objects of step `props`, in the order of the control. */
-  props: {
-    camera1: 'Камера',
-    camera2: 'Друга камера',
-    pole: 'Стовп',
-    monitor: 'Монітор',
+    shot: 'Ракурс',
+    dusk: 'Сутінки',
+    route: 'Маршрут',
+    nudge: 'Посунути антену',
     wicket: 'Хвіртка',
-    fence: 'Паркани',
-    shed: 'Сарай',
-    garage: 'Гараж',
-    swing: 'Гойдалка',
-    bicycle: 'Велосипед',
-    cat: 'Кіт',
+    gate: 'Ворота гаража',
     tray: 'Деко',
-    phone: 'Телефон',
-    house: 'Дім у розрізі',
-    neighbour: 'Вікно сусіда',
+    metre: 'м',
+  },
+  /** The eight shots of the yard, in the order of the control. */
+  shots: {
+    both: 'Обидва',
+    yard: 'Подвір’я',
+    pole: 'Стовп',
+    window: 'Вікно',
+    screen: 'Екран',
+    antenna: 'Прутик',
+    route: 'Дім',
+    top: 'Згори',
   },
 } as const;
 

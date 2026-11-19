@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global process, console, window, document, requestAnimationFrame, Buffer */
+/* global process, console, window, document, requestAnimationFrame */
 // Browser check and measurements of the sandbox `_dev/_sandbox-radio-link` (preview or dev server up; batch 2,
 // Block Q builds the full tree, serves it on 5377 and runs this):
 //
@@ -11,10 +11,12 @@
 //           independence of the director's camera and of the engine's draw-call counter, `hide()` (a screen in
 //           front of the eye stays out of its frame), its cost on a live frame (the gate of decision 24), leaks and
 //           the console; snapshots `eye-<size>.jpg` and `far-<size>.jpg` (the same scene from step `far`).
-//   props — the objects of the yard (B12), one by one: the object on show is the one asked for, the frame stays
-//           within 350 draw calls and four hue families, and the object's own pixels (the frame without it masks the
-//           sky out) have no strong hue family but the yard's `blue` and `yellow`; a snapshot `props-<name>.jpg` of
-//           each; the console.
+//   yard  — the yard of the volume (B13) from its eight shots: draw calls, triangles and hue families of each, a
+//           snapshot `yard-<shot>.jpg`; the camera's antenna and the monitor's antenna and screen where the model's
+//           numbers put them; what the eye sees of the white wall, the nook and the cat's spot and the tones of its
+//           frame (the cat's body against the gravel, pickets against gaps) at dusk 0.2 and 1; the monitor's screen in
+//           clear view in `screen` and `route` along the route; the cellar's floor through the cut; no grain and
+//           `both` within four hue families at dusk 0, 0.5 and 1; every control on screen; the console.
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-radio-link — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -439,126 +441,240 @@ async function eye(context) {
   );
 }
 
-/* ------------------------------------------------------------------------------------- section props */
+/* -------------------------------------------------------------------------------------- section yard */
 
-/** The objects of step `props`, in the order of its control (`SANDBOX.props` of the sandbox's index.ts). */
-const PROPS = [
-  'camera1',
-  'camera2',
-  'pole',
-  'monitor',
-  'wicket',
-  'fence',
-  'shed',
-  'garage',
-  'swing',
-  'bicycle',
-  'cat',
-  'tray',
-  'phone',
-  'house',
-  'neighbour',
-];
+/** The eight shots of step `yard`, in the order of its control (`SANDBOX.shots` of the sandbox's index.ts). */
+const SHOTS = ['both', 'yard', 'pole', 'window', 'screen', 'antenna', 'route', 'top'];
 const MAX_DRAW_CALLS = 350;
+const MAX_TRIANGLES = 1_500_000;
 const MAX_HUES = 4;
-/**
- * The hue families the yard may paint with (VISUAL.md §4: `blue` — sky, dusk, shadows, rim light; `yellow` — lantern,
- * neighbour's window, headlight); everything else on an object must stay under `hueFamilies`' 8 %.
- */
-const YARD_HUES = ['blue', 'yellow'];
-/** A pixel belongs to the object when the frame with it and the frame without it differ by more than this (R+G+B). */
-const OWN_DIFF = 12;
+/** Within 1 mm: the anchors the model's numbers place; the lens may sit up to 0.15 m off (the whip is upright). */
+const PLACE_TOLERANCE = 1e-3;
+const LENS_TOLERANCE = 0.15;
+const COLS = 128;
+
+/** Distance of two points [x, y, z]. */
+const distance = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
 /**
- * The object's own pixels of a frame: those where the frame `withIt` differs from the same frame `without` the object;
- * everything else is made black (so `hueFamilies` skips it). The sky makes up most of the coloured pixels of a
- * frame, so the families of the whole frame say little about the object itself.
+ * The tones of the eye's frame in the body row of the cat (`r = seen.cat.cell.row + 4`, as `places.row()` of C5):
+ * (a) the run of cells round column `seen.cat.cell.col + 3` whose luma stays within 12 of that cell's, and the mean of
+ * the five cells right past it on the head's side (smaller columns) against the run's mean; (b) to the right of
+ * `seen.wicket.cell.col − 8`, the pairs of neighbouring cells that differ by more than 45 (picket against gap).
  */
-function ownPixels(withIt, without) {
-  const data = Buffer.alloc(withIt.data.length);
-  let pixels = 0;
-  for (let i = 0; i < data.length; i += 4) {
-    const d =
-      Math.abs(withIt.data[i] - without.data[i]) +
-      Math.abs(withIt.data[i + 1] - without.data[i + 1]) +
-      Math.abs(withIt.data[i + 2] - without.data[i + 2]);
-    data[i + 3] = 255;
-    if (d <= OWN_DIFF) continue;
-    data[i] = withIt.data[i];
-    data[i + 1] = withIt.data[i + 1];
-    data[i + 2] = withIt.data[i + 2];
-    pixels++;
-  }
-  return { png: { width: withIt.width, height: withIt.height, data }, pixels };
+function tones(luma, seen) {
+  const r = seen.cat.cell.row + 4;
+  const at = (c) => luma[r * COLS + c];
+  const c0 = seen.cat.cell.col + 3;
+  const ref = at(c0);
+  let lo = c0;
+  let hi = c0;
+  while (lo - 1 >= 0 && Math.abs(at(lo - 1) - ref) <= 12) lo--;
+  while (hi + 1 < COLS && Math.abs(at(hi + 1) - ref) <= 12) hi++;
+  const band = [];
+  for (let c = lo; c <= hi; c++) band.push(at(c));
+  const past = [];
+  for (let c = lo - 5; c < lo; c++) if (c >= 0) past.push(at(c));
+  let pairs = 0;
+  for (let c = Math.max(0, seen.wicket.cell.col - 8); c + 1 < COLS; c++)
+    if (Math.abs(at(c) - at(c + 1)) > 45) pairs++;
+  const row = [];
+  for (let c = 0; c < COLS; c++) row.push(at(c));
+  return {
+    row: r,
+    from: c0,
+    band: { lo, hi, cells: hi - lo + 1, mean: round(mean(band), 1) },
+    gravel: { cells: past.length, mean: round(mean(past), 1) },
+    pairs,
+    luma: row,
+  };
 }
 
-/**
- * Hue families of the object on show alone: the held frame without the interface, once with the object and once
- * without it (toggle `shown`), then `hueFamilies` of its own pixels. Leaves the object and the interface shown.
- */
-async function ownHues(page) {
-  await page.evaluate(() => window.__ui.setVisible(false));
-  await held(page);
-  const withIt = decodePng(await page.screenshot({ type: 'png' }));
-  await page.evaluate(() => window.__ui.set('shown', false, true));
-  await held(page);
-  const without = decodePng(await page.screenshot({ type: 'png' }));
-  await page.evaluate(() => window.__ui.set('shown', true, true));
-  await page.evaluate(() => window.__ui.setVisible(true));
-  await held(page);
-  const own = ownPixels(withIt, without);
-  return { pixels: own.pixels, ...hueFamilies(own.png) };
-}
-
-// One page: step `props` on the frozen clock. For each object: pick it (as a gesture), 2 s of engine time for the
-// director to frame it, then the object on show, the frame's draw calls, its hue families and a snapshot, and the
-// hue families of the object's own pixels (only `YARD_HUES` may be strong there).
-async function props(context) {
-  const n = (report.sections.props = { objects: {} });
+// One page: step `yard` on the frozen clock. The eight shots (draw calls, triangles, hue families, a snapshot each);
+// the anchors where the model's numbers put them; what the eye sees and its tones at dusk 0.2 and 1; the monitor's
+// screen in clear view in `screen` and `route` at the five stops; the cellar's floor through the cut; the look at
+// dusk 0, 0.5 and 1; the interface and the console.
+async function yard(context) {
+  const n = (report.sections.yard = { shots: {}, seen: {}, tones: {}, screenClear: {}, look: {} });
   const page = await context.newPage();
-  const pos = await open(page, 'props', 1).catch((err) => ({ error: String(err) }));
-  if (!check('opened', at(pos, 'props'), where(pos))) {
+  const pos = await open(page, 'yard', 1).catch((err) => ({ error: String(err) }));
+  if (!check('opened', at(pos, 'yard'), where(pos))) {
     await page.close();
     return;
   }
-  for (const name of PROPS) {
-    await page.evaluate((v) => window.__ui.set('prop', v, true), name);
-    await page.evaluate(() => window.__app.step(1 / 60, 120));
-    const shown = await read(page, 'radio-props');
-    const calls = (await stats(page)).drawCalls;
+  const set = (id, v) => page.evaluate(([i, x]) => window.__ui.set(i, x, true), [id, v]);
+  const advance = (frames) => page.evaluate((k) => window.__app.step(1 / 60, k), frames);
+  const locate = (name) => page.evaluate((x) => window.__app.locate(x), name);
+
+  // frames: each shot after 2 s of engine time (the director's move takes 1.8 s)
+  for (const k of SHOTS) {
+    await set('shot', k);
+    await advance(120);
+    const s = await stats(page);
     const hues = hueFamilies(decodePng(await page.screenshot({ type: 'png' })));
-    await screenshot(page, join(out, `props-${name}.jpg`));
-    const own = await ownHues(page);
-    n.objects[name] = { ...shown, frameDrawCalls: calls, ...hues, own };
-    const foreign = own.families.filter((f) => !YARD_HUES.includes(f));
+    await screenshot(page, join(out, `yard-${k}.jpg`));
+    const must =
+      k === 'yard' ? ['yard:cat', 'yard:wicket'] : k === 'both' ? ['yard:lens', 'yard:monitorScreen'] : [];
+    const visible = {};
+    for (const name of must) visible[name] = (await locate(name))?.visible === true;
+    const shot = (await read(page, 'radio-yard')).shot;
+    n.shots[k] = { shot, drawCalls: s.drawCalls, triangles: s.triangles, ...hues, visible };
     check(
-      name,
-      shown?.name === name &&
-        calls <= MAX_DRAW_CALLS &&
+      `frame ${k}`,
+      shot === k &&
+        s.drawCalls <= MAX_DRAW_CALLS &&
+        s.triangles <= MAX_TRIANGLES &&
         hues.families.length <= MAX_HUES &&
-        own.coloured > 0 &&
-        foreign.length === 0,
-      `on show ${shown?.name ?? '—'} (${shown?.triangles ?? 0} triangles, ${shown?.drawCalls ?? 0} meshes); ` +
-        `frame ${calls} draw calls; hues ${hues.families.join(', ') || 'none'} of ${hues.coloured} coloured; ` +
-        `own ${own.families.join(', ') || 'none'} of ${own.coloured} coloured` +
-        (foreign.length
-          ? ` (${foreign.map((f) => `${f} ${own.shares[f]}`).join(', ')}: not a yard hue)`
-          : ''),
+        Object.values(visible).every(Boolean),
+      `${s.drawCalls} draw calls, ${s.triangles} triangles; hues ${hues.families.join(', ') || 'none'} of ` +
+        `${hues.coloured} coloured` +
+        (must.length ? `; in view ${must.map((m) => `${m} ${visible[m]}`).join(', ')}` : ''),
     );
   }
+  await set('shot', 'both');
+
+  // places: the camera's antenna and lens, the monitor's antenna and screen along the route
+  await advance(1);
+  let y = await read(page, 'radio-yard');
+  const antenna = await locate('yard:cameraAntenna');
+  const lens = await locate('yard:lens');
+  const off = {
+    cameraAntenna: distance(antenna.world, y.want.cameraAntenna),
+    lens: distance(lens.world, y.want.lens),
+    monitor: [],
+  };
+  for (const route of [0, 1, 2, 3, 4])
+    for (const nudge of [-0.15, 0.15]) {
+      await set('route', route);
+      await set('nudge', nudge);
+      await advance(1);
+      y = await read(page, 'radio-yard');
+      const a = await locate('yard:monitorAntenna');
+      const s = await locate('yard:monitorScreen');
+      off.monitor.push({
+        route,
+        nudge,
+        antenna: distance(a.world, y.want.monitorAntenna),
+        screen: distance(s.world, y.want.monitorScreen),
+      });
+    }
+  await set('route', 1);
+  await set('nudge', 0);
+  const worst = Math.max(...off.monitor.flatMap((m) => [m.antenna, m.screen]));
+  n.places = off;
+  check(
+    'places',
+    off.cameraAntenna <= PLACE_TOLERANCE && off.lens <= LENS_TOLERANCE && worst <= PLACE_TOLERANCE,
+    `camera antenna ${off.cameraAntenna.toExponential(1)} m, lens ${round(off.lens, 3)} m, monitor at most ` +
+      `${worst.toExponential(1)} m over 5 stops × nudge ±0.15`,
+  );
+
+  // seen and tones: what the eye sees at dusk 0.2 and 1
+  for (const dusk of [0.2, 1]) {
+    await set('dusk', dusk);
+    await advance(30);
+    const e = await read(page, 'radio-eye');
+    const luma = await read(page, 'radio-luma');
+    const { light, dark, wicket, cat } = e.seen;
+    n.seen[dusk] = e.seen;
+    check(
+      `seen ${dusk}`,
+      light.cell &&
+        dark.cell &&
+        wicket.cell &&
+        cat.cell &&
+        light.luma >= 200 &&
+        dark.luma <= 70 &&
+        cat.luma >= 200 &&
+        cat.luma - cat.around >= 60,
+      `wall ${light.luma}, nook ${dark.luma}, spot ${cat.luma} (around ${round(cat.around, 1)}), cells wall ` +
+        `${JSON.stringify(light.cell)} nook ${JSON.stringify(dark.cell)} wicket ${JSON.stringify(wicket.cell)} ` +
+        `cat ${JSON.stringify(cat.cell)}`,
+    );
+    const t = cat.cell && wicket.cell ? tones(luma, e.seen) : null;
+    n.tones[dusk] = t;
+    check(
+      `tones ${dusk}`,
+      t && t.band.cells >= 5 && t.gravel.cells === 5 && t.gravel.mean - t.band.mean >= 40 && t.pairs >= 5,
+      t
+        ? `row ${t.row}: body ${t.band.cells} cells (cols ${t.band.lo}…${t.band.hi}) mean ${t.band.mean}, gravel ` +
+            `past it ${t.gravel.mean}; ${t.pairs} picket edges past col ${wicket.cell.col - 8}`
+        : 'no cat or wicket in the frame',
+    );
+  }
+  await set('dusk', 0.2);
+
+  // screenClear: in `screen` and `route`, the monitor's screen in view and clear at each stop
+  for (const k of ['screen', 'route']) {
+    await set('shot', k);
+    const list = [];
+    for (const route of [0, 1, 2, 3, 4]) {
+      await set('route', route);
+      await advance(120);
+      const s = await locate('yard:monitorScreen');
+      list.push({ route, visible: s?.visible === true, clear: (await read(page, 'radio-yard')).screenClear });
+    }
+    n.screenClear[k] = list;
+    check(
+      `screenClear ${k}`,
+      list.every((m) => m.visible && m.clear === true),
+      list
+        .map((m) => `${m.route}: ${m.visible ? 'in view' : 'OUT'}, ${m.clear ? 'clear' : 'BLOCKED'}`)
+        .join('; '),
+    );
+  }
+
+  // cellar: from `route` with the monitor out in the yard, the cellar's floor through the cut in the slab
+  await set('shot', 'route');
+  await set('route', 0);
+  await advance(120);
+  n.cellarSeen = (await read(page, 'radio-yard')).cellarSeen;
+  await screenshot(page, join(out, 'yard-route-0.jpg'));
+  check('cellar', n.cellarSeen === true, `cellarSeen ${n.cellarSeen}`);
+  await set('route', 1);
+
+  // look: no grain, and `both` within four hue families at dusk 0, 0.5 and 1
+  await set('shot', 'both');
+  await advance(120);
+  n.grain = (await read(page, 'radio-yard')).grain;
+  for (const dusk of [0, 0.5, 1]) {
+    await set('dusk', dusk);
+    await advance(30);
+    const yd = await read(page, 'radio-yard');
+    n.look[dusk] = { lantern: yd.lantern, ...hueFamilies(decodePng(await page.screenshot({ type: 'png' }))) };
+    await screenshot(page, join(out, `yard-both-dusk-${dusk}.jpg`));
+  }
+  await set('dusk', 0.2);
+  check(
+    'look',
+    n.grain === 0 && Object.values(n.look).every((l) => l.families.length <= MAX_HUES),
+    `grain ${n.grain}; both at dusk ` +
+      Object.entries(n.look)
+        .map(([d, l]) => `${d}: ${l.families.join(', ') || 'none'} (lantern ${round(l.lantern)})`)
+        .join('; '),
+  );
+
+  // ui and console
+  await advance(1);
+  const offscreen = await page.evaluate(() => window.__ui.offscreen());
   const errors = await appErrors(page);
+  n.offscreen = offscreen;
   n.errors = errors;
   check(
-    'console',
-    errors.length === 0,
-    errors.length ? `${errors.length}: ${errors[0].level} ${errors[0].message.slice(0, 160)}` : 'clean',
+    'ui',
+    offscreen.length === 0 && errors.length === 0,
+    (offscreen.length ? `off screen: ${offscreen.map((o) => o.name).join(', ')}` : 'all controls on screen') +
+      '; ' +
+      (errors.length
+        ? `${errors.length}: ${errors[0].level} ${errors[0].message.slice(0, 160)}`
+        : 'console clean'),
   );
   await page.close();
 }
 
 /* ---------------------------------------------------------------------------------------------- run */
 
-const SECTIONS = { eye, props };
+const SECTIONS = { eye, yard };
 const only =
   typeof args.only === 'string'
     ? args.only
