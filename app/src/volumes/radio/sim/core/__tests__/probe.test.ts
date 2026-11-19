@@ -10,7 +10,7 @@ import {
   type TapId,
 } from '../probe';
 import { createRng } from '../rng';
-import { createFft } from '../spectrum';
+import { createFft, powerSpectrumDb } from '../spectrum';
 import { BAND, FS_CH, FS_WB, IF } from '../standard';
 import { dbmToAmp } from '../units';
 import { argmax } from './helpers';
@@ -187,9 +187,10 @@ describe('probe', () => {
   });
 
   it('шкала дійсного відведення — від нуля до 10 MHz', () => {
-    /* rx.detected = 0,5·cos(2π·0,1n): fromHz 0, toHz 10e6, найбільший стовпчик — на 2 MHz ± 0,1; the scale of a
-       real tap is one-sided, so the tone shows its power 0.5²/2 = 0.125, −9.03 dB, within the Hann window's loss
-       between bins (≤ 1.5 dB); farther than 1 MHz from it all is below −90 */
+    /* rx.detected = 0,5·cos(2π·0,1n): fromHz 0, toHz 10e6, найбільший стовпчик — на 2 MHz ± 0,1; each column holds
+       the transform's largest bin as it is, so the tone shows the half of its power 0.5²/2 that falls at +2 MHz,
+       0.0625, −12.04 dB, within the Hann window's loss between bins (≤ 1.5 dB); farther than 1 MHz from it all is
+       below −90 */
     const taps = silent();
     const x = taps['rx.detected'];
     for (let n = 0; n < x.length; n++) x[n] = 0.5 * Math.cos(TWO_PI * ((0.1 * n) % 1));
@@ -199,9 +200,39 @@ describe('probe', () => {
     expect(d.bins).toHaveLength(500);
     const j = argmax(d.bins);
     expect(Math.abs(at(d, j) - 2e6)).toBeLessThanOrEqual(0.1e6);
-    expect(d.bins[j]).toBeLessThanOrEqual(10 * Math.log10(0.125) + 0.05);
-    expect(d.bins[j]).toBeGreaterThan(10 * Math.log10(0.125) - 1.5);
+    expect(d.bins[j]).toBeLessThanOrEqual(10 * Math.log10(0.0625) + 0.05);
+    expect(d.bins[j]).toBeGreaterThan(10 * Math.log10(0.0625) - 1.5);
     for (let k = 0; k < 500; k++) if (Math.abs(at(d, k) - 2e6) > 1e6) expect(d.bins[k]).toBeLessThan(-90);
+
+    // a part of exactly one piece on 512 columns: column j is bin 512 + j of the transform of those samples, as it is
+    const piece = read(taps, {
+      tap: 'rx.detected',
+      view: 'scale',
+      start: 0.5,
+      span: 1024 / 28_800,
+      columns: 512,
+    });
+    const block = new Float32Array(2 * 1024);
+    for (let n = 0; n < 1024; n++) block[2 * n] = x[14_400 + n]!;
+    const own = new Float32Array(1024);
+    powerSpectrumDb(block, fft, own);
+    expect(piece.bins).toHaveLength(512);
+    expect(Math.max(...Array.from(piece.bins, (v, k) => Math.abs(v - own[512 + k]!)))).toBeLessThan(1e-3);
+
+    // a probe that has just read the scale of a tap of pairs shows a real tap exactly as a fresh probe does: the
+    // other tap leaves nothing in the work block (whole frame, a part of two pieces, a part shorter than the transform)
+    tone(taps['rx.shifted'], 0.3, 1);
+    const used = createProbe();
+    for (const [start, span] of [
+      [0, 1],
+      [0.25, 1500 / 28_800],
+      [0.5, 300 / 28_800],
+    ] as const) {
+      const req = { view: 'scale', start, span, columns: 500 } as const;
+      used.read({ ...req, tap: 'rx.shifted' }, taps, RATES, CENTRES, fft);
+      const real = Array.from(used.read({ ...req, tap: 'rx.detected' }, taps, RATES, CENTRES, fft).bins);
+      expect(real).toEqual(Array.from(read(taps, { ...req, tap: 'rx.detected' }).bins));
+    }
   });
 
   it('стрілка: пари (I, Q)', () => {

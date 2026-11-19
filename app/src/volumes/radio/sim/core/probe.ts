@@ -132,10 +132,17 @@ export function createProbe(): {
     return m;
   }
 
-  /** Puts `count` samples of `x` from `from` into `block` at `at` (a real sample gets im = 0). */
+  /**
+   * Puts `count` samples of `x` from `from` into `block` at `at`. A real sample gets im = 0 written beside it, so
+   * nothing of a tap of pairs read before stays in the block.
+   */
   function load(x: Float32Array, pairs: boolean, from: number, count: number, at: number): void {
     if (pairs) block.set(x.subarray(2 * from, 2 * (from + count)), 2 * at);
-    else for (let n = 0; n < count; n++) block[2 * (at + n)] = x[from + n]!;
+    else
+      for (let n = 0; n < count; n++) {
+        block[2 * (at + n)] = x[from + n]!;
+        block[2 * (at + n) + 1] = 0;
+      }
   }
 
   /** The spectrum of `block` added to `power` in mW; the floor of the spectrum counts as silence. */
@@ -186,7 +193,9 @@ export function createProbe(): {
       }
       for (let b = 0; b < size; b++) power[b]! /= pieces;
     } else {
-      // a short part in the middle of an empty block, where the window is near its top
+      // a short part in the middle of an empty block, where the window is near its top, its power multiplied by what
+      // the window loses on it: a tone keeps its own level at any length of the part, while the mean noise in a bin
+      // rises as the part shortens, as a shorter look resolves coarser (16 samples: about 16 dB over a whole frame)
       const at = (size - count) >> 1;
       const gain = padding(fft, count, at);
       block.fill(0);
@@ -197,15 +206,15 @@ export function createProbe(): {
   }
 
   /**
-   * The scale of `c` columns over `nb` bins from `power[offset]`: the largest bin in each column. A real tap shows
-   * the half of positive frequencies, each bin but zero doubled for its mirror image, so a tone shows its power.
+   * The scale of `c` columns over `nb` bins from `power[offset]`: the largest bin of the transform in each column,
+   * as it is. A real tap shows only the half of positive frequencies, its bins unchanged (two-sided: a real tone of
+   * power P shows P/2, the other half is in its mirror image at the negative frequency, which is not shown).
    */
-  function scale(c: number, nb: number, offset: number, real: boolean): void {
+  function scale(c: number, nb: number, offset: number): void {
     top.fill(0, 0, c);
     for (let b = 0; b < nb; b++) {
-      const p = real && b > 0 ? 2 * power[offset + b]! : power[offset + b]!;
       const j = Math.floor((b * c) / nb); // the column of the bin's frequency
-      top[j] = Math.max(top[j]!, p); // Math.max: a NaN of the model stays NaN
+      top[j] = Math.max(top[j]!, power[offset + b]!); // Math.max: a NaN of the model stays NaN
     }
     const floor = FLOOR_DBM;
     for (let j = 0; j < c; j++) bins[j] = Math.max(floor, 10 * Math.log10(top[j]!));
@@ -251,14 +260,14 @@ export function createProbe(): {
           if (typeof centre !== 'number' || !Number.isFinite(centre))
             throw new RangeError(`probe: centre of ${tap} is ${String(centre)}`);
           const c = Math.min(columns, size);
-          scale(c, size, 0, false);
+          scale(c, size, 0);
           data.bins = bins.subarray(0, c);
           data.fromHz = centre - span / 2;
           data.toHz = centre + span / 2;
         } else {
           const half = size >> 1;
           const c = Math.min(columns, half);
-          scale(c, half, half, true);
+          scale(c, half, half);
           data.bins = bins.subarray(0, c);
           data.toHz = span / 2;
         }
