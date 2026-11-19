@@ -19,6 +19,8 @@ Commands (run from the repository root; numpy is needed, see requirements.txt):
   link_budget.py --site <site.json> --check <dir>     writes them to a temporary directory and compares:
                                                       `link_budget: 2 fixture(s) up to date` (exit 0) or one
                                                       `link_budget: <file> differs` per file (exit 1)
+  --write and --check refuse with `link_budget: no reflected ray at stop 2 …` (exit 1) when the worst point of stop 2
+  has no reflected ray: notches.json would have nothing to describe. --write then writes no file at all.
 
 Geometry (the rules of task B6a). Metres; x east, y north, z up, the origin is the ground under the camera.
 - A ray gains 2 × 1.1 dBi of the two antennas and loses 20·lg(4πd/λ) of free space, λ = 0.1224 m for every channel.
@@ -271,11 +273,18 @@ def fx_ladder(site):
     return {'stops': stops}
 
 
+class NoReflection(Exception):
+    """The worst point of stop 2 has no reflected ray, so notches.json has no extra path, delay or amplitude."""
+
+
 def fx_notches(site):
     """Stop 2 with the gate open: the level along the nudge axis, the worst point, its notches; the tray at stop 1; the
     gate half open at the worst point; how many rays reach the route with the gate open."""
     worst, levels = worst_nudge(site)
-    direct, reflected = rays(site, WORST_ROUTE, worst, gate=1.0)
+    pair = rays(site, WORST_ROUTE, worst, gate=1.0)
+    if len(pair) != 2:
+        raise NoReflection('no reflected ray at stop %d (gate open, worst nudge %+.4f)' % (WORST_ROUTE, worst))
+    direct, reflected = pair
     extra = reflected['d'] - direct['d']
     shut = level_dbm(site, 1)
     return {'route': WORST_ROUTE, 'extraM': extra, 'delayNs': extra / C_M_PER_NS,
@@ -294,11 +303,13 @@ def render(build, site):
 
 
 def write(directory, site):
+    """Renders every sample before writing any, so a site that cannot give one of them leaves `directory` as it was."""
+    texts = {name: render(build, site) for name, build in FIXTURES.items()}
     directory = pathlib.Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    for name, build in FIXTURES.items():
-        (directory / name).write_text(render(build, site), encoding='utf-8', newline='\n')
-    return len(FIXTURES)
+    for name, text in texts.items():
+        (directory / name).write_text(text, encoding='utf-8', newline='\n')
+    return len(texts)
 
 
 def check(directory, site):
@@ -378,14 +389,21 @@ def table(site):
     for r in [('what', 'target', 'value', 'verdict')] + rows:
         print('  ' + '  '.join(cell.ljust(width) for cell, width in zip(r, widths)).rstrip())
 
-    # Details without a verdict: the numbers the plan quotes.
-    direct, reflected = rays(site, WORST_ROUTE, worst, gate=1.0)
+    # Details without a verdict: the numbers the plan quotes. A moved yard may leave stop 2 without a reflected ray;
+    # the depth and channel rows above are then missed, so the details only say so and the last line is still printed.
+    at_worst = rays(site, WORST_ROUTE, worst, gate=1.0)
     plain = rays(site, WORST_ROUTE, 0.0, gate=1.0)
-    print('  worst point: nudge %+.4f; extra path %.2f m (at nudge 0: %.2f m), %.1f ns; reflected/direct amplitude '
-          '%.3f; channel 3 %.2f dBm, channel 1 %.2f dBm; the leaf is hit at %.2f of its length'
-          % (worst, reflected['d'] - direct['d'], plain[1]['d'] - plain[0]['d'],
-             (reflected['d'] - direct['d']) / C_M_PER_NS, 10 ** ((reflected['gainDb'] - direct['gainDb']) / 20),
-             ch3, ch1, reflected['on']))
+    at_zero = '%.2f m' % (plain[1]['d'] - plain[0]['d']) if len(plain) == 2 else 'no reflected ray'
+    if len(at_worst) == 2:
+        direct, reflected = at_worst
+        extra = reflected['d'] - direct['d']
+        print('  worst point: nudge %+.4f; extra path %.2f m (at nudge 0: %s), %.1f ns; reflected/direct amplitude '
+              '%.3f; channel 3 %.2f dBm, channel 1 %.2f dBm; the leaf is hit at %.2f of its length'
+              % (worst, extra, at_zero, extra / C_M_PER_NS, 10 ** ((reflected['gainDb'] - direct['gainDb']) / 20),
+                 ch3, ch1, reflected['on']))
+    else:
+        print('  worst point: nudge %+.4f; no reflected ray (extra path at nudge 0: %s); channel 3 %.2f dBm, '
+              'channel 1 %.2f dBm' % (worst, at_zero, ch3, ch1))
     print('  worst point, gate %s: %s dBm' % (' / '.join(GATE_KEYS), ' / '.join(
         '%.2f' % level_dbm(site, WORST_ROUTE, worst, gate=float(g)) for g in GATE_KEYS)))
     loss = [(t / 100, level_dbm(site, 1) - level_dbm(site, 1, tray=t / 100)) for t in range(101)]
@@ -491,10 +509,19 @@ def main():
     if args.clear:
         return 1 if clear(site, args.clear) else 0
     if args.write is not None:
-        print('link_budget: wrote %d file(s)' % write(args.write, site))
+        try:
+            count = write(args.write, site)
+        except NoReflection as error:
+            print('link_budget: %s; no file written' % error)
+            return 1
+        print('link_budget: wrote %d file(s)' % count)
         return 0
     if args.check is not None:
-        differ = check(args.check, site)
+        try:
+            differ = check(args.check, site)
+        except NoReflection as error:
+            print('link_budget: %s; notches.json cannot be built' % error)
+            return 1
         for name in differ:
             print('link_budget: %s differs' % name)
         if differ:
