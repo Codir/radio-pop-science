@@ -10,3 +10,4 @@ export * from './channel';
 export * from './interferers';
 export * from './rf';
 export * from './spectrum';
+export * from './probe';
