@@ -114,6 +114,37 @@ describe('the parts on the board follow its state', () => {
     expect(freed).toBe(true);
   });
 
+  it('a leg in the air keeps the part’s turn at every quarter: the body does not swing, the loose leg hangs over its place', () => {
+    const cases = [
+      ['b3', 0], // b3 → b7
+      ['b5', 1], // b5 → f5, across the strips and the channel
+      ['j9', 2], // j9 → j5
+      ['f5', 3], // f5 → b5
+    ] as const;
+    for (const [at, o] of cases) {
+      for (const lifted of [1, 0]) {
+        const { ctx } = stubContext();
+        const bench = mountBench(ctx);
+        bench.preset([{ id: 'R1', spec: 'resistor-4k7', at, o }]);
+        const r = bench.parts.models.get('R1')!;
+        const turn = r.bodyGroup.quaternion.clone();
+        const sockets = [...bench.state.parts.get('R1')!.legs];
+        const kept = 1 - lifted;
+        expect(seatLeg(bench.layout, bench.state, 'R1', lifted, null)).toBe(true);
+        for (const t of [1 / 60, 2 / 60]) {
+          bench.update(1 / 60, t);
+          const name = `at ${at}, o ${o}, leg ${lifted} in the air, t ${t.toFixed(3)}`;
+          expect(r.bodyGroup.quaternion.angleTo(turn), name).toBeLessThan(1e-9);
+          expect(near(r.legTips[kept]!, bench.board.socketLocal(sockets[kept]!)), name).toBe(true);
+          const over = bench.board.socketLocal(sockets[lifted]!);
+          const tip = r.legTips[lifted]!;
+          expect(Math.hypot(tip.x - over.x, tip.z - over.z), name).toBeLessThan(1e-9);
+          expect(tip.y, name).toBeGreaterThan(0.1);
+        }
+      }
+    }
+  });
+
   it('a pot’s knob follows the setting of the board’s state', () => {
     const { ctx } = stubContext();
     const bench = mountBench(ctx);

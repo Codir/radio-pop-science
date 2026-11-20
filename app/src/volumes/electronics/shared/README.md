@@ -93,8 +93,8 @@ its `dielectric`, `farads` and `ratedV` (E1-5), a `transistor` by its key in `TR
 made directly (`createCeramic`, `createFilm`, `createElectrolytic`, `createTransistor`).
 
 On the bench: `bench.state` (the board as data) and `bench.parts` (`bench/on-board.ts`): every frame the 3D parts
-follow the state — a part that came gets its model, a part whose legs moved stands on its new sockets, a part that left
-is disposed; `bench.parts.show(id, model, sockets)` stands a model the state does not hold (a kind the catalog lacks
+follow the state — a part that came gets its model, a part whose legs moved stands on its new sockets, a leg taken out
+of its socket hangs in the air over where it was while the body keeps its turn, a part that left is disposed; `bench.parts.show(id, model, sockets)` stands a model the state does not hold (a kind the catalog lacks
 yet) outside the circuit. `bench.preset([{ id: 'R1', spec: 'resistor-4k7', at: 'a3', o?, setting? }, …])` makes the
 board hold exactly a step's parts at once (a part that does not stand there is a RangeError); `bench.clear()` takes
 everything off. `props.things` and `props.bulb` are the permanent things; the bench gives the bulb's filament the light
@@ -102,8 +102,10 @@ rig's glow every frame.
 
 For checks: `__app.read('electronics-board')` → `{ parts: { R1: { spec, legs } … }, leads, settings, models, shown }`;
 `__app.read('electronics-parts')` → for every part, shown model and permanent thing (`battery`, `player`, `speaker`,
-`lamp`): `{ key, center, radius, drawCalls, prints, printsShown }` (world). The sandbox's step `parts` and
-`qa/measure.mjs --only parts` read them.
+`lamp`): `{ key, center, radius, drawCalls, prints, printsShown, printsClear, printsCovered, printAt, printEm }`
+(world). `printsClear` counts the prints the camera sees with nothing drawn in front of them (rays from the camera to the
+middle and both ends of each print's line), `printsCovered` those shown although something covers them. The sandbox's
+step `parts` and `qa/measure.mjs --only parts` read them.
 
 ## Копії
 

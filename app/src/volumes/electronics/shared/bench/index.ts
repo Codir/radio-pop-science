@@ -7,7 +7,7 @@
  * `circuit/shared/stage/index.ts` (`mountStage` → `mountBench`; shared/README.md, «Копії»): no flashlight, unfolding,
  * snail, battery cutaway or lamp close-up.
  */
-import { Box3, Group, Vector3, type Material, type Mesh, type Object3D } from 'three';
+import { Box3, Group, Raycaster, Vector3, type Material, type Mesh, type Object3D } from 'three';
 import { damp, type ChapterContext } from '@/engine/api';
 import { KToonMaterial } from '@/style';
 import type { Text3D } from '@/text';
@@ -121,14 +121,44 @@ export interface Bench {
   update(dt: number, t: number): void;
 }
 
+/** Whether the renderer draws `o`: a mesh with a visible material (whether it is shown in the tree is the caller's). */
+function drawn(o: Object3D): boolean {
+  const m = (o as Mesh).material as Material | Material[] | undefined;
+  return (o as Mesh).isMesh === true && (Array.isArray(m) ? m : m ? [m] : []).some((x) => x.visible);
+}
+
 /** Meshes the renderer draws below `root`: shown in the tree, with a visible material. */
 function drawnMeshes(root: Object3D): number {
   let n = 0;
-  root.traverseVisible((o) => {
-    const m = (o as Mesh).material as Material | Material[] | undefined;
-    if ((o as Mesh).isMesh && (Array.isArray(m) ? m : m ? [m] : []).some((x) => x.visible)) n++;
-  });
+  root.traverseVisible((o) => void (drawn(o) && n++));
   return n;
+}
+
+/**
+ * Whether the camera sees a print (QA): rays from the camera to the middle of its line and to both ends of it (inset a
+ * tenth) meet no drawn mesh before the print — a text does not count, and the face the print lies on is behind it.
+ */
+function printInSight(
+  t: Text3D,
+  eye: Vector3,
+  covers: readonly Object3D[],
+  ray: Raycaster,
+  at: Vector3,
+): boolean {
+  const m = t.metrics;
+  const y = (m.top + m.bottom) / 2;
+  const inset = (m.right - m.left) * 0.1;
+  for (const x of [m.left + inset, (m.left + m.right) / 2, m.right - inset]) {
+    at.set(x, y, 0).applyMatrix4(t.matrixWorld);
+    const d = at.distanceTo(eye);
+    if (d < 1e-6) return false;
+    ray.set(eye, at.sub(eye).divideScalar(d));
+    ray.near = 0;
+    // a millimetre's grace: only what stands clearly in front of the print covers it
+    ray.far = Math.max(d - 1e-3, 0);
+    if (ray.intersectObjects(covers as Object3D[], false).length > 0) return false;
+  }
+  return true;
 }
 
 /** Apply `tame()` to every lit K material below `root` (call again after adding things to the bench). */
@@ -296,19 +326,29 @@ export function mountBench(ctx: ChapterContext): Bench {
     shown: [...parts.shown.keys()],
   }));
   // `__app.read('electronics-parts')` — every part and permanent thing in 3D: where its body is (world), its draw calls,
-  // its print, how much of it is shown and where (the checks look at each one close)
+  // its print, how much of it is shown, how much of it the camera sees with nothing in front of it, and where it is (the
+  // checks look at each one close)
   const things: Readonly<Record<string, PartView>> = {
     battery: props.things.battery,
     player: props.things.player,
     speaker: props.things.speaker,
   };
+  const ray = new Raycaster();
+  const probe = new Vector3();
   ctx.qa.expose('electronics-parts', () => {
-    group.updateMatrixWorld(true);
+    ctx.root.updateMatrixWorld(true);
+    const camera = ctx.camera.camera;
+    camera.updateMatrixWorld();
+    const eye = camera.getWorldPosition(new Vector3());
+    // what can cover a print: every mesh of the scene that is drawn, no text
+    const covers: Object3D[] = [];
+    ctx.root.traverseVisible((o) => void (drawn(o) && !(o as Text3D).isText3D && covers.push(o)));
     const box = new Box3();
     const entry = (key: string, root: Object3D, body: Object3D, prints: readonly Text3D[]) => {
       box.setFromObject(body);
       const c = box.getCenter(new Vector3());
       const first = prints[0];
+      const inSight = prints.map((t) => printInSight(t, eye, covers, ray, probe));
       return {
         key,
         center: c.toArray(),
@@ -316,6 +356,9 @@ export function mountBench(ctx: ChapterContext): Bench {
         drawCalls: drawnMeshes(root),
         prints: prints.length,
         printsShown: prints.filter((t) => t.visible).length,
+        // the prints the camera sees with nothing drawn in front of them, and those shown although something covers them
+        printsClear: inSight.filter(Boolean).length,
+        printsCovered: prints.filter((t, i) => t.visible && !inSight[i]).length,
         // where the first print is and how tall one em of it is (world), for a look at it close
         printAt: first ? first.getWorldPosition(new Vector3()).toArray() : null,
         printEm: first ? first.fontSize * first.matrixWorld.getMaxScaleOnAxis() : 0,

@@ -50,13 +50,17 @@ export function createPartsOnBoard(board: BoardView, state: BoardState): PartsOn
     group.add(model.group);
   };
 
-  /** The tips of the legs (board frame) for sockets, a missing one where the part's shape puts it, in the air. */
+  /**
+   * The tips of the legs (board frame) for sockets; a missing one in the air, where the part's shape as it stands now
+   * puts it (its quarter turn, a re-seated leg's reach), measured from the first leg in a socket: the body keeps its
+   * turn when a leg leaves its socket.
+   */
   const tipsOf = (model: PartModel, legs: readonly (SocketId | null)[]): Vector3[] | null => {
     const tips = legs.map((s) => (s === null ? null : board.socketLocal(s)));
     const k = tips.findIndex((t) => t !== null);
     if (k < 0) return null;
     const from = tips[k]!;
-    return tips.map((t, i) => t ?? from.clone().add(model.nominal[i]!).sub(model.nominal[k]!).setY(AIR));
+    return tips.map((t, i) => t ?? from.clone().add(model.legTips[i]!).sub(model.legTips[k]!).setY(AIR));
   };
 
   const remove = (map: Map<string, PartModel>, id: string): void => {

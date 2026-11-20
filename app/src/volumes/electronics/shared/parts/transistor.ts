@@ -1,7 +1,8 @@
 /**
  * A transistor in TO-92 (docs/volumes/electronics/VISUAL.md §4.7) — the catalog gains them in E1-6; `buildPart` binds
  * this model to their keys. A black half cylinder 0.52 wide, 0.42 deep and 0.52 high, its bottom 0.3 above the board,
- * three legs 1 P apart. At the orientation 0 the flat side faces the reader (+z) and carries the model's name; leg 0 is
+ * three legs 1 P apart in the board that leave the case's bottom 1.27 mm apart (the outer two bend in at a knee and meet
+ * the case under it). At the orientation 0 the flat side faces the reader (+z) and carries the model's name; leg 0 is
  * the leftmost seen on the flat side with the legs down, then 1 and 2 to the right (+x). Which lead is in which leg is
  * the board's own table (`sim/board` `TO92_LEGS`): the board and the model never part.
  *
@@ -11,7 +12,7 @@ import { Box3, Group, Mesh, Shape, Vector3 } from 'three';
 import { G } from '@/kit';
 import { K } from '@/style';
 import { BOARD_SPEC, TO92_LEGS } from '@electronics/sim/board';
-import { Prints, RADIAL_Y, assemble, radialLegs, type PartModel } from './part';
+import { MM, Prints, RADIAL_Y, assemble, radialLegs, type PartModel } from './part';
 
 export const TO92 = {
   width: 0.52,
@@ -19,6 +20,9 @@ export const TO92 = {
   height: 0.52,
   /** The flat side lies this far in front of the legs' line (+z); the round back as far behind it. */
   front: 0.21,
+  /** Where the legs leave the case's bottom, from the middle: a real TO-92's leads are 1.27 mm apart there, bent out
+   * to the 2.54 mm of the board below it. */
+  lead: 1.27 * MM,
 } as const;
 
 /** What is printed on the flat side, and the type, by catalog key (VISUAL §4.7). */
@@ -90,7 +94,8 @@ export function createTransistor(key: string): TransistorModel {
       new Vector3(w, RADIAL_Y + TO92.height, TO92.front),
     ),
     legX: [0, P, 2 * P],
-    legPaths: radialLegs([-P, 0, P], RADIAL_Y),
+    // the outer legs bend in at a knee and meet the case under it, as a real TO-92's formed leads do
+    legPaths: radialLegs([-TO92.lead, 0, TO92.lead], RADIAL_Y),
     bodyMaterials: [caseMesh.material],
     prints,
   });

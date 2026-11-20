@@ -4,10 +4,10 @@
  * toward the reader (+z) at the orientation 0; the body's size. The lead of every leg is the board's own table
  * (`sim/board` `TO92_LEGS`, which `footprint.test.ts` holds against the catalog), so the board and the model never part.
  */
-import { Box3, Vector3, type BufferGeometry } from 'three';
+import { Box3, Matrix4, Vector3, type BufferGeometry } from 'three';
 import { describe, expect, it } from 'vitest';
 import { BOARD_SPEC, TO92_LEGS } from '@electronics/sim/board';
-import { TRANSISTORS, createTransistor } from '..';
+import { LEG, MM, RADIAL_Y, TO92, TRANSISTORS, createTransistor } from '..';
 
 /** VISUAL §4.7, the table, and the two output transistors of the amplifier (E1-6) the board's table also knows. */
 const TABLE = {
@@ -58,6 +58,35 @@ describe('the transistors in TO-92 (VISUAL §4.7)', () => {
     expect(width(back)).toBeLessThan(0.05);
     // the print lies on the flat side
     expect(q.printAt.z).toBeGreaterThan(box.max.z - 1e-6);
+  });
+
+  it('brings every leg out from under the case: above the case’s bottom each leg is inside its outline', () => {
+    const q = createTransistor('transistor-bc547b');
+    // the legs and the case are both in the body frame (the legs' mesh has no transform of its own)
+    expect(q.legs.parent).toBe(q.bodyGroup);
+    expect(q.legs.matrix.equals(new Matrix4())).toBe(true);
+    // the outline seen from above: a circle of the width, its centre behind the flat side so the case is `depth` deep
+    const r = TO92.width / 2;
+    const cz = TO92.front - (TO92.depth - r);
+    const pos = (q.legs.geometry as BufferGeometry).getAttribute('position');
+    const inside: Vector3[] = [];
+    for (let i = 0; i < pos.count; i++) {
+      const v = new Vector3().fromBufferAttribute(pos, i);
+      if (v.y < RADIAL_Y) continue;
+      inside.push(v);
+      expect(
+        Math.hypot(v.x, v.z - cz),
+        `(${v.x.toFixed(3)}; ${v.y.toFixed(3)}; ${v.z.toFixed(3)})`,
+      ).toBeLessThan(r);
+      expect(v.z).toBeLessThan(TO92.front);
+    }
+    // all three legs reach into the case, at the real lead pitch of a TO-92 (1.27 mm, three times over)
+    for (const x of [-1.27 * MM, 0, 1.27 * MM]) {
+      expect(
+        inside.some((v) => Math.abs(v.x - x) < LEG.radius + 1e-6),
+        `a leg rises into the case at x ${x.toFixed(3)}`,
+      ).toBe(true);
+    }
   });
 
   it('has no model for a key it does not know', () => {

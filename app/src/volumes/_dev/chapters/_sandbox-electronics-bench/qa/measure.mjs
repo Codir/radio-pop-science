@@ -20,11 +20,12 @@
 //           `<step>-<size>.jpg`.
 //   parts — step `parts` on a held page (E2-4): `electronics-board` lists every part placed with the sockets of its
 //           legs and every model shown outside the circuit; each one has a model; draw calls ≤ 350 with all of them on
-//           the board; every world text shown ≥ 16 px-equivalent (none on a phone); the hue families (reported);
-//           snapshot `parts-<size>.jpg`. On a desktop then every part and permanent thing close (the camera put in
-//           front of it and above, from `electronics-parts`; a print too small for that, once more at the print): its
-//           print shown whole and ≥ 16 px-equivalent, snapshots `close-<id>[-print]-<size>.jpg` for the reader of the
-//           parts' look; the console.
+//           the board; every world text shown ≥ 16 px-equivalent (none on a phone), and no print shown under something
+//           that covers it (rays from the camera, `electronics-parts`); the hue families (reported); snapshot
+//           `parts-<size>.jpg`. On a desktop then every part and permanent thing close (the camera put in front of it
+//           and above, from `electronics-parts`; a print too small or covered there, once more at the print): its print
+//           shown whole, seen with nothing drawn in front of it, and ≥ 16 px-equivalent, snapshots
+//           `close-<id>[-print]-<size>.jpg` for the reader of the parts' look; the console.
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-electronics-bench — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -371,6 +372,13 @@ async function parts(context) {
       smallest >= 16,
       `${texts.length} texts, smallest ${round(smallest, 1)}: ${texts.map((t) => t.text.replace(/\s+/g, '')).join(' · ')}`,
     );
+  // a print counts as shown only where the camera sees it: rays from the camera to it meet nothing drawn in front of it
+  const covered = Object.entries(models ?? {}).filter(([, m]) => m.printsCovered > 0);
+  check(
+    'no print shown under something that covers it',
+    covered.length === 0,
+    covered.map(([id, m]) => `${id} ${m.printsCovered}`).join(', ') || 'none',
+  );
 
   const png = decodePng(await page.screenshot({ type: 'png' }));
   const hue = (n.hue = hueFamilies(png));
@@ -396,28 +404,36 @@ async function parts(context) {
       const t = await page.evaluate(() => window.__app.textSizes());
       return { seen, least: t.length ? Math.min(...t.map((x) => x.pxEq)) : Infinity, count: t.length };
     };
+    /** Every print of the thing shown, and seen: the rays from the camera to each meet nothing drawn in front of it. */
+    const whole = (s) => s.printsShown === s.prints && s.printsClear === s.prints;
     for (const [id, m] of Object.entries(models ?? {})) {
       // the whole thing, its sphere filling the frame
       let v = await look(m.center, Math.max(m.radius, CLOSE.least) * CLOSE.fill);
       let where = 'whole';
       await screenshot(page, join(out, `close-${id}-${tag}.jpg`));
-      if (v.seen[id].printsShown < v.seen[id].prints && m.printAt) {
+      if (!whole(v.seen[id]) && m.printAt) {
         // a print too small for that framing: at the print, from where one em would be ≈ `printPx` px-equivalent in a
         // full frame, and closer step by step while it is still too small (the safe frame is fitted beside the panel)
         let d = (m.printEm * 540) / CLOSE.printPx / Math.tan((CLOSE.fov * Math.PI) / 360);
         for (let k = 0; k < 4; k++, d *= 0.6) {
           v = await look(m.printAt, d);
-          if (v.seen[id].printsShown === v.seen[id].prints) break;
+          if (whole(v.seen[id])) break;
         }
         where = `print, ${round(d)} away`;
         await screenshot(page, join(out, `close-${id}-print-${tag}.jpg`));
       }
       const s = v.seen[id];
-      n.close[id] = { where, prints: s.prints, shown: s.printsShown, smallest: round(v.least, 1) };
+      n.close[id] = {
+        where,
+        prints: s.prints,
+        shown: s.printsShown,
+        clear: s.printsClear,
+        smallest: round(v.least, 1),
+      };
       check(
-        `close ${id}: print whole, ≥ 16 px-eq`,
-        s.printsShown === s.prints && v.least >= 16,
-        `${where}: ${s.printsShown}/${s.prints} shown; texts in frame ${v.count}, smallest ${round(v.least, 1)}`,
+        `close ${id}: print whole, seen, ≥ 16 px-eq`,
+        whole(s) && v.least >= 16,
+        `${where}: ${s.printsShown}/${s.prints} shown, ${s.printsClear}/${s.prints} with nothing in front; texts in frame ${v.count}, smallest ${round(v.least, 1)}`,
       );
     }
   }
