@@ -161,7 +161,8 @@ bench.hands.policy = {
   sandbox's `battery-switch`, which also follows a step that sets it.
 - Every part on the board stands on its `Leg`s (`bench.parts.legs`); while the hand does not drive a part, its legs
   follow the board's state at once (a step's `preset`, a test's `seatLeg`). `bench.preset` and `bench.clear` first let
-  go of whatever the hand holds (`hands.reset`). The body's glow under the pointer is cyan emissive on the part's
+  go of whatever the hand holds (`hands.reset`), and the model forgets every part they take off (`model.forget`, «model»
+  below): a preset's parts are new and whole. The body's glow under the pointer is cyan emissive on the part's
   `body` materials (E2-7's heat look shares them).
 - `hand/swap.ts` (`createSwap`) is a scripted repair kept for the chapters: a still copy of a thing leaves along a way
   while the new one comes back the same way.
@@ -185,6 +186,7 @@ model.sync(); // the board's netlist; a new shape compiles, a changed setting on
 model.ok; // the last solve succeeded; `failure` says why not ('singular', 'no-convergence')
 model.rowVolts('7ae'); // 5.997 V on the divider; `nodeVolts(n)`, `reading(id)` → { u, i, p }; null after a failure
 model.ohms(a, b); // what an ohmmeter reads between two nodes: Ω, Infinity (no path), null (no solve)
+model.forget('R1'); // a new part goes under this id: its memory goes at once, the next sync solves again
 ```
 
 - **Compile on a new shape, solve on a new setting.** The netlist's `key` (`sim/board`) is the circuit's shape: a part
@@ -194,8 +196,12 @@ model.ohms(a, b); // what an ohmmeter reads between two nodes: Ω, Infinity (no 
   sandbox solves in ≈ 0.03 ms.
 - **One `ModelState` for the bench's life** (`model.state`): what the model remembers of every part — heat, burnt, a
   lamp's filament — lives there by part id through every new circuit. A part in the hand keeps its entry (it stays
-  burnt); a part that left the board for good (into the tray: `state.parts` no longer has it) has its entry deleted, as
-  `sim/core/README.md` («The state») asks — ids are never given twice, so a new part is whole.
+  burnt); a part that left the board for good (into the tray: `state.parts` no longer has it) has its entry deleted at
+  the next sync, as `sim/core/README.md` («The state») asks. The hand never gives an id twice (`sim/board` `nextId`),
+  but a step's preset puts its own list under fixed ids (`R1`, `J1`) in the same call that takes the old parts off, so
+  at the next sync the board cannot tell a new `R1` from an old one: whoever puts a new part under an id that was given
+  calls `model.forget(id)` first (`bench.preset` and `bench.clear` do it for every part they take off). The entry goes
+  at once and the next sync solves again, though the circuit's shape is the same.
 - **A failed solve is never shown** (gotcha G7): `solution` stays the last good one, `ok` is false, and `reading`,
   `rowVolts`, `nodeVolts` give null until a solve succeeds — never a NaN, never the failure's zeros.
 - **The ohmmeter's own solve** (`ohms`): the circuit now on the board with its sources out (the batteries; the player

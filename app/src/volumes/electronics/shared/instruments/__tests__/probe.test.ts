@@ -9,6 +9,7 @@ import { Group, PerspectiveCamera, Ray, Vector2, Vector3, type Object3D } from '
 import { describe, expect, it } from 'vitest';
 import type { ChapterContext, DragInfo, InteractionHandlers } from '@/engine/api';
 import { seatLeg } from '@electronics/sim/board';
+import { memoryOf } from '@electronics/sim/core';
 import { STAGE_SHOTS, mountBench, type PresetPart } from '../../bench';
 import { SEAT_SECONDS, type HandKey } from '../../hand';
 import { METER_REFRESH } from '../meter-model';
@@ -209,6 +210,35 @@ describe('the multimeter’s probes in the hand', () => {
     // the battery out: from 11ae through 2 kΩ, 1 kΩ and the jumper to the + rail and the switch, whose other end the
     // battery left — none of it to the − rail
     expect(text()).toBe('OL');
+  });
+
+  it('a step’s preset puts whole parts: a burnt R1 is forgotten when the preset gives its id to a new one', () => {
+    const { bench, frames, text } = setup();
+    bench.multimeter.put({ red: 'a7', black: '-3' });
+    frames(METER_REFRESH + 0.05);
+    expect(text()).toBe('5,997 V');
+    // R1 burns (E2-7 sets this on an overload): a gap from the next solve on — the switch flipped twice solves twice
+    memoryOf(bench.model.state, 'R1').burnt = true;
+    bench.closed = 0;
+    frames(1 / 60);
+    bench.closed = 1;
+    frames(METER_REFRESH + 0.05);
+    expect(text()).toBe('0,000 V');
+    // the next step's preset: the same list, so the same circuit's shape, but every part in it new and whole
+    bench.preset(DIVIDER);
+    expect(bench.model.state.parts.has('R1')).toBe(false);
+    frames(METER_REFRESH + 0.05);
+    expect(bench.model.state.parts.get('R1')?.burnt ?? false).toBe(false);
+    expect(text()).toBe('5,997 V');
+    // across R1 with the battery out: its 1 kΩ, no gap
+    bench.multimeter.mode = 'ohm';
+    bench.multimeter.put({ red: 'c3', black: 'd7' });
+    frames(0.3 + METER_REFRESH + 0.05);
+    expect(text()).toBe('1,000 kΩ');
+    // the same for `clear`: what it takes off is forgotten at once, before any frame
+    memoryOf(bench.model.state, 'R2').burnt = true;
+    bench.clear();
+    expect(bench.model.state.parts.has('R2')).toBe(false);
   });
 
   it('leave with the meter: the tips come out of their sockets, the grips are not taken', () => {

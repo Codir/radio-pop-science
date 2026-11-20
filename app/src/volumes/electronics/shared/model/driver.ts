@@ -10,8 +10,10 @@
  *
  * One `ModelState` per bench, for its whole life: what the model remembers of every part (its heat, whether it burnt,
  * a lamp's filament) lives there by part id, through every new circuit. A part that left the bench for good — into the
- * tray, never just into the hand — has its entry deleted (sim/core/README.md, «The state»): ids are never given twice,
- * so a new part is always whole.
+ * tray, never just into the hand — has its entry deleted at the next sync (sim/core/README.md, «The state»). The hand
+ * never gives an id twice (`sim/board` `nextId`), but a step's preset puts its own list under fixed ids (`R1`, `J1`)
+ * in the same call that takes the old parts off, so the board alone cannot tell a new part from an old one under the
+ * same id: whoever puts a new part under an id that was given calls `forget(id)`, and the new part is whole.
  *
  * A solve that fails (`ok: false`) is never shown: the driver keeps the last good solution, says it failed, and gives
  * no reading of the circuit now on the board until one succeeds — never a NaN, never the zeros of the failure.
@@ -71,8 +73,15 @@ export interface BenchModel {
   readonly compiles: number;
   /** How long the last solve took (ms). */
   readonly dcMs: number;
-  /** Follow the board now: compile a new shape, solve again when the shape or a setting changed. */
+  /** Follow the board now: compile a new shape, solve again when the shape or a setting changed, or a part was
+   * forgotten. */
   sync(): void;
+  /**
+   * Delete what the model remembers of a part (its heat, whether it burnt; sim/core/README.md, «The state») at once:
+   * a new part is going to stand under this id (a step's preset, `bench.preset` and `bench.clear`). The next sync
+   * solves again, though the circuit's shape is the same. A part the model remembers nothing of changes nothing.
+   */
+  forget(id: string): void;
   /** What a meter would read on a part of the circuit now on the board; null when it is not in it, or the last solve
    * failed. */
   reading(id: string): PartReading | null;
@@ -124,6 +133,8 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
   let version = 0;
   let compiles = 0;
   let dcMs = 0;
+  /** A part's memory was deleted on demand since the last solve: the next sync solves again. */
+  let forgotten = false;
   let ohmsMemo: { key: string; value: number | null } | null = null;
 
   /** Copy the settings of the new netlist into the compiled parts; true when one changed. */
@@ -140,7 +151,7 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
   };
 
   /** Delete the memory of every part that is no longer on the bench (sim/core/README.md, «The state»). */
-  const forget = (more: readonly PartInstance[]): void => {
+  const forgetGone = (more: readonly PartInstance[]): void => {
     for (const id of [...state.parts.keys()]) {
       if (board.parts.has(id) || fixedIds.has(id) || more.some((p) => p.id === id)) continue;
       state.parts.delete(id);
@@ -176,7 +187,7 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
     sync() {
       const more = extra();
       const next = netlistOf(layout, board, fixed, more);
-      forget(more);
+      forgetGone(more);
       let dirty: boolean;
       if (circuit === null || next.key !== net?.key) {
         // `netlistOf` never builds a malformed netlist, so `compile` never throws here
@@ -184,9 +195,10 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
         compiled = new Map(next.net.parts.map((p) => [p.id, p]));
         compiles++;
         dirty = true;
-      } else dirty = settle(next.net.parts);
+      } else dirty = settle(next.net.parts) || forgotten;
       net = next;
       if (!dirty) return;
+      forgotten = false;
       const t0 = now();
       const dc = solveDC(circuit, { state });
       dcMs = now() - t0;
@@ -194,6 +206,9 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
       ok = dc.ok;
       failure = dc.ok ? null : (dc.reason ?? 'singular');
       if (dc.ok) solution = dc;
+    },
+    forget(id) {
+      if (state.parts.delete(id)) forgotten = true;
     },
     reading(id) {
       return ok && solution ? (solution.parts[id] ?? null) : null;

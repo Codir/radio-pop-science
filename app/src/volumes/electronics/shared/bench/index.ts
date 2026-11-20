@@ -166,10 +166,11 @@ export interface Bench {
   /**
    * A step's own small circuit: the board holds exactly these parts, at once, and the plugs named in `leads` are in
    * these sockets (null: lying at rest); a plug not named stays where it is. A part or a plug that does not stand
-   * where it is put is a RangeError: a preset is the step's data.
+   * where it is put is a RangeError: a preset is the step's data. Every part in it is new and whole: the model forgets
+   * what it remembered of the parts taken off (`model.forget`), an old `R1` burnt or warm included.
    */
   preset(parts: readonly PresetPart[], leads?: Readonly<Record<string, SocketId | null>>): void;
-  /** Takes every part and plug off the board. */
+  /** Takes every part and plug off the board; the model forgets the parts at once (`model.forget`). */
   clear(): void;
   /** Jump to the state without the filament's and the slider's ramps (deep links). */
   snap(): void;
@@ -421,6 +422,19 @@ export function mountBench(ctx: ChapterContext): Bench {
     return apart >= fp.span[0] - 1e-9 && apart <= fp.span[1] + 1e-9;
   };
 
+  /**
+   * Every part off the board, the one in the hand too, and the model forgets them at once: a preset puts its list
+   * under fixed ids in the same call, with no sync between, so a new `R1` must not inherit an old one's memory.
+   */
+  const takeOff = (): void => {
+    const gone = [...state.parts.keys()];
+    hands.reset();
+    for (const id of gone) {
+      remove(state, id);
+      model.forget(id);
+    }
+  };
+
   const bench: Bench = {
     group,
     room,
@@ -455,8 +469,7 @@ export function mountBench(ctx: ChapterContext): Bench {
     meter: 0,
     scope: 0,
     preset(list, leads) {
-      hands.reset();
-      for (const id of [...state.parts.keys()]) remove(state, id);
+      takeOff();
       for (const p of list) {
         const stands =
           p.to === undefined
@@ -477,8 +490,7 @@ export function mountBench(ctx: ChapterContext): Bench {
       fixed.sync(state, () => false);
     },
     clear() {
-      hands.reset();
-      for (const id of [...state.parts.keys()]) remove(state, id);
+      takeOff();
       state.leads.clear();
       parts.sync();
       fixed.sync(state, () => false);

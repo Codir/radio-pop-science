@@ -2,7 +2,8 @@
  * The bench's model driver (`driver.ts`): the one place the bench calls the circuit model. It reads the board's
  * netlist at every sync, compiles only when the circuit's shape (`key`) changed, writes a changed setting into the
  * compiled parts and solves again, keeps one `ModelState` for the life of the bench, forgets the memory of a part that
- * left the board for good (sim/core/README.md, «The state»), and on a failed solve keeps the last good one.
+ * left the board for good (sim/core/README.md, «The state») or whose id a new part takes (`forget`, a step's preset),
+ * and on a failed solve keeps the last good one.
  */
 import { describe, expect, it } from 'vitest';
 import { WIRE_OHMS, memoryOf } from '@electronics/sim/core';
@@ -155,6 +156,38 @@ describe('the bench’s model driver', () => {
     model.sync();
     expect(model.state.parts.get('R3')?.burnt ?? false).toBe(false);
     expect(model.rowVolts('7ae')).toBeCloseTo(MIDDLE, 9);
+  });
+
+  it('forgets a part on demand when its id is given to a new one (a step’s preset), and solves again', () => {
+    const board = divider(true);
+    const model = createBenchModel({ layout, board });
+    model.sync();
+    // R1 burns: a gap from the next solve on (the switch flipped twice solves twice)
+    memoryOf(model.state, 'R1').burnt = true;
+    memoryOf(model.state, 'R1').heat = 1;
+    setSetting(board, 'SW', 0);
+    model.sync();
+    setSetting(board, 'SW', 1);
+    model.sync();
+    expect(Math.abs(model.rowVolts('7ae')!)).toBeLessThan(1e-9);
+    // a new R1 in the old one's place before any sync, as a preset puts it: the board alone cannot tell the two apart
+    remove(board, 'R1');
+    expect(place(layout, board, { id: 'R1', spec: 'resistor-1k', anchor: 'b3', o: 0 })).toBe(true);
+    model.sync();
+    expect(model.state.parts.get('R1')?.burnt).toBe(true);
+    // the one who put it says so: the entry goes at once, and the same circuit is solved again with the part whole
+    const { version, compiles } = model;
+    model.forget('R1');
+    expect(model.state.parts.has('R1')).toBe(false);
+    model.sync();
+    expect(model.compiles).toBe(compiles);
+    expect(model.version).toBe(version + 1);
+    expect(model.rowVolts('7ae')).toBeCloseTo(MIDDLE, 9);
+    expect(model.state.parts.get('R1')?.burnt ?? false).toBe(false);
+    // forgetting what the model does not remember changes nothing: no solve
+    model.forget('R9');
+    model.sync();
+    expect(model.version).toBe(version + 1);
   });
 
   it('takes the parts the bench adds off the board (the meter in the A mode) at every sync', () => {
