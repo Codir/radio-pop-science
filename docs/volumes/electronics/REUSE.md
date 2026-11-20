@@ -49,7 +49,12 @@
 
 ## 4. Копії
 
-У `main` ще нічого не скопійовано: перші рядки принесе злиття клону черги E2 і завдання E1-9.
+Нижче — копії завдання E1-9; рядки черги E2 принесе злиття її клону. Власний звуковий вихід
+(`electronics/shared/sound/output.ts`, `plan.ts`, `tape.ts`, `board.ts`) — новий код, не копія: рівень і обмежувач
+у ньому — ті самі числа, що в `app/src/audio/engine.ts` (`MASTER_LEVEL` 0,55; поріг −12 dB, коліно 6 dB, ratio 20,
+атака 3 ms, відпуск 0,25 s), записані числами, бо платформа їх не експортує.
 
 | Звідки | Куди | Що змінимо | Завдання | Стан |
 |---|---|---|---|---|
+| `radio/shared/link/` — `index.ts`, `handler.ts`, `protocol.ts`, `model.worker.ts`, `__tests__/link.test.ts`, `__tests__/handler.test.ts` | `electronics/shared/sound/` — `stream.ts`, `handler.ts`, `protocol.ts`, `model.worker.ts`, `__tests__/stream.test.ts`, `__tests__/handler.test.ts` | змінено: модель кола (`Transient` з `sim/core`) замість лінії радіо; запит — блок відліків (1536 при 24 kHz) з дошкою лише тоді, коли вона змінилася; запит іде, лише поки звуковий вихід хоче блок, а наступний — одразу, щойно прийшов попередній, не чекаючи оновлення рушія; немає `still`, межі 25 запитів на секунду й одного кадру на шість оновлень (синхронний шлях дає блок за оновлення, поки вихід хоче); відліки нумерує сцена, тож після падіння потоку вони йдуть далі; без змін: `WorkerLike`, форма `new Worker(new URL(…))`, один запит у дорозі, перехід на головний потік назавжди, одна помилка в консолі за життя, `dispose` через `ctx.onDispose` | E1-9 | зроблено |
+| `_dev/chapters/_sandbox-radio-link/` — `index.ts` (слова в `SANDBOX`), `qa/measure.mjs` (каркас: `check`, `open`, розділи `--only`, звіт JSON, рядок `PASS`/`FAIL`) | `_dev/chapters/_sandbox-electronics-sound/` — `index.ts`, `qa/check.mjs` | змінено: один крок і свої слова; свої розділи перевірки (`sound`, `settings`, `filter`, `noaudio`, `visits`); сторінки без `?noaudio`, справжнє клацання по сцені, лічба `AudioContext` скриптом сторінки | E1-9 | зроблено |
