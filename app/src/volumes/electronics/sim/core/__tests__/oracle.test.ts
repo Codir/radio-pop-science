@@ -24,14 +24,16 @@ const samples = new Map(
 /** The linear circuits of E1-3: one solve of the matrix on both sides, so they agree to rounding. */
 const LINEAR = ['battery-load', 'divider', 'grid', 'pot-ccw', 'pot-cw', 'pot-mid', 'speaker-switch'];
 const RELATIVE = 1e-6;
-// …and near zero: a current through 1 mΩ is a difference of two voltages over 1 mΩ, and one unit in the last place
-// of 9 V there is 1.8e-12 A (both ngspice and the model compute it so)
-const FLOOR = 1e-11;
 
+/**
+ * Relative alone, with no absolute allowance: the smallest numbers of the samples (the load at the end of a pot's
+ * track takes 1.7e-16 W) are held to 1e-6 of themselves like the rest. An exact zero of ngspice (the ground, a part
+ * behind an open switch) therefore demands an exact zero of the model: nothing drives that row on either side.
+ */
 function agrees(model: number | undefined, spice: number, what: string): void {
   expect(model, what).toBeTypeOf('number');
   expect(Math.abs(model! - spice), `${what}: the model ${model}, ngspice ${spice}`).toBeLessThanOrEqual(
-    RELATIVE * Math.abs(spice) + FLOOR,
+    RELATIVE * Math.abs(spice),
   );
 }
 

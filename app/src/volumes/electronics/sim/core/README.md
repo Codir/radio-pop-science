@@ -35,7 +35,7 @@ capacitors with E1-5, transistors and the amplifier with E1-6.
 ```ts
 import { compile, createModelState, solveDC, type Netlist } from '@electronics/sim/core';
 
-// 9 V → 1 kΩ → node 2 → 2 kΩ → ground; a 10 kΩ pot across the battery, its wiper on node 3
+// 9 V → 1 kΩ → node 2 → 2 kΩ → ground; a 10 kΩ pot across the battery, its wiper on node 3, loaded by 4.7 kΩ
 const net: Netlist = {
   nodes: 4,
   parts: [
@@ -43,13 +43,15 @@ const net: Netlist = {
     { id: 'R1', spec: 'resistor-1k', pins: [1, 2] },
     { id: 'R2', spec: 'resistor-2k', pins: [2, 0] },
     { id: 'P1', spec: 'pot-10k', pins: [0, 3, 1], setting: 0.3 },
+    { id: 'RL', spec: 'resistor-4k7', pins: [3, 0] },
   ],
 };
 const dc = solveDC(net);
 dc.ok; // true
 dc.v[2]; // 5.996 V (the battery's 1.5 Ω takes a little)
+dc.v[3]; // 1.865 V: 3 kΩ of the track below the wiper, 4.7 kΩ beside them, 7 kΩ above
 dc.parts.R1; // { u: 2.998, i: 0.002998, p: 0.008988 }
-dc.issues; // [] — nothing open, shorted or in the air
+dc.issues; // [] — nothing open, shorted or in the air (without RL the wiper would be `floating`, see Topology)
 
 // a stand compiles once and solves on every change of a knob: the matrix is allocated once per circuit
 const circuit = compile(net);
@@ -87,7 +89,7 @@ temperature of a lamp, the charge of the capacitors and the damage of parts are 
 |---|---|---|
 | `open` | a source whose terminals the rest of the circuit does not join (a gap, an open switch): no current flows through it | `part` |
 | `short` | a source whose terminals are joined by wires alone — jumpers, closed switches, or both legs in one row; the current is E / (r + wires) | `part` |
-| `floating` | pins of a part in rows no other part touches (never the ground): a leg in the air | `part`, `pins` (names) |
+| `floating` | pins of a part in rows no other part touches (never the ground): a leg in the air. A pot whose wiper is left unconnected counts too: `{ kind: 'floating', part: 'P1', pins: ['wiper'] }`, while its track still carries current | `part`, `pins` (names) |
 | `ungrounded` | nodes in use with no path to the ground for direct current; the model ties `nodes[0]` to the ground by `TIE_OHMS` (1 GΩ) and solves on — no current flows through the tie | `nodes` |
 
 The order: the issues of the sources in the order of the parts, then the floating pins in the order of the parts,
@@ -168,7 +170,9 @@ python3 tools/ref-models/electronics/spice.py --check                           
 
 `__tests__/`: `purity` (the text of every file), `parts` (the catalog), `mna` (the LU and the stamps), `dc` (linear
 circuits by hand: a divider, the batteries under load, a grid of five resistors, the pot at 0 / 0.5 / 1, a switch,
-the speaker; a singular circuit; the state; malformed netlists), `topology` (open, short, floating, ungrounded),
-`oracle` (every sample of `__fixtures__/` against the model: relative difference ≤ 1e-6, and 1e-11 near zero).
+the speaker; the worked example above; a singular circuit; the state; malformed netlists), `topology` (open, short,
+floating — a pot's free wiper among them — ungrounded), `oracle` (every sample of `__fixtures__/` against the
+model: relative difference ≤ 1e-6 for every number, the smallest too, with no absolute allowance; where ngspice
+gives an exact zero — the ground, a part behind an open switch — the model must give an exact zero).
 The samples are written by `tools/ref-models/electronics/spice.py` from `cases.py` (its README); the model and ngspice
 agree on them to 4e-10, the rounding of the samples.

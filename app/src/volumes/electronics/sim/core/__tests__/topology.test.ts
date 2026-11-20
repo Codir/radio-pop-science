@@ -121,6 +121,12 @@ describe('the topology of a circuit', () => {
       { kind: 'ungrounded', nodes: [4, 5] },
     ]);
     close(air.parts.R1!.i, 9 / 1001.5, 1e-12, 'the loop beside it');
+    // a pot across the battery with its wiper alone in row 2: the wiper is in the air, the track still conducts
+    const wiper = solveDC(net(3, part('B', 'battery-9v', [1, 0]), part('P1', 'pot-10k', [0, 2, 1], 0.3)));
+    expect(wiper.ok).toBe(true);
+    expect(wiper.issues).toEqual([{ kind: 'floating', part: 'P1', pins: ['wiper'] }]);
+    close(wiper.parts.P1!.i, -9 / 10001.5, 1e-15, 'the track from cw to ccw');
+    close(wiper.v[2], (0.3 * 9 * 10e3) / 10001.5, 1e-9, 'the wiper reads its share of the track');
   });
 
   it('nodes without a path to the ground: the model ties them by a large resistance, says so and goes on', () => {

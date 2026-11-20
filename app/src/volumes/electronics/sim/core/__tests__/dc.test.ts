@@ -196,6 +196,39 @@ describe('the operating point of linear circuits, by hand', () => {
     close(dc.parts.LS!.i, terminal / 8, 1e-12, 'speaker');
     close(dc.parts.PH!.i, terminal / 32, 1e-12, 'earphone');
   });
+
+  it('the worked example of sim/core/README.md, as written there', () => {
+    const example = net(
+      4,
+      part('B1', 'battery-9v', [1, 0]),
+      part('R1', 'resistor-1k', [1, 2]),
+      part('R2', 'resistor-2k', [2, 0]),
+      part('P1', 'pot-10k', [0, 3, 1], 0.3),
+      part('RL', 'resistor-4k7', [3, 0]),
+    );
+    // the pot at 0.3: 3 kΩ from ccw (ground) to the wiper, RL beside them, 7 kΩ from the wiper to the battery
+    const expected = (setting: number): { v1: number; v3: number } => {
+      const below = parallel(10e3 * setting, 4700);
+      const load = parallel(3000, 10e3 * (1 - setting) + below);
+      const v1 = (9 * load) / (load + 1.5);
+      return { v1, v3: (v1 * below) / (10e3 * (1 - setting) + below) };
+    };
+    const at = expected(0.3);
+    const dc = solveDC(example);
+    expect(dc.ok).toBe(true);
+    expect(dc.issues).toEqual([]);
+    close(dc.v[2], (at.v1 * 2) / 3, 1e-9, 'v[2]');
+    expect(dc.v[2]!.toFixed(3)).toBe('5.996');
+    close(dc.v[3], at.v3, 1e-9, 'v[3]');
+    expect(dc.v[3]!.toFixed(3)).toBe('1.865');
+    const r1 = dc.parts.R1!;
+    expect([r1.u.toFixed(3), r1.i.toFixed(6), r1.p.toFixed(6)]).toEqual(['2.998', '0.002998', '0.008988']);
+    close(r1.p, (at.v1 / 3) * (at.v1 / 3000), 1e-15, 'R1.p');
+    // the same netlist compiled once follows the knob
+    const circuit = compile(example);
+    example.parts[3]!.setting = 0.8;
+    close(solveDC(circuit, { state: createModelState() }).v[3], expected(0.8).v3, 1e-9, 'v[3] at 0.8');
+  });
 });
 
 describe('what the model answers besides numbers', () => {
