@@ -1,12 +1,13 @@
 /**
- * The bench of the volume «Радіоелектроніка» (docs/volumes/electronics/VISUAL.md §2, §3, §4, §6, §7, §8): the dark
+ * The bench of the volume «Радіоелектроніка» (docs/volumes/electronics/VISUAL.md §2, §3, §4, §5, §6, §7, §8): the dark
  * room, the base with the breadboard, the light, the magnifier in its holder, the permanent things (`props.ts`: the
- * battery, the player, the speaker and the lamp with their real marks; the instruments still stand-ins) with their
+ * battery, the player, the speaker and the lamp with their real marks; the oscilloscope still a stand-in) with their
  * wires and plug leads (`fixed.ts`), the battery's switch under the hand (`switch.ts`), the tray of parts and the
- * reader's hand (`shared/hand`), and the parts on the board, which stand on their legs (`on-board.ts`). A chapter mounts
- * it once in its scene factory and drives it through plain parameters (shared/README.md, «bench», «hand»). Copied in its shape from
- * `circuit/shared/stage/index.ts` (`mountStage` → `mountBench`; shared/README.md, «Копії»): no flashlight, unfolding,
- * snail, battery cutaway or lamp close-up.
+ * reader's hand (`shared/hand`), the parts on the board, which stand on their legs (`on-board.ts`), the circuit model
+ * that solves what is on the board (`shared/model`) and the multimeter that reads it (`shared/instruments`). A chapter
+ * mounts it once in its scene factory and drives it through plain parameters (shared/README.md, «bench», «hand»,
+ * «model», «instruments»). Copied in its shape from `circuit/shared/stage/index.ts` (`mountStage` → `mountBench`;
+ * shared/README.md, «Копії»): no flashlight, unfolding, snail, battery cutaway or lamp close-up.
  */
 import { Box3, Group, Raycaster, Vector3, type Material, type Mesh, type Object3D } from 'three';
 import { damp, type ChapterContext } from '@/engine/api';
@@ -15,8 +16,11 @@ import type { Text3D } from '@/text';
 import {
   createBoardState,
   createLayout,
+  footprintOf,
   netlistOf,
+  occupant,
   place,
+  put,
   remove,
   seatLead,
   setSetting,
@@ -26,12 +30,14 @@ import {
   type SocketId,
 } from '@electronics/sim/board';
 import { createHands, createTerrain, createTray, type Hands, type Raised, type Tray } from '../hand';
+import { createMultimeter, type Multimeter } from '../instruments';
+import { createBenchModel, type BenchModel } from '../model';
 import type { PartEye, PartView } from '../parts';
 import { createAir } from './air';
 import { createBase, type Base } from './base';
 import { createBoardView, type BoardView } from './board-view';
 import { PLUG, createFixed, type Fixed } from './fixed';
-import { PLACES } from './layout';
+import { BOARD, PLACES } from './layout';
 import { BENCH_AMBIENT, createLight, type LightRig } from './light';
 import { tame } from './materials';
 import { createMounds } from './mounds';
@@ -86,6 +92,11 @@ export interface PresetPart {
   readonly spec: string;
   readonly at: SocketId;
   readonly o?: Orientation;
+  /**
+   * A part of two legs that may stand at any span within its reach (a jumper, 1 … 16 P; a resistor 4 … 6 P): its
+   * leg 1 here instead of where `o` would put it — a jumper from a rail to the row it feeds.
+   */
+  readonly to?: SocketId;
   /** A pot's setting 0…1. */
   readonly setting?: number;
 }
@@ -119,6 +130,11 @@ export interface Bench {
   flying: boolean;
   /** The magnifier and its holder. */
   readonly tools: BenchTools;
+  /** The circuit model of what is on the board (`shared/model`): the only way the bench reads the circuit. */
+  readonly model: BenchModel;
+  /** The multimeter on the table: its dial (`mode`), its probes (`put`), its number for the step's panel
+   * (`readout`); it comes and goes with `meter`. */
+  readonly multimeter: Multimeter;
   /**
    * Lift of the unlit room 0…1 (default `BENCH_AMBIENT`): an even cool fill and a stronger moon that step back as
    * the lamp's light rises.
@@ -285,6 +301,22 @@ export function mountBench(ctx: ChapterContext): Bench {
   const fixed = createFixed({ socket: (id, out) => board.socketLocal(id, out), ground: leadTerrain.ground }, leadTerrain);
   board.group.add(fixed.group);
   ctx.onDispose(() => fixed.dispose());
+  // the multimeter: its case in its place on the table, its probes and leads in the board's frame (the hand's)
+  const multimeter = createMultimeter({
+    frame: board.group,
+    layout,
+    socket: (id, out) => board.socketLocal(id, out),
+    taken: (id) => occupant(state, id) !== null,
+    ground: leadTerrain.ground,
+    onBase: (x, z) =>
+      Math.abs(x + PLACES.breadboard.x) <= BOARD.width / 2 && Math.abs(z + PLACES.breadboard.z) <= BOARD.depth / 2,
+    fromBase: (x, y, z, out) => out.set(x - PLACES.breadboard.x, y - PLACES.breadboard.height, z - PLACES.breadboard.z),
+    phone: () => phone,
+  });
+  props.meter.add(multimeter.body);
+  ctx.onDispose(() => multimeter.dispose());
+  // the circuit model of what is on the board, the meter's own part in it (the A mode)
+  const model = createBenchModel({ layout, board: state, extra: () => multimeter.extra() });
   const tray = createTray();
   group.add(tray.group);
   ctx.onDispose(() => tray.dispose());
@@ -313,6 +345,7 @@ export function mountBench(ctx: ChapterContext): Bench {
     parts,
     tray,
     leads: fixed.leads,
+    probes: multimeter.probes,
     terrain: leadTerrain,
     area,
     flying: () => bench.flying,
@@ -367,10 +400,25 @@ export function mountBench(ctx: ChapterContext): Bench {
     for (const [id, m] of parts.shown) standing.set(`shown:${id}`, m.hit);
     mounds.update(dt, standing, snap);
     fixed.update(dt);
+    multimeter.update(dt, bench.meter, (name) => hands.busyProbe(name));
     hands.update(dt, t);
+    // the circuit on the board now (what arrived this frame included), and what the meter reads of it
+    model.sync();
+    multimeter.measure(dt, model, snap);
     board.highlight(hands.rows, dt);
     tray.update(dt, eye);
     props.view(eye);
+    multimeter.view(eye);
+  };
+
+  /** A part of two legs from `a` to `b` stands within its reach: its footprint's span, measured on the board. */
+  const spans = (spec: string, a: SocketId, b: SocketId): boolean => {
+    const fp = footprintOf(spec);
+    const sa = layout.socket(a);
+    const sb = layout.socket(b);
+    if (!fp?.span || fp.offsets.length !== 2 || !sa || !sb) return false;
+    const apart = Math.hypot(sb.x - sa.x, sb.z - sa.z) / layout.spec.pitch;
+    return apart >= fp.span[0] - 1e-9 && apart <= fp.span[1] + 1e-9;
   };
 
   const bench: Bench = {
@@ -388,6 +436,8 @@ export function mountBench(ctx: ChapterContext): Bench {
     tray,
     hands,
     tools,
+    model,
+    multimeter,
     flying: false,
     ambient: BENCH_AMBIENT,
     moon: 1,
@@ -408,8 +458,13 @@ export function mountBench(ctx: ChapterContext): Bench {
       hands.reset();
       for (const id of [...state.parts.keys()]) remove(state, id);
       for (const p of list) {
-        if (!place(layout, state, { id: p.id, spec: p.spec, anchor: p.at, o: p.o ?? 0 })) {
-          throw new RangeError(`bench.preset: ${p.id} (${p.spec}) does not stand at ${p.at}, o ${p.o ?? 0}`);
+        const stands =
+          p.to === undefined
+            ? place(layout, state, { id: p.id, spec: p.spec, anchor: p.at, o: p.o ?? 0 })
+            : spans(p.spec, p.at, p.to) && put(layout, state, { id: p.id, spec: p.spec, legs: [p.at, p.to] });
+        if (!stands) {
+          const where = p.to === undefined ? `at ${p.at}, o ${p.o ?? 0}` : `from ${p.at} to ${p.to}`;
+          throw new RangeError(`bench.preset: ${p.id} (${p.spec}) does not stand ${where}`);
         }
         if (p.setting !== undefined) setSetting(state, p.id, p.setting);
       }
@@ -432,6 +487,7 @@ export function mountBench(ctx: ChapterContext): Bench {
       glow = unit(bench.lamp);
       slider = unit(bench.closed);
       hands.snap();
+      multimeter.snap();
       apply(0, time, true);
     },
     update(dt, t) {
@@ -477,6 +533,42 @@ export function mountBench(ctx: ChapterContext): Bench {
       pending: [...net.pending],
     };
   });
+  // `__app.read('electronics-model')` — the circuit model of the board: the netlist's key, how many solves and compiles,
+  // whether the last solve succeeded (and why not), what it cost, the parts left out, every part's reading and the
+  // voltage of every row a part uses (the last good solution; nothing of a failed one)
+  ctx.qa.expose('electronics-model', () => {
+    const used = new Set(model.circuit?.net.parts.flatMap((p) => p.pins) ?? []);
+    return {
+      key: model.net?.key ?? null,
+      version: model.version,
+      compiles: model.compiles,
+      ok: model.ok,
+      failure: model.failure,
+      dcMs: model.dcMs,
+      iterations: model.solution?.iterations ?? 0,
+      issues: model.solution?.issues ?? [],
+      pending: [...(model.net?.pending ?? [])],
+      parts: model.ok ? { ...model.solution?.parts } : {},
+      rows: Object.fromEntries(
+        layout.rows.filter((r) => used.has(layout.node(r))).map((r) => [r, model.rowVolts(r)]),
+      ),
+    };
+  });
+  // `__app.read('electronics-meter')` — the multimeter: its dial, where its probes are, the reading now (`live`), what
+  // its display shows (`value`, `text`) and how often it refreshed, how far it is on its place, its marks shown
+  ctx.qa.expose('electronics-meter', () => ({
+    mode: multimeter.mode,
+    red: multimeter.sockets.red,
+    black: multimeter.sockets.black,
+    live: multimeter.live ?? null,
+    value: multimeter.value,
+    text: multimeter.text,
+    unit: multimeter.unit,
+    refreshes: multimeter.refreshes,
+    shown: bench.meter,
+    ready: multimeter.probes.get('red')!.ready(),
+    prints: multimeter.prints.texts.filter((t) => t.visible).length,
+  }));
   // `__app.read('electronics-hand')` — the hand: what it holds, where a carried end would go, the preview of a carried
   // part, the lit rows, the parts it drives, how often the reader flipped the switch
   ctx.qa.expose('electronics-hand', () => ({

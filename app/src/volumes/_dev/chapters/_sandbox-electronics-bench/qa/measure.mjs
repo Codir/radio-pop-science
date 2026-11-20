@@ -36,6 +36,15 @@
 //           gone (into the tray on a desktop); from the frame of every release on, the camera, the thing moved, the turn
 //           of its body and the plugs are sampled frame by frame for jumps (`electronics-motion`); draw calls ≤ 350;
 //           the console; snapshots `hand-<what>-<size>.jpg`.
+//   meter — the multimeter (E2-6) on held pages, every probe moved by a real pointer (a finger with --touch): step
+//           `meter` — the probes at rest and ready, the display «—»; step `divider` (1 kΩ / 2 kΩ, the switch closed) —
+//           the dial on V (`__ui.set('meter-mode', 'V', true)`), the red probe by its grip into a7, the black into −3:
+//           the display's text «5,997 V» (decimal comma), the same text in the panel's readout `ctl-meter`, the value
+//           the model's row 7ae (`electronics-model`) and the circuit's shape untouched by the probes; Ω on the same
+//           probes — the divider with its battery out, «2,000 kΩ»; A — the jumper J2's end out of −11 by its capsule,
+//           the red probe into a11: the meter closes the branch, 9 / 3001,5 A — «2,998 mA» — text, panel and model
+//           agree; the model's last solve dcMs < 1 ms; draw calls ≤ 350; the console; snapshots
+//           `meter-<what>-<size>.jpg`.
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-electronics-bench — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -697,9 +706,186 @@ async function hand(context) {
   await page.close();
 }
 
+/* ------------------------------------------------------------------------------------- section meter */
+
+/** What the meter must show on the divider (VISUAL §5.1: four significant digits, a decimal comma). */
+const METER_TEXT = { V: '5,997 V', ohm: '2,000 kΩ', A: '2,998 mA' };
+/** The divider's numbers: 9 V behind the battery's 1.5 Ω; the switch, the jumpers and the meter in A are 1 mΩ each. */
+const WIRE = 0.001;
+const DIVIDER_V = (9 * (2000 + WIRE)) / (1.5 + 3 * WIRE + 3000);
+const BRANCH_A = 9 / (1.5 + 3 * WIRE + 3000);
+const plain = (s) => (typeof s === 'string' ? s.replace(/\u00a0/g, ' ') : s);
+
+async function meter(context) {
+  const n = (report.sections.meter = {});
+
+  // step `meter`: an empty board, the probes free by the meter
+  {
+    const page = await context.newPage();
+    const pos = await open(page, 'meter').catch((err) => ({ error: String(err) }));
+    if (!check('meter: opened', at(pos, 'meter'), where(pos))) {
+      await page.close();
+      return;
+    }
+    await advance(page, 0.7);
+    const m = (n.free = await read(page, 'electronics-meter'));
+    check(
+      'meter: the probes free by the meter, the display «—»',
+      m?.ready === true && m.red === null && m.black === null && m.text === '—',
+      JSON.stringify(m),
+    );
+    await screenshot(page, join(out, `meter-free-${tag}.jpg`));
+    const errors = await appErrors(page);
+    check('meter: console', errors.length === 0, consoleText(errors));
+    await page.close();
+  }
+
+  const page = await context.newPage();
+  const pos = await open(page, 'divider').catch((err) => ({ error: String(err) }));
+  if (!check('divider: opened', at(pos, 'divider'), where(pos))) {
+    await page.close();
+    return;
+  }
+  const p = await pointer(page, touch);
+  const scr = async (name) => {
+    const v = await locate(page, name);
+    if (!v) throw new Error(`probe '${name}' is unknown`);
+    return { x: v.x, y: v.y, visible: v.visible };
+  };
+  const meterNow = () => read(page, 'electronics-meter');
+  const modelNow = () => read(page, 'electronics-model');
+  /** The panel's readout of the meter as the reader sees it (a phone: the dock's tab «Керування»). */
+  const panel = () =>
+    page.evaluate(() => document.querySelector('[data-ui="ctl-meter"] output')?.textContent ?? null);
+  if (touch) await page.evaluate(() => window.__ui.setSheet({ tab: 'controls' }));
+  const mode = async (m) => {
+    await page.evaluate((id) => window.__ui.set('meter-mode', id, true), m);
+    await advance(page, 0.5);
+  };
+  /**
+   * Press `grab` and drag so that the end `thing` (on the board's face) comes to `target` (a socket probe or a screen
+   * point), correcting the pointer on the way by what is left (the hand keeps its grip, so screen moves map to board
+   * moves only nearly), then let go and let it arrive.
+   */
+  const bring = async (grab, thing, target) => {
+    const g = await scr(grab);
+    const goal = typeof target === 'string' ? () => scr(target) : async () => target;
+    const end0 = await scr(thing);
+    const t0 = await goal();
+    let at = { x: g.x, y: g.y };
+    await p.down(at.x, at.y);
+    const d = { x: t0.x - end0.x, y: t0.y - end0.y };
+    // up and over: a little above the straight way, in 12 moves
+    for (let k = 1; k <= 12; k++) {
+      const f = k / 12;
+      at = { x: g.x + d.x * f, y: g.y + d.y * f - Math.sin(Math.PI * f) * height * 0.04 };
+      await p.move(at.x, at.y);
+    }
+    for (let k = 0; k < 4; k++) {
+      const e = await scr(thing);
+      const t = await goal();
+      const left = { x: t.x - e.x, y: t.y - e.y };
+      if (Math.hypot(left.x, left.y) < 0.6) break;
+      at = { x: at.x + left.x, y: at.y + left.y };
+      await p.move(at.x, at.y);
+    }
+    await p.up();
+    await advance(page, 0.35);
+  };
+
+  await mode('V');
+  const key0 = (await modelNow())?.key;
+  await bring('probe:red', 'end:red', 'socket:a7');
+  await bring('probe:black', 'end:black', 'socket:-3');
+  await advance(page, 0.5);
+  const v = (n.V = { meter: await meterNow(), panel: plain(await panel()), model: await modelNow() });
+  check(
+    'V: the red probe in a7, the black in −3',
+    v.meter?.red === 'a7' && v.meter?.black === '-3',
+    `red ${v.meter?.red}, black ${v.meter?.black}`,
+  );
+  check(
+    `V: the display «${METER_TEXT.V}», the panel the same`,
+    plain(v.meter?.text) === METER_TEXT.V && v.panel === METER_TEXT.V,
+    `display «${plain(v.meter?.text)}», panel «${v.panel}»`,
+  );
+  check(
+    'V: the value is the model’s row 7ae, 9 · 2000 / 3001,5 V',
+    Math.abs(v.meter?.value - v.model?.rows?.['7ae']) <= 1e-12 && Math.abs(v.meter?.value - DIVIDER_V) <= 1e-9,
+    `meter ${v.meter?.value}, model ${v.model?.rows?.['7ae']}, by hand ${DIVIDER_V}`,
+  );
+  check('V: the probes take no part in the circuit', v.model?.key === key0, v.model?.key === key0 ? 'same key' : 'key changed');
+  await screenshot(page, join(out, `meter-v-${tag}.jpg`));
+
+  await mode('ohm');
+  const o = (n.ohm = { meter: await meterNow(), panel: plain(await panel()) });
+  check(
+    `Ω: the divider with its battery out, «${METER_TEXT.ohm}», the panel the same`,
+    plain(o.meter?.text) === METER_TEXT.ohm && o.panel === METER_TEXT.ohm && Math.abs(o.meter?.value / 2000.001 - 1) <= 1e-6,
+    `display «${plain(o.meter?.text)}», panel «${o.panel}», value ${o.meter?.value}`,
+  );
+
+  // A: the meter in the branch instead of the jumper J2 — its end out of −11, lying beyond the rail; the red probe into
+  // a11 (the row 11ae), the black stays on the − rail
+  await mode('A');
+  const rail = await scr('socket:-12');
+  const line = await scr('socket:j12');
+  const beyond = { x: rail.x + (rail.x - line.x) * 0.8, y: rail.y + (rail.y - line.y) * 0.8 };
+  await bring('leg:J2:1', 'tip:J2:1', beyond);
+  const board = await read(page, 'electronics-board');
+  check('A: the jumper’s end out of −11', board?.parts?.J2?.legs?.[1] === null, JSON.stringify(board?.parts?.J2));
+  await bring('probe:red', 'end:red', 'socket:a11');
+  await advance(page, 0.5);
+  const a = (n.A = { meter: await meterNow(), panel: plain(await panel()), model: await modelNow() });
+  check(
+    `A: the meter closes the branch, «${METER_TEXT.A}», the panel the same`,
+    a.meter?.red === 'a11' && plain(a.meter?.text) === METER_TEXT.A && a.panel === METER_TEXT.A,
+    `red ${a.meter?.red}; display «${plain(a.meter?.text)}», panel «${a.panel}»`,
+  );
+  check(
+    'A: the value is the model’s current through the meter, 9 / 3001,5 A',
+    Math.abs(a.meter?.value - a.model?.parts?.METER?.i) <= 1e-15 && Math.abs(a.meter?.value / BRANCH_A - 1) <= 1e-9,
+    `meter ${a.meter?.value}, model ${a.model?.parts?.METER?.i}, by hand ${BRANCH_A}`,
+  );
+  await screenshot(page, join(out, `meter-a-${tag}.jpg`));
+
+  // the model's solve time: one solve of this board is far below the browser's timer step (0.1 ms), so 40 of them are
+  // timed — the dial between V and A, each turn a new circuit (the meter's wire in or out) compiled and solved in one
+  // frame — and each must be under 1 ms; their mean, under the timer's dither, is the cost of one
+  const timing = await page.evaluate(async (k) => {
+    const v0 = window.__app.read('electronics-model').version;
+    const ms = [];
+    for (let i = 0; i < k; i++) {
+      window.__ui.set('meter-mode', i % 2 === 0 ? 'V' : 'A', true);
+      await window.__app.step(1 / 60, 1);
+      ms.push(window.__app.read('electronics-model').dcMs);
+    }
+    return { ms, solves: window.__app.read('electronics-model').version - v0 };
+  }, 40);
+  const mean = timing.ms.reduce((s, x) => s + x, 0) / timing.ms.length;
+  const most = Math.max(...timing.ms);
+  n.dcMs = { mean: round(mean, 4), max: round(most, 3), solves: timing.solves };
+  check(
+    'the model’s solve dcMs < 1 ms',
+    timing.solves === 40 && timing.ms.every((x) => Number.isFinite(x) && x >= 0) && most < 1,
+    `${timing.solves} solves: mean ${round(mean, 4)} ms, max ${round(most, 3)} ms`,
+  );
+
+  const calls = (n.drawCalls = await drawCalls(page));
+  check(
+    'draw calls with the meter, its probes and the divider',
+    calls.engine > 0 && calls.engine <= DRAW_CALLS.gate,
+    `${calls.engine} (gate ≤ ${DRAW_CALLS.gate}); ${calls.triangles} triangles`,
+  );
+  const errors = await appErrors(page);
+  n.errors = errors;
+  check('console', errors.length === 0, consoleText(errors));
+  await page.close();
+}
+
 /* ---------------------------------------------------------------------------------------------- run */
 
-const SECTIONS = { room, shots, parts, hand };
+const SECTIONS = { room, shots, parts, hand, meter };
 const only =
   typeof args.only === 'string'
     ? args.only

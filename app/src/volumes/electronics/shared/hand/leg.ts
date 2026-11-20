@@ -1,10 +1,11 @@
 /**
- * One end the hand moves on the bench (docs/volumes/electronics/VISUAL.md §6): a leg of a part, a plug of a lead, later
- * a probe's tip. Copied from `End` of `circuit/chapters/build/parts/ends.ts` (shared/README.md, «Копії»): where it
- * belongs now (a socket, lying on the bench, the hand, the tray) and where it is shown. Every change of place is a
- * travel from the pose on screen — eased, rising in a low arc (a short way rises less) — so an end never jumps,
- * whatever the step or the hand asks. One socket holds one end (the board's state says which): the circuit's clamps
- * for two ends, their sharing offsets and fan are not taken.
+ * One end the hand moves on the bench (docs/volumes/electronics/VISUAL.md §6): a leg of a part, a plug of a lead, a
+ * probe's tip. Copied from `End` of `circuit/chapters/build/parts/ends.ts` (shared/README.md, «Копії»): where it
+ * belongs now (a socket, lying on the bench, the hand, the tray, at rest by its instrument) and where it is shown.
+ * Every change of place is a travel from the pose on screen — eased, rising in a low arc (a short way rises less) — so
+ * an end never jumps, whatever the step or the hand asks. One socket holds one end of a part or a lead (the board's
+ * state says which; a probe's tip touches what is there): the circuit's clamps for two ends, their sharing offsets and
+ * fan are not taken.
  *
  * `seated` is set ON ARRIVAL: the click is the moment of contact, and the board's netlist reads arrived ends only.
  *
@@ -21,7 +22,9 @@ export type Place =
   /** In the hand: the tip at `at` (the hand moves it, `carry`). */
   | { readonly kind: 'hand'; readonly at: Vector3 }
   /** In the tray, where a part taken from it starts and where a part let go off the board ends. */
-  | { readonly kind: 'tray'; readonly at: Vector3 };
+  | { readonly kind: 'tray'; readonly at: Vector3 }
+  /** At rest by its instrument: a probe's tip beside the multimeter, at `at` — which the instrument moves with itself. */
+  | { readonly kind: 'rest'; readonly at: Vector3 };
 
 /** What a leg needs of the bench. */
 export interface LegWorld {

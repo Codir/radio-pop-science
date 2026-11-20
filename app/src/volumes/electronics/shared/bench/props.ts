@@ -1,13 +1,13 @@
 /**
  * The permanent things of the bench (docs/volumes/electronics/VISUAL.md §2, §4.1, §5), each one on its place: the
  * battery's open box with the switch on its lid, the player, the speaker and the lamp on its post — the models with
- * real marks of `shared/parts` (E2-4) — and the magnifier's holder; on the table the two instruments, still stand-ins
- * of their size and colours (meter E2-6, oscilloscope E2-9). The tray of parts is the hand's (`shared/hand/tray.ts`),
- * the wires of these things are `fixed.ts`'s.
+ * real marks of `shared/parts` (E2-4) — and the magnifier's holder; on the table the places of the two instruments:
+ * the multimeter's (`shared/instruments`, E2-6; the bench puts it in `meter`) and the oscilloscope, still a stand-in of
+ * its size and colours (E2-9). The tray of parts is the hand's (`shared/hand/tray.ts`), the wires of these things are
+ * `fixed.ts`'s.
  */
 import { Group, Object3D, Vector3 } from 'three';
 import { Builder } from '@/kit';
-import { col } from '@/style';
 import {
   BULB_BOTTOM,
   BULB_SCALE,
@@ -22,8 +22,6 @@ import {
 import { LAMP, PLACES } from './layout';
 import { addLampPost, addLensHolder } from './mounts';
 import { SLIDER_TRAVEL, SLIDER_Y, createSlider, type SliderModel } from './switch-slider';
-
-const mix = (a: string, b: string, k: number) => col(a).lerp(col(b), k);
 
 /** Where the instruments wait while no step has them: beyond the frame's edge, on the table (world x, z). */
 export const AWAY = {
@@ -44,7 +42,7 @@ export interface Props {
   things: { readonly battery: PartView; readonly player: PartView; readonly speaker: PartView };
   /** The battery's switch: the yellow slider on the box's lid. */
   slider: SliderModel;
-  /** The instruments' groups (world), placed by `place`. */
+  /** The instruments' groups (world), placed by `place`: the multimeter's case goes into `meter`. */
   meter: Group;
   scope: Group;
   /** 0 = open (the thumb pushed to the left, the gap shows) … 1 = closed. */
@@ -53,39 +51,6 @@ export interface Props {
   place(meter: number, scope: number): void;
   /** Every frame: the prints of the permanent things («9 V», «8 Ω», «6 V») where they can be read. */
   view(eye: PartEye): void;
-}
-
-/** The multimeter, display up, its top away from the reader: display window, the dial, two jacks (VISUAL §5.1). */
-function meter(): Group {
-  const { width: W, depth: D, height: H } = PLACES.meter;
-  const b = new Builder('meter');
-  b.box(W, H, D, { r: 0.12, c: 'slate' });
-  b.box(W - 0.16, 0.02, D - 0.16, { at: [0, H, 0], r: 0.05, c: 'ink' });
-  b.box(W - 0.4, 0.02, 0.62, {
-    at: [0, H + 0.01, -D / 2 + 0.5],
-    r: 0.03,
-    slot: 'gloss',
-    c: mix('steel', 'mist', 0.5),
-  });
-  b.cyl(0.32, 0.08, { at: [0, H + 0.01, 0.15], seg: 32, c: 'slate', bevel: 0.03 });
-  b.box(0.06, 0.03, 0.26, { at: [0, H + 0.09, 0.05], r: 0.01, c: 'mist' });
-  for (const [x, ring] of [
-    [-0.3, 'ink'],
-    [0.3, 'coral'],
-  ] as const) {
-    b.ring(0.09, 0.025, {
-      at: [x, H + 0.03, D / 2 - 0.35],
-      axis: 'y',
-      seg: 24,
-      tubeSeg: 8,
-      slot: 'gloss',
-      c: ring,
-    });
-    b.cyl(0.06, 0.02, { at: [x, H + 0.01, D / 2 - 0.35], seg: 16, c: 'ink' });
-  }
-  const group = b.build().group;
-  group.name = 'meter';
-  return group;
 }
 
 /** The oscilloscope on the table, its face toward the reader: a dark screen with no trace yet (VISUAL §5.2). */
@@ -134,7 +99,9 @@ export function createProps(): Props {
 
   const onTable = new Group();
   onTable.name = 'table-props';
-  const m = meter();
+  // the multimeter's place: the bench puts the instrument in it
+  const m = new Group();
+  m.name = 'meter';
   const s = scope();
   onTable.add(m, s);
 

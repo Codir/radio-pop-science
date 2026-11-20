@@ -12,15 +12,17 @@
  *   goes back to where it was; off the board, to its slot in the tray (0.4 s) and is gone. A click (no drag) on a
  *   placed part turns it end for end: lifted 0.2, turned 180° and put back in 0.3 s (when the step allows it).
  * - Gesture 2 — one end, by its grip: a leg of a part (`leg:<id>:<k>`, a ring on an axial part's leg, a tab before a
- *   radial part's body, a capsule on a jumper's end), a plug of a lead (`lead:<name>`), later a probe's tip. The press
- *   takes it out of its socket (the part is pending at once); the hand leads it within its reach (the part's span from
- *   its other legs, the lead's length from its thing); within `NEAR` of a free socket it may take, a cue ring shows
- *   there and the row lights (`near`) — never the socket it just left until the hand has gone `AWAY` from it. A part's
- *   leg clicks into the nearest such socket within `SNAP` while the hand still moves (VISUAL §6, «Одна ніжка»); let go
- *   with no socket, it goes back where it was (it never stays in the air on its own). A wire's end — a jumper's, a
- *   plug, a probe's — clicks in when it is let go within `SNAP` of such a socket, and lies where it was let go
- *   otherwise: it crosses many sockets on its way (a plug always comes from beyond the board's edge), and one that
- *   clicked into the first of them would never reach its row.
+ *   radial part's body, a capsule on a jumper's end), a plug of a lead (`lead:<name>`), a probe of the multimeter
+ *   (`probe:<name>`, a capsule on its handle). The press takes it out of its socket (the part is pending at once); the
+ *   hand leads it within its reach (the part's span from its other legs, the lead's length from its thing, the probe's
+ *   lead from its jack); within `NEAR` of a socket it may take — a free one; for a probe any but the other probe's,
+ *   since a probe touches what is there (VISUAL §5.1) — a cue ring shows there and the row lights (`near`), never the
+ *   socket it just left until the hand has gone `AWAY` from it. A part's leg clicks into the nearest such socket within
+ *   `SNAP` while the hand still moves (VISUAL §6, «Одна ніжка»); let go with no socket, it goes back where it was (it
+ *   never stays in the air on its own). A wire's end — a jumper's, a plug, a probe's — clicks in when it is let go
+ *   within `SNAP` of such a socket, and lies where it was let go otherwise (a probe let go off the base goes back to
+ *   rest by its meter): it crosses many sockets on its way (a plug always comes from beyond the board's edge), and one
+ *   that clicked into the first of them would never reach its row.
  *
  * The circuit's `near` was never set (zero synthesis, gotcha G14); here it is live. Drag events after the hand let go
  * of a thing (a click mid-drag ends the gesture) go to the same press without asking `enabled` again (G11): every
@@ -61,7 +63,7 @@ import {
 import { JUMPER, type PartModel } from '../parts';
 import { createCue, type Cue } from './cue';
 import { createGrip, gripGeometries, type Grip, type GripKind, type GripSpot } from './grips';
-import type { Leg } from './leg';
+import type { Leg, Place } from './leg';
 import type { Terrain } from './terrain';
 import { TRAY, type Tray } from './tray';
 
@@ -140,6 +142,24 @@ export interface LeadEnd {
   gripAxis(out: Vector3): Vector3;
 }
 
+/**
+ * A probe of an instrument (`shared/instruments/probe.ts`): an end on a lead from its jack, like a plug, but it takes
+ * no socket of the board — its own socket is the instrument's (`socket`, `seat`) and it may go into one a leg is in.
+ */
+export interface ProbeEnd extends LeadEnd {
+  /** The socket its tip has arrived in, or null. */
+  readonly socket: SocketId | null;
+  /** The instrument is on its place: the probe may be taken. */
+  ready(): boolean;
+  /** Its tip has arrived in the socket, or was taken out (null). */
+  seat(socket: SocketId | null): void;
+  /** May its tip go into this socket of the board: any one, a taken one too, but the other probe's. */
+  takes(socket: SocketId): boolean;
+  /** Where it goes when it is let go away from every socket at `at` (board frame): lying there over the base, or
+   * back to rest by its instrument. */
+  drop(at: Vector3): Place;
+}
+
 /** The parts on the board as the hand sees them (`bench/on-board.ts`). */
 export interface HandParts {
   readonly models: ReadonlyMap<string, PartModel>;
@@ -165,6 +185,8 @@ export interface HandsWorld {
   readonly parts: HandParts;
   readonly tray: Tray;
   readonly leads: ReadonlyMap<string, LeadEnd>;
+  /** The probes of the instruments by name (`red`, `black`): their keys are `probe:<name>`. */
+  readonly probes?: ReadonlyMap<string, ProbeEnd>;
   readonly terrain: Terrain;
   /** The board's body in plan (board frame): a part let go over it goes back where it was, off it to the tray. */
   readonly area: { readonly x0: number; readonly x1: number; readonly z0: number; readonly z1: number };
@@ -196,6 +218,8 @@ export interface Hands {
   carried(id: string): boolean;
   /** The plug lead the hand drives now, or which travels. */
   busyLead(name: string): boolean;
+  /** The probe the hand drives now, or which travels into a socket. */
+  busyProbe(name: string): boolean;
   /** Where the thing the hand moves now, or moved last, is (world): the checks' motion reader. `up`, when given, gets
    * the world direction of that part's own up — its turn against the table (a plug's focus leaves it as it was). */
   focus(out: Vector3, up?: Vector3): Vector3;
@@ -310,6 +334,7 @@ interface End {
   readonly part: string | null;
   readonly k: number;
   readonly lead: string | null;
+  readonly probe: string | null;
   /** The socket it left (null: it lay). */
   readonly from: SocketId | null;
   readonly offset: Vector3;
@@ -334,6 +359,7 @@ type Intent =
   | { readonly kind: 'part'; readonly id: string; readonly spec: string; readonly legs: readonly (SocketId | null)[] }
   | { readonly kind: 'leg'; readonly id: string; readonly k: number; readonly socket: SocketId }
   | { readonly kind: 'lead'; readonly name: string; readonly socket: SocketId }
+  | { readonly kind: 'probe'; readonly name: string; readonly socket: SocketId }
   | { readonly kind: 'tray'; readonly id: string };
 
 interface PartRec {
@@ -350,9 +376,19 @@ interface PartRec {
 interface LeadRec {
   readonly lead: LeadEnd;
   readonly grip: Grip;
+  /** A probe's: its grip shows only while its instrument is on its place. */
+  readonly ready: () => boolean;
   linger: number;
   over: number;
 }
+
+/** What the hand moves now or moved last, for the checks' motion reader. */
+interface Focus {
+  readonly part: string | null;
+  readonly lead: string | null;
+  readonly probe: string | null;
+}
+const NO_FOCUS: Focus = { part: null, lead: null, probe: null };
 
 const UP = new Vector3(0, 1, 0);
 
@@ -372,7 +408,8 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
   let end: End | null = null;
   let near: SocketSpec | null = null;
   let offered: string | null = null;
-  let lastFocus: { part: string | null; lead: string | null } = { part: null, lead: null };
+  let lastFocus: Focus = NO_FOCUS;
+  const probeEnds: ReadonlyMap<string, ProbeEnd> = world.probes ?? new Map();
   const flips = new Map<string, Flip>();
   const levels = new Map<string, { from: number; to: number; t: number; seconds: number }>();
   let intents: Intent[] = [];
@@ -513,7 +550,7 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
       hand: hp.clone(),
     };
     if (origin === 'offer') offered = null;
-    lastFocus = { part: id, lead: null };
+    lastFocus = { ...NO_FOCUS, part: id };
     follow(carry, hp, true);
     // level with the table in the tray (the slot's press set it), the board's tilt on the way
     if (origin === 'tray') setLevel(id, 1, 0.25);
@@ -567,7 +604,7 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
     flips.set(id, { spec: p.spec, target: [...p.legs].reverse() as SocketId[], start, pivot, t: 0 });
     lift(id, p.spec, p.legs.length);
     legs.forEach((l, k) => l.go({ kind: 'hand', at: start[k]!.clone() }, 0));
-    lastFocus = { part: id, lead: null };
+    lastFocus = { ...NO_FOCUS, part: id };
   };
 
   const stepFlips = (dt: number): void => {
@@ -591,10 +628,14 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
 
   /* -------------------------------------------------------------------------------- gesture 2: an end */
 
+  /** The lead an end is on: a plug's, a probe's; null for a part's leg. */
+  const wireOf = (e: End): LeadEnd | null =>
+    e.lead !== null ? world.leads.get(e.lead)! : e.probe !== null ? probeEnds.get(e.probe)! : null;
+
   /** Where an end may go from its other legs (a part's span) or its thing (a lead's length), in plan. */
   const reach = (e: End, p: Vector3): void => {
-    if (e.lead !== null) {
-      const l = world.leads.get(e.lead)!;
+    const l = wireOf(e);
+    if (l !== null) {
       const d = Math.hypot(p.x - l.from.x, p.z - l.from.z);
       if (d > l.reach) {
         p.x = l.from.x + ((p.x - l.from.x) * l.reach) / d;
@@ -622,14 +663,14 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
     });
   };
 
-  /** May the end click into this socket: free, not the one just left, within reach, allowed. */
+  /** May the end click into this socket: free (a probe: any it takes), not the one just left, within reach, allowed. */
   const takes = (e: End, s: SocketSpec): boolean => {
-    if (s.id === e.left || !canSeat(layout, state, s.id)) return false;
+    if (s.id === e.left) return false;
+    const probe = e.probe !== null ? probeEnds.get(e.probe)! : null;
+    if (probe ? !probe.takes(s.id) : !canSeat(layout, state, s.id)) return false;
     if (hands.policy?.seat?.(e.key, s.id) === false) return false;
-    if (e.lead !== null) {
-      const l = world.leads.get(e.lead)!;
-      return Math.hypot(s.x - l.from.x, s.z - l.from.z) <= l.reach + 1e-9;
-    }
+    const l = wireOf(e);
+    if (l !== null) return Math.hypot(s.x - l.from.x, s.z - l.from.z) <= l.reach + 1e-9;
     const part = state.parts.get(e.part!);
     const span = part ? footprintOf(part.spec)?.span : null;
     if (!part || !span) return false;
@@ -642,9 +683,14 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
   };
 
   const endHeight = (e: End, p: Vector3): number =>
-    e.lead !== null ? Math.max(terrain.ground(p.x, p.z), 0) + CARRY : CARRY;
+    wireOf(e) !== null ? Math.max(terrain.ground(p.x, p.z), 0) + CARRY : CARRY;
 
-  const startEnd = (key: HandKey, leg: Leg, ev: DragInfo, who: { part?: string; k?: number; lead?: string }) => {
+  const startEnd = (
+    key: HandKey,
+    leg: Leg,
+    ev: DragInfo,
+    who: { part?: string; k?: number; lead?: string; probe?: string },
+  ) => {
     const hp = handPoint(ev, new Vector3(), true);
     if (!hp) return;
     let from: SocketId | null;
@@ -653,13 +699,20 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
       from = state.leads.get(who.lead) ?? null;
       if (from) seatLead(layout, state, who.lead, null);
       loose = 'lie';
-      lastFocus = { part: null, lead: who.lead };
+      lastFocus = { ...NO_FOCUS, lead: who.lead };
+    } else if (who.probe !== undefined) {
+      // out of its socket at the press: the meter reads nothing until it is in one again
+      const probe = probeEnds.get(who.probe)!;
+      from = probe.socket;
+      probe.seat(null);
+      loose = 'lie';
+      lastFocus = { ...NO_FOCUS, probe: who.probe };
     } else {
       const p = state.parts.get(who.part!)!;
       from = p.legs[who.k!] ?? null;
       if (from) seatLeg(layout, state, who.part!, who.k!, null);
       loose = footprintOf(p.spec)?.shape === 'wire' ? 'lie' : 'back';
-      lastFocus = { part: who.part!, lead: null };
+      lastFocus = { ...NO_FOCUS, part: who.part! };
     }
     held = key;
     end = {
@@ -668,6 +721,7 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
       part: who.part ?? null,
       k: who.k ?? 0,
       lead: who.lead ?? null,
+      probe: who.probe ?? null,
       from,
       offset: leg.pos.clone().setY(0).sub(hp),
       loose,
@@ -710,7 +764,11 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
     near = null;
     e.leg.go({ kind: 'socket', socket }, SEAT_SECONDS, SEAT_LIFT);
     intents.push(
-      e.lead !== null ? { kind: 'lead', name: e.lead, socket } : { kind: 'leg', id: e.part!, k: e.k, socket },
+      e.lead !== null
+        ? { kind: 'lead', name: e.lead, socket }
+        : e.probe !== null
+          ? { kind: 'probe', name: e.probe, socket }
+          : { kind: 'leg', id: e.part!, k: e.k, socket },
     );
   };
 
@@ -731,8 +789,14 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
       intents.push({ kind: 'leg', id: e.part!, k: e.k, socket: e.from });
       return;
     }
-    // it lies where it was let go, its wire toward its thing or its part
     const at = e.leg.pos.clone();
+    if (e.probe !== null) {
+      // a probe lies where the hand let it go over the base, and goes back to rest by its meter off it
+      e.leg.go(probeEnds.get(e.probe)!.drop(e.at.clone()), 0.3, 0.3);
+      done(e.key, 'away');
+      return;
+    }
+    // it lies where it was let go, its wire toward its thing or its part
     const anchor = e.lead !== null ? world.leads.get(e.lead)!.from : null;
     const out = anchor ? anchor.clone().sub(at).setY(0) : e.leg.out.clone().setY(0);
     if (out.lengthSq() < 1e-9) out.set(1, 0, 0);
@@ -777,6 +841,15 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
           const at = l.leg.pos.clone();
           l.leg.go({ kind: 'lie', at, out: l.from.clone().sub(at).setY(0).normalize() }, 0.15, 0);
         }
+      } else if (i.kind === 'probe') {
+        const pr = probeEnds.get(i.name);
+        if (!pr || pr.leg.socket !== i.socket) continue;
+        if (pr.leg.seated !== i.socket) {
+          keep.push(i);
+          continue;
+        }
+        pr.seat(i.socket);
+        done(`probe:${i.name}`, 'board');
       } else {
         const legs = legsOf(i.id);
         if (!legs.every((l) => l.place.kind === 'tray')) continue;
@@ -979,13 +1052,18 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
     for (const [id, m] of parts.models) if (!recs.has(id)) adopt(id, m);
   };
 
-  /** The plugs of the leads: one capsule each. */
-  for (const lead of world.leads.values()) {
-    const key = `lead:${lead.name}` as const;
+  /** The capsule of a plug or of a probe (the end of a lead), and what the hand does with it. */
+  const adoptWire = (
+    key: `lead:${string}` | `probe:${string}`,
+    lead: LeadEnd,
+    who: { lead?: string; probe?: string },
+    ready: () => boolean,
+    busy: () => boolean,
+  ): void => {
     const g = gripOf(grips, key, 'end');
-    const rec: LeadRec = { lead, grip: g, linger: 0, over: 0 };
-    leadRecs.set(lead.name, rec);
-    const gripLive = (): boolean => live(key) && free(key) && (held === key || !hands.busyLead(lead.name));
+    const rec: LeadRec = { lead, grip: g, ready, linger: 0, over: 0 };
+    leadRecs.set(key, rec);
+    const gripLive = (): boolean => live(key) && free(key) && ready() && (held === key || !busy());
     probes.push(
       ctx.input.register(g.hit, {
         cursor: 'grab',
@@ -997,7 +1075,7 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
         },
         dragStart: (e) => {
           if (!gripLive() || held !== null) return;
-          startEnd(key, lead.leg, e, { lead: lead.name });
+          startEnd(key, lead.leg, e, who);
         },
         drag: (e) => {
           if (held !== key || !end || end.key !== key) return;
@@ -1017,6 +1095,13 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
         return frame.localToWorld(lead.leg.pos.clone().setY(0));
       }),
     );
+  };
+  for (const lead of world.leads.values()) {
+    adoptWire(`lead:${lead.name}`, lead, { lead: lead.name }, () => true, () => hands.busyLead(lead.name));
+  }
+  // the probes of the instruments: only while their instrument is on its place
+  for (const p of probeEnds.values()) {
+    adoptWire(`probe:${p.name}`, p, { probe: p.name }, () => p.ready(), () => hands.busyProbe(p.name));
   }
 
   /* ---------------------------------------------------------------------------------- the frame */
@@ -1075,7 +1160,7 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
       );
       parts.level(id, 1);
       offered = id;
-      lastFocus = { part: id, lead: null };
+      lastFocus = { ...NO_FOCUS, part: id };
       return id;
     },
     busy(id) {
@@ -1085,7 +1170,7 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
         offered === id ||
         levels.has(id) ||
         end?.part === id ||
-        intents.some((i) => i.kind !== 'lead' && i.id === id)
+        intents.some((i) => (i.kind === 'part' || i.kind === 'leg' || i.kind === 'tray') && i.id === id)
       );
     },
     carried(id) {
@@ -1094,9 +1179,17 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
     busyLead(name) {
       return end?.lead === name || intents.some((i) => i.kind === 'lead' && i.name === name);
     },
+    busyProbe(name) {
+      return end?.probe === name || intents.some((i) => i.kind === 'probe' && i.name === name);
+    },
     focus(out, up) {
       frame.updateWorldMatrix(true, false);
-      const l = lastFocus.lead !== null ? world.leads.get(lastFocus.lead) : undefined;
+      const l =
+        lastFocus.lead !== null
+          ? world.leads.get(lastFocus.lead)
+          : lastFocus.probe !== null
+            ? probeEnds.get(lastFocus.probe)
+            : undefined;
       const legs = lastFocus.part !== null ? legsOf(lastFocus.part) : [];
       // a part gone (into the tray) stays where it was last seen
       if (l) frame.localToWorld(focusAt.copy(l.leg.pos));
@@ -1118,6 +1211,7 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
       levels.clear();
       for (const i of intents) {
         if (i.kind === 'lead') world.leads.get(i.name)?.leg.snap();
+        else if (i.kind === 'probe') probeEnds.get(i.name)?.leg.snap();
         else for (const leg of legsOf(i.id)) leg.snap();
       }
       resolve();
@@ -1177,7 +1271,7 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
       for (const rec of leadRecs.values()) {
         const l = rec.lead;
         rec.linger = rec.over ? LINGER : Math.max(rec.linger - Math.max(dt, 0), 0);
-        const want = (touch || rec.linger > 0) && (held === null || held === rec.grip.key);
+        const want = (touch || rec.linger > 0) && (held === null || held === rec.grip.key) && rec.ready();
         const at = l.gripAt(new Vector3());
         spots.push({ g: rec.grip, s: { leg: 0, kind: 'end', at, r: GRIP_R, axis: l.gripAxis(new Vector3()) } });
         rec.grip.shown.go(want ? 1 : 0, 0.15);

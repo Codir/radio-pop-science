@@ -39,7 +39,7 @@ What a chapter writes (plain numbers, read every frame by `bench.update`):
 | `lens`, `lensTarget` | 0, `null` | the magnifier: 0 in its holder … 1 at `lensTarget` (a `LensPose` in the base frame, e.g. `overPose`) |
 | `lensCall` | 0 | the step asks the reader to take the magnifier: the resting ring turns full cyan and pulses |
 | `dive` | 0 | progress of the flight through the ring: the rim's arcs from 0.5 on |
-| `meter`, `scope` | 0 | the instruments: 0 away beyond the frame's edge … 1 on their places (a step tweens them, 0.6 s) |
+| `meter`, `scope` | 0 | the instruments: 0 away beyond the frame's edge … 1 on their places (a step tweens them, 0.6 s); the multimeter's probes may be taken only at 1, and go with it when it leaves |
 
 What the bench has (read-only): `room`, `base` (`base.frame` is the tilted base frame: whatever stands on the base
 goes there, then `tameAll(bench.group)`), `light` (the rig owns `ctx.env.tune`; never tune the environment from a
@@ -48,9 +48,10 @@ every frame), `layout` (the board as data, `sim/board`), `board` (the 3D breadbo
 `socketLocal(id)`, the instanced `mouths`, the `print`, the lit rows `highlight(rows, dt)` / `lit`), `state` and
 `parts` (the parts on the board, below), `props` (the permanent things: the battery box with the switch, the player,
 the speaker and the lamp with their real marks from `shared/parts` — `props.things`, `props.bulb` — the lamp post and
-the `filament` where the light hangs; the multimeter and the oscilloscope still stand-ins of their size and colour),
-`fixed`, `switch`, `tray` and `hands` (the reader's hand, «hand» below) and `tools` (the magnifier and its `holder`
-pose).
+the `filament` where the light hangs; `props.meter` is the multimeter's place on the table, the oscilloscope still a
+stand-in of its size and colour), `fixed`, `switch`, `tray` and `hands` (the reader's hand, «hand» below), `tools` (the
+magnifier and its `holder` pose), `model` (the circuit model of the board, «model» below) and `multimeter` («instruments»
+below).
 
 The board's print (the letters of the lines, the column numbers) is drawn only where all of it has ≥ 16 px-equivalent
 per em (`chapter-check`'s rule): on `board`, not on `stand`, never on a phone. The rails' «+» and «−» are not print
@@ -100,7 +101,9 @@ of its socket hangs in the air over where it was while the body keeps its turn, 
 moves the legs of the parts it drives: «hand» below); `bench.parts.show(id, model, sockets)` stands a model the state
 does not hold (a kind the catalog lacks yet) outside the circuit. `bench.preset([{ id: 'R1', spec: 'resistor-4k7',
 at: 'a3', o?, setting? }, …], leads?)` makes the board hold exactly a step's parts at once, and the named plugs in their
-sockets (a part or a plug that does not stand there is a RangeError); `bench.clear()` takes everything off. `props.things` and `props.bulb` are the permanent things; the bench gives the bulb's filament the light
+sockets (a part or a plug that does not stand there is a RangeError); a part of two legs that stands at any span within
+its reach — a jumper from a rail to the row it feeds — takes `to`, the socket of its leg 1, instead of `o`
+(`{ id: 'J1', spec: 'jumper', at: '+3', to: 'a3' }`); `bench.clear()` takes everything off. `props.things` and `props.bulb` are the permanent things; the bench gives the bulb's filament the light
 rig's glow every frame.
 
 For checks: `__app.read('electronics-board')` → `{ parts: { R1: { spec, legs } … }, leads, settings, models, shown, key,
@@ -137,12 +140,13 @@ bench.hands.policy = {
   its way (0.25 s, from the level it has), and lays it down again on its way back (0.4 s). On a phone the tray is the
   dock's: `bench.hands.offer(key)` puts a new part over the board to be taken.
 - **Gesture 2 — one end** by its grip (`leg:<id>:<k>`: a ring on an axial part's leg, a tab before a radial part's
-  body, a capsule on a jumper's end; `lead:<name>`: the capsule on a plug): out of its socket at the press (the part
-  pending), led within its reach (the part's span from its other legs, 4.0 of a lead from its thing); `hands.near` is
-  the free socket within `NEAR` it would take (a cue ring, the row lit) — never the one it left until the hand has
-  gone `AWAY`. A part's leg clicks in within `SNAP` while the hand moves; a jumper's end and a plug click in when let
-  go within `SNAP` (they cross many sockets on their way), and lie where they were let go otherwise; a part's leg let
-  go with no socket goes back.
+  body, a capsule on a jumper's end; `lead:<name>`: the capsule on a plug; `probe:<name>`: the capsule on a probe's
+  handle, «instruments» below): out of its socket at the press (the part pending), led within its reach (the part's
+  span from its other legs, 4.0 of a lead from its thing, 9 of a probe from its jack); `hands.near` is the free socket
+  within `NEAR` it would take (a probe: any but the other probe's) — a cue ring, the row lit — never the one it left
+  until the hand has gone `AWAY`. A part's leg clicks in within `SNAP` while the hand moves; a jumper's end, a plug and
+  a probe click in when let go within `SNAP` (they cross many sockets on their way), and lie where they were let go
+  otherwise (a probe let go off the base goes back to rest by the meter); a part's leg let go with no socket goes back.
 - On a touch screen the thing rides `LIFT` (48 px) above the finger and the grips are always shown; with a mouse they
   come while the pointer is on the part and 1.5 s after. The grips' spheres never overlap (VISUAL §6 and §8: the tests
   cast rays from the cameras of `stand`, `board` and `phone`). On a phone the radial parts' tabs are hidden: those
@@ -168,6 +172,79 @@ another row) and `pending`; `__app.read('electronics-hand')` → `{ held, near, 
 hand moves now or moved last, that part's own up — its body's turn against the table — and every plug). Probes: `part:<id>`, `leg:<id>:<k>` (its grip), `tip:<id>:<k>` (the leg's foot on
 the board's face), `lead:<name>`, `end:<name>`, `tray:<key>`, `switch`. The sandbox's step `hand` and
 `qa/measure.mjs --only hand` (a mouse, `--touch`) drive them.
+
+## `model` — the circuit on the board (E2-6)
+
+`shared/model/driver.ts` is the only file of the bench that calls the circuit model (`sim/core`); everything the bench
+shows of the circuit is read from it. The bench mounts one (`bench.model`) and syncs it every frame after the hand, so a
+leg that arrived this frame is in the circuit the same frame:
+
+```ts
+const model = createBenchModel({ layout, board: state, extra: () => multimeter.extra() }); // fixed?: BENCH_FIXED, now?
+model.sync(); // the board's netlist; a new shape compiles, a changed setting only solves again; nothing changed: nothing
+model.ok; // the last solve succeeded; `failure` says why not ('singular', 'no-convergence')
+model.rowVolts('7ae'); // 5.997 V on the divider; `nodeVolts(n)`, `reading(id)` → { u, i, p }; null after a failure
+model.ohms(a, b); // what an ohmmeter reads between two nodes: Ω, Infinity (no path), null (no solve)
+```
+
+- **Compile on a new shape, solve on a new setting.** The netlist's `key` (`sim/board`) is the circuit's shape: a part
+  in or out, a leg in another row. A setting (a pot's knob, the battery's switch `SW`) is written into the compiled
+  parts, which the model reads live, and the same circuit is solved again. `compiles`, `version` (one per solve) and
+  `dcMs` (the last solve's time, `performance.now`; a test passes its own clock) are for the checks: a board of the
+  sandbox solves in ≈ 0.03 ms.
+- **One `ModelState` for the bench's life** (`model.state`): what the model remembers of every part — heat, burnt, a
+  lamp's filament — lives there by part id through every new circuit. A part in the hand keeps its entry (it stays
+  burnt); a part that left the board for good (into the tray: `state.parts` no longer has it) has its entry deleted, as
+  `sim/core/README.md` («The state») asks — ids are never given twice, so a new part is whole.
+- **A failed solve is never shown** (gotcha G7): `solution` stays the last good one, `ok` is false, and `reading`,
+  `rowVolts`, `nodeVolts` give null until a solve succeeds — never a NaN, never the failure's zeros.
+- **The ohmmeter's own solve** (`ohms`): the circuit now on the board with its sources out (the batteries; the player
+  when the catalog has it), the meter's own source `OHMMETER` — 5 V behind 10 kΩ, at most 0.5 mA, so a lamp reads its
+  cold 5.5 Ω — between the two nodes, and the voltage it makes over its current. It has a model state of its own (the
+  burnt parts copied in as gaps): the bench's is untouched. Computed once per solve of the board and pair of nodes.
+
+For checks: `__app.read('electronics-model')` → `{ key, version, compiles, ok, failure, dcMs, iterations, issues,
+pending, parts: { id: { u, i, p } }, rows: { row: volts } }` (the rows a part uses; nothing of a failed solve).
+
+## `instruments` — the multimeter (E2-6)
+
+The bench mounts the multimeter with itself (`bench.multimeter`, VISUAL §5.1): a digital pocket meter on the table on
+the left, display up — its matt window has no digits, the number is in the step's panel — a dial of four positions
+(off, V, A, Ω) whose knob turns after the panel's switch in 0.25 s, the two jacks, and the red and black probes on their
+leads. It comes and goes with `bench.meter` (0.6 s); its probes are taken only when it is on its place, and go with it
+when it leaves.
+
+```ts
+bench.meter = 1; // or the step's param, tweened
+ui.define({ divider: { controls: [
+  { type: 'segmented', id: 'meter-mode', items: [...], value: 'V', onChange: (m) => (bench.multimeter.mode = m) },
+  bench.multimeter.readout('meter', words.meter), // a text readout: no count-up, right on a held page
+] } });
+bench.multimeter.put({ red: 'a7', black: '-3' }); // a step's own probes, at once; null — back to rest
+```
+
+- **What it reads** (`meter-model.ts`): **V** — from the red probe's row to the black one's, an ideal voltmeter; **A** —
+  the meter is a wire between its probes (`METER`, the catalog's jumper, 1 mΩ) that the model driver takes into the
+  circuit (`extra()`), the current into the red probe; across the battery an honest short, no fuse (plan decision 8);
+  **Ω** — `model.ohms`, «OL» when no current flows or beyond `OHM_LIMIT` 40 MΩ (a pocket meter's top range; the
+  catalog's largest resistor is 10 MΩ). A probe out of a socket, or the meter off: «—». With the model's last solve
+  failed the display keeps what it shows.
+- **The display** (`createMeterDisplay`) shows four significant digits with a decimal comma and the range's SI prefix
+  (V: mV, V; A: μA, mA, A; Ω: Ω, kΩ, MΩ), picked on the rounded value — «5,997 V», «4,700 kΩ», «500,0 mV», «2,998 mA»;
+  plain «0,000 V» for zero. It reads every `METER_REFRESH` 0.33 s of engine time and holds its reading between, at once
+  when the dial turns or on `snap` (a deep link); a held frame (`dt` 0) never refreshes.
+- **The probes** (`probe.ts`, copied from the circuit's gauge) are ends of the hand like the plugs (`probe:red`,
+  `probe:black`; `hand/hands.ts` `ProbeEnd`): a `cyan` capsule on the handle, taken and let go like a plug's end, but
+  a probe takes no socket of the board — its socket is the meter's (`multimeter.sockets`) and it goes into any socket,
+  one a leg or a plug is in too (its tip then touches the top of what is there), never the other probe's. Let go away
+  from the sockets it lies on the base, or off the base goes back to rest beside the meter (`Leg` place `rest`, which
+  the meter moves with itself). In a socket and in the hand a probe stands leaning toward the meter; its lead rises from
+  the jack in an arch to the probe's back. On a phone the probes rest on the base in front of the board (VISUAL §9).
+
+For checks: `__app.read('electronics-meter')` → `{ mode, red, black, live, value, text, unit, refreshes, shown, ready,
+prints }` (`live` — the reading now; `value`, `text` — what the display shows); probes `probe:red`, `probe:black` (the
+grips) and `end:red`, `end:black` (the tips on the board's face). The sandbox's steps `meter` and `divider` and
+`qa/measure.mjs --only meter` drive them.
 
 ## Копії
 
@@ -200,7 +277,7 @@ from «заплановано» to «зроблено» in the same commit and c
 | `circuit/shared/stage/bulb-heat.ts` | `electronics/shared/parts/heat-scale.ts` | лише шкала «тепло ↔ температура» (`HEAT_STOPS`, `temperatureOfHeat`, `heatOfTemperature`, `FIRST_GLOW`) і `formatTemperature`; енергетичний баланс лампи прибрано: температуру нитки дає модель | E2-4 | зроблено |
 | `circuit/shared/stage/__tests__/bulb.test.ts`, `bulb-heat.test.ts` | `electronics/shared/parts/__tests__/bulb.test.ts`, `heat-scale.test.ts` | тести скла взято як є; з тестів тепла — лише шкала й показ; нові: скло й різьба лампи стенда за `VISUAL.md` §2, лампа на 6 V і 3 V на шкалі за §4.6 | E2-4 | зроблено |
 | `circuit/chapters/build/parts/glide.ts` | `electronics/shared/hand/glide.ts` | нічого, лише коментар-заголовок | E2-5 | зроблено |
-| `circuit/chapters/build/parts/ends.ts` | `electronics/shared/hand/leg.ts` | `End` → `Leg`: місця «гніздо», «лежить», «у руці», «лоток» (гнізда й рельєф — від стенда, `LegWorld`); одне гніздо — один кінець (затискачів на два кінці, їхнього зсуву й віяла немає); напрям повертає за якорем — річчю дроту чи тілом деталі; `seated` — лише по прибуттю | E2-5 | зроблено |
+| `circuit/chapters/build/parts/ends.ts` | `electronics/shared/hand/leg.ts` | `End` → `Leg`: місця «гніздо», «лежить», «у руці», «лоток», «спокій біля приладу» (щуп, E2-6) (гнізда й рельєф — від стенда, `LegWorld`); одне гніздо — один кінець (затискачів на два кінці, їхнього зсуву й віяла немає); напрям повертає за якорем — річчю дроту чи тілом деталі; `seated` — лише по прибуттю | E2-5 | зроблено |
 | `circuit/chapters/build/parts/curves.ts` | `electronics/shared/hand/curves.ts` | рельєф — параметр (`Terrain`); `peeled` і `blend` (з ними й `resample`) не взято: обидва кінці кожного дроту стенда вільні | E2-5 | зроблено |
 | `circuit/chapters/build/parts/clamps.ts` (`ground`) | `electronics/shared/hand/terrain.ts` | лише `ground()` із піднятими ділянками як даними (тіло плати, бокс батареї, речі на основі, а для дротів і тіла деталей на платі — їх дає стенд, `bench/mounds.ts`) і лічильник змін `version`, за яким дріт перебудовує форму; затискачі й місця спокою — ні | E2-5 | зроблено |
 | `circuit/chapters/build/parts/grips.ts` | `electronics/shared/hand/grips.ts` | батьківська група — параметр; загальний ключ; три форми (`VISUAL.md` §6): кільце на ніжці аксіальної деталі, язичок перед радіальною, капсула 0,07 × 0,24 на кінці перемички, штекері й щупі; радіус сфери дає стенд (сфери не перекриваються); тримач завжди видимий, з’являється й зникає лише вигляд — прихований захват теж бере вказівник | E2-5 | зроблено |
@@ -209,7 +286,7 @@ from «заплановано» to «зроблено» in the same commit and c
 | `circuit/chapters/build/parts/switch.ts` | `electronics/shared/bench/switch.ts` | вимикач батареї; `world.flying` → `bench.flying`; `closed` → налаштування деталі `SW` (`bench.closed`); повзунок з інерцією ставить сам стенд | E2-5 | зроблено |
 | `circuit/chapters/battery/parts/cue.ts` | `electronics/shared/hand/cue.ts` | внутрішній радіус кільця, швидкість появи й ім’я — параметри (кільце-підказка на гнізді: 0,12 і 0,025, 0,12 s) | E2-5 | зроблено |
 | `circuit/chapters/build/qa/helpers.mjs` | `_dev/chapters/_sandbox-electronics-bench/qa/helpers.mjs` | нічого, лише коментар-заголовок (бриф E2-3 називає файл серед файлів пісочниці, і `measure.mjs` бере з нього `read`) | E2-3 | зроблено |
-| `circuit/shared/stage/tools/gauge.ts` (щуп і дріт) | `electronics/shared/instruments/probe.ts` | вістря — `Leg` (гніздо, спокій, рука); дріт — від гнізда приладу; стрілку, шкалу, `GAUGE_HOME` і число в 3D не взято | E2-6 | заплановано |
+| `circuit/shared/stage/tools/gauge.ts` (щуп і дріт) | `electronics/shared/instruments/probe.ts` | щуп у мірилі стенда (вістря 0,25, ручка 0,9), червоний `coral` і чорний `ink`; вістря — `Leg` руки (гніздо, лежить на основі, рука, спокій біля приладу); дріт `DynTube` — від гнізда приладу дугою до спинки щупа; стрілку, шкалу, `GAUGE_HOME`, нахил приладу й число в 3D не взято | E2-6 | зроблено |
 | `circuit/shared/world/dive.ts` | `electronics/shared/dive/rail-math.ts` | нічого | E2-8 | заплановано |
 | `circuit/chapters/lamp/parts/rail.ts` | `electronics/shared/dive/camera-rail.ts` | імпорт — з `./rail-math` | E2-8 | заплановано |
 | `circuit/chapters/lamp/parts/lens-keeper.ts` | `electronics/shared/dive/lens-keeper.ts` | спирається на лупу стенда (`BenchTools`) | E2-8 | заплановано |

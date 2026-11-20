@@ -5,7 +5,8 @@ import { defineChapter } from '@/engine/api';
  * of `@electronics/shared/**` in a real browser, with the measurements of `qa/measure.mjs`. Batch E2 grows it step by
  * step; E2-3: the dark room, the base with the breadboard, the magnifier in its holder and the stand-ins of the
  * permanent things, from the bench's shots (steps `room`, `board`, `meter`, `scope`); E2-4: the parts with their real
- * marks on the board (step `parts`); E2-5: the hand, the tray, the plug leads and the switch (step `hand`).
+ * marks on the board (step `parts`); E2-5: the hand, the tray, the plug leads and the switch (step `hand`); E2-6: the
+ * circuit model on the bench and the multimeter with its probes (steps `meter`, `divider`).
  * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
@@ -21,7 +22,8 @@ export const SANDBOX = {
     },
     meter: {
       title: 'Мультиметр на столі',
-      blurb: 'Заготовка мультиметра виїжджає ліворуч від основи; у кадрі вона й уся плата.',
+      blurb:
+        'Мультиметр виїжджає ліворуч від основи, щупи лежать біля нього вільно. Плата порожня, тож показ — «—». Щуп беруть за ручку й ставлять у будь-яке гніздо; режим і число — у панелі.',
     },
     scope: {
       title: 'Осцилограф на столі',
@@ -36,6 +38,11 @@ export const SANDBOX = {
       title: 'Рука й лоток',
       blurb:
         'Порожня плата, у лотку резистори, перемичка й світлодіоди, дроти динаміка, плеєра й лампи лежать вільно. Деталь несуть цілою — з лотка на плату, з місця на місце, назад у лоток; клацання по деталі перевертає її. Ніжку переставляють за кільце чи язичок, кінець перемички чи штекер — за капсулу. Дотик до вимикача перемикає батарею.',
+    },
+    divider: {
+      title: 'Подільник і мультиметр',
+      blurb:
+        'Від шини «+» перемичка, 1 kΩ, 2 kΩ і друга перемичка до шини «−», вимикач замкнено. Червоний щуп у середній ряд, чорний на «−» — і мультиметр показує напругу; так само струм, коли прилад стоїть замість перемички, і опір.',
     },
   },
   /** The names under the pointer (tooltips) and on the dock's buttons of the tray (a phone). */
@@ -59,7 +66,10 @@ export const SANDBOX = {
       lamp2: 'Дріт лампи',
     },
     switch: 'Вимикач батареї',
+    probes: { red: 'Червоний щуп', black: 'Чорний щуп' },
   },
+  /** The multimeter in the panel: its number, the dial's switch (V, A, Ω are symbols; «off» is a word). */
+  meter: { readout: 'Мультиметр', mode: 'Режим', off: 'Вимкнено' },
 } as const;
 
 export default defineChapter({
