@@ -1,0 +1,53 @@
+{
+  "id": "electronics",
+  "title": "Радіоелектроніка",
+  "subtitle": "Від резистора до підсилювача",
+  "emptyNote": "Перші глави — в роботі",
+  "order": 3,
+  "accent": "teal",
+  "emblem": "chart",
+  "status": "draft",
+  "format": "path",
+  "axis": {
+    "label": "Поверх",
+    "unit": "",
+    "hint": "Де ми: від стенда до атомів деталі",
+    "floors": [
+      { "id": "atoms", "label": "атоми", "value": 0 },
+      { "id": "inside", "label": "усередині деталі", "value": 1 },
+      { "id": "part", "label": "деталь", "value": 2 },
+      { "id": "stand", "label": "стенд", "value": 3 }
+    ]
+  },
+  "groups": [
+    { "id": "prologue", "label": "Пролог", "layer": "prologue" },
+    { "id": "tools", "label": "Прилади", "layer": "path" },
+    { "id": "resistor", "label": "Резистор", "layer": "path" },
+    { "id": "capacitor", "label": "Конденсатор", "layer": "path" },
+    { "id": "diode", "label": "Діод", "layer": "path" },
+    { "id": "transistor", "label": "Транзистор", "layer": "path" },
+    { "id": "practicum", "label": "Практикум", "layer": "practicum" },
+    { "id": "branches", "label": "Гілки", "layer": "branch" }
+  ],
+  "journey": [
+    { "id": "prologue", "group": "prologue", "title": "Музика з плеєра ледь чути. Що поставити між ним і динаміком?", "minutes": 5, "floor": "stand" },
+    { "id": "meter", "group": "tools", "title": "Як побачити напругу, струм і форму сигналу?", "minutes": 9, "floor": "stand" },
+    { "id": "resistor", "group": "resistor", "title": "Навіщо схемі деталь, яка лише заважає струму?", "minutes": 10, "floor": "inside" },
+    { "id": "sensors", "group": "branches", "parent": "resistor", "title": "Які резистори відчувають тепло й світло?", "minutes": 8, "floor": "part" },
+    { "id": "resistor-pick", "group": "resistor", "title": "Як підібрати резистор?", "minutes": 11, "floor": "part" },
+    { "id": "smd", "group": "branches", "parent": "resistor-pick", "title": "Як читати крихітні деталі без смужок?", "minutes": 7, "floor": "part" },
+    { "id": "divider", "group": "resistor", "title": "Як резистори ділять напругу?", "minutes": 9, "floor": "stand" },
+    { "id": "capacitor", "group": "capacitor", "title": "Як конденсатор запасає заряд?", "minutes": 10, "floor": "inside" },
+    { "id": "capacitor-kinds", "group": "capacitor", "title": "Чим різняться конденсатори?", "minutes": 10, "floor": "part" },
+    { "id": "filter", "group": "capacitor", "title": "Чому конденсатор пропускає музику, а батарейку — ні?", "minutes": 11, "floor": "stand" },
+    { "id": "diode", "group": "diode", "title": "Чому діод пропускає струм лише в один бік?", "minutes": 9, "floor": "atoms" },
+    { "id": "rectifier", "group": "branches", "parent": "diode", "title": "Як зі змінної напруги зробити постійну?", "minutes": 9, "floor": "stand" },
+    { "id": "led", "group": "diode", "title": "Чому світлодіоди світять різними кольорами?", "minutes": 9, "floor": "inside" },
+    { "id": "transistor", "group": "transistor", "title": "Як малий струм керує великим?", "minutes": 10, "floor": "inside" },
+    { "id": "blinker", "group": "branches", "parent": "transistor", "title": "Як два транзистори блимають самі?", "minutes": 9, "floor": "stand" },
+    { "id": "mosfet", "group": "branches", "parent": "transistor", "title": "Чим польовий транзистор відрізняється від звичайного?", "minutes": 8, "floor": "inside" },
+    { "id": "amplifier", "group": "transistor", "title": "Як транзистор робить тихий звук гучним?", "minutes": 12, "floor": "stand" },
+    { "id": "build", "group": "practicum", "title": "Зберіть підсилювач самі", "minutes": 12, "floor": "stand" },
+    { "id": "lab", "group": "practicum", "title": "Вільний стенд", "minutes": 15, "floor": "stand" }
+  ]
+}

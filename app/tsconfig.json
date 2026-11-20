@@ -20,7 +20,8 @@
       "@/*": ["./src/*"],
       "@electricity/*": ["./src/volumes/electricity/*"],
       "@circuit/*": ["./src/volumes/circuit/*"],
-      "@radio/*": ["./src/volumes/radio/*"]
+      "@radio/*": ["./src/volumes/radio/*"],
+      "@electronics/*": ["./src/volumes/electronics/*"]
     }
   },
   "include": ["src", "vite.config.ts"]
