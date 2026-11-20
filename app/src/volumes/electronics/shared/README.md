@@ -338,7 +338,10 @@ keeper.to(() => door.lens(door.rail.position), 1.2); // on the step's entry
   on the same line. A drag (`rail.scrub`) follows the hand; `door.travelTo` glides in the flight's time (`levels.ts`
   `flightSeconds`: the whole way 2 s, with reduced motion 0.6 s, a shorter way less). The rail takes the camera with the
   first move and gives it back when it rests on the step's shot again (that shot held, `ctx.camera.hold`); while the
-  camera is anywhere else the door writes `bench.flying` — the hand and the switch do nothing.
+  camera is anywhere else the door writes `bench.flying` — the hand and the switch do nothing. `door.home()` glides
+  back, then `then` takes the camera; `door.home({ instant: true })` (a step entered without motion) puts the rail on
+  its start at once — `door.lens(door.rail.position)` is the holder's pose, the next dive starts from the step's shot —
+  and leaves the camera on the shot the new step has put it on.
 - **The stops** (`poses.ts`, pure maths of the part's sockets and its model's `hit`): both cameras on one line from the
   body, 60° over the board's face, across the part's axis on the reader's side (`partPlace`, `partStops`; `PART_VIEW`
   holds the numbers). A part moved while the rail rests gets new stops; the door is `ready` only while every leg of its

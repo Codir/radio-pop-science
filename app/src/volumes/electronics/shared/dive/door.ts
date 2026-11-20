@@ -78,8 +78,10 @@ export interface Door {
   /** Glide to a position of the rail in the flight's time (`flightSeconds`: reduced motion shortens it). */
   travelTo(t: number): void;
   /**
-   * Back to the step's shot with the lens to its holder: glides there, or at once (`instant`); arrived, the rail lets
-   * the camera go, which then moves to the shot `then` (default: the lead shot is held where it is).
+   * Back to the step's shot with the lens to its holder: glides there, arrived, the rail lets the camera go, which then
+   * moves to the shot `then` (default: the lead shot is held where it is); or at once (`instant`, a step entered without
+   * motion): the rail is put on its start (`lens(rail.position)` is the holder's pose) and lets the camera go where it
+   * is, on the shot the new step has already put it on (`then` is not used).
    */
   home(opts?: { instant?: boolean; then?: string }): void;
   /** Every frame after `bench.update`: follows the part, advances the rail, opens the part, says whether it flies. */
@@ -193,6 +195,9 @@ export function partDoor(ctx: ChapterContext, bench: Bench, partId: string, opts
     home({ instant = false, then } = {}) {
       if (!rail.engaged) return;
       if (instant) {
+        // the rail's own position back to the step's shot, without driving the camera (`rail.snap` would cut it back
+        // to the lead shot over the shot the new step has just put it on)
+        rail.rail.set(rail.rail.min);
         rail.release();
         homing = undefined;
         return;
