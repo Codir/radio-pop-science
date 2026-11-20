@@ -5,3 +5,6 @@ export * from './mna';
 export * from './state';
 export * from './topology';
 export * from './dc';
+export * from './diode';
+export * from './lamp';
+export * from './limits';

@@ -38,11 +38,28 @@ NGSPICE = shutil.which('ngspice') or '/usr/bin/ngspice'
 # ── The catalog: the numbers of the plan (their sources: app/src/volumes/electronics/sim/core/README.md) ──────────
 WIRE_OHMS = 1e-3  # a jumper, a closed switch, the end of a pot's track
 BATTERIES = {'battery-9v': (9.0, 1.5), 'battery-4aa': (6.0, 0.6), 'battery-aa': (1.5, 0.15)}  # (V, internal Ω)
-SOURCES = {'ideal-9v': 9.0}  # ideal sources, V
+SOURCES = {'ideal-9v': 9.0, 'ideal-5v': 5.0}  # ideal sources, V
 POTS = {'pot-10k': 10e3}  # the whole track, Ω
 LOADS = {'speaker-8': 8.0, 'earphone-32': 32.0, 'jumper': WIRE_OHMS}  # parts that are a plain resistance, Ω
 E24 = (10, 11, 12, 13, 15, 16, 18, 20, 22, 24, 27, 30, 33, 36, 39, 43, 47, 51, 56, 62, 68, 75, 82, 91)
 PREFIX = {'R': 1, '': 1, 'k': 1e3, 'M': 1e6}
+
+# Diodes and LEDs: the DC parameters of SPICE's diode — saturation current IS (A), emission coefficient N, series
+# resistance RS (Ω), breakdown voltage BV (V) and the current at it IBV (A). Pins: anode, cathode.
+DIODES = {
+    # LTspice standard.dio: .model 1N4148 D(Is=2.52n Rs=.568 N=1.752 …), with BV/IBV of the onsemi datasheet
+    'diode-1n4148': {'is': 2.52e-9, 'n': 1.752, 'rs': 0.568, 'bv': 100.0, 'ibv': 100e-6},
+    # Vishay (Thomatronik) d1n4007: is = 1.43733E-008 n = 1.80829 rs = 0.0414712 … bv = 1100 ibv = 10
+    'diode-1n4007': {'is': 1.43733e-8, 'n': 1.80829, 'rs': 0.0414712, 'bv': 1100.0, 'ibv': 10.0},
+    # 5 mm indicator LEDs fitted to the plan's forward voltage at 20 mA (the fit: README.md of the model)
+    'led-red': {'is': 8.66e-18, 'n': 2.0, 'rs': 6.0, 'bv': 20.0, 'ibv': 10e-6},
+    'led-yellow': {'is': 1.25e-18, 'n': 2.0, 'rs': 6.0, 'bv': 20.0, 'ibv': 10e-6},
+    'led-green': {'is': 1.81e-19, 'n': 2.0, 'rs': 6.0, 'bv': 20.0, 'ibv': 10e-6},
+    'led-blue': {'is': 2.45e-16, 'n': 3.5, 'rs': 10.0, 'bv': 20.0, 'ibv': 10e-6},
+    'led-white': {'is': 2.45e-16, 'n': 3.5, 'rs': 10.0, 'bv': 20.0, 'ibv': 10e-6},
+}
+GMIN = 1e-12  # the conductance SPICE puts across every junction (S): ngspice's default gmin
+VT = 1.38064852e-23 / 1.6021766208e-19 * (27 + 273.15)  # kT/q at ngspice's default 27 °C (its constants), V
 
 DIGITS = 10  # significant digits of a float in a sample
 CHECK_TOLERANCE = 1e-9  # --check: relative difference that still counts as the same number
@@ -93,6 +110,15 @@ def elements(k, p):
         lines = ['r%sa %d %d %s' % (name, ccw, wiper, number(lower)),
                  'r%sb %d %d %s' % (name, wiper, cw, number(upper))]
         return lines, [[(a, 1)], [(a, -1), (b, 1)], [(b, -1)]]
+    if spec in DIODES:  # a probe of 0 V in front of the anode measures the current; the diode has a model of its own
+        anode, cathode = pins
+        d = DIODES[spec]
+        lines = ['v%sp %d n%sa dc 0' % (name, anode, name),
+                 'd%s n%sa %d m%s' % (name, name, cathode, name),
+                 '.model m%s d (is=%s n=%s rs=%s bv=%s ibv=%s)' % (
+                     name, number(d['is']), number(d['n']), number(d['rs']), number(d['bv']), number(d['ibv']))]
+        probe = 'v%sp#branch' % name
+        return lines, [[(probe, 1)], [(probe, -1)]]
     if spec == 'switch':
         if p.get('setting', 0) < 0.5:  # open: no element at all
             return [], [[], []]
@@ -266,6 +292,35 @@ def selftest():
     near(switches['parts']['S2']['i'], 0, 0, 'the open switch')
     load = 8 * 132 / 140
     near(switches['parts']['S1']['i'], 6 / (0.6 + 2e-3 + load), 1e-12, 'the closed switch')
+    # a diode is SPICE's: the junction takes IS·(e^(vd/(N·Vt)) − 1) + GMIN·vd, and RS stands in front of it. The red
+    # LED from the 9 V battery through 330 Ω: about 21 mA, and the loop's voltages add up to 9 V
+    leds = solve('led-red', CASES['led-red'])
+    red = DIODES['led-red']
+    current, across = leds['parts']['D1']['i'], leds['parts']['D1']['u']
+    junction = across - current * red['rs']
+    near(red['is'] * math.expm1(junction / (red['n'] * VT)) + GMIN * junction, current, 1e-9 * current,
+         'led-red: Shockley')
+    near(9 - current * (1.5 + 330), across, 1e-9, 'led-red: the loop')
+    near(current, 21.2e-3, 0.1e-3, 'led-red: about 21 mA')
+    # 1N4148 from 5 V through 430 Ω: about 10 mA at about 0.69 V
+    forward = solve('diode-forward', CASES['diode-forward'])
+    near(forward['parts']['D2']['i'], 10e-3, 0.05e-3, '1N4148 at 10 mA')
+    near(forward['parts']['D2']['u'], 0.69, 0.01, '1N4148: its voltage at 10 mA')
+    # the wrong way round: SPICE's reverse region below −3·N·Vt, −IS·(1 + (3·N·Vt / (e·vd))³) + GMIN·vd — nanoamperes
+    reverse = solve('diode-reverse', CASES['diode-reverse'])
+    for diode, spec in (('D1', 'diode-1n4148'), ('D2', 'diode-1n4007'), ('D3', 'led-red')):
+        d = DIODES[spec]
+        current, across = reverse['parts'][diode]['i'], reverse['parts'][diode]['u']
+        junction = across - current * d['rs']
+        cubic = (3 * d['n'] * VT / (junction * math.e)) ** 3
+        near(current, -d['is'] * (1 + cubic) + GMIN * junction, 1e-6 * abs(current), '%s reversed' % spec)
+        assert -1e-6 < current < 0 and across < -8.99, '%s reversed: %r A at %r V' % (spec, current, across)
+    # the fit of the LEDs: the forward voltage at 20 mA, IS·(e^(v/(N·Vt)) − 1) = 20 mA, lies in the plan's window
+    for spec, (low, high) in (('led-red', (1.9, 2.0)), ('led-yellow', (2.0, 2.1)), ('led-green', (2.1, 2.2)),
+                              ('led-blue', (3.0, 3.2)), ('led-white', (3.0, 3.2))):
+        d = DIODES[spec]
+        volts = d['n'] * VT * math.log1p(20e-3 / d['is']) + 20e-3 * d['rs']
+        assert low <= volts <= high, '%s: %.4f V at 20 mA, outside %g … %g V' % (spec, volts, low, high)
     # every case has a deck ngspice solves, and a sample on one line
     for name, netlist in CASES.items():
         text = dump(solve(name, netlist))

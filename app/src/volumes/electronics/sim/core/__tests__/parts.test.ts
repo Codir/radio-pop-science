@@ -1,4 +1,4 @@
-/** The catalog: the keys, the series of resistors, the numbers of the plan and the limits of every part. */
+/** The catalog: the keys, the series of resistors, the numbers of the plan and of the published models. */
 import { describe, expect, it } from 'vitest';
 import { E12, E24, PARTS, resistorKey, WIRE_OHMS, type PartSpec } from '../index';
 
@@ -51,18 +51,67 @@ describe('the catalog of parts', () => {
       expect(() => resistorKey(missing)).toThrow(RangeError);
   });
 
-  it('batteries and the ideal source: the numbers of the plan', () => {
+  it('batteries and the ideal sources: the numbers of the plan', () => {
     expect(PARTS['battery-9v']).toEqual({
       kind: 'battery',
       pins: ['plus', 'minus'],
       volts: 9,
       ohms: 1.5,
       cells: 6,
-      limits: {},
+      limits: { currentA: 1 },
     });
     expect(PARTS['battery-4aa']).toMatchObject({ volts: 6, ohms: 0.6, cells: 4 });
     expect(PARTS['battery-aa']).toMatchObject({ volts: 1.5, ohms: 0.15, cells: 1 });
     expect(PARTS['ideal-9v']).toEqual({ kind: 'source', pins: ['plus', 'minus'], volts: 9, limits: {} });
+    expect(PARTS['ideal-5v']).toEqual({ kind: 'source', pins: ['plus', 'minus'], volts: 5, limits: {} });
+  });
+
+  it('the diodes: the parameters of their published SPICE models', () => {
+    // LTspice standard.dio: .model 1N4148 D(Is=2.52n Rs=.568 N=1.752 …); BV and IBV from the onsemi datasheet
+    expect(PARTS['diode-1n4148']).toEqual({
+      kind: 'diode',
+      pins: ['anode', 'cathode'],
+      is: 2.52e-9,
+      n: 1.752,
+      rs: 0.568,
+      bv: 100,
+      ibv: 100e-6,
+      limits: { currentA: 0.3, reverseV: 100 },
+    });
+    // Vishay (Thomatronik) d1n4007: is = 1.43733E-008 n = 1.80829 rs = 0.0414712 … bv = 1100 ibv = 10
+    expect(PARTS['diode-1n4007']).toEqual({
+      kind: 'diode',
+      pins: ['anode', 'cathode'],
+      is: 1.43733e-8,
+      n: 1.80829,
+      rs: 0.0414712,
+      bv: 1100,
+      ibv: 10,
+      limits: { currentA: 1, reverseV: 1000 },
+    });
+  });
+
+  it('the LEDs: five colours, fitted to the plan, 20 mA rated, 30 mA at most', () => {
+    const fitted = {
+      red: { is: 8.66e-18, n: 2, rs: 6 },
+      yellow: { is: 1.25e-18, n: 2, rs: 6 },
+      green: { is: 1.81e-19, n: 2, rs: 6 },
+      blue: { is: 2.45e-16, n: 3.5, rs: 10 },
+      white: { is: 2.45e-16, n: 3.5, rs: 10 },
+    };
+    for (const [color, junction] of Object.entries(fitted)) {
+      expect(PARTS[`led-${color}`], color).toEqual({
+        kind: 'led',
+        pins: ['anode', 'cathode'],
+        color,
+        ...junction,
+        bv: 20,
+        ibv: 10e-6,
+        ratedA: 0.02,
+        lumensPerAmp: expect.any(Number),
+        limits: { currentA: 0.03 },
+      });
+    }
   });
 
   it('the pot, the switch, the jumper, the speaker and the earphone', () => {
@@ -99,7 +148,10 @@ describe('the catalog of parts', () => {
     }
     expect([...kinds].sort()).toEqual([
       'battery',
+      'diode',
       'jumper',
+      'lamp',
+      'led',
       'pot',
       'resistor',
       'source',

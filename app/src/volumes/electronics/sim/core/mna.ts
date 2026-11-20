@@ -1,15 +1,16 @@
 /**
  * Modified nodal analysis. The unknowns are the voltages of the nodes in use (the ground and the rows no pin uses are
- * left out) and then the currents of the parts that need one (an ideal source). A node's row says that the currents
- * leaving it through the parts add up to what is pushed into it; a source's row says what its voltage is. Every part
- * leaves its stamp in a dense matrix, and LU with partial pivoting solves it.
+ * left out), then the voltages of the parts' own nodes (a diode's junction behind its series resistance), then the
+ * currents of the parts that need one (an ideal source). A node's row says that the currents leaving it through the
+ * parts add up to what is pushed into it; a source's row says what its voltage is. Every part leaves its stamp in a
+ * dense matrix, and LU with partial pivoting solves it.
  *
- * `compile` allocates the matrix of a circuit once. A solve clears it, stamps again and factors it in place, so the
- * transient (E1-5) can solve thousands of times without allocating; the Newton iterations of nonlinear parts (E1-4)
- * stamp the parts again around each new guess.
+ * `compile` allocates the matrix of a circuit once, and with it the scratch of Newton's iterations. A solve clears
+ * the matrix, stamps again and factors it in place, so the transient (E1-5) can solve thousands of times without
+ * allocating; the Newton iterations of nonlinear parts (`dc.ts`) stamp the parts again around each new guess.
  */
 import { checkNetlist, checkSetting, GROUND, type Netlist, type PartInstance } from './netlist';
-import { behaviour, PARTS, type Behaviour, type PartSpec } from './parts';
+import { behaviour, PARTS, type Behaviour, type Operating, type PartSpec, type Placement } from './parts';
 
 /** The smallest pivot the factorization takes, in the unit of the matrix (S): the default PIVTOL of SPICE. */
 export const PIVOT_MIN = 1e-13;
@@ -104,15 +105,12 @@ export interface Stamper {
   voltage(plus: number, minus: number, branch: number, volts: number): void;
 }
 
-/** A part of a compiled circuit. */
-export interface Element {
+/** A part of a compiled circuit: where it sits (the node of every pin, its own nodes, its first current unknown, its
+ * memory) and how it behaves. */
+export interface Element extends Placement {
   readonly part: PartInstance;
   readonly spec: PartSpec;
   readonly behaviour: Behaviour;
-  /** The node of every pin. */
-  readonly nodes: Int32Array;
-  /** The index of its first current unknown, −1 when it has none. */
-  readonly branch: number;
 }
 
 /** A netlist ready to solve: its parts with their behaviour, its unknowns and its matrix, made once. The circuit
@@ -120,29 +118,59 @@ export interface Element {
 export interface Circuit {
   readonly net: Netlist;
   readonly elements: readonly Element[];
-  /** The unknown of every node, −1 for the ground and for a node no pin uses; the currents follow the nodes. */
+  /** How many nodes there are with the parts' own: the board's `net.nodes`, then one for each own node. */
+  readonly size: number;
+  /** The unknown of every node (the parts' own too), −1 for the ground and for a node no pin uses; the currents
+   * follow the nodes. */
   readonly index: Int32Array;
   readonly system: LinearSystem;
   readonly stamper: Stamper;
+  /** The memory of every part, one array (each element's `memory` is a view of its share). */
+  readonly memory: Float64Array;
+  /** The guess the parts stamp around: its `v` holds the last solution of this circuit, the parts' own nodes too. */
+  readonly operating: Operating;
+  /** Whether `operating.v` and `memory` hold a solution of this circuit (a later solve may start from it). */
+  solved: boolean;
 }
 
 /** Checks the netlist (a RangeError names the fault), numbers the unknowns and allocates the matrix. */
 export function compile(net: Netlist): Circuit {
   checkNetlist(net);
-  const index = new Int32Array(net.nodes).fill(-1);
+  const parts = net.parts.map((part) => {
+    const spec = PARTS[part.spec]!;
+    return { part, spec, behaviour: behaviour(spec) };
+  });
+  const size = net.nodes + parts.reduce((sum, p) => sum + p.behaviour.inner, 0);
+  const index = new Int32Array(size).fill(-1);
   let unknowns = 0;
   const used = new Uint8Array(net.nodes);
   for (const part of net.parts) for (const node of part.pins) used[node] = 1;
   for (let node = 0; node < net.nodes; node++) if (node !== GROUND && used[node]) index[node] = unknowns++;
-  const elements = net.parts.map((part): Element => {
-    const spec = PARTS[part.spec]!;
-    const how = behaviour(spec);
+  for (let node = net.nodes; node < size; node++) index[node] = unknowns++;
+  const memory = new Float64Array(parts.reduce((sum, p) => sum + p.behaviour.memory, 0));
+  let own = net.nodes;
+  let kept = 0;
+  const elements = parts.map(({ part, spec, behaviour: how }): Element => {
     const branch = how.branches > 0 ? unknowns : -1;
     unknowns += how.branches;
-    return { part, spec, behaviour: how, nodes: Int32Array.from(part.pins), branch };
+    const inner = Int32Array.from({ length: how.inner }, (_, k) => own + k);
+    own += how.inner;
+    const share = memory.subarray(kept, kept + how.memory);
+    kept += how.memory;
+    return { part, spec, behaviour: how, nodes: Int32Array.from(part.pins), branch, inner, memory: share };
   });
   const system = createSystem(unknowns);
-  return { net, elements, index, system, stamper: stamperOf(system, index) };
+  return {
+    net,
+    elements,
+    size,
+    index,
+    system,
+    stamper: stamperOf(system, index),
+    memory,
+    operating: { v: new Float64Array(size), sources: 1, initial: false, limited: false },
+    solved: false,
+  };
 }
 
 function stamperOf(system: LinearSystem, index: Int32Array): Stamper {
@@ -191,11 +219,24 @@ export function readSettings(c: Circuit): Float64Array {
   return out;
 }
 
-/** Clears the matrix and stamps every part at its setting, then ties each node of `ties` to the ground by TIE_OHMS. */
-export function assemble(c: Circuit, settings: Float64Array, ties: readonly number[]): void {
+/**
+ * Clears the matrix and stamps every part at its setting around the guess `op`, then ties each node of `ties` to the
+ * ground by TIE_OHMS. A part marked in `broken` (it burnt) stamps nothing: it is a gap, and its own nodes follow its
+ * first pin through 1 S, which carries no current since nothing else touches them.
+ */
+export function assemble(
+  c: Circuit,
+  settings: Float64Array,
+  ties: readonly number[],
+  op: Operating = c.operating,
+  broken?: Uint8Array,
+): void {
   const { system, stamper, elements } = c;
   system.a.fill(0);
   system.b.fill(0);
-  elements.forEach((e, k) => e.behaviour.stamp(settings[k]!, e, stamper));
+  elements.forEach((e, k) => {
+    if (broken?.[k]) for (const node of e.inner) stamper.conductance(node, e.nodes[0]!, 1);
+    else e.behaviour.stamp(settings[k]!, e, stamper, op);
+  });
   for (const node of ties) stamper.conductance(node, GROUND, 1 / TIE_OHMS);
 }

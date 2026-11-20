@@ -38,8 +38,9 @@ function groups(nodes: number): { find: (n: number) => number; join: (a: number,
   return { find, join: (a, b) => void (parent[find(a)] = find(b)) };
 }
 
-/** The topology of a circuit at the settings of its parts (in the order of the elements). */
-export function analyse(c: Circuit, settings: Float64Array): Topology {
+/** The topology of a circuit at the settings of its parts (in the order of the elements); a part marked in `broken`
+ * (it burnt) is a gap: it joins nothing, though its pins still sit in their rows. */
+export function analyse(c: Circuit, settings: Float64Array, broken?: Uint8Array): Topology {
   const { elements } = c;
   const nodes = c.net.nodes;
   const issues: TopologyIssue[] = [];
@@ -48,14 +49,14 @@ export function analyse(c: Circuit, settings: Float64Array): Topology {
   const joined = (skip: number, wiresOnly: boolean) => {
     const g = groups(nodes);
     elements.forEach((e, k) => {
-      if (k === skip || (wiresOnly && !e.behaviour.wire(settings[k]!))) return;
+      if (k === skip || broken?.[k] || (wiresOnly && !e.behaviour.wire(settings[k]!))) return;
       for (const [a, b] of e.behaviour.links(settings[k]!)) g.join(e.nodes[a]!, e.nodes[b]!);
     });
     return g;
   };
 
   elements.forEach((e, k) => {
-    if (!e.behaviour.source) return;
+    if (!e.behaviour.source || broken?.[k]) return;
     const [plus, minus] = [e.nodes[0]!, e.nodes[1]!];
     const wires = joined(k, true);
     const rest = joined(k, false);

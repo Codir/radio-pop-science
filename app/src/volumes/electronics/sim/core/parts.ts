@@ -5,15 +5,19 @@
  * here; a nonlinear kind (diode, lamp, transistor) brings its own module and one more case in `behaviour`.
  * The numbers and their sources: README.md, «Catalog».
  */
+import { diodeBehaviour } from './diode';
+import { lampBehaviour } from './lamp';
 import type { Stamper } from './mna';
 
 /** The resistance of a wire: a jumper, a closed switch, the end of a pot's track (Ω). */
 export const WIRE_OHMS = 1e-3;
 
-/** What a part stands before it warms (E1-4 reads them): power in W, current in A. */
+/** What a part stands for good (`limits.ts` reads them): power in W, current in A either way, voltage in V the wrong
+ * way round (from the second pin to the first). */
 export interface Limits {
   readonly powerW?: number;
   readonly currentA?: number;
+  readonly reverseV?: number;
 }
 
 /** A battery: an ideal source of `volts` behind its internal resistance `ohms`; `cells` in series. */
@@ -78,23 +82,104 @@ export interface SpeakerSpec {
   readonly limits: Limits;
 }
 
+/** The DC parameters of SPICE's diode: the junction takes `is`·(e^(v/(`n`·Vt)) − 1) and breaks down at `bv` with
+ * `ibv`; `rs` stands in front of it (`diode.ts`). */
+export interface JunctionParams {
+  /** Saturation current IS (A). */
+  readonly is: number;
+  /** Emission coefficient N. */
+  readonly n: number;
+  /** Series resistance RS (Ω). */
+  readonly rs: number;
+  /** Reverse breakdown voltage BV (V). */
+  readonly bv: number;
+  /** The current at the breakdown voltage IBV (A). */
+  readonly ibv: number;
+}
+
+/** A rectifier or signal diode. */
+export interface DiodeSpec extends JunctionParams {
+  readonly kind: 'diode';
+  readonly pins: readonly ['anode', 'cathode'];
+  readonly limits: Limits;
+}
+
+export type LedColor = 'red' | 'yellow' | 'green' | 'blue' | 'white';
+
+/** A 5 mm indicator LED: a diode whose junction shines in proportion to its forward current. */
+export interface LedSpec extends JunctionParams {
+  readonly kind: 'led';
+  readonly pins: readonly ['anode', 'cathode'];
+  readonly color: LedColor;
+  /** The current it is made for (A). */
+  readonly ratedA: number;
+  /** Its light: luminous flux per ampere of forward current (lm/A), an estimate from a maker's datasheet. */
+  readonly lumensPerAmp: number;
+  readonly limits: Limits;
+}
+
+/** An incandescent lamp: a tungsten filament made for `volts` and `amps` (`lamp.ts`). */
+export interface LampSpec {
+  readonly kind: 'lamp';
+  readonly pins: readonly ['a', 'b'];
+  readonly volts: number;
+  readonly amps: number;
+  /** The filament's resistance at room temperature (Ω). */
+  readonly coldOhms: number;
+  /** The thermal time constant of the filament at its rated voltage (s); the transient (E1-5) runs it. */
+  readonly tauS: number;
+  readonly limits: Limits;
+}
+
 export type PartSpec =
-  BatterySpec | SourceSpec | ResistorSpec | PotSpec | SwitchSpec | JumperSpec | SpeakerSpec;
+  | BatterySpec
+  | SourceSpec
+  | ResistorSpec
+  | PotSpec
+  | SwitchSpec
+  | JumperSpec
+  | SpeakerSpec
+  | DiodeSpec
+  | LedSpec
+  | LampSpec;
 export type PartKind = PartSpec['kind'];
 
 /** Two pins (indices into the part's pins) joined by a path for direct current. */
 export type Link = readonly [number, number];
 
-/** Where a part sits in the matrix: the node of each pin, and its first current unknown (−1 when it has none). */
+/** Where a part sits in the matrix: the node of each pin, its first current unknown (−1 when it has none), its own
+ * nodes (a diode's junction behind its series resistance) and its memory between Newton's iterations. */
 export interface Placement {
   readonly nodes: Int32Array;
   readonly branch: number;
+  /** The numbers of the part's own nodes, after the board's nodes. */
+  readonly inner: Int32Array;
+  /** What a nonlinear part keeps from one iteration to the next (a junction's voltage, a filament's temperature). */
+  readonly memory: Float64Array;
+}
+
+/** The guess the parts stamp around, one iteration of Newton's method. */
+export interface Operating {
+  /** The node voltages of the guess by node number: the board's nodes, then the parts' own. */
+  readonly v: Float64Array;
+  /** The share of their voltage the sources give: 1, or less while the sources are stepped up from zero. */
+  sources: number;
+  /** The first iteration from nothing: a junction linearizes at the voltage in its memory, not at the guess. */
+  initial: boolean;
+  /** Set by a part that had to limit the step of its voltage: the iterations have not settled yet. */
+  limited: boolean;
 }
 
 /** How a part of the catalog behaves in the matrix. The setting it gets is already the one from `setting`. */
 export interface Behaviour {
   /** Extra unknowns, currents, the part adds to the matrix (an ideal source: one). */
   readonly branches: number;
+  /** Nodes of its own the part adds (a diode with a series resistance: its junction). */
+  readonly inner: number;
+  /** Numbers the part keeps between Newton's iterations. */
+  readonly memory: number;
+  /** A nonlinear part: the operating point takes Newton's iterations. */
+  readonly nonlinear: boolean;
   /** A source of energy: the topology checks whether its loop is open or shorted. */
   readonly source: boolean;
   /** The setting the part works with, from the instance's own (a default when absent, held to the range). */
@@ -103,9 +188,12 @@ export interface Behaviour {
   links(setting: number): readonly Link[];
   /** Whether at this setting the part is a wire (a jumper, a closed switch): a source across wires is shorted. */
   wire(setting: number): boolean;
-  /** Adds the part to the matrix. */
-  stamp(setting: number, at: Placement, s: Stamper): void;
-  /** The current into every pin (A) from the node voltages `v` and the unknowns `x` of a solution. */
+  /** Sets the memory before the first iteration of a solve. */
+  start?(at: Placement): void;
+  /** Adds the part to the matrix: a nonlinear part, its linearization around the guess `op`. */
+  stamp(setting: number, at: Placement, s: Stamper, op: Operating): void;
+  /** The current into every pin (A) from the node voltages `v` (the parts' own nodes too) and the unknowns `x` of
+   * a solution. */
   currents(setting: number, at: Placement, v: Float64Array, x: Float64Array, out: Float64Array): void;
 }
 
@@ -117,10 +205,14 @@ const POT_LINKS: readonly Link[] = [
 ];
 const fixed = (): number => 0;
 
+/** What every linear part shares: no own nodes, no memory. */
+const LINEAR = { inner: 0, memory: 0, nonlinear: false } as const;
+
 /** A resistance of `ohms` between pins 0 and 1. */
 function resistive(ohms: number, wire: boolean): Behaviour {
   const g = 1 / ohms;
   return {
+    ...LINEAR,
     branches: 0,
     source: false,
     setting: fixed,
@@ -138,14 +230,15 @@ function resistive(ohms: number, wire: boolean): Behaviour {
 function battery(volts: number, ohms: number): Behaviour {
   const g = 1 / ohms;
   return {
+    ...LINEAR,
     branches: 0,
     source: true,
     setting: fixed,
     links: () => ONE_LINK,
     wire: () => false,
-    stamp: (_, at, s) => {
+    stamp: (_, at, s, op) => {
       s.conductance(at.nodes[0]!, at.nodes[1]!, g);
-      s.current(at.nodes[1]!, at.nodes[0]!, volts * g);
+      s.current(at.nodes[1]!, at.nodes[0]!, volts * op.sources * g);
     },
     currents: (_, at, v, __, out) => {
       out[0] = (v[at.nodes[0]!]! - v[at.nodes[1]!]! - volts) * g;
@@ -157,12 +250,13 @@ function battery(volts: number, ohms: number): Behaviour {
 /** An ideal source: its current is an unknown of its own, and its row says v(plus) − v(minus) = volts. */
 function source(volts: number): Behaviour {
   return {
+    ...LINEAR,
     branches: 1,
     source: true,
     setting: fixed,
     links: () => ONE_LINK,
     wire: () => false,
-    stamp: (_, at, s) => s.voltage(at.nodes[0]!, at.nodes[1]!, at.branch, volts),
+    stamp: (_, at, s, op) => s.voltage(at.nodes[0]!, at.nodes[1]!, at.branch, volts * op.sources),
     currents: (_, at, __, x, out) => {
       out[0] = x[at.branch]!;
       out[1] = -out[0];
@@ -177,6 +271,7 @@ function sections(ohms: number, setting: number): readonly [number, number] {
 
 function pot(ohms: number): Behaviour {
   return {
+    ...LINEAR,
     branches: 0,
     source: false,
     setting: (raw) => Math.min(Math.max(raw ?? 0.5, 0), 1),
@@ -200,6 +295,7 @@ function pot(ohms: number): Behaviour {
 function toggle(): Behaviour {
   const g = 1 / WIRE_OHMS;
   return {
+    ...LINEAR,
     branches: 0,
     source: false,
     setting: (raw) => ((raw ?? 0) >= 0.5 ? 1 : 0),
@@ -231,6 +327,11 @@ export function behaviour(spec: PartSpec): Behaviour {
       return toggle();
     case 'jumper':
       return resistive(WIRE_OHMS, true);
+    case 'diode':
+    case 'led':
+      return diodeBehaviour(spec);
+    case 'lamp':
+      return lampBehaviour(spec);
   }
 }
 
@@ -280,18 +381,91 @@ function resistors(): [string, ResistorSpec][] {
   return out;
 }
 
+/** A 5 mm indicator LED: the plan's 20 mA rated and 30 mA at most, a breakdown far above any battery of the bench. */
+function led(color: LedColor, is: number, n: number, rs: number, lumensPerAmp: number): LedSpec {
+  return {
+    kind: 'led',
+    pins: ['anode', 'cathode'],
+    color,
+    is,
+    n,
+    rs,
+    bv: 20,
+    ibv: 10e-6,
+    ratedA: 0.02,
+    lumensPerAmp,
+    limits: { currentA: 0.03 },
+  };
+}
+
 /** Every part the model knows, by key. */
 export const PARTS: Readonly<Record<string, PartSpec>> = Object.freeze({
-  'battery-9v': { kind: 'battery', pins: ['plus', 'minus'], volts: 9, ohms: 1.5, cells: 6, limits: {} },
-  'battery-4aa': { kind: 'battery', pins: ['plus', 'minus'], volts: 6, ohms: 0.6, cells: 4, limits: {} },
-  'battery-aa': { kind: 'battery', pins: ['plus', 'minus'], volts: 1.5, ohms: 0.15, cells: 1, limits: {} },
+  'battery-9v': {
+    kind: 'battery',
+    pins: ['plus', 'minus'],
+    volts: 9,
+    ohms: 1.5,
+    cells: 6,
+    limits: { currentA: 1 },
+  },
+  'battery-4aa': {
+    kind: 'battery',
+    pins: ['plus', 'minus'],
+    volts: 6,
+    ohms: 0.6,
+    cells: 4,
+    limits: { currentA: 3 },
+  },
+  'battery-aa': {
+    kind: 'battery',
+    pins: ['plus', 'minus'],
+    volts: 1.5,
+    ohms: 0.15,
+    cells: 1,
+    limits: { currentA: 3 },
+  },
   'ideal-9v': { kind: 'source', pins: ['plus', 'minus'], volts: 9, limits: {} },
+  'ideal-5v': { kind: 'source', pins: ['plus', 'minus'], volts: 5, limits: {} },
   ...Object.fromEntries(resistors()),
   'pot-10k': { kind: 'pot', pins: ['ccw', 'wiper', 'cw'], ohms: 10e3, limits: { powerW: 0.2 } },
   switch: { kind: 'switch', pins: ['a', 'b'], limits: {} },
   jumper: { kind: 'jumper', pins: ['a', 'b'], limits: {} },
   'speaker-8': { kind: 'speaker', pins: ['plus', 'minus'], ohms: 8, limits: { powerW: 2 } },
   'earphone-32': { kind: 'speaker', pins: ['plus', 'minus'], ohms: 32, limits: { powerW: 0.1 } },
+  'diode-1n4148': {
+    kind: 'diode',
+    pins: ['anode', 'cathode'],
+    is: 2.52e-9,
+    n: 1.752,
+    rs: 0.568,
+    bv: 100,
+    ibv: 100e-6,
+    limits: { currentA: 0.3, reverseV: 100 },
+  },
+  'diode-1n4007': {
+    kind: 'diode',
+    pins: ['anode', 'cathode'],
+    is: 1.43733e-8,
+    n: 1.80829,
+    rs: 0.0414712,
+    bv: 1100,
+    ibv: 10,
+    limits: { currentA: 1, reverseV: 1000 },
+  },
+  'led-red': led('red', 8.66e-18, 2, 6, 0.86),
+  'led-yellow': led('yellow', 1.25e-18, 2, 6, 0.54),
+  'led-green': led('green', 1.81e-19, 2, 6, 0.64),
+  'led-blue': led('blue', 2.45e-16, 3.5, 10, 21),
+  'led-white': led('white', 2.45e-16, 3.5, 10, 17),
+  'lamp-6v': {
+    kind: 'lamp',
+    pins: ['a', 'b'],
+    volts: 6,
+    amps: 0.1,
+    coldOhms: 5.5,
+    tauS: 0.05,
+    limits: { powerW: 0.7 },
+  },
 } satisfies Record<string, PartSpec>);
 
 /** The catalog key of a resistor of `ohms` (a value of E24 from 1 Ω to 10 MΩ): `resistorKey(4700)` is
