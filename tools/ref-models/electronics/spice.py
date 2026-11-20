@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Reference of the circuit model of the electronics volume: every case of cases.py becomes a SPICE deck, ngspice
-solves it in batch mode, and the node voltages and the readings of every part go to a sample that the tests of the
-TypeScript model (app/src/volumes/electronics/sim/core) compare with.
+solves it in batch mode, and what it gives goes to a sample that the tests of the TypeScript model
+(app/src/volumes/electronics/sim/core) compare with: at the operating point the node voltages and the readings of
+every part (`op`); in time, the voltages of chosen nodes and the currents of chosen parts at chosen moments and the
+mean and swing of a node over a window (`tran`); for a sine, the amplitude of chosen nodes per volt of the source
+(`ac`).
 
 The deck is built from this script's own catalog — the numbers of the plan, written here again (README.md names their
 sources) — never from the TypeScript: when two independent descriptions of the same parts give the same numbers, that
@@ -19,6 +22,7 @@ text is the same, or when its numbers differ from a fresh run by at most 1e-9 of
 other way by another build of ngspice) and everything else is the same.
 """
 import argparse
+import bisect
 import json
 import math
 import os
@@ -63,6 +67,34 @@ DIODES = {
 GMIN = 1e-12  # the conductance SPICE puts across every junction (S): ngspice's default gmin
 VT = 1.38064852e-23 / 1.6021766208e-19 * (27 + 273.15)  # kT/q at ngspice's default 27 °C (its constants), V
 
+# Capacitors: the capacitance C (F), the equivalent series resistance ESR (Ω) in front of it and the leak (Ω) across
+# the capacitance. Pins: a, b (an electrolytic: plus, minus). The numbers and their sources: README.md of the model.
+CAPACITORS = {
+    # ceramic, 50 V: C0G (100 pF, 1 nF) and X7R (10 nF, 100 nF); ESR 0.03 Ω, insulation 10 GΩ
+    'ceramic-100p': (100e-12, 0.03, 10e9),
+    'ceramic-1n': (1e-9, 0.03, 10e9),
+    'ceramic-10n': (10e-9, 0.03, 10e9),
+    'ceramic-100n': (100e-9, 0.03, 10e9),
+    # film, polyester, 63 V (WIMA MKS 2): insulation 10 GΩ up to 0.33 μF, 1250 s (MΩ·μF) above
+    'film-100n': (100e-9, 0.03, 10e9),
+    'film-1u': (1e-6, 0.03, 1.25e9),
+    # aluminium electrolytic: ESR = tan δ / (2π·120 Hz·C) with tan δ 0.20 at 16 V and 0.28 at 6.3 V (Nichicon VR);
+    # the leak is the rated voltage over the leakage current after 5 minutes, 0.002·C·U + 3 μA (Vishay 048 RML)
+    'electrolytic-1u-16v': (1e-6, 265.3, 5.277e6),
+    'electrolytic-10u-16v': (10e-6, 26.53, 4.819e6),
+    'electrolytic-100u-16v': (100e-6, 2.653, 2.581e6),
+    'electrolytic-470u-16v': (470e-6, 0.5644, 886.9e3),
+    'electrolytic-1000u-16v': (1000e-6, 0.2653, 457.1e3),
+    'electrolytic-100u-6v3': (100e-6, 3.714, 1.479e6),
+}
+# Sources of a sine without internal resistance: the amplitude (V) and the frequency (Hz) when the part has no
+# setting; a setting is the frequency. Pins: plus, minus.
+SINES = {'ideal-ac-6v': (6.0, 50.0)}
+
+# A transient is solved with tolerances far tighter than ngspice's defaults, so that the reference is much closer to
+# the true waveform than the tolerances of the tests; its largest step is the case's `step`.
+TRAN_OPTIONS = 'reltol=1e-6 abstol=1e-15 vntol=1e-9'
+
 DIGITS = 10  # significant digits of a float in a sample
 CHECK_TOLERANCE = 1e-9  # --check: relative difference that still counts as the same number
 CHECK_FLOOR = 1e-15  # … and absolute, for numbers near zero
@@ -89,10 +121,26 @@ def number(x):
     return repr(float(x))
 
 
-def elements(k, p):
+def elements(k, p, charges=None):
     """The SPICE lines of the k-th part `p` and the current into each of its pins as a list of (vector, sign) terms
-    (an empty list is no current)."""
+    (an empty list is no current). `charges`, in a transient, is the voltage every capacitor starts with by id (0 for
+    one it does not name); at the operating point (None) a capacitor is open and has no initial condition."""
     spec, pins, name = p['spec'], p['pins'], str(k)
+    if spec in CAPACITORS:  # ESR from the first pin to the capacitance in node n<k>, the leak across the capacitance
+        farads, esr, leak = CAPACITORS[spec]
+        a, b = pins
+        initial = '' if charges is None else ' ic=%s' % number(charges.get(p['id'], 0.0))
+        lines = ['r%s %d n%s %s' % (name, a, name, number(esr)),
+                 'c%s n%s %d %s%s' % (name, name, b, number(farads), initial),
+                 'r%sl n%s %d %s' % (name, name, b, number(leak))]
+        current = '@r%s[i]' % name
+        return lines, [[(current, 1)], [(current, -1)]]
+    if spec in SINES:  # 0 V at the operating point, 1 V in an AC analysis, the sine in time
+        amplitude, hertz = SINES[spec]
+        plus, minus = pins
+        hertz = max(p.get('setting', hertz), 0.0)
+        line = 'v%s %d %d dc 0 ac 1 sin(0 %s %s)' % (name, plus, minus, number(amplitude), number(hertz))
+        return [line], [[('v%s#branch' % name, 1)], [('v%s#branch' % name, -1)]]
     if spec in BATTERIES:  # the ideal source behind its internal resistance, inside node n<k>
         volts, ohms = BATTERIES[spec]
         plus, minus = pins
@@ -137,31 +185,43 @@ def elements(k, p):
     return ['r%s %d %d %s' % (name, a, b, number(ohms))], [[(current, 1)], [(current, -1)]]
 
 
-def deck(name, netlist):
-    """(the lines of the deck, the nodes it prints, the pin currents of every part as in `elements`)."""
+def circuit(netlist, charges=None):
+    """(the element lines of the netlist, the nodes they use but the ground, the pin currents of every part as in
+    `elements`)."""
     body, currents, nodes = [], [], set()
     for k, p in enumerate(netlist['parts']):
-        lines, pins = elements(k, p)
+        lines, pins = elements(k, p, charges)
         body += lines
         currents.append(pins)
         for line in lines:
             nodes.update(int(token) for token in line.split()[1:3] if token.isdigit())
     nodes.discard(0)
-    vectors = ['v(%d)' % n for n in sorted(nodes)]
+    return body, sorted(nodes), currents
+
+
+def deck(name, netlist):
+    """(the lines of the deck at the operating point, the nodes it prints, the pin currents of every part)."""
+    body, nodes, currents = circuit(netlist)
+    vectors = ['v(%d)' % n for n in nodes]
     vectors += sorted({vector for pins in currents for pin in pins for vector, _ in pin})
     lines = ['* electronics oracle: %s' % name, '.options savecurrents', *body, '.control', 'set numdgt=17', 'op',
              'print ' + ' '.join(vectors), '.endc', '.end']
-    return lines, sorted(nodes), currents
+    return lines, nodes, currents
 
 
-def run(lines):
+WAVEFORMS = 'tran.txt'  # the file a transient deck writes its waveforms to (wrdata), in ngspice's directory
+
+
+def run(lines, read=None):
     """Runs ngspice on the deck in a directory of its own (no .spiceinit of the user is read) and returns
-    {vector: value} of what it printed."""
+    {vector: value} of what it printed, and the text of the file `read` it wrote there when one is named."""
     with tempfile.TemporaryDirectory() as work:
         path = pathlib.Path(work) / 'deck.cir'
         path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
         done = subprocess.run([NGSPICE, '-b', str(path)], cwd=work, env=dict(os.environ, HOME=work),
-                              capture_output=True, text=True, timeout=60)
+                              capture_output=True, text=True, timeout=120)
+        written = pathlib.Path(work) / read if read else None
+        text = written.read_text(encoding='utf-8') if written is not None and written.is_file() else None
     printed = {}
     for line in done.stdout.splitlines():
         match = re.fullmatch(r'\s*(\S+)\s*=\s*([-+0-9.eE]+)\s*', line)
@@ -169,13 +229,25 @@ def run(lines):
             printed[match.group(1).lower()] = float(match.group(2))
     if done.returncode != 0 or re.search(r'(?im)^\s*error', done.stdout + done.stderr):
         raise RuntimeError('ngspice failed (exit %d):\n%s%s' % (done.returncode, done.stdout, done.stderr))
-    return printed
+    if read and text is None:
+        raise RuntimeError('ngspice wrote no %s:\n%s%s' % (read, done.stdout, done.stderr))
+    return (printed, text) if read else printed
 
 
-def solve(name, netlist):
-    """The sample of one case: the netlist, the deck, the node voltages and the readings of every part, the same
-    readings the model gives: u from the first pin to the second, i into the first pin, p the power the part takes
-    (the sum over its pins of the voltage against the last pin times the current into the pin)."""
+def solve(name, case):
+    """The sample of one case of cases.py, by its analysis: a plain netlist is an operating point."""
+    analysis = case.get('analysis', 'op')
+    if analysis == 'tran':
+        return solve_tran(name, case)
+    if analysis == 'ac':
+        return solve_ac(name, case)
+    return solve_op(name, case)
+
+
+def solve_op(name, netlist):
+    """The sample of an operating point: the netlist, the deck, the node voltages and the readings of every part, the
+    same readings the model gives: u from the first pin to the second, i into the first pin, p the power the part
+    takes (the sum over its pins of the voltage against the last pin times the current into the pin)."""
     lines, nodes, currents = deck(name, netlist)
     printed = run(lines)
     wanted = ['v(%d)' % n for n in nodes] + [vector for pins in currents for pin in pins for vector, _ in pin]
@@ -192,6 +264,97 @@ def solve(name, netlist):
         power = sum((at[k] - at[-1]) * into[k] for k in range(len(at) - 1))
         parts[p['id']] = {'u': at[0] - at[1], 'i': into[0], 'p': power}
     return {'analysis': 'op', 'case': name, 'netlist': netlist, 'spice': lines, 'v': v, 'parts': parts}
+
+
+def waveforms(text):
+    """{vector: [values]} and the times of what `wrdata` wrote: a header of names, then one row per time point."""
+    rows = [line.split() for line in text.splitlines() if line.strip()]
+    names = [name.lower() for name in rows[0]]
+    columns = {name: [float(row[k]) for row in rows[1:]] for k, name in enumerate(names)}
+    return columns.pop('time'), columns
+
+
+def interpolate(times, values, t):
+    """The waveform at the moment `t`, linear between ngspice's time points."""
+    j = bisect.bisect_left(times, t)
+    if j < len(times) and times[j] == t:
+        return values[j]
+    if j == 0 or j == len(times):
+        raise RuntimeError('ngspice gave no time point around %r s' % t)
+    share = (t - times[j - 1]) / (times[j] - times[j - 1])
+    return values[j - 1] + share * (values[j] - values[j - 1])
+
+
+def window_of(times, values, start, stop):
+    """(mean, swing) of the waveform from `start` to `stop`: its integral over the window (by trapezoids between
+    ngspice's time points) over the window's length, and its largest value less its smallest."""
+    points = [(start, interpolate(times, values, start))]
+    points += [(t, x) for t, x in zip(times, values) if start < t < stop]
+    points.append((stop, interpolate(times, values, stop)))
+    area = sum((t1 - t0) * (x0 + x1) / 2 for (t0, x0), (t1, x1) in zip(points, points[1:]))
+    level = [x for _, x in points]
+    return area / (stop - start), max(level) - min(level)
+
+
+def solve_tran(name, case):
+    """The sample of a transient from t = 0, every capacitor starting at its voltage in `charges` (0 when the case
+    does not name it; the model's start 'zero' when none is named, else its start 'state'), with ngspice's step at
+    most `step`: the voltage of every node of `nodes` and the current into the first pin of every part of `parts` at
+    each of `times`, and over `window` (when given) the mean and the swing of every node of `nodes`."""
+    netlist, charges = case['netlist'], case['charges']
+    body, _, currents = circuit(netlist, charges)
+    pins = {p['id']: pin for p, pin in zip(netlist['parts'], currents)}
+    vectors = ['v(%d)' % n for n in case['nodes']]
+    vectors += sorted({vector for id in case['parts'] for vector, _ in pins[id][0]} - set(vectors))
+    lines = ['* electronics oracle: %s' % name, '.options savecurrents %s' % TRAN_OPTIONS, *body, '.control',
+             'set wr_singlescale', 'set wr_vecnames', 'option numdgt=17',
+             'tran %s %s 0 %s uic' % (number(case['step']), number(case['stop']), number(case['step'])),
+             'wrdata %s %s' % (WAVEFORMS, ' '.join(vectors)), '.endc', '.end']
+    _, text = run(lines, read=WAVEFORMS)
+    times, columns = waveforms(text)
+    missing = [vector for vector in vectors if vector.lower() not in columns]
+    if missing:
+        raise RuntimeError('ngspice did not write %s for %s' % (', '.join(missing), name))
+    node = {n: columns['v(%d)' % n] for n in case['nodes']}
+    into = {id: [sum(sign * columns[vector.lower()][row] for vector, sign in pins[id][0]) for row in range(len(times))]
+            for id in case['parts']}
+    sample = {'analysis': 'tran', 'case': name, 'netlist': netlist, 'spice': lines, 'start': case['start'],
+              'charges': charges, 'step': case['step'], 'stop': case['stop'], 'times': case['times'],
+              'v': {str(n): [interpolate(times, node[n], t) for t in case['times']] for n in case['nodes']},
+              'i': {id: [interpolate(times, into[id], t) for t in case['times']] for id in case['parts']},
+              'window': case['window'], 'mean': {}, 'swing': {}}
+    if case['window']:
+        for n in case['nodes']:
+            mean, swing = window_of(times, node[n], *case['window'])
+            sample['mean'][str(n)] = mean
+            sample['swing'][str(n)] = swing
+    return sample
+
+
+def solve_ac(name, case):
+    """The sample of an AC analysis: the source `source` gives 1 V, and the amplitude of every node of `nodes` at each
+    of `frequencies` is its gain — what a sine of any amplitude comes out as, per volt."""
+    netlist = case['netlist']
+    if not any(p['id'] == case['source'] and p['spec'] in SINES for p in netlist['parts']):
+        raise RuntimeError('%s: the source %s is not a sine of the catalog' % (name, case['source']))
+    body, _, _ = circuit(netlist)
+    control = []
+    for j, hertz in enumerate(case['frequencies']):
+        names = ['g%dn%d' % (j, n) for n in case['nodes']]
+        control += ['ac lin 1 %s %s' % (number(hertz), number(hertz))]
+        control += ['let %s = mag(v(%d))' % (g, n) for g, n in zip(names, case['nodes'])]
+        control += ['print ' + ' '.join(names)]
+    lines = ['* electronics oracle: %s' % name, '.options savecurrents', *body, '.control', 'set numdgt=17',
+             *control, '.endc', '.end']
+    printed = run(lines)
+    gain = {}
+    for n in case['nodes']:
+        keys = ['g%dn%d' % (j, n) for j in range(len(case['frequencies']))]
+        if any(key not in printed for key in keys):
+            raise RuntimeError('ngspice did not print the gain of node %d for %s' % (n, name))
+        gain[str(n)] = [printed[key] for key in keys]
+    return {'analysis': 'ac', 'case': name, 'netlist': netlist, 'spice': lines, 'source': case['source'],
+            'frequencies': case['frequencies'], 'gain': gain}
 
 
 # ── The samples ──────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -329,14 +492,59 @@ def selftest():
         d = DIODES[spec]
         volts = d['n'] * VT * math.log1p(20e-3 / d['is']) + 20e-3 * d['rs']
         assert low <= volts <= high, '%s: %.4f V at 20 mA, outside %g … %g V' % (spec, volts, low, high)
+    # capacitors in time, against the formulas of an RC circuit with the capacitor's ESR and leak
+    farads, esr, leak = CAPACITORS['electrolytic-100u-16v']
+    volts, ohms = BATTERIES['battery-9v']
+    parallel = lambda a, b: a * b / (a + b)
+    charge = solve('rc-charge', CASES['rc-charge'])
+    loop = ohms + 10e3 + esr  # the battery, the resistor and the ESR in series; the leak across the capacitance
+    final, tau = volts * leak / (leak + loop), farads * parallel(loop, leak)
+    for t, node, into in zip(charge['times'], charge['v']['2'], charge['i']['C1']):
+        inside = final * -math.expm1(-t / tau)  # the voltage across the capacitance
+        current = (volts - inside) / loop
+        near(node, inside + esr * current, 1e-6 * node, 'rc-charge at %g s' % t)
+        near(into, current, 1e-5 * current, 'rc-charge: the current at %g s' % t)
+    near(charge['v']['2'][3] / volts, -math.expm1(-1), 0.005, 'rc-charge: 63.2 % of 9 V after R·C = 1 s')
+    discharge = solve('rc-discharge', CASES['rc-discharge'])
+    tau = farads * parallel(10e3 + esr, leak)
+    for t, node in zip(discharge['times'], discharge['v']['1']):
+        near(node, 9 * math.exp(-t / tau) * 10e3 / (10e3 + esr), 1e-6 * node, 'rc-discharge at %g s' % t)
+    near(discharge['v']['1'][3] / 9, math.exp(-1), 0.005, 'rc-discharge: 36.8 % after R·C = 1 s')
+    # the LED fades: the current out of the capacitor is the LED's, and it only falls
+    fading = solve('led-discharge', CASES['led-discharge'])
+    current = fading['i']['D1']
+    for k, (led, cap) in enumerate(zip(current, fading['i']['C1'])):
+        near(led, -cap, 1e-9 * led, 'led-discharge: the loop at %g s' % fading['times'][k])
+    assert all(a > b > 0 for a, b in zip(current, current[1:])), 'led-discharge: the current falls'
+    assert 15e-3 < current[0] < 21e-3 and 0.5e-3 < current[-1] < 2e-3, current
+    # the filters: the low-pass gives Z / (R + Z), the high-pass R / (R + Z), Z the capacitor with ESR and leak
+    farads, esr, leak = CAPACITORS['film-100n']
+    filters = solve('filters', CASES['filters'])
+    for k, hertz in enumerate(filters['frequencies']):
+        z = esr + 1 / (1 / leak + 2j * math.pi * hertz * farads)
+        near(filters['gain']['2'][k], abs(z / (1e3 + z)), 1e-9, 'low-pass at %g Hz' % hertz)
+        near(filters['gain']['3'][k], abs(1e3 / (1e3 + z)), 1e-9, 'high-pass at %g Hz' % hertz)
+    # the rectifier: the peak less a diode's drop, the ripple about I / (f·C)
+    rectifier = solve('rectifier', CASES['rectifier'])
+    mean, swing = rectifier['mean']['2'], rectifier['swing']['2']
+    assert 4.5 < mean < 5.5 and 0.5 * mean / 1e3 / 50 / 470e-6 < swing < 1.5 * mean / 1e3 / 50 / 470e-6, (mean, swing)
+
     # every case has a deck ngspice solves, and a sample on one line
-    for name, netlist in CASES.items():
-        text = dump(solve(name, netlist))
+    for name, case in CASES.items():
+        text = dump(solve(name, case))
         data = json.loads(text)
         assert text.endswith('\n') and text.count('\n') == 1, name
         assert json.dumps(data, sort_keys=True, separators=(',', ':')) + '\n' == text, name
-        assert data['netlist'] == netlist and sorted(data['parts']) == sorted(p['id'] for p in netlist['parts']), name
-        assert len(data['v']) == netlist['nodes'] and data['v'][0] == 0, name
+        netlist = case.get('netlist', case)
+        assert data['netlist'] == netlist and data['analysis'] == case.get('analysis', 'op'), name
+        if data['analysis'] == 'op':
+            assert sorted(data['parts']) == sorted(p['id'] for p in netlist['parts']), name
+            assert len(data['v']) == netlist['nodes'] and data['v'][0] == 0, name
+        elif data['analysis'] == 'tran':
+            assert all(len(series) == len(case['times']) for series in [*data['v'].values(), *data['i'].values()])
+            assert sorted(data['mean']) == (sorted(data['v']) if case['window'] else []), name
+        else:
+            assert all(len(gain) == len(case['frequencies']) for gain in data['gain'].values()), name
     # --check: a last digit rounded the other way passes, a real change does not
     text = dump(divider)
     data = json.loads(text)

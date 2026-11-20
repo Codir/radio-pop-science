@@ -7,4 +7,6 @@ export * from './topology';
 export * from './dc';
 export * from './diode';
 export * from './lamp';
+export * from './capacitor';
 export * from './limits';
+export * from './transient';

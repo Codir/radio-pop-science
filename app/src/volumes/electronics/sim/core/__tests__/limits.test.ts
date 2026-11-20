@@ -104,6 +104,7 @@ describe('heat in time', () => {
   it('heat follows the load with the part’s time constant; a part burns when its heat reaches 1', () => {
     expect(HEAT_SECONDS).toEqual({
       battery: 2,
+      capacitor: 10,
       resistor: 10,
       pot: 10,
       speaker: 10,

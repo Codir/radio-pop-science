@@ -5,9 +5,10 @@
  * parts add up to what is pushed into it; a source's row says what its voltage is. Every part leaves its stamp in a
  * dense matrix, and LU with partial pivoting solves it.
  *
- * `compile` allocates the matrix of a circuit once, and with it the scratch of Newton's iterations. A solve clears
- * the matrix, stamps again and factors it in place, so the transient (E1-5) can solve thousands of times without
- * allocating; the Newton iterations of nonlinear parts (`dc.ts`) stamp the parts again around each new guess.
+ * `compile` allocates the matrix of a circuit once, and with it the scratch of Newton's iterations and the history of
+ * the parts in time. A solve clears the matrix, stamps again and factors it in place, so the transient
+ * (`transient.ts`) solves thousands of times without allocating; the Newton iterations of nonlinear parts (`dc.ts`)
+ * stamp the parts again around each new guess.
  */
 import { checkNetlist, checkSetting, GROUND, type Netlist, type PartInstance } from './netlist';
 import { behaviour, PARTS, type Behaviour, type Operating, type PartSpec, type Placement } from './parts';
@@ -17,6 +18,11 @@ export const PIVOT_MIN = 1e-13;
 
 /** The resistance that ties a node without a path to the ground (Ω): the air between two rows of a board. */
 export const TIE_OHMS = 1e9;
+
+/** What happened to a part, by element, in the array a solve takes (`damage`): whole (0); burnt, a gap in the
+ * circuit (BURNT); bulged, its failed form (BULGED: an electrolytic capacitor, `capacitor.ts`). */
+export const BURNT = 1;
+export const BULGED = 2;
 
 /** A square system A·x = b of `n` unknowns, A dense in rows. */
 export interface LinearSystem {
@@ -127,6 +133,10 @@ export interface Circuit {
   readonly stamper: Stamper;
   /** The memory of every part, one array (each element's `memory` is a view of its share). */
   readonly memory: Float64Array;
+  /** The history of every part in time, one array (each element's `history` is a view of its share). */
+  readonly history: Float64Array;
+  /** Scratch of Newton's iterations, as long as the unknowns: the last guess. */
+  readonly scratch: Float64Array;
   /** The guess the parts stamp around: its `v` holds the last solution of this circuit, the parts' own nodes too. */
   readonly operating: Operating;
   /** Whether `operating.v` and `memory` hold a solution of this circuit (a later solve may start from it). */
@@ -148,8 +158,10 @@ export function compile(net: Netlist): Circuit {
   for (let node = 0; node < net.nodes; node++) if (node !== GROUND && used[node]) index[node] = unknowns++;
   for (let node = net.nodes; node < size; node++) index[node] = unknowns++;
   const memory = new Float64Array(parts.reduce((sum, p) => sum + p.behaviour.memory, 0));
+  const history = new Float64Array(parts.reduce((sum, p) => sum + p.behaviour.history, 0));
   let own = net.nodes;
   let kept = 0;
+  let held = 0;
   const elements = parts.map(({ part, spec, behaviour: how }): Element => {
     const branch = how.branches > 0 ? unknowns : -1;
     unknowns += how.branches;
@@ -157,7 +169,10 @@ export function compile(net: Netlist): Circuit {
     own += how.inner;
     const share = memory.subarray(kept, kept + how.memory);
     kept += how.memory;
-    return { part, spec, behaviour: how, nodes: Int32Array.from(part.pins), branch, inner, memory: share };
+    const past = history.subarray(held, held + how.history);
+    held += how.history;
+    const nodes = Int32Array.from(part.pins);
+    return { part, spec, behaviour: how, nodes, branch, inner, memory: share, history: past };
   });
   const system = createSystem(unknowns);
   return {
@@ -168,7 +183,17 @@ export function compile(net: Netlist): Circuit {
     system,
     stamper: stamperOf(system, index),
     memory,
-    operating: { v: new Float64Array(size), sources: 1, initial: false, limited: false },
+    history,
+    scratch: new Float64Array(unknowns),
+    operating: {
+      v: new Float64Array(size),
+      sources: 1,
+      initial: false,
+      limited: false,
+      time: 0,
+      dt: 0,
+      trapezoid: false,
+    },
     solved: false,
   };
 }
@@ -212,35 +237,52 @@ function stamperOf(system: LinearSystem, index: Int32Array): Stamper {
   };
 }
 
-/** The setting every part works with now, in the order of the elements; a setting that is not a finite number is a
- * RangeError. */
-export function readSettings(c: Circuit): Float64Array {
-  const out = new Float64Array(c.elements.length);
-  c.elements.forEach((e, k) => {
-    checkSetting(e.part);
-    out[k] = e.behaviour.setting(e.part.setting);
-  });
+/** The setting every part works with now, in the order of the elements, into `out` (a new array when absent); a
+ * setting that is not a finite number is a RangeError. */
+export function readSettings(
+  c: Circuit,
+  out: Float64Array = new Float64Array(c.elements.length),
+): Float64Array {
+  updateSettings(c, out);
   return out;
+}
+
+/** `readSettings` in place: whether any setting differs from what `out` held. */
+export function updateSettings(c: Circuit, out: Float64Array): boolean {
+  let changed = false;
+  const { elements } = c;
+  for (let k = 0; k < elements.length; k++) {
+    const e = elements[k]!;
+    checkSetting(e.part);
+    const setting = e.behaviour.setting(e.part.setting);
+    if (setting !== out[k]) changed = true;
+    out[k] = setting;
+  }
+  return changed;
 }
 
 /**
  * Clears the matrix and stamps every part at its setting around the guess `op`, then ties each node of `ties` to the
- * ground by TIE_OHMS. A part marked in `broken` (it burnt) stamps nothing: it is a gap, and its own nodes follow its
- * first pin through 1 S, which carries no current since nothing else touches them.
+ * ground by TIE_OHMS. A part marked BURNT in `damage` stamps nothing: it is a gap, and its own nodes follow its first
+ * pin through 1 S, which carries no current since nothing else touches them. A part marked BULGED stamps its failed
+ * form (a gap when it has none).
  */
 export function assemble(
   c: Circuit,
   settings: Float64Array,
   ties: readonly number[],
   op: Operating = c.operating,
-  broken?: Uint8Array,
+  damage?: Uint8Array,
 ): void {
   const { system, stamper, elements } = c;
   system.a.fill(0);
   system.b.fill(0);
-  elements.forEach((e, k) => {
-    if (broken?.[k]) for (const node of e.inner) stamper.conductance(node, e.nodes[0]!, 1);
-    else e.behaviour.stamp(settings[k]!, e, stamper, op);
-  });
-  for (const node of ties) stamper.conductance(node, GROUND, 1 / TIE_OHMS);
+  for (let k = 0; k < elements.length; k++) {
+    const e = elements[k]!;
+    const failed = damage?.[k] ?? 0;
+    if (failed === 0) e.behaviour.stamp(settings[k]!, e, stamper, op);
+    else if (failed === BULGED && e.behaviour.failed) e.behaviour.failed.stamp(e, stamper);
+    else for (let j = 0; j < e.inner.length; j++) stamper.conductance(e.inner[j]!, e.nodes[0]!, 1);
+  }
+  for (let j = 0; j < ties.length; j++) stamper.conductance(ties[j]!, GROUND, 1 / TIE_OHMS);
 }

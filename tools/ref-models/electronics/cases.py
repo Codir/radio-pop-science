@@ -1,10 +1,12 @@
 """The circuits of the oracle. Every task of the circuit model adds its own here.
 
-A case is a netlist in the form of app/src/volumes/electronics/sim/core/netlist.ts — the number of nodes (node 0 is
-the ground) and the parts, each with an id, a key of the catalog, the node of every pin in the catalog's order and,
-for a pot or a switch, a setting. The test of the model feeds the very same netlist, read from the sample, to the
-model. spice.py turns it into a SPICE deck from its own catalog, runs ngspice and writes <name>.json.
+A case at the operating point is a netlist in the form of app/src/volumes/electronics/sim/core/netlist.ts — the number
+of nodes (node 0 is the ground) and the parts, each with an id, a key of the catalog, the node of every pin in the
+catalog's order and, for a pot, a switch or a sine source, a setting. A case in time (`tran`) or for a sine (`ac`)
+wraps such a netlist with what to measure. The test of the model feeds the very same netlist, read from the sample,
+to the model. spice.py turns it into a SPICE deck from its own catalog, runs ngspice and writes <name>.json.
 """
+import math
 
 
 def part(id, spec, pins, setting=None):
@@ -23,6 +25,33 @@ def pot_divider(setting):
     """A 10 kΩ pot from a 9 V battery, its wiper loaded by 4.7 kΩ: ccw on the ground, cw on the battery."""
     return net(3, part('B1', 'battery-9v', [1, 0]), part('P1', 'pot-10k', [0, 2, 1], setting),
                part('RL', 'resistor-4k7', [2, 0]))
+
+
+def tran(netlist, step, stop, times=(), nodes=(), parts=(), charges=None, window=()):
+    """A transient from t = 0: ngspice's largest step `step` (s) up to `stop` (s); the voltages of `nodes` and the
+    currents into the first pin of `parts` at each of `times`; over `window` (from, to), when given, the mean and the
+    swing of every node of `nodes`. `charges` is the voltage of a capacitor at t = 0 by id: none — every capacitor
+    empty, the model's start 'zero'; some — the model's start 'state'."""
+    return {'analysis': 'tran', 'netlist': netlist, 'step': step, 'stop': stop, 'times': list(times),
+            'nodes': list(nodes), 'parts': list(parts), 'start': 'state' if charges else 'zero',
+            'charges': dict(charges or {}), 'window': list(window)}
+
+
+def ac(netlist, source, frequencies, nodes):
+    """An AC analysis: the sine source `source` gives 1 V; the amplitude of `nodes` at each of `frequencies` (Hz)."""
+    return {'analysis': 'ac', 'netlist': netlist, 'source': source, 'frequencies': list(frequencies),
+            'nodes': list(nodes)}
+
+
+def trapezoid_frequency(hertz, rate):
+    """Where the trapezoid with a fixed step 1/rate puts a sine of `hertz`: it answers it exactly as the circuit itself
+    answers (rate/π)·tan(π·hertz/rate) — the frequency warping of the bilinear transform. Rounded to 1e-9 Hz."""
+    return round(rate / math.pi * math.tan(math.pi * hertz / rate), 9)
+
+
+def every(step, count):
+    """count moments step, 2·step, … (s), each written as the nearest double to its decimal."""
+    return [round(step * k, 12) for k in range(1, count + 1)]
 
 
 def led_loops(color):
@@ -75,4 +104,31 @@ CASES = {
                          part('R1', 'resistor-1k', [1, 2]), part('D1', 'diode-1n4148', [0, 2]),
                          part('R2', 'resistor-1k', [1, 3]), part('D2', 'diode-1n4007', [0, 3]),
                          part('R3', 'resistor-1k', [1, 4]), part('D3', 'led-red', [0, 4])),
+
+    # ── E1-5: capacitors in time ──────────────────────────────────────────────────────────────────────────────────
+    # the 9 V battery charges 100 μF through 10 kΩ from empty: R·C = 1 s; twenty moments over five time constants
+    'rc-charge': tran(net(3, part('B1', 'battery-9v', [1, 0]), part('R1', 'resistor-10k', [1, 2]),
+                          part('C1', 'electrolytic-100u-16v', [2, 0])),
+                      step=1e-3, stop=5, times=every(0.25, 20), nodes=[2], parts=['C1']),
+    # the same 100 μF, charged to 9 V, empties through 10 kΩ alone
+    'rc-discharge': tran(net(2, part('C1', 'electrolytic-100u-16v', [1, 0]), part('R1', 'resistor-10k', [1, 0])),
+                         step=1e-3, stop=5, times=every(0.25, 20), nodes=[1], parts=['C1'], charges={'C1': 9.0}),
+    # 470 μF, charged to 9 V, empties through 330 Ω and the red LED: the LED fades in half a second
+    'led-discharge': tran(net(3, part('C1', 'electrolytic-470u-16v', [1, 0]), part('R1', 'resistor-330', [1, 2]),
+                              part('D1', 'led-red', [2, 0])),
+                          step=1e-4, stop=0.5, times=every(0.025, 20), nodes=[1, 2], parts=['D1', 'C1'],
+                          charges={'C1': 9.0}),
+    # a half-wave rectifier: a sine of 6 V amplitude at 50 Hz through 1N4007 into 470 μF beside 1 kΩ, from empty; the
+    # output at twenty moments, and its mean and ripple over the last five periods of the first second
+    'rectifier': tran(net(3, part('V1', 'ideal-ac-6v', [1, 0]), part('D1', 'diode-1n4007', [1, 2]),
+                          part('C1', 'electrolytic-470u-16v', [2, 0]), part('R1', 'resistor-1k', [2, 0])),
+                      step=5e-6, stop=1, times=every(0.05, 20), nodes=[2], window=(0.9, 1)),
+    # a low-pass and a high-pass filter of the same parts, 1 kΩ and 100 nF (cut-off 1/(2π·R·C) ≈ 1.59 kHz), side by
+    # side on one sine: the low-pass's output is node 2, the high-pass's node 3. At 100 Hz, 1 kHz and 10 kHz, and at
+    # the three frequencies where the model's trapezoid at 48 kHz answers them
+    'filters': ac(net(4, part('V1', 'ideal-ac-6v', [1, 0]), part('R1', 'resistor-1k', [1, 2]),
+                      part('C1', 'film-100n', [2, 0]), part('C2', 'film-100n', [1, 3]),
+                      part('R2', 'resistor-1k', [3, 0])),
+                  'V1', [100, 1000, 10000, *(trapezoid_frequency(f, 48000) for f in (100, 1000, 10000))],
+                  nodes=[2, 3]),
 }

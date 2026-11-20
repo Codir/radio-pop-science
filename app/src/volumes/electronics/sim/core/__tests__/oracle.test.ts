@@ -1,14 +1,15 @@
 /**
  * The model against its independent reference: every sample of tools/ref-models/electronics/spice.py is a netlist
- * that ngspice solved. The model solves the very same netlist, and its node voltages and part readings must agree.
- * The samples are written by the script (ngspice runs on the developer's machine only); `spice.py --check` tells
- * whether they are fresh.
+ * that ngspice solved. At the operating point (here) the model solves the very same netlist, and its node voltages
+ * and part readings must agree; the samples in time and for a sine are compared in transient.test.ts. The samples
+ * are written by the script (ngspice runs on the developer's machine only); `spice.py --check` tells whether they
+ * are fresh.
  */
 import { describe, expect, it } from 'vitest';
 import { solveDC, type Netlist, type PartReading } from '../index';
 
 interface OperatingPoint {
-  analysis: 'op';
+  analysis: 'op' | 'tran' | 'ac';
   case: string;
   netlist: Netlist;
   spice: string[];
@@ -33,6 +34,14 @@ const NONLINEAR = [
   'led-white',
   'led-yellow',
 ];
+/** The circuits of E1-5 in time (`tran`) and for a sine (`ac`): transient.test.ts compares them. */
+const IN_TIME = {
+  'rc-charge': 'tran',
+  'rc-discharge': 'tran',
+  'led-discharge': 'tran',
+  rectifier: 'tran',
+  filters: 'ac',
+};
 /** The plan: 1e-6 of the size for the linear circuits, 1e-3 for the nonlinear ones. */
 const RELATIVE = { linear: 1e-6, nonlinear: 1e-3 };
 /** Newton's iterations of the model on any sample, at most (the plan). */
@@ -69,11 +78,11 @@ function compare(name: string, relative: number): void {
 }
 
 describe('oracle: the model against ngspice', () => {
-  it('every sample on disk is one this test compares', () => {
-    expect([...samples.keys()].sort()).toEqual([...LINEAR, ...NONLINEAR].sort());
+  it('every sample on disk is one this test or transient.test.ts compares', () => {
+    expect([...samples.keys()].sort()).toEqual([...LINEAR, ...NONLINEAR, ...Object.keys(IN_TIME)].sort());
     for (const [name, sample] of samples) {
       expect(sample.case).toBe(name);
-      expect(sample.analysis).toBe('op');
+      expect(sample.analysis).toBe(IN_TIME[name as keyof typeof IN_TIME] ?? 'op');
     }
   });
 

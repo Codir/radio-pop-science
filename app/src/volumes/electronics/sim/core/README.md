@@ -13,15 +13,18 @@ keeps this by reading the text of every file under `sim/` (comments too). The re
 What E1-3 gives: the linear parts, the operating point (`solveDC`), the checks of the shape of a circuit
 (`topology.ts`), and the comparison with ngspice. E1-4 adds the nonlinear parts — diodes, LEDs of five colours, an
 incandescent lamp — with Newton's iterations at the operating point, and the limits of every part: how loaded it is,
-how its heat gathers, and when it burns. Time and capacitors come with E1-5, transistors and the amplifier with E1-6.
+how its heat gathers, and when it burns. E1-5 adds time: capacitors of three kinds, the transient (`Transient`) with
+a fixed step, a lamp whose filament warms in time, parts that burn (and electrolytic capacitors that bulge) in time,
+and a sine source for the oracle. Transistors and the amplifier come with E1-6.
 
 ## Units and conventions
 
-- **SI everywhere:** V, A, Ω, W (later F and s). No prefixes in numbers: 4.7 kΩ is `4700`.
+- **SI everywhere:** V, A, Ω, W, F, s, Hz. No prefixes in numbers: 4.7 kΩ is `4700`, 100 nF is `100e-9`.
 - **Node 0 is the ground.** Nodes are numbered by the board, `0 … nodes − 1`; a node that no pin uses costs nothing
   (it is left out of the matrix and reads 0 V), so the board may give every row of its sockets a number.
 - **Pins** of a part come in the order of the catalog (`PARTS[key].pins`): `['plus', 'minus']`, `['a', 'b']`,
-  `['ccw', 'wiper', 'cw']`, `['anode', 'cathode']`.
+  `['ccw', 'wiper', 'cw']`, `['anode', 'cathode']`. An electrolytic capacitor has `['plus', 'minus']`, a ceramic or
+  film one `['a', 'b']`.
 - **Readings** (`PartReading`): `u` — the voltage from the first pin to the second; `i` — the current into the part
   through its first pin; `p` — the power the part takes, the sum over its pins of voltage × current into the pin.
   A resistor has `p = u·i > 0`. A battery that feeds a circuit has the current coming *out* of its plus pin, so its
@@ -30,7 +33,11 @@ how its heat gathers, and when it burns. Time and capacitors come with E1-5, tra
   sign says which way the current goes.
 - **Settings** (`PartInstance.setting`): a pot — the share of its track from `ccw` to the wiper, 0…1 (0 is the knob
   turned fully counter-clockwise; 0.5 when absent; outside 0…1 it is held to the range). A switch — 0 open, 1
-  closed (from 0.5 up counts as closed; open when absent). Other parts ignore it.
+  closed (from 0.5 up counts as closed; open when absent). A sine source — its frequency in Hz (its catalog `hz` when
+  absent, never below 0). Other parts ignore it.
+- **A capacitor's reading:** `i` is the current into its first pin — what flows through its ESR, the leak's and the
+  capacitance's together; `u` is the voltage on its pins, the ESR's drop included; `p` is `u·i`, positive while it
+  charges. Its charge is in the state (`volts`, the voltage across the capacitance alone).
 
 ## The netlist and the operating point
 
@@ -90,15 +97,16 @@ dc.parts.D1!.i; // 0 — a gap now
 dc.issues; // [{ kind: 'open', part: 'B1' }]
 ```
 
-`solveDC(net | circuit, { state?, maxIterations? }) → DcSolution`:
+`solveDC(net | circuit, { state?, maxIterations?, time? }) → DcSolution` (`time`: the moment whose sources it holds
+steady — a sine gives its value then; 0 when absent, where a sine gives 0 V; a capacitor is open but for its leak):
 
 | Field | What it is |
 |---|---|
 | `ok` | `true` when the circuit has a single solution and the model found it |
 | `reason` | when `ok` is false: `'singular'` — the matrix has no single solution (two ideal sources side by side, an ideal source with both pins in one row); `'no-convergence'` — Newton's iterations did not settle, not even with the sources stepped up from zero. Never an exception, never `NaN`: `v` and every reading are then zeros |
 | `v` | `Float64Array` of node voltages by node number |
-| `parts` | `{ [id]: { u, i, p } }` for every part; a burnt part reads `i` 0 and `p` 0 and the voltage across its gap |
-| `status` | `{ [id]: { condition, load } }` for every part: `'ok'`, `'warm'`, `'hot'` or `'burnt'`, and the share of its limit it is under (see Limits) |
+| `parts` | `{ [id]: { u, i, p } }` for every part; a burnt part reads `i` 0 and `p` 0 and the voltage across its gap, a bulged capacitor what its leak of 1 kΩ carries |
+| `status` | `{ [id]: { condition, load } }` for every part: `'ok'`, `'warm'`, `'hot'`, `'burnt'` or `'bulged'`, and the share of its limit it is under (see Limits) |
 | `iterations` | how many times the matrix was factored: 1 for a linear circuit, Newton's iterations otherwise (those of the source steps included) |
 | `sourceSteps` | how many steps of the sources the solve took: 0 when Newton's iterations settled at once |
 | `issues` | what is wrong with the shape of the circuit (below); the numbers are valid all the same |
@@ -119,9 +127,12 @@ It holds the node voltages of the last good solve (`v`) and, by part id, the mem
 |---|---|
 | `heat` | how warm the part is, as a share of its limit (`advanceHeat`, see Limits) |
 | `burnt` | the part burnt: every later solve with this state leaves it out — a gap. Nothing mends it; the stand that puts a new part in its place deletes the entry (`state.parts.delete(id)`) |
-| `kelvin` | a lamp: its filament's temperature, written by every good solve (the steady one; room temperature when dark or burnt) |
+| `bulged` | an electrolytic capacitor bulged: every later solve with this state takes it as a leak of 1 kΩ without capacitance (see Capacitors); nothing mends it either |
+| `kelvin` | a lamp: its filament's temperature, written by every good solve (the steady one; room temperature when dark or burnt) and by every step of the transient |
+| `volts` | a capacitor: the voltage across its capacitance — its charge over its capacitance — written by every good solve (charged: its steady voltage) and by every step of the transient; 0 once it bulged |
 
-The transient (E1-5) adds the charge of the capacitors there.
+`levelOf(memory, kind, otherwise)` and `keepLevel(memory, kind, level)` read and write a part's level: `volts` of a
+capacitor, `kelvin` of a lamp.
 
 **Where Newton's iterations start.** A compiled circuit solved before starts from its own last solution, its
 junctions too: a stand that compiles once and solves on every turn of a knob settles in two or three iterations
@@ -151,6 +162,7 @@ burnt across a battery leaves the battery `open`.
 | `battery-4aa` | `battery` | plus, minus | 6 V, internal 0.6 Ω, 4 cells | 3 A (the same) | the same |
 | `battery-aa` | `battery` | plus, minus | 1.5 V, internal 0.15 Ω, 1 cell | 3 A (the same) | the same |
 | `ideal-9v`, `ideal-5v` | `source` | plus, minus | 9 V or 5 V, no internal resistance | — | the reference of hand calculations and of the oracle (5 V for the LEDs and diodes of E1-4); the bench never offers them (batteries only, the design §3.4) |
+| `ideal-ac-6v` | `sine` | plus, minus | 6 V amplitude, 50 Hz unless its setting gives another frequency, no internal resistance | — | the plan's sine for the rectifier (batch E1, task E1-5), and the generator of the filters' tests; the reference of the oracle in time — the bench never offers it: the safe adapter of the rectifier's branch (the design §3.4) is the decision of the task that builds that branch |
 | `resistor-<code>` | `resistor` | a, b | every value of E24 from 1 Ω to 9.1 MΩ, and 10 MΩ: 169 parts; `series` E12 or E24; `tolerance` 0.05 | 0.25 W | values: IEC 60063 (E12, E24); key: the letter code of IEC 60062; 0.25 W and 5 % (gold band): the usual through-hole resistor of the kits, the design §5.2 |
 | `pot-10k` | `pot` | ccw, wiper, cw | a linear track of 10 kΩ; each part of the track at least 1 mΩ | 0.2 W | Bourns PDB181 series, for example PDB181-K420K-103B: 10 kΩ, linear, 0.2 W (Digi-Key listing; datasheet bourns.com «PDB18») |
 | `switch` | `switch` | a, b | open: no path; closed: 1 mΩ | — | the decision of this task (below) |
@@ -161,6 +173,9 @@ burnt across a battery leaves the battery `open`.
 | `diode-1n4007` | `diode` | anode, cathode | IS 14.3733 nA, N 1.80829, RS 41.4712 mΩ, BV 1100 V, IBV 10 A | 1 A; 1000 V reverse | Vishay's SPICE model and datasheet, below |
 | `led-red`, `led-yellow`, `led-green`, `led-blue`, `led-white` | `led` | anode, cathode | fitted to the plan's forward voltage at 20 mA (below); BV 20 V, IBV 10 μA; rated 20 mA; `lumensPerAmp` | 30 mA | the plan's windows and limits; the light: Kingbright's datasheets, below |
 | `lamp-6v` | `lamp` | a, b | 6 V · 0.1 A (60 Ω hot), cold 5.5 Ω, thermal time constant 50 ms | 0.7 W | the plan's decision and the choices below |
+| `ceramic-100p`, `ceramic-1n`, `ceramic-10n`, `ceramic-100n` | `capacitor` | a, b | 100 pF, 1 nF (C0G), 10 nF, 100 nF (X7R); ESR 0.03 Ω; leak 10 GΩ | 50 V either way | the plan's values; the numbers: Capacitors, below |
+| `film-100n`, `film-1u` | `capacitor` | a, b | 100 nF, 1 μF polyester; ESR 0.03 Ω; leak 10 GΩ and 1.25 GΩ | 63 V either way | WIMA MKS 2, below |
+| `electrolytic-1u-16v` … `electrolytic-1000u-16v` (1, 10, 100, 470, 1000 μF), `electrolytic-100u-6v3` | `capacitor` | plus, minus | ESR from tan δ, leak from the leakage current: the table below | the rated voltage; 1 V the wrong way round | Nichicon VR and Vishay 048 RML, below |
 
 `resistorKey(ohms)` gives the key of a value (`resistorKey(4700)` is `'resistor-4k7'`; a value the catalog has not
 is a `RangeError`). The codes: `4R7` 4.7 Ω, `47` 47 Ω, `470` 470 Ω, `4k7` 4.7 kΩ, `47k`, `470k`, `4M7` 4.7 MΩ, `10M`.
@@ -265,7 +280,10 @@ continuous, VRRM 100 V. The model gives 0.729 V at 10 mA (the datasheet: 1 V at 
 1.43733E-008 n = 1.80829 rs = 0.0414712 … bv = 1100 ibv = 10`. The limits: Vishay 1N4001 … 1N4007, document 88503,
 revision 29.04.2020 — IF(AV) 1.0 A, VRRM 1000 V; VF 1.1 V at 1 A at most, the model gives 0.886 V. (A model with
 `Is=7.02767n Rs=0.0341512 N=1.80803` circulates as well; its source could not be traced, so the maker's own was
-taken.) CJO, TT and the rest of both models are for the transient (E1-5): DC does not read them.
+taken.) CJO, TT and the rest of both models — the junction's capacitance and the time its charge takes to leave —
+the model does not take, in time either (the decision of E1-5), and the oracle's decks leave them out too: 0.7 pF and
+3.5 ns of 1N4148 do nothing a step of 1/48000 s could show, and in a rectifier at 50 Hz 1N4007's recovery of a few
+microseconds is a thousandth of its half period.
 
 **LEDs.** No maker publishes SPICE models of generic 5 mm indicator LEDs, so they are fitted (the decision of this
 task) to the plan's forward voltage at 20 mA: N and RS by the chip's family — N 2 and RS 6 Ω for the classic
@@ -333,91 +351,253 @@ a third of the power at 6 V. Radiation alone is a simplification that shows at l
 a filament radiates little, so the model's filament warms easily there (by 0.2 K at 1 mV, to 398 K at 60 mV), where
 a real one also loses heat through its leads. An ohmmeter's small current still reads the cold 5.5 Ω (5.54 Ω at 1 mA).
 
-**The thermal time constant** (`tauS`, the decision of this task: 50 ms, the lower end of the plan's 50–100 ms) is
-for the transient (E1-5): C·dT/dt = V²/R(T) − K·(T⁴ − T0⁴) with C = `tauS`·4·K·T_hot³, so that a small change about
-the hot filament settles with `tauS`. An estimate: a straight tungsten wire that is 60 Ω and radiates 0.6 W at
-2160 K (emissivity ≈ 0.26) is about 20 μm thick and 30 mm long, 0.18 mg; with 0.16 J/(g·K) that gives
-C ≈ 2.9e-5 J/K against 4·0.6 W / 2160 K ≈ 1.1e-3 W/K, about 26 ms. A real filament is a coil, which hides part of its
-surface from radiating and so needs more wire for the same power, and it sits on supports: twice the estimate is
-the plan's lower end.
+**The thermal time constant** (`tauS`, the decision of E1-4: 50 ms, the lower end of the plan's 50–100 ms) sets
+the filament's heat capacity in time: C·dT/dt = V²/R(T) − K·(T⁴ − T0⁴) with C = `tauS`·4·K·T_hot³
+(`filamentCapacity`: 5.55e-5 J/K), so that a small change about the hot filament settles with `tauS`. An estimate: a
+straight tungsten wire that is 60 Ω and radiates 0.6 W at 2160 K (emissivity ≈ 0.26) is about 20 μm thick and 30 mm
+long, 0.18 mg; with 0.16 J/(g·K) that gives C ≈ 2.9e-5 J/K against 4·0.6 W / 2160 K ≈ 1.1e-3 W/K, about 26 ms. A real
+filament is a coil, which hides part of its surface from radiating and so needs more wire for the same power, and it
+sits on supports: twice the estimate is the plan's lower end.
+
+**In time** (E1-5) the filament's temperature is the lamp's history. Over a step h the temperature at its end solves
+(a·T − base + K·(T⁴ − T0⁴))·R(T) = V², with a = C/h and base = a·T_last by backward Euler, a = 2C/h and base =
+a·T_last + Q_last by the trapezoid (Q the heat the filament was gaining, V²/R − K·(T⁴ − T0⁴)) — the steady filament is
+the same equation with a = base = 0, solved by the same Newton's method held by bisection. Newton's iterations of the
+circuit linearize it the same way (its slope dI/dV through dT/dV). A filament never cools below the room: only a
+trapezoid step far longer than its time constant could ask that, and then it stays at the room.
+
+So a cold lamp switched on draws the current of its cold filament: four AA cells through the closed switch give it
+0.980 A at once, 9.85 times its steady 99.5 mA; the filament is half way there in 3 ms (cold, it takes 6.5 W and has
+little to radiate: it warms with a time constant of about 2 ms), and the current is 0.320 A after 10 ms, 0.144 A after
+50 ms, and within 5 %, 2 % and 1 % of its steady value after 131, 167 and 194 ms — 2.6, 3.3 and 3.9 time constants
+(the last part of the way goes a little faster than `tauS`: as the filament warms, the power it takes falls, which
+helps it settle). The plan asks for an inrush of more than five times the steady current and a settling within 3–5
+time constants: the test takes the 2 % band.
 
 **The limit** is 0.7 W, the power at 110 % of the rated voltage (0.695 W): a lamp maker's usual margin. At 6 V the
 lamp is `warm` (load 0.86) and lives for ever; from the 9 V battery it takes 1.08 W (load 1.55), is `hot`, and burns
 out after 2.1 s. That is a compression: a real lamp at 150 % of its voltage lives hours, not seconds — its life falls
 as about the twelfth power of the voltage. The documents should not present those seconds as real.
 
+## Capacitors (`capacitor.ts`)
+
+A capacitor is its capacitance C behind its equivalent series resistance (ESR) — from the first pin to a node of its
+own, the capacitance from there to the second pin — with a leak across the capacitance that carries its leakage
+current. At the operating point the capacitance is open and what flows is the leak: 9 V through 10 kΩ into 100 μF
+holds it at 8.965 V, the leak's 2.581 MΩ against the rest. Its `links` join its pins (the leak is a path for direct
+current), so a capacitor never leaves a node in the air or a source open. In time, over a step h, the capacitance is
+its companion — backward Euler: i = (C/h)·(v − v_last); the trapezoid: i = (2C/h)·(v − v_last) − i_last — and its
+history is the voltage across the capacitance and the current through it at the last moment. Its current is read as
+the leak's and the capacitance's (as SPICE reads a capacitor), which keeps a leakage current of a nanoampere to its
+last digits where the ESR's drop would be the difference of two nearly equal voltages.
+
+| Key | C | ESR | Leak | Rated | Leak × C |
+|---|---|---|---|---|---|
+| `ceramic-100p`, `ceramic-1n` (C0G), `ceramic-10n`, `ceramic-100n` (X7R) | 100 pF … 100 nF | 0.03 Ω | 10 GΩ | 50 V | ≤ 1000 s |
+| `film-100n` | 100 nF | 0.03 Ω | 10 GΩ | 63 V | 1000 s |
+| `film-1u` | 1 μF | 0.03 Ω | 1.25 GΩ | 63 V | 1250 s |
+| `electrolytic-1u-16v` | 1 μF | 265.3 Ω | 5.277 MΩ | 16 V | 5.3 s |
+| `electrolytic-10u-16v` | 10 μF | 26.53 Ω | 4.819 MΩ | 16 V | 48 s |
+| `electrolytic-100u-16v` | 100 μF | 2.653 Ω | 2.581 MΩ | 16 V | 258 s |
+| `electrolytic-470u-16v` | 470 μF | 0.5644 Ω | 886.9 kΩ | 16 V | 417 s |
+| `electrolytic-1000u-16v` | 1000 μF | 0.2653 Ω | 457.1 kΩ | 16 V | 457 s |
+| `electrolytic-100u-6v3` | 100 μF | 3.714 Ω | 1.479 MΩ | 6.3 V | 148 s |
+
+**Electrolytic** (aluminium, wet electrolyte; the sources read 20.11.2026). The ESR is the one the makers derive from
+the dissipation factor, ESR = tan δ / (2π·f·C) — Vishay BCcomponents, «048 RML, Aluminum Capacitors Radial Miniature
+Long Life», document 28318, revision 15-Oct-03, «Equivalent series resistance (ESR): calculated from tan δmax and C_R:
+ESR = tan δ / 2πfC_R» — with tan δ at 120 Hz of a general-purpose series that has every value of the catalog,
+Nichicon's VR (85 °C, 6.3 … 450 V, 0.1 … 33 000 μF; datasheet read from a distributor's copy): 0.20 at 16 V, 0.28 at
+6.3 V, rounded to four digits. The leak is the rated voltage over the leakage current Vishay's 048 RML allows after 5
+minutes at the rated voltage, I_L5 ≤ 0.002·C_R·U_R + 3 μA (C in μF, U in V) — the long-term figure, as a part on the
+bench has been at its voltage for minutes; after 1 minute the makers allow more (048 RML: 0.01·C·U + 3 μA, three times
+as much for 100 μF on 16 V; VR: 0.03·C·U or 4 μA, eight times). Both are maxima — a good part leaks less — and the
+leakage of a real one grows faster than its voltage near the rating; the model keeps a plain resistance (the decision
+of E1-5). The plan's RC circuit, 9 V → 10 kΩ → 100 μF, then reaches 63.10 % of 9 V after R·C = 1 s (63.21 % for a
+bare R·C), and the same 100 μF charged to 9 V is at 36.65 % of it after 1 s through 10 kΩ (36.79 %). The limits: the rated voltage either way and 1 V the wrong way round,
+048 RML's «Reverse voltage U_rev ≤ 1 V» and the plan's numbers.
+
+**Ceramic** — 50 V, the usual rating of the through-hole parts of a kit; C0G for 100 pF and 1 nF, X7R for 10 and
+100 nF (the model takes no voltage or temperature dependence of either). **Film** — WIMA MKS 2, metallised polyester
+(PET) in 5 mm pitch, 63 V (WIMA's catalogue, page 34, edition 03.26): its insulation resistance at +20 °C, measured at
+50 V for 63 V parts, is at least 1×10⁴ MΩ for C ≤ 0.33 μF and at least 1250 s (MΩ·μF) for 0.33 μF < C ≤ 4.7 μF — 10 GΩ
+and 1.25 GΩ. The ceramic parts take the same 10 GΩ, the «10 000 MΩ» that the specifications of radial ceramic
+capacitors commonly give (some cap the larger values by 100 or 500 MΩ·μF instead: 1 or 5 GΩ for 100 nF — on the
+bench an open circuit either way); that is the decision of E1-5, not one maker's number. Their ESR, 0.03 Ω, is the
+decision of E1-5 too: the resistance of the plates and the leads, the order of the floor of the makers' impedance
+curves near the self-resonance (MKS 2's curve for 0.1 μF bottoms out at a few hundredths of an ohm). The dielectric
+loss, tan δ (MKS 2: ≤ 8·10⁻³ at 1 kHz; X7R typically ≤ 2.5 %), is an ESR that grows as the frequency falls; the model
+does not take it — a constant ESR made of it would be tens of ohms at audio frequencies, where the real one is far less.
+
+**Bulging** (the plan: an electrolytic over its rated voltage, or more than 1 V the wrong way round, is `hot` and in
+time `bulged`; the decision of E1-5: what it becomes then). A bulged capacitor has vented: no capacitance is left, and
+between its pins it is a leak of `BULGED_OHMS` = 1 kΩ — a gap with a large leak, a thousand times its healthy one (9 mA
+on the 9 V battery). It keeps no charge (`volts` 0), stays `'bulged'` with load 0 and never heals; nothing in the
+model makes smoke or a bang (the design §3.4). Its heat gathers as any part's with τ = 10 s (`HEAT_SECONDS.capacitor`,
+the decision of E1-5: a compression, as for the lamp — a real electrolytic on 1.4 times its rating may take minutes to
+vent): 100 μF / 6.3 V straight on the 9 V battery (load 1.43) bulges after 12.0 s, the wrong way round (load 9) after
+1.2 s. The leakage of a real part grows steeply over its rating and the wrong way round, which is what heats it; the
+model's leak stays the plain resistance above, and the load carries the overload instead. A ceramic or film capacitor
+over its rating burns as any other part — a gap; on the bench (9 V at most against 50 V and 63 V) that never happens.
+
 ## Limits (`limits.ts`)
 
 **The load** (`loadOf(spec, reading)`) is the share of its limit a part is under: the largest of |p| / `powerW`,
-|i| / `currentA` and (−u) / `reverseV`, of the limits the part has. Resistors, the pot (its whole track), the
-speaker, the earphone and the lamp have a power; LEDs, diodes and batteries a current; diodes a reverse voltage too.
-The ideal sources, the switch and the jumper have none.
+|i| / `currentA`, |u| / `voltageV` and (−u) / `reverseV`, of the limits the part has. Resistors, the pot (its whole
+track), the speaker, the earphone and the lamp have a power; LEDs, diodes and batteries a current; diodes a reverse
+voltage too; capacitors a voltage either way, an electrolytic a reverse voltage too. The ideal sources, the sine, the
+switch and the jumper have none.
 
-**The condition** (`conditionOf(load, burnt)`): `'ok'` up to half the limit (`WARM_LOAD` 0.5), `'warm'` above it,
-`'hot'` above the limit, `'burnt'` once the part burnt. The red LED with 330 Ω from 9 V is warm (21.2 mA, load
-0.71), and so is its resistor (0.149 W, load 0.60).
+**The condition** (`conditionOf(load, damage)`): `'ok'` up to half the limit (`WARM_LOAD` 0.5), `'warm'` above it,
+`'hot'` above the limit, `'burnt'` once the part burnt (`damage` true or `'burnt'`), `'bulged'` once an electrolytic
+capacitor bulged. The red LED with 330 Ω from 9 V is warm (21.2 mA, load 0.71), and so is its resistor (0.149 W, load
+0.60).
 
-**Heat** (the decision of this task, a simple accumulation): a part warms toward its load as a body warms to its
+**Heat** (the decision of E1-4, a simple accumulation): a part warms toward its load as a body warms to its
 steady temperature, dH/dt = (load − H) / τ, so H is how warm it is as a share of its limit. `heatStep(H, load,
 seconds, τ)` is the exact step for a steady load. A part that can burn (`canBurn`: every part with limits but a
-battery) burns when H reaches 1: never at a load up to 1, after `burnSeconds(load, τ)` = τ·ln(load / (load − 1))
-from cold above it — quickly far over the limit, slowly just over it. The time constants (`HEAT_SECONDS`, the
-decision of this task):
+battery) fails when H reaches 1: never at a load up to 1, after `burnSeconds(load, τ)` = τ·ln(load / (load − 1))
+from cold above it — quickly far over the limit, slowly just over it. It burns, or, a polar capacitor, bulges
+(`failureOf(spec)`; `fail(memory, failure)` marks it). The time constants (`HEAT_SECONDS`, the decisions of E1-4 and,
+for the capacitors, of E1-5):
 
 | Kind | τ | For example |
 |---|---|---|
 | `resistor`, `pot`, `speaker` | 10 s | a 0.25 W resistor at 0.2 W never burns; at 1 W (75 Ω on the 9 V battery, 1.04 W) it burns after 2.8 s |
+| `capacitor` | 10 s | 100 μF / 6.3 V on the 9 V battery bulges after 12.0 s, the wrong way round after 1.2 s; on 16 V it is warm for ever |
 | `led` | 2 s | an LED straight on the 9 V battery takes 0.93 A (red) or 0.51 A (blue) and burns after 0.07 or 0.12 s: a flash |
 | `diode` | 5 s | 1N4148 straight on the 9 V battery takes 3.7 A and burns after 0.28 s; 1N4007 5.2 A, 1.1 s |
 | `lamp` | 2 s | the 6 V lamp on the 9 V battery: 2.1 s |
 | `battery` | 2 s | a short warms the battery to its load (6 for the 9 V one) in a few seconds; it never burns |
 
 `advanceHeat(state, net, dc, seconds)` lets model time pass at an operating point: every limited part of the board
-moves its heat toward its load in `dc.status`, a part that reaches 1 burns, and the ids of the parts that burnt now
-come back. The next solve with the state leaves them out — a burnt resistor, LED, diode or lamp is a gap (its
-reading is the voltage across the gap, no current). In the operating point the stand calls it once a frame with the
-frame's time; the transient (E1-5) runs the same step in its own time. Time runs forward: a negative or infinite
-step is a `RangeError`.
+moves its heat toward its load in `dc.status`, a part that reaches 1 fails, and the ids of the parts that failed now
+come back. The next solve with the state knows them — a burnt resistor, LED, diode or lamp is a gap (its reading is
+the voltage across the gap, no current), a bulged capacitor a leak of 1 kΩ. In the operating point the stand calls it
+once a frame with the frame's time. The transient takes the same step at every step of its own, with the load of that
+moment: in time the heat is the load filtered by τ, so a part takes the mean of a load that swings faster than τ (a
+rectifier's diode, at 50 Hz, its mean current). Time runs forward: a negative or infinite step is a `RangeError`.
+
+## The transient (`transient.ts`)
+
+```ts
+import { createModelState, Transient, type Netlist } from '@electronics/sim/core';
+
+// the 9 V battery through a switch and 10 kΩ into 100 μF
+const board: Netlist = {
+  nodes: 4,
+  parts: [
+    { id: 'B1', spec: 'battery-9v', pins: [1, 0] },
+    { id: 'S1', spec: 'switch', pins: [1, 2], setting: 0 },
+    { id: 'R1', spec: 'resistor-10k', pins: [2, 3] },
+    { id: 'C1', spec: 'electrolytic-100u-16v', pins: [3, 0] },
+  ],
+};
+const state = createModelState(); // one per stand, as for solveDC
+const t = new Transient(board, { dt: 1 / 48000, state });
+t.start('dc'); // the operating point: the switch open, the capacitor empty
+t.issues; // [{ kind: 'open', part: 'B1' }]
+t.set('S1', 1); // the reader closes the switch: the next step takes it
+const trace = new Float32Array(2048);
+t.run(2048, [{ node: 3, out: trace }]); // 2048 steps, the capacitor's voltage after each
+t.time; // 0.04267 s: 2048 / 48000
+t.parts.C1; // { u: 0.378, i: 0.000862, p: 0.000326 } — the ESR's 2.3 mV in u
+t.status.R1; // { condition: 'ok', load: 0.0297 }
+state.parts.get('C1')!.volts; // 0.3757 V across the capacitance, kept for the next board
+```
+
+`new Transient(net, { dt, state?, maxIterations? })` compiles the board (a malformed netlist is the same `RangeError`
+as for `solveDC`; a step that is not a finite number above 0 is one too). Then:
+
+| Member | What it does |
+|---|---|
+| `start(from)` | begins time at 0: `'dc'` from the operating point (every capacitor charged, every filament steady — `solveDC` with the state), `'zero'` from nothing (every capacitor empty, every filament at room temperature, the nodes at 0 V: a board just switched on), `'state'` from the charges and temperatures the state holds (empty and cold for a part it does not know). False with `reason` when the operating point has no solution |
+| `step()` | one step of `dt`; false with `ok` false and `reason` (`'singular'`, `'no-convergence'`) when the next moment has no solution — the board then stays at its last moment and the next step tries again. Before `start` it throws |
+| `run(steps, probes?)` | `steps` steps; after step k it writes every probe's sample into `out[k]`: `{ node, out }` the node's voltage, `{ part, out }` the current into the part's first pin. Returns how many steps succeeded. A probe of a node or part the board has not, or an array shorter than `steps`, is a `RangeError` before any step |
+| `set(id, setting)` | a knob, a switch, a sine's frequency: writes the setting into the netlist (a stand may write `part.setting` itself too); the next step takes it |
+| `rebuild(net)` | a new board (a part put in or taken out): compiles it and carries over, by node number and by id, the node voltages, every capacitor's charge and filament's temperature, heat and damage (all from the state), and the guess of Newton's iterations; time runs on; the readings are those of the next step. A new part in place of a burnt one: delete the old entry from the state (`state.parts.delete(id)`), then `rebuild` (or `start`) |
+| `time`, `v`, `parts`, `status`, `issues` | the moment of the last step (s), the node voltages, `{ id: { u, i, p } }`, `{ id: { condition, load } }`, the shape of the board — the same objects at every step, updated in place (new ones after `rebuild`) |
+| `state`, `memory(id)` | the stand's memory — heat, damage, `volts` of a capacitor, `kelvin` of a lamp, node voltages — written after every step; `memory(id)` is the entry of one part (every part on the board has one) |
+| `ok`, `reason` | how the last step (or the start) went |
+
+**The step** (the plan: a fixed step, the trapezoid, backward Euler after a jump). A capacitor and a lamp keep their
+history; at every step they stamp the companion of the step from it, and the matrix gives the next moment: one solve
+for a linear circuit, Newton's iterations of the operating point (`newton` of `dc.ts`, the same stopping rules) from
+the solution of the last step for a nonlinear one — two to three iterations a step on the oracle's circuits, five at
+most. The steps integrate by the trapezoid; the first `EULER_STEPS` = 2 steps after `start` and after any change on
+the board (a setting, `rebuild`, a part that burnt or bulged) go by backward Euler. One step of Euler would not do
+(the decision of E1-5, where the plan said «the step after a change»): a part much faster than the step — 1 nF behind
+1 kΩ is R·C = 1 μs against 20.8 μs — is left 1/(1 + h/R·C) short of its jump by one step of Euler, 4.6 % there, and
+the trapezoid swings that remainder from one side to the other, shrinking it by less than a fifth a step (× −0.825):
+a ringing of 3.8 % of the jump. After two steps of Euler 0.21 % is left, and the swing that follows stays under 0.2 %
+and dies out (the test switches exactly that circuit on). The second step of Euler costs nothing that shows: a step
+of Euler leaves an error of (h/R·C)²/2 of the jump in a slow part, 0.7 mV of 9 V at 80 steps per R·C. A step whose
+iterations do not settle is taken again in 2, 4, … 64 steps of Euler before it fails.
+
+**What the trapezoid answers.** A trapezoid with a fixed step h answers a sine of f exactly as the circuit itself
+answers (1/(π·h))·tan(π·f·h) — the frequency warping of the bilinear transform. At 1/48000 s that is 100.0014 Hz for
+100 Hz, 1001.4 Hz for 1 kHz and 11 724 Hz for 10 kHz, and there the model is ngspice's `.ac` to better than 10⁻⁸ (the
+samples `filters.json` hold both). Against `.ac` at the frequency itself, the low-pass and the high-pass of 1 kΩ and
+100 nF are within 0.1 % at 100 Hz and 1 kHz and the high-pass within 0.34 % at 10 kHz; the low-pass at 10 kHz, far
+above its cut-off of 1.59 kHz, is 14.4 % low (0.1345 against 0.1572, −1.35 dB): where a response falls steeply, the
+stretch of the frequency shows. A step four times shorter (1/192 000 s) brings it within 0.9 %. The melody's highs
+(E1-7) and the stand's filters do not hinge on a decibel at 10 kHz, but a page that quotes the response there should
+take ngspice's numbers, not the model's.
+
+**Heat in time.** After every step the heat of every part moves toward its load of that moment by the exact step of
+`limits.ts` (with e^(−dt/τ) computed once), and a part that reaches 1 fails at that step: 1 W in a 0.25 W resistor
+(75 Ω on the 9 V battery) burns it at 2.756 s, as `burnSeconds` says to the millisecond; the red LED on the battery
+burns after 0.066 s; an electrolytic bulges as in Capacitors. The next steps know it (a change on the board: Euler).
+
+Nothing in a step allocates: the matrix, the readings, the scratch of Newton's iterations and the copy of a step to
+take again are made once per board; `run` writes into the stand's own arrays.
 
 ## Modules
 
 | Module | What it does |
 |---|---|
 | `netlist.ts` | `Netlist`, `PartInstance`, `GROUND`; `checkNetlist` and `checkSetting` (the `RangeError`s above) |
-| `parts.ts` | The catalog `PARTS`, `E12`, `E24`, `resistorKey`, `WIRE_OHMS`; the types of the parts (`PartSpec`, one interface per kind, `JunctionParams`, `Limits`); `Behaviour`, `Placement`, `Operating`; `behaviour(spec)` — how a kind of part sits in the matrix |
-| `mna.ts` | The dense LU with partial pivoting (`createSystem`, `factor`, `solveFactored`); `compile` (unknowns: the nodes in use, the parts' own nodes, then the currents of the parts that need one; the parts' memory; the scratch of the iterations); the `Stamper` the parts write with; `assemble` (clear, stamp every part around a guess, leave the burnt ones out, tie) |
+| `parts.ts` | The catalog `PARTS`, `E12`, `E24`, `resistorKey`, `WIRE_OHMS`; the types of the parts (`PartSpec`, one interface per kind, `JunctionParams`, `Limits`, `Dielectric`); `Behaviour`, `FailedForm`, `Placement`, `Operating`; `behaviour(spec)` — how a kind of part sits in the matrix; the sine source |
+| `mna.ts` | The dense LU with partial pivoting (`createSystem`, `factor`, `solveFactored`); `compile` (unknowns: the nodes in use, the parts' own nodes, then the currents of the parts that need one; the parts' memory and history; the scratch of the iterations); the `Stamper` the parts write with; `readSettings`, `updateSettings`; `assemble` (clear, stamp every part around a guess, leave the burnt ones out, stamp the bulged ones' failed form, tie); the damage codes `BURNT`, `BULGED` |
 | `topology.ts` | `analyse` — the issues and the nodes to tie, by union–find over the links of the parts (a burnt part has none) |
-| `dc.ts` | `solveDC` — one solve, or Newton's iterations with source stepping — `DcSolution`, `PartReading`, `DcOptions`, `MAX_ITERATIONS` |
+| `dc.ts` | `solveDC` — one solve, or Newton's iterations with source stepping — `DcSolution`, `PartReading`, `DcOptions`, `MAX_ITERATIONS`; `newton` (one go of the iterations, which the transient takes at every step; `Go`, `newGo`), `readPart`, `damageIn`, `failureIn` |
 | `diode.ts` | SPICE's junction: `ROOM_KELVIN`, `THERMAL_VOLTAGE`, `GMIN`, `junctionOf`, `junctionCurrent`, `pnjlim`, `limitJunction`, `forwardVoltage`, `ledLumens`, `diodeBehaviour` |
-| `lamp.ts` | The tungsten filament: `TUNGSTEN_EXPONENT`, `filament`, `lampBehaviour` |
-| `limits.ts` | `loadOf`, `conditionOf`, `WARM_LOAD`, `HEAT_SECONDS`, `heatStep`, `burnSeconds`, `canBurn`, `advanceHeat`; `Condition`, `PartStatus` |
-| `state.ts` | `ModelState`, `PartMemory`, `createModelState`, `memoryOf` |
+| `lamp.ts` | The tungsten filament, steady and in time: `TUNGSTEN_EXPONENT`, `filament`, `filamentCapacity`, `lampBehaviour` |
+| `capacitor.ts` | The capacitor — ESR, capacitance, leak; its companion in time; its bulged form: `capacitorBehaviour`, `BULGED_OHMS` |
+| `limits.ts` | `loadOf`, `conditionOf`, `WARM_LOAD`, `HEAT_SECONDS`, `heatStep`, `burnSeconds`, `limited`, `canBurn`, `failureOf`, `damageOf`, `fail`, `advanceHeat`; `Condition`, `Failure`, `PartStatus` |
+| `transient.ts` | `Transient` with `TransientOptions`, `TransientStart`, `Probe`; `EULER_STEPS` |
+| `state.ts` | `ModelState`, `PartMemory`, `createModelState`, `memoryOf`, `levelOf`, `keepLevel` |
 | `index.ts` | the public entry |
 
-## Adding a kind of part (E1-5, E1-6)
+## Adding a kind of part (E1-6 and later)
 
 A kind is four things:
 
 1. its spec interface in `parts.ts`, added to the union `PartSpec`, and its entries in `PARTS`;
-2. a `Behaviour` (`parts.ts` for a linear kind, a module of its own for a nonlinear one, as `diode.ts` and
-   `lamp.ts`) and one more `case` in `behaviour(spec)`;
-3. its limits and, if it has any, its time constant in `HEAT_SECONDS` (`limits.ts`);
+2. a `Behaviour` (`parts.ts` for a simple linear kind, a module of its own otherwise, as `diode.ts`, `lamp.ts` and
+   `capacitor.ts`) and one more `case` in `behaviour(spec)`;
+3. its limits and, if it has any, its time constant in `HEAT_SECONDS` (`limits.ts`) — and, if it fails otherwise than
+   by burning, its case in `failureOf` and its `failed` form;
 4. its numbers in the oracle's own catalog (`tools/ref-models/electronics/spice.py`) and its cases in `cases.py`.
 
 A `Behaviour` says how many current unknowns the part adds (`branches`: an ideal source has one), how many nodes of
-its own (`inner`: a diode with RS has its junction), how many numbers it keeps between iterations (`memory`), whether
-it is nonlinear (then the operating point takes Newton's iterations), whether it is a source (`open` and `short`
-are checked for sources), which pins conduct direct current at a setting (`links`), whether it is a wire at a
-setting (`wire`), how its memory starts a solve (`start`), its stamp, and the currents into its pins from a solution
-(`currents`). The stamp writes through the `Stamper` — `conductance(a, b, g)`, `current(a, b, i)` (a current through
-the part from node `a` to node `b`), `voltage(plus, minus, branch, volts)` — by node numbers, the part's own nodes
-(`at.inner`) too; a conductance or a current from a node to itself (a part with both legs in one row) is not
-stamped at all, since adding and taking away a jumper's 1000 S would round away the GMIN beside it. A part stamps
-around the guess `op: Operating`: the node voltages `op.v`, the share `op.sources` a source gives (it multiplies its
-voltage by it), `op.initial` (the first iteration from nothing: a junction linearizes at its memory) and
-`op.limited` (a part that limited its step sets it: the iterations go on). A nonlinear part stamps its
-linearization: its slope as a conductance and the current that makes up the rest. The transient (E1-5) adds the
-time step and the parts' state in time to the same guess.
+its own (`inner`: a diode with RS has its junction, a capacitor the node between its ESR and its capacitance), how
+many numbers it keeps between iterations (`memory`) and between the moments of the transient (`history`, whose first
+number is the part's level: a capacitor's voltage, a filament's temperature), whether it is nonlinear (then the
+operating point and every step take Newton's iterations), whether it is a source (`open` and `short` are checked for
+sources), which pins conduct direct current at a setting (`links`), whether it is a wire at a setting (`wire`), how its
+memory starts a solve (`start`), its stamp, the currents into its pins from a solution (`currents`), and, for a part
+with a state in time, its history at an operating point (`settle`) and after a step (`accept`); `failed`, when it
+fails otherwise than into a gap. The stamp writes through the `Stamper` — `conductance(a, b, g)`, `current(a, b, i)`
+(a current through the part from node `a` to node `b`), `voltage(plus, minus, branch, volts)` — by node numbers, the
+part's own nodes (`at.inner`) too; a conductance or a current from a node to itself (a part with both legs in one
+row) is not stamped at all, since adding and taking away a jumper's 1000 S would round away the GMIN beside it. A part
+stamps around the guess `op: Operating`: the node voltages `op.v`, the share `op.sources` a source gives (it
+multiplies its voltage by it), `op.initial` (the first iteration from nothing: a junction linearizes at its memory),
+`op.limited` (a part that limited its step sets it: the iterations go on), and the moment: `op.time` (a sine reads
+it), `op.dt` (0 at the operating point; the step in time, when a part with a state stamps its companion from its
+history) and `op.trapezoid` (the trapezoid, or backward Euler). A nonlinear part stamps its linearization: its slope
+as a conductance and the current that makes up the rest.
 
 ## Tests
 
@@ -439,11 +619,23 @@ or the tie holds, 3000 random boards, and `no-convergence`), `lamp` (the catalog
 against a bisection by hand at nine voltages, the lamp's law, 0.1 A ± 2 % from four AA cells, less than half the
 power from 3 V, the state's temperature, the lamp's limit), `limits` (conditions, loads, the limits of the catalog,
 heat in time, the 0.25 W resistor at 0.2 W for an hour and at 1 W, a burnt part as a gap, a shorted battery, two
-stands), `oracle` (every sample of `__fixtures__/` against the model: relative difference ≤ 1e-6 for the linear
-samples and ≤ 1e-3 for the nonlinear ones — the plan's tolerances — for every number, the smallest too, with no
-absolute allowance; where ngspice gives an exact zero — the ground, a part behind an open switch — the model must
-give an exact zero; at most 50 iterations and no source steps). The samples are written by
+stands), `capacitor` (the catalog — ESR and leak of the electrolytics from their makers' rules —, a capacitor at the
+operating point, the loads by voltage, an electrolytic over its rating and the wrong way round: bulged after 12.0 and
+1.2 s, then a leak of 1 kΩ, at the operating point too), `transient` (every sample in time against ngspice, the
+plan's tolerances: the RC charge and discharge within 1 % at 20 moments with 63.2 % and 36.8 % ± 0.5 % after
+R·C; the LED fed by 470 μF within 2 %; the rectifier's output, mean and ripple within 3 %; the filters against `.ac`
+where the trapezoid answers, within 1e-5, and at the frequency itself within 1 % but for the low-pass at 10 kHz,
+whose 14.4 % and its 0.9 % at a step four times shorter are tested as such; halving the step, under 0.1 %; the
+trapezoid's second order; no ringing after a stiff jump; the lamp's inrush; parts that burn in time; the worked
+example above; start, run, set, rebuild and a failed step), `oracle` (every sample of `__fixtures__/` at the
+operating point against the model: relative difference ≤ 1e-6 for the linear samples and ≤ 1e-3 for the nonlinear
+ones — the plan's tolerances — for every number, the smallest too, with no absolute allowance; where ngspice gives an
+exact zero — the ground, a part behind an open switch — the model must give an exact zero; at most 50 iterations and
+no source steps; and that every sample on disk is compared here or in `transient`). The samples are written by
 `tools/ref-models/electronics/spice.py` from `cases.py` (its README); the model and ngspice agree on them to 4e-10
 for the linear ones, the rounding of the samples, and to 1.6e-8 for the nonlinear ones, the tolerance to which both
 sides settle — but for the power in the 1 kΩ before the reversed LED of `diode-reverse` (8.1e-20 W: 9 pA and 9 nV,
-the difference of two nodes at 9 V), where the rounding of those nodes on either side leaves 8e-7.
+the difference of two nodes at 9 V), where the rounding of those nodes on either side leaves 8e-7. In time they agree
+far inside the plan's tolerances: the RC curves to 3.2e-6, the LED's current to 3.9e-7, the rectifier's output to
+9.5e-7 and its mean and ripple to 0.01 %, at the steps the tests take (1 ms, 0.1 ms, 1/48000 s; ngspice steps at
+most 1 ms, 0.1 ms and 5 μs with its tolerances tightened).

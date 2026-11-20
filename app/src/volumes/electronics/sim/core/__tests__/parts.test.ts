@@ -64,6 +64,14 @@ describe('the catalog of parts', () => {
     expect(PARTS['battery-aa']).toMatchObject({ volts: 1.5, ohms: 0.15, cells: 1 });
     expect(PARTS['ideal-9v']).toEqual({ kind: 'source', pins: ['plus', 'minus'], volts: 9, limits: {} });
     expect(PARTS['ideal-5v']).toEqual({ kind: 'source', pins: ['plus', 'minus'], volts: 5, limits: {} });
+    // a sine of 6 V amplitude, 50 Hz unless its setting says another frequency: the reference of the oracle in time
+    expect(PARTS['ideal-ac-6v']).toEqual({
+      kind: 'sine',
+      pins: ['plus', 'minus'],
+      amplitude: 6,
+      hz: 50,
+      limits: {},
+    });
   });
 
   it('the diodes: the parameters of their published SPICE models', () => {
@@ -150,12 +158,14 @@ describe('the catalog of parts', () => {
     }
     expect([...kinds].sort()).toEqual([
       'battery',
+      'capacitor',
       'diode',
       'jumper',
       'lamp',
       'led',
       'pot',
       'resistor',
+      'sine',
       'source',
       'speaker',
       'switch',

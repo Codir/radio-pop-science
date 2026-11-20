@@ -3,13 +3,15 @@
  * of the matrix. A circuit with nonlinear parts (diodes, LEDs, a lamp) takes Newton's iterations: every part stamps
  * its linearization around the last solution, the matrix gives the next one, until nothing moves. A junction limits
  * the step of its voltage (`diode.ts`); when the iterations still do not settle, the sources are stepped up from zero,
- * each step starting from the solution of the last (source stepping, as in SPICE).
+ * each step starting from the solution of the last (source stepping, as in SPICE). The transient (`transient.ts`)
+ * takes the same iterations at every step, from the solution of the last.
  */
 import { ROOM_KELVIN } from './diode';
-import { filament } from './lamp';
-import { conditionOf, loadOf, type PartStatus } from './limits';
+import { conditionOf, damageOf, loadOf, type PartStatus } from './limits';
 import {
   assemble,
+  BULGED,
+  BURNT,
   compile,
   factor,
   readSettings,
@@ -18,7 +20,7 @@ import {
   type LinearSystem,
 } from './mna';
 import type { Netlist } from './netlist';
-import { memoryOf, type ModelState } from './state';
+import { keepLevel, memoryOf, type ModelState } from './state';
 import { analyse, type TopologyIssue } from './topology';
 
 /** What a meter would read on a part. */
@@ -58,11 +60,14 @@ export interface DcSolution {
 }
 
 export interface DcOptions {
-  /** The memory of the stand: the solve starts from its node voltages, leaves the burnt parts out, and leaves there
-   * its node voltages and the temperature of every lamp when it succeeds. */
+  /** The memory of the stand: the solve starts from its node voltages, knows the parts that burnt or bulged, and
+   * leaves there its node voltages, the temperature of every lamp and the charge of every capacitor when it
+   * succeeds. */
   state?: ModelState;
   /** Newton's iterations at most, in one go and in each step of the sources (100, the ITL1 of SPICE). */
   maxIterations?: number;
+  /** The moment whose sources the operating point holds steady (s): a sine gives its value then. 0 when absent. */
+  time?: number;
 }
 
 /** The iterations of one go (SPICE's ITL1). */
@@ -96,11 +101,21 @@ const STEPPING_ITERATIONS = 5000;
 const isCircuit = (x: Netlist | Circuit): x is Circuit => 'elements' in x;
 
 /** How one go of Newton's iterations ended. */
-interface Go {
+export interface Go {
   settled: boolean;
   singular: boolean;
   iterations: number;
 }
+
+/** A go to fill: `newton` writes into it instead of making one. */
+export const newGo = (): Go => ({ settled: false, singular: false, iterations: 0 });
+
+const end = (go: Go, settled: boolean, singular: boolean, iterations: number): Go => {
+  go.settled = settled;
+  go.singular = singular;
+  go.iterations = iterations;
+  return go;
+};
 
 /** Whether the guess `x` leaves every row of A·x = b, just assembled around it, at the rounding: the largest row's
  * remainder against the largest row's sum of the magnitudes of its terms. */
@@ -123,30 +138,32 @@ function quietAt(system: LinearSystem, x: Float64Array): boolean {
 }
 
 /**
- * Newton's iterations from the guess in `c.operating` (its `v`, `initial` and the parts' memory), at most `max` of
- * them. The circuit's last solution is left in `c.operating.v` and `c.system.x`.
+ * Newton's iterations from the guess in `c.operating` (its `v`, `initial`, the moment it is for and the parts' memory),
+ * at most `max` of them, written into `go` (a new one when absent). The circuit's last solution is left in
+ * `c.operating.v` and `c.system.x`. It allocates nothing: the transient calls it at every step.
  */
-function newton(
+export function newton(
   c: Circuit,
   settings: Float64Array,
   ties: readonly number[],
-  broken: Uint8Array,
+  damage: Uint8Array,
   max: number,
+  go: Go = newGo(),
 ): Go {
   const { system, index, operating: op } = c;
   const { v } = op;
   const x = system.x;
-  const before = new Float64Array(x.length);
+  const before = c.scratch;
   // the unknowns below `voltages` are node voltages, the rest currents of sources
   let voltages = 0;
-  for (const k of index) if (k >= 0) voltages++;
+  for (let node = 0; node < index.length; node++) if (index[node]! >= 0) voltages++;
   let quietRun = 0;
   for (let iterations = 1; iterations <= max; iterations++) {
     op.limited = false;
-    assemble(c, settings, ties, op, broken);
+    assemble(c, settings, ties, op, damage);
     // from the second iteration of a go on, `x` is the guess the parts were just stamped around
     const quiet = iterations > 1 && quietAt(system, x);
-    if (!factor(system)) return { settled: false, singular: true, iterations };
+    if (!factor(system)) return end(go, false, true, iterations);
     before.set(x);
     solveFactored(system);
     let exact = iterations > 1;
@@ -155,7 +172,7 @@ function newton(
     for (let k = 0; k < voltages; k++) scale = Math.max(scale, Math.abs(x[k]!), Math.abs(before[k]!));
     for (let k = 0; k < x.length; k++) {
       const now = x[k]!;
-      if (!Number.isFinite(now)) return { settled: false, singular: false, iterations };
+      if (!Number.isFinite(now)) return end(go, false, false, iterations);
       const step = Math.abs(now - before[k]!);
       const size = Math.max(Math.abs(now), Math.abs(before[k]!));
       if (step > EXACT * size + FLOOR) exact = false;
@@ -168,10 +185,10 @@ function newton(
     }
     const steady = !op.limited && !op.initial;
     op.initial = false;
-    if (steady && (exact || small)) return { settled: true, singular: false, iterations };
+    if (steady && (exact || small)) return end(go, true, false, iterations);
     quietRun = steady && quiet ? quietRun + 1 : 0;
   }
-  return { settled: quietRun >= NOISE_RUN, singular: false, iterations: max };
+  return end(go, quietRun >= NOISE_RUN, false, max);
 }
 
 /** Sets every part's memory for a new solve. */
@@ -243,6 +260,52 @@ function stepSources(
   return { settled: reached === 1, singular: false, iterations, steps };
 }
 
+/** The damage of every element of the circuit by the state's memory: 0 whole, BURNT, BULGED. */
+export function damageIn(
+  c: Circuit,
+  state: ModelState | undefined,
+  out: Uint8Array = new Uint8Array(c.elements.length),
+): Uint8Array {
+  c.elements.forEach((e, k) => {
+    const failure = damageOf(state?.parts.get(e.part.id));
+    out[k] = failure === 'burnt' ? BURNT : failure === 'bulged' ? BULGED : 0;
+  });
+  return out;
+}
+
+const FAILURES = [false, 'burnt', 'bulged'] as const;
+
+/** The failure an element's damage code stands for, or false. */
+export const failureIn = (damage: number): false | 'burnt' | 'bulged' => FAILURES[damage] ?? false;
+
+/**
+ * The reading of the element `k` of a circuit solved into `c.operating.v` and `c.system.x` for the moment of
+ * `c.operating`, into `out`: a burnt part carries nothing, a bulged one what its failed form carries. `scratch` holds
+ * the currents of the pins (as long as the part has pins at least).
+ */
+export function readPart(
+  c: Circuit,
+  k: number,
+  setting: number,
+  damage: number,
+  scratch: Float64Array,
+  out: PartReading,
+): void {
+  const e = c.elements[k]!;
+  const all = c.operating.v;
+  const pins = e.nodes.length;
+  if (damage === 0) e.behaviour.currents(setting, e, all, c.system.x, scratch, c.operating);
+  else if (damage === BULGED && e.behaviour.failed) e.behaviour.failed.currents(e, all, scratch);
+  else scratch.fill(0, 0, pins);
+  // the power against the last pin: Σ (v_pin − v_last)·i_pin equals Σ v_pin·i_pin, as the currents add up to zero
+  const last = all[e.nodes[pins - 1]!]!;
+  let p = 0;
+  for (let pin = 0; pin < pins - 1; pin++) p += (all[e.nodes[pin]!]! - last) * scratch[pin]!;
+  out.u = all[e.nodes[0]!]! - all[e.nodes[1]!]!;
+  out.i = scratch[0]!;
+  out.p = p;
+}
+
 /**
  * Solves the operating point of a netlist, or of a compiled circuit (its matrix is then reused, and the solve starts
  * from its last solution). A malformed netlist or a setting that is not a finite number is a RangeError; a circuit
@@ -254,8 +317,10 @@ export function solveDC(net: Netlist | Circuit, opts: DcOptions = {}): DcSolutio
   const max = opts.maxIterations ?? MAX_ITERATIONS;
   const settings = readSettings(circuit);
   const { system, elements, operating: op } = circuit;
-  const broken = new Uint8Array(elements.length);
-  elements.forEach((e, k) => (broken[k] = state?.parts.get(e.part.id)?.burnt ? 1 : 0));
+  op.time = opts.time ?? 0;
+  op.dt = 0;
+  op.trapezoid = false;
+  const broken = damageIn(circuit, state);
   const { issues, ties } = analyse(circuit, settings, broken);
   const nodes = circuit.net.nodes;
   const parts: Record<string, PartReading> = {};
@@ -266,14 +331,14 @@ export function solveDC(net: Netlist | Circuit, opts: DcOptions = {}): DcSolutio
     op.sources = 1;
     elements.forEach((e, k) => {
       parts[e.part.id] = { u: 0, i: 0, p: 0 };
-      status[e.part.id] = { condition: conditionOf(0, broken[k] === 1), load: 0 };
+      status[e.part.id] = { condition: conditionOf(0, failureIn(broken[k]!)), load: 0 };
     });
     return { ok: false, reason, v: new Float64Array(nodes), parts, status, iterations, sourceSteps, issues };
   };
 
   let iterations = 1;
   let sourceSteps = 0;
-  const nonlinear = elements.some((e, k) => e.behaviour.nonlinear && !broken[k]);
+  const nonlinear = elements.some((e, k) => e.behaviour.nonlinear && broken[k] !== BURNT);
   if (!nonlinear) {
     op.v.fill(0);
     op.sources = 1;
@@ -300,30 +365,28 @@ export function solveDC(net: Netlist | Circuit, opts: DcOptions = {}): DcSolutio
   }
   circuit.solved = true;
 
-  const all = op.v;
-  let currents = new Float64Array(3);
+  const scratch = new Float64Array(Math.max(3, ...elements.map((e) => e.nodes.length)));
   elements.forEach((e, k) => {
-    const pins = e.nodes.length;
-    if (currents.length < pins) currents = new Float64Array(pins);
-    if (broken[k]) currents.fill(0);
-    else e.behaviour.currents(settings[k]!, e, all, system.x, currents);
-    // the power against the last pin: Σ (v_pin − v_last)·i_pin equals Σ v_pin·i_pin, as the currents add up to zero
-    const last = all[e.nodes[pins - 1]!]!;
-    let p = 0;
-    for (let pin = 0; pin < pins - 1; pin++) p += (all[e.nodes[pin]!]! - last) * currents[pin]!;
-    const reading = { u: all[e.nodes[0]!]! - all[e.nodes[1]!]!, i: currents[0]!, p };
+    const reading = { u: 0, i: 0, p: 0 };
+    readPart(circuit, k, settings[k]!, broken[k]!, scratch, reading);
     parts[e.part.id] = reading;
     const load = broken[k] ? 0 : loadOf(e.spec, reading);
-    status[e.part.id] = { condition: conditionOf(load, broken[k] === 1), load };
+    status[e.part.id] = { condition: conditionOf(load, failureIn(broken[k]!)), load };
   });
-  const v = all.slice(0, nodes);
+  const v = op.v.slice(0, nodes);
   if (state) {
     state.v = v.slice();
-    for (const e of elements) {
-      if (e.spec.kind !== 'lamp') continue;
+    // the level of every part with a state in time, steady: a lamp's temperature, a capacitor's charge
+    elements.forEach((e, k) => {
+      if (!e.behaviour.settle) return;
       const memory = memoryOf(state, e.part.id);
-      memory.kelvin = memory.burnt ? ROOM_KELVIN : filament(e.spec, parts[e.part.id]!.u).kelvin;
-    }
+      if (broken[k]) {
+        if (e.spec.kind === 'lamp') memory.kelvin = ROOM_KELVIN; // a broken filament is dark
+        return;
+      }
+      e.behaviour.settle(settings[k]!, e, op.v, op);
+      keepLevel(memory, e.spec.kind, e.history[0]!);
+    });
   }
   return { ok: true, v, parts, status, iterations, sourceSteps, issues };
 }
