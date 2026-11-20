@@ -1,20 +1,35 @@
 /**
- * The bench of the volume «Радіоелектроніка» (docs/volumes/electronics/VISUAL.md §2, §3, §7, §8): the dark room, the
- * base with the breadboard, the light, the magnifier in its holder and the permanent things — for now as stand-ins
- * (`props.ts`). A chapter mounts it once in its scene factory and drives it through plain parameters (shared/README.md,
- * «bench»). Copied in its shape from `circuit/shared/stage/index.ts` (`mountStage` → `mountBench`; shared/README.md,
- * «Копії»): no flashlight, unfolding, snail, battery cutaway or lamp close-up.
+ * The bench of the volume «Радіоелектроніка» (docs/volumes/electronics/VISUAL.md §2, §3, §4, §7, §8): the dark room,
+ * the base with the breadboard, the light, the magnifier in its holder, the permanent things (`props.ts`: the battery,
+ * the player, the speaker and the lamp with their real marks; the tray and the instruments still stand-ins) and the
+ * parts on the board, which follow the board's state (`on-board.ts`). A chapter mounts it once in its scene factory and
+ * drives it through plain parameters (shared/README.md, «bench»). Copied in its shape from
+ * `circuit/shared/stage/index.ts` (`mountStage` → `mountBench`; shared/README.md, «Копії»): no flashlight, unfolding,
+ * snail, battery cutaway or lamp close-up.
  */
-import { Group, Vector3, type Mesh } from 'three';
+import { Box3, Group, Vector3, type Material, type Mesh, type Object3D } from 'three';
 import { damp, type ChapterContext } from '@/engine/api';
 import { KToonMaterial } from '@/style';
-import { createLayout, type BoardLayout } from '@electronics/sim/board';
+import type { Text3D } from '@/text';
+import {
+  createBoardState,
+  createLayout,
+  place,
+  remove,
+  setSetting,
+  type BoardLayout,
+  type BoardState,
+  type Orientation,
+  type SocketId,
+} from '@electronics/sim/board';
+import type { PartEye, PartView } from '../parts';
 import { createAir } from './air';
 import { createBase, type Base } from './base';
 import { createBoardView, type BoardView } from './board-view';
 import { PLACES } from './layout';
 import { BENCH_AMBIENT, createLight, type LightRig } from './light';
 import { tame } from './materials';
+import { createPartsOnBoard, type PartsOnBoard } from './on-board';
 import { createProps, type Props } from './props';
 import { createRoom, type Room } from './room';
 import { STAGE_POST, benchShots } from './shots';
@@ -24,6 +39,7 @@ export { BOARD, LAMP, LENS, PLACES, SWITCH } from './layout';
 export { BOARD_Y } from './base';
 export { BOARD_LOOK, type BoardView } from './board-view';
 export { BENCH_AMBIENT, filamentColor, type LightRig } from './light';
+export { type PartsOnBoard } from './on-board';
 export { AWAY, type Props } from './props';
 export { STAGE_FOV, STAGE_POST, STAGE_SHOTS, benchShots, boardToWorld, type BenchShot } from './shots';
 export { holderPose, overPose, worldDirToBoard, worldToBoard, type BenchTools, type LensPose } from './tools';
@@ -32,9 +48,23 @@ export {
   BOARD_SPEC,
   createLayout,
   type BoardLayout,
+  type BoardState,
+  type Orientation,
   type RowId,
   type SocketId,
 } from '@electronics/sim/board';
+
+/** A part a step puts on the board: leg 0 in `at`, turned by `o` (default 0: the legs along the line, to the right). */
+export interface PresetPart {
+  /** The id on the board: the footprint's letters and a number (`R1`, `LED2`). */
+  readonly id: string;
+  /** The key of the catalog (`resistor-4k7`). */
+  readonly spec: string;
+  readonly at: SocketId;
+  readonly o?: Orientation;
+  /** A pot's setting 0…1. */
+  readonly setting?: number;
+}
 
 export interface Bench {
   /** Everything of the bench; already added to `ctx.root`. */
@@ -46,7 +76,12 @@ export interface Bench {
   /** The breadboard as data (`sim/board`) and in 3D. */
   readonly layout: BoardLayout;
   readonly board: BoardView;
-  /** The permanent things as stand-ins: battery box with the switch, player, speaker, lamp, tray, instruments. */
+  /** What stands in which socket (`sim/board`): `preset` and `clear` here, the hand from E2-5. */
+  readonly state: BoardState;
+  /** The parts on the board in 3D (`shared/parts`), following `state` every frame. */
+  readonly parts: PartsOnBoard;
+  /** The permanent things: the battery box with the switch, the player, the speaker, the lamp (real marks, E2-4);
+   * the tray and the instruments (stand-ins). */
   readonly props: Props;
   /** The magnifier and its holder. */
   readonly tools: BenchTools;
@@ -74,9 +109,26 @@ export interface Bench {
   /** The instruments: 0 away beyond the frame's edge … 1 on their places on the table (a step tweens them, 0.6 s). */
   meter: number;
   scope: number;
+  /**
+   * A step's own small circuit: the board holds exactly these parts, at once (the hand's travel is E2-5's). A part
+   * that does not stand where it is put is a RangeError: a preset is the step's data.
+   */
+  preset(parts: readonly PresetPart[]): void;
+  /** Takes every part and plug off the board. */
+  clear(): void;
   /** Jump to the state without the filament's and the slider's ramps (deep links). */
   snap(): void;
   update(dt: number, t: number): void;
+}
+
+/** Meshes the renderer draws below `root`: shown in the tree, with a visible material. */
+function drawnMeshes(root: Object3D): number {
+  let n = 0;
+  root.traverseVisible((o) => {
+    const m = (o as Mesh).material as Material | Material[] | undefined;
+    if ((o as Mesh).isMesh && (Array.isArray(m) ? m : m ? [m] : []).some((x) => x.visible)) n++;
+  });
+  return n;
 }
 
 /** Apply `tame()` to every lit K material below `root` (call again after adding things to the bench). */
@@ -112,6 +164,10 @@ export function mountBench(ctx: ChapterContext): Bench {
   const layout = createLayout();
   const board = createBoardView(ctx, layout);
   board.group.position.set(PLACES.breadboard.x, PLACES.breadboard.height, PLACES.breadboard.z);
+  const state = createBoardState();
+  const parts = createPartsOnBoard(board, state);
+  board.group.add(parts.group);
+  ctx.onDispose(() => parts.dispose());
   const props = createProps();
   base.frame.add(board.group, props.onBase);
   group.add(props.onTable);
@@ -138,9 +194,11 @@ export function mountBench(ctx: ChapterContext): Bench {
   const unit = (v: number): number => Math.min(Math.max(v, 0), 1);
   const lampWorld = new Vector3();
   const bounceOffset = new Vector3(...BOUNCE_OFFSET);
-  const apply = (): void => {
+  const eye: PartEye = { camera: ctx.camera.camera, aspect: 1, phone, room: 1 };
+  const apply = (dt: number): void => {
     light.set({ glow, moon: bench.moon, ambient: bench.ambient });
     const room = Math.min(1, 0.25 + 0.75 * Math.max(bench.moon, glow ** 2));
+    props.bulb.setGlow(light.filament, light.emission, glow, bench.moon);
     // the slider shows in the dark by its own faint glow and hands over to the room's light
     props.slider.setGlow(1 - Math.max(bench.moon, light.output));
     props.setSwitch(slider);
@@ -151,6 +209,14 @@ export function mountBench(ctx: ChapterContext): Bench {
     air.set(lampWorld, light.lamp.color, light.output ** 1.5);
     tools.set({ use: bench.lens, target: bench.lensTarget, dive: bench.dive, call: bench.lensCall }, time);
     board.update(ctx.camera.camera, room);
+    // the parts follow the board's state; the prints show where they can be read from this camera
+    parts.sync();
+    eye.camera = ctx.camera.camera;
+    eye.aspect = ctx.viewport.aspect;
+    eye.phone = phone;
+    eye.room = room;
+    parts.update(dt, eye);
+    props.view(eye);
   };
 
   const bench: Bench = {
@@ -160,6 +226,8 @@ export function mountBench(ctx: ChapterContext): Bench {
     light,
     layout,
     board,
+    state,
+    parts,
     props,
     tools,
     ambient: BENCH_AMBIENT,
@@ -172,10 +240,25 @@ export function mountBench(ctx: ChapterContext): Bench {
     dive: 0,
     meter: 0,
     scope: 0,
+    preset(list) {
+      for (const id of [...state.parts.keys()]) remove(state, id);
+      for (const p of list) {
+        if (!place(layout, state, { id: p.id, spec: p.spec, anchor: p.at, o: p.o ?? 0 })) {
+          throw new RangeError(`bench.preset: ${p.id} (${p.spec}) does not stand at ${p.at}, o ${p.o ?? 0}`);
+        }
+        if (p.setting !== undefined) setSetting(state, p.id, p.setting);
+      }
+      parts.sync();
+    },
+    clear() {
+      for (const id of [...state.parts.keys()]) remove(state, id);
+      state.leads.clear();
+      parts.sync();
+    },
     snap() {
       glow = unit(bench.lamp);
       slider = unit(bench.closed);
-      apply();
+      apply(0);
     },
     update(dt, t) {
       time = t;
@@ -184,7 +267,7 @@ export function mountBench(ctx: ChapterContext): Bench {
       glow = damp(glow, to, to > glow ? 16 : 9, dt);
       if (Math.abs(glow - to) < 1e-3) glow = to;
       slider = damp(slider, unit(bench.closed), 22, dt);
-      apply();
+      apply(dt);
     },
   };
 
@@ -201,6 +284,49 @@ export function mountBench(ctx: ChapterContext): Bench {
     print: board.print.filter((t) => t.visible).length,
     phone,
   }));
+  // `__app.read('electronics-board')` — the board as data: every part with the socket of each leg, the plugs, the
+  // settings; which parts have a model, and the models shown outside the circuit
+  ctx.qa.expose('electronics-board', () => ({
+    parts: Object.fromEntries(
+      [...state.parts.values()].map((p) => [p.id, { spec: p.spec, legs: [...p.legs] }]),
+    ),
+    leads: Object.fromEntries(state.leads),
+    settings: Object.fromEntries(state.settings),
+    models: [...parts.models.keys()],
+    shown: [...parts.shown.keys()],
+  }));
+  // `__app.read('electronics-parts')` — every part and permanent thing in 3D: where its body is (world), its draw calls,
+  // its print, how much of it is shown and where (the checks look at each one close)
+  const things: Readonly<Record<string, PartView>> = {
+    battery: props.things.battery,
+    player: props.things.player,
+    speaker: props.things.speaker,
+  };
+  ctx.qa.expose('electronics-parts', () => {
+    group.updateMatrixWorld(true);
+    const box = new Box3();
+    const entry = (key: string, root: Object3D, body: Object3D, prints: readonly Text3D[]) => {
+      box.setFromObject(body);
+      const c = box.getCenter(new Vector3());
+      const first = prints[0];
+      return {
+        key,
+        center: c.toArray(),
+        radius: box.getSize(new Vector3()).length() / 2,
+        drawCalls: drawnMeshes(root),
+        prints: prints.length,
+        printsShown: prints.filter((t) => t.visible).length,
+        // where the first print is and how tall one em of it is (world), for a look at it close
+        printAt: first ? first.getWorldPosition(new Vector3()).toArray() : null,
+        printEm: first ? first.fontSize * first.matrixWorld.getMaxScaleOnAxis() : 0,
+      };
+    };
+    return Object.fromEntries([
+      ...[...parts.models, ...parts.shown].map(([id, m]) => [id, entry(m.key, m.group, m.hit, m.prints)]),
+      ...Object.entries(things).map(([id, t]) => [id, entry(t.name, t.group, t.group, t.prints)]),
+      ['lamp', entry('lamp-6v', props.bulb.group, props.bulb.glass, props.bulb.prints)],
+    ]);
+  });
   bench.snap();
   return bench;
 }

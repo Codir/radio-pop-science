@@ -4,7 +4,8 @@ import { defineChapter } from '@/engine/api';
  * Sandbox of the bench of the volume «Радіоелектроніка» (a chapter of `_dev`, never on the site): the shared pieces
  * of `@electronics/shared/**` in a real browser, with the measurements of `qa/measure.mjs`. Batch E2 grows it step by
  * step; E2-3: the dark room, the base with the breadboard, the magnifier in its holder and the stand-ins of the
- * permanent things, from the bench's shots (steps `room`, `board`, `meter`, `scope`).
+ * permanent things, from the bench's shots (steps `room`, `board`, `meter`, `scope`); E2-4: the parts with their real
+ * marks on the board (step `parts`).
  * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
@@ -25,6 +26,11 @@ export const SANDBOX = {
     scope: {
       title: 'Осцилограф на столі',
       blurb: 'Заготовка осцилографа виїжджає праворуч позаду; у кадрі її лице й уся плата.',
+    },
+    parts: {
+      title: 'Деталі на платі',
+      blurb:
+        'По одній деталі кожного виду й ряд резисторів від 1 Ω до 1 MΩ: смужки за номіналом, полярність, друк. Конденсатори й транзистор стоять на платі, але поза схемою, доки їх немає в каталозі моделі.',
     },
   },
 } as const;

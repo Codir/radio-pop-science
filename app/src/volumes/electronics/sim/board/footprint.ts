@@ -66,9 +66,9 @@ const LEAD: Footprint = { shape: 'lead', offsets: [], pins: [0, 1], span: null, 
  * - 2N3904, 2N3906: Fairchild «2N3904 / MMBT3904 / PZT3904» and «2N3906 / MMBT3906 / PZT3906» (2001), TO-92: 1 emitter,
  *   2 base, 3 collector.
  * The catalog lists every transistor's pins as collector, base, emitter; the footprint takes them by name, so the
- * order of the catalog does not matter.
+ * order of the catalog does not matter. The part's model (`shared/parts/transistor.ts`) reads the same table.
  */
-const TO92_LEGS: Readonly<Record<string, readonly string[]>> = {
+export const TO92_LEGS: Readonly<Record<string, readonly string[]>> = {
   'transistor-bc547b': ['collector', 'base', 'emitter'],
   'transistor-bc557b': ['collector', 'base', 'emitter'],
   'transistor-bc337-25': ['collector', 'base', 'emitter'],

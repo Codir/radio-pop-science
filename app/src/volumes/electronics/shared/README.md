@@ -44,9 +44,11 @@ What the bench has (read-only): `room`, `base` (`base.frame` is the tilted base 
 goes there, then `tameAll(bench.group)`), `light` (the rig owns `ctx.env.tune`; never tune the environment from a
 chapter; the lamp light hangs at the `filament`, and `mountBench` puts the shadowless `bounce` above the lamp's pool
 every frame), `layout` (the board as data, `sim/board`), `board` (the 3D breadboard: `socketWorld(id)`,
-`socketLocal(id)`, the instanced `mouths`, the `print`), `props` (the permanent things — for now stand-ins of their
-size and colour: the battery box with the switch, the player, the speaker, the lamp's post, glass and `filament`, the
-tray, the multimeter and the oscilloscope) and `tools` (the magnifier and its `holder` pose).
+`socketLocal(id)`, the instanced `mouths`, the `print`), `state` and `parts` (the parts on the board, below), `props`
+(the permanent things: the battery box with the switch, the player, the speaker and the lamp with their real marks
+from `shared/parts` — `props.things`, `props.bulb` — the lamp post and the `filament` where the light hangs; the tray,
+the multimeter and the oscilloscope still stand-ins of their size and colour) and `tools` (the magnifier and its
+`holder` pose).
 
 The board's print (the letters of the lines, the column numbers) is drawn only where all of it has ≥ 16 px-equivalent
 per em (`chapter-check`'s rule): on `board`, not on `stand`, never on a phone. The rails' «+» and «−» are not print
@@ -58,6 +60,50 @@ rows, the last frame's draw calls, the print's texts shown, a phone's page); pro
 `qa/measure.mjs --only room,shots` reads them.
 
 `model/hash.ts` has the checks' small helpers `fnv1a` and `meanOf` (copied from `radio`).
+
+## `parts` — the parts with their real marks (E2-4)
+
+`shared/parts` builds every part as a model with the marks of the real one (VISUAL §4): the resistor's value in four
+colour bands from the data (`resistorBands` → `bandColor`, gold and silver mixed from tokens), the 1N4148's glass and
+the 1N4007's print, the LEDs in five colours with the collar cut on the cathode's side, the pot whose knob follows its
+setting, the violet jumper, the ceramic disc and the film box with their code (`capacitorCode`), the electrolytic can
+with its stripe over the minus leg and the rim, the transistors in TO-92 with their name on the flat side; and the
+permanent things of the base — the 9 V battery in its box, the player, the speaker and the lamp (the circuit's bulb,
+made smaller).
+
+```ts
+const r = buildPart('resistor-4k7'); // null for a key with no model: a fixed thing, or a key the catalog lacks
+board.group.add(r.group);
+r.fit([board.socketLocal('a3'), board.socketLocal('a7')]); // the body between the tips, the legs bent to them
+r.setLook({ light, setting, heat, status, load }, dt); // the hook of the model's state, every frame (dt may be 0)
+r.view({ camera, aspect, phone, room }); // the print only where it reads (≥ 16 px-equivalent), never on a phone
+```
+
+A part is built in its body frame — the origin on the board's face under the middle between its outer legs, +x from
+leg 0 to the last, +z toward the reader at the orientation 0 — and `fit(tips)` stands it on any tips: every quarter
+turn, across the channel (e → f is 0.6), a leg re-seated or in the air. Every part has `hit`, the invisible box of its
+body (gesture 1's target: never drawn, still hit by a ray), at most six draw calls, no shadow; `materials` (all its lit
+K materials) and `body` (those that take the look of heat, never a resistor's bands) are for E2-7. `setLook` here
+lights an LED (`light` b → glow 1.8 · b, none below 0.02) and turns a pot's knob (`setting`, 300° within 0.15 s);
+heat, burnt and bulged are E2-7's. The prints are Text3D, made only where the fonts are loaded (never in unit tests).
+
+The kinds the model's catalog gains in other tasks are bound already by the fields of their specs: a `capacitor` by
+its `dielectric`, `farads` and `ratedV` (E1-5), a `transistor` by its key in `TRANSISTORS` and the board's
+`TO92_LEGS` (E1-6). Until the clone is merged with them, `buildPart` gives null for those keys and their models are
+made directly (`createCeramic`, `createFilm`, `createElectrolytic`, `createTransistor`).
+
+On the bench: `bench.state` (the board as data) and `bench.parts` (`bench/on-board.ts`): every frame the 3D parts
+follow the state — a part that came gets its model, a part whose legs moved stands on its new sockets, a part that left
+is disposed; `bench.parts.show(id, model, sockets)` stands a model the state does not hold (a kind the catalog lacks
+yet) outside the circuit. `bench.preset([{ id: 'R1', spec: 'resistor-4k7', at: 'a3', o?, setting? }, …])` makes the
+board hold exactly a step's parts at once (a part that does not stand there is a RangeError); `bench.clear()` takes
+everything off. `props.things` and `props.bulb` are the permanent things; the bench gives the bulb's filament the light
+rig's glow every frame.
+
+For checks: `__app.read('electronics-board')` → `{ parts: { R1: { spec, legs } … }, leads, settings, models, shown }`;
+`__app.read('electronics-parts')` → for every part, shown model and permanent thing (`battery`, `player`, `speaker`,
+`lamp`): `{ key, center, radius, drawCalls, prints, printsShown }` (world). The sandbox's step `parts` and
+`qa/measure.mjs --only parts` read them.
 
 ## Копії
 
@@ -86,9 +132,9 @@ from «заплановано» to «зроблено» in the same commit and c
 | `radio/shared/world/index.ts` (`fnv1a`, `meanOf`) | `electronics/shared/model/hash.ts` | `meanOf` бере `ArrayLike<number>` | E2-3 | зроблено |
 | `_dev/chapters/_sandbox-radio-link/index.ts` | `_dev/chapters/_sandbox-electronics-bench/index.ts` | свій id, порядок 9031, кроки й слова (`SANDBOX`) | E2-3 | зроблено |
 | `_dev/chapters/_sandbox-radio-link/qa/measure.mjs` (скелет) | `_dev/chapters/_sandbox-electronics-bench/qa/measure.mjs` | лишено аргументи, `report` / `check` / вердикт, `open`, `held`; розділи перевірок нові | E2-3 | зроблено |
-| `circuit/shared/stage/bulb.ts` | `electronics/shared/parts/bulb.ts` | без великого плану (`close`); `supportPath` вбудовано; розміри лампи з `layout`; `depthShell` — і для куполів світлодіодів | E2-4 | заплановано |
-| `circuit/shared/stage/bulb-heat.ts` | `electronics/shared/parts/heat-scale.ts` | лише шкала «тепло ↔ температура» й `formatTemperature`; енергетичний баланс лампи прибрано: температуру нитки дає модель | E2-4 | заплановано |
-| `circuit/shared/stage/__tests__/bulb.test.ts`, `bulb-heat.test.ts` | `electronics/shared/parts/__tests__/` | разом із кодом | E2-4 | заплановано |
+| `circuit/shared/stage/bulb.ts` | `electronics/shared/parts/bulb.ts` | без великого плану (`close`, `lamp-view.ts`) і без `print` `circuit`; `supportPath` вбудовано з `bulb-close.ts`; уся лампа зменшена в `BULB_SCALE` 0,8 (скло — `LAMP.glass` 0,38, різьба 0,14 входить у патрон стійки), відблиск — під менше скло; на цоколі друк «6 V»; `depthShell` експортовано — ним користуються купол світлодіода й скло 1N4148 | E2-4 | зроблено |
+| `circuit/shared/stage/bulb-heat.ts` | `electronics/shared/parts/heat-scale.ts` | лише шкала «тепло ↔ температура» (`HEAT_STOPS`, `temperatureOfHeat`, `heatOfTemperature`, `FIRST_GLOW`) і `formatTemperature`; енергетичний баланс лампи прибрано: температуру нитки дає модель | E2-4 | зроблено |
+| `circuit/shared/stage/__tests__/bulb.test.ts`, `bulb-heat.test.ts` | `electronics/shared/parts/__tests__/bulb.test.ts`, `heat-scale.test.ts` | тести скла взято як є; з тестів тепла — лише шкала й показ; нові: скло й різьба лампи стенда за `VISUAL.md` §2, лампа на 6 V і 3 V на шкалі за §4.6 | E2-4 | зроблено |
 | `circuit/chapters/build/parts/glide.ts` | `electronics/shared/hand/glide.ts` | нічого | E2-5 | заплановано |
 | `circuit/chapters/build/parts/ends.ts` | `electronics/shared/hand/leg.ts` | `End` → `Leg`: місця «гніздо», «лежить», «у руці», «лоток»; одне гніздо — одна ніжка; `seated` — лише по прибуттю | E2-5 | заплановано |
 | `circuit/chapters/build/parts/curves.ts` | `electronics/shared/hand/curves.ts` | `resample` — з `../bench/dyn-tube`; рельєф — параметр (`Terrain`) | E2-5 | заплановано |

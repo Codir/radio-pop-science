@@ -18,6 +18,13 @@
 //           `board` and every world text ≥ 16 px-equivalent; none on a phone), the instrument's stand-in inside the
 //           free area of its shot (not on a phone, where every shot is `phone`), the console; snapshots
 //           `<step>-<size>.jpg`.
+//   parts — step `parts` on a held page (E2-4): `electronics-board` lists every part placed with the sockets of its
+//           legs and every model shown outside the circuit; each one has a model; draw calls ≤ 350 with all of them on
+//           the board; every world text shown ≥ 16 px-equivalent (none on a phone); the hue families (reported);
+//           snapshot `parts-<size>.jpg`. On a desktop then every part and permanent thing close (the camera put in
+//           front of it and above, from `electronics-parts`; a print too small for that, once more at the print): its
+//           print shown whole and ≥ 16 px-equivalent, snapshots `close-<id>[-print]-<size>.jpg` for the reader of the
+//           parts' look; the console.
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-electronics-bench — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -289,9 +296,141 @@ async function shots(context) {
   }
 }
 
+/* ------------------------------------------------------------------------------------- section parts */
+
+/** Step `parts` of the scene: every part on the board with the sockets of its legs, and the models shown outside the
+ * circuit (the kinds the model's catalog gains in E1-5, E1-6). */
+const PLACED = {
+  LED1: ['a1', 'a2'],
+  LED2: ['a4', 'a5'],
+  LED3: ['a7', 'a8'],
+  LED4: ['a10', 'a11'],
+  LED5: ['a13', 'a14'],
+  P1: ['d1', 'd3', 'd5'],
+  R1: ['f1', 'f5'],
+  R2: ['f7', 'f11'],
+  R3: ['f13', 'f17'],
+  R4: ['h1', 'h5'],
+  R5: ['h7', 'h11'],
+  R6: ['h13', 'h17'],
+  R7: ['j1', 'j5'],
+  D1: ['j7', 'j11'],
+  D2: ['j13', 'j17'],
+  J1: ['f6', 'j6'],
+};
+const SHOWN = ['C1', 'C2', 'C3', 'Q1'];
+/** Close-ups: from the front and above (the direction of the shot `board`), the subject's sphere filling the frame;
+ * a print too small for that, once more at the print, its em ≈ `printPx` px-equivalent. */
+const CLOSE = { dir: [0, 0.62, 0.78], fill: 4.2, least: 0.42, fov: 27, printPx: 30 };
+
+async function parts(context) {
+  const n = (report.sections.parts = {});
+  const page = await context.newPage();
+  const pos = await open(page, 'parts').catch((err) => ({ error: String(err) }));
+  if (!check('opened', at(pos, 'parts'), where(pos))) {
+    await page.close();
+    return;
+  }
+  const board = (n.board = await read(page, 'electronics-board'));
+  const ids = Object.keys(PLACED);
+  const wrong = ids.filter((id) => JSON.stringify(board?.parts?.[id]?.legs) !== JSON.stringify(PLACED[id]));
+  check(
+    'electronics-board lists every part placed',
+    wrong.length === 0 && Object.keys(board?.parts ?? {}).length === ids.length,
+    `${Object.keys(board?.parts ?? {}).length} parts${wrong.length ? `; wrong: ${wrong.join(', ')}` : ''}`,
+  );
+  check(
+    'every part has its model, the shown ones too',
+    ids.every((id) => board?.models?.includes(id)) && SHOWN.every((id) => board?.shown?.includes(id)),
+    `models ${board?.models?.length}, shown ${board?.shown?.join(' ')}`,
+  );
+
+  const calls = (n.drawCalls = await drawCalls(page));
+  check(
+    'draw calls with every part on the board',
+    calls.engine > 0 && calls.engine <= DRAW_CALLS.gate && calls.reader === calls.engine,
+    `${calls.engine} (gate ≤ ${DRAW_CALLS.gate}); ${calls.triangles} triangles, ${calls.programs} programs`,
+  );
+  const models = (n.models = await read(page, 'electronics-parts'));
+  const heavy = Object.entries(models ?? {}).filter(
+    ([id, m]) => id in PLACED && m.drawCalls - m.printsShown > 6,
+  );
+  check(
+    'each part ≤ 6 draw calls besides its print',
+    heavy.length === 0,
+    heavy.map(([id, m]) => `${id} ${m.drawCalls}`).join(', ') || 'all',
+  );
+
+  const texts = await page.evaluate(() => window.__app.textSizes());
+  n.texts = texts.map((t) => ({ text: t.text, pxEq: round(t.pxEq, 1) }));
+  const smallest = texts.length ? Math.min(...texts.map((t) => t.pxEq)) : Infinity;
+  if (touch) check('no print on a phone', texts.length === 0, `${texts.length} texts`);
+  else
+    check(
+      'every print shown ≥ 16 px-eq',
+      smallest >= 16,
+      `${texts.length} texts, smallest ${round(smallest, 1)}: ${texts.map((t) => t.text.replace(/\s+/g, '')).join(' · ')}`,
+    );
+
+  const png = decodePng(await page.screenshot({ type: 'png' }));
+  const hue = (n.hue = hueFamilies(png));
+  check('hue families (reported)', true, `${hue.families.join(', ')} (${hue.coloured} coloured px)`);
+  await screenshot(page, join(out, `parts-${tag}.jpg`));
+
+  if (!touch) {
+    n.close = {};
+    /** Put the camera in front of `at` and above it at distance `d`, and draw two held frames. */
+    const look = async (at, d) => {
+      const [cx, cy, cz] = at;
+      const k = d / Math.hypot(...CLOSE.dir);
+      await page.evaluate(({ shot }) => window.__app.engine.runtime.director.go(shot, { instant: true }), {
+        shot: {
+          position: [cx + CLOSE.dir[0] * k, cy + CLOSE.dir[1] * k, cz + CLOSE.dir[2] * k],
+          target: [cx, cy, cz],
+          fov: CLOSE.fov,
+        },
+      });
+      await held(page);
+      await held(page);
+      const seen = await read(page, 'electronics-parts');
+      const t = await page.evaluate(() => window.__app.textSizes());
+      return { seen, least: t.length ? Math.min(...t.map((x) => x.pxEq)) : Infinity, count: t.length };
+    };
+    for (const [id, m] of Object.entries(models ?? {})) {
+      // the whole thing, its sphere filling the frame
+      let v = await look(m.center, Math.max(m.radius, CLOSE.least) * CLOSE.fill);
+      let where = 'whole';
+      await screenshot(page, join(out, `close-${id}-${tag}.jpg`));
+      if (v.seen[id].printsShown < v.seen[id].prints && m.printAt) {
+        // a print too small for that framing: at the print, from where one em would be ≈ `printPx` px-equivalent in a
+        // full frame, and closer step by step while it is still too small (the safe frame is fitted beside the panel)
+        let d = (m.printEm * 540) / CLOSE.printPx / Math.tan((CLOSE.fov * Math.PI) / 360);
+        for (let k = 0; k < 4; k++, d *= 0.6) {
+          v = await look(m.printAt, d);
+          if (v.seen[id].printsShown === v.seen[id].prints) break;
+        }
+        where = `print, ${round(d)} away`;
+        await screenshot(page, join(out, `close-${id}-print-${tag}.jpg`));
+      }
+      const s = v.seen[id];
+      n.close[id] = { where, prints: s.prints, shown: s.printsShown, smallest: round(v.least, 1) };
+      check(
+        `close ${id}: print whole, ≥ 16 px-eq`,
+        s.printsShown === s.prints && v.least >= 16,
+        `${where}: ${s.printsShown}/${s.prints} shown; texts in frame ${v.count}, smallest ${round(v.least, 1)}`,
+      );
+    }
+  }
+
+  const errors = await appErrors(page);
+  n.errors = errors;
+  check('console', errors.length === 0, consoleText(errors));
+  await page.close();
+}
+
 /* ---------------------------------------------------------------------------------------------- run */
 
-const SECTIONS = { room, shots };
+const SECTIONS = { room, shots, parts };
 const only =
   typeof args.only === 'string'
     ? args.only
