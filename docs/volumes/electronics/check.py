@@ -17,6 +17,8 @@ Rules (after docs/volumes/radio/check.py):
     PATH.md, in chapters/*.md or in the cards of chapters/_terms.md; the rest of PATH.md may name what it forbids.
 A step item is «- `chapter/step` — <idea>» with continuation lines indented by two spaces and fields «**Дія:**»,
 «**Висновок:**», «**Терміни:**» (a comma list or «—»), «**Формула:**» (the formula in backticks or «—»), «**Д:**».
+The H2 «Де сценарії свідомо відступили від цього шляху» (a date may follow) holds one line per deviation, as circuit's
+does («- `chapter/step` — what changed → `chapters/<id>.md`»): those lines are notes, not steps, and no rule reads them.
 Prints one `electronics check: <problem>` line per problem (a missing document is one), a line of counts, then
 `electronics check: OK` (exit 0) or `electronics check: N problem(s)` (exit 1).
 The forbidden characters are built from their code points here: rule 4 reads this file too.
@@ -36,6 +38,7 @@ SANDBOXES = ('app/src/volumes/_dev/chapters', '_sandbox-electronics-*')
 SUFFIXES = {'.md', '.tsv', '.json', '.ts', '.mjs', '.py'}
 DOCUMENTS = ('VOLUME.md', 'PATH.md', 'PATH-ledger.md', 'PATH-NOTES.md', 'REUSE.md')  # under docs/volumes/electronics/
 TERMS = 'chapters/_terms.md'  # written by batch E3 (task E3-0); rule 3 reads it once it exists
+DEVIATIONS = 'Де сценарії свідомо відступили від цього шляху'  # the H2 of PATH.md whose list items are not steps
 MICRO = chr(0xB5)
 CYRILLIC = '%s-%s' % (chr(0x400), chr(0x4FF))
 STRAIGHT = re.compile(r'\w*[%s]%s[%s]\w*' % (CYRILLIC, chr(0x27), CYRILLIC))
@@ -129,9 +132,15 @@ def parse_path(md):
 
     Returns `heads` {id: [title, …]} and `steps`, in order: {'id', 'chapter', 'under' (the id of the H3 heading the
     item stands under, None outside one), 'line', 'lines' [(n, text)], 'fields'}. Any other heading ends a chapter.
+    The section DEVIATIONS, up to the next H1 or H2, is skipped whole: its items are notes on steps, not steps.
     """
-    heads, steps, under, item = {}, [], None, None
+    heads, steps, under, item, aside = {}, [], None, None, False
     for n, line in enumerate(md.split('\n'), 1):
+        if line.startswith(('# ', '## ')):
+            aside = line.startswith('## ') and h2(line).startswith(DEVIATIONS)
+        if aside:
+            under, item = None, None
+            continue
         if line.startswith('#'):
             item = None
             m = H3.match(line)

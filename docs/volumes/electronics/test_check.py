@@ -47,6 +47,11 @@ LEDGER = ('# Реєстр\n\n## Терміни шляху\n\n| № | Термі�
           '## Формули\n\n| № | Формула | Крок | Повторюється |\n|---|---|---|---|\n'
           '| 1 | `I = U / R` | `resistor/law` | `build/play` |\n\n'
           '## Чесна фізика\n\nСказано в «Докладніше» `prologue/quiet`; `sim/core` і `resistor/*` — не кроки.\n')
+# The deviations as circuit's PATH.md writes them: one line each, beginning with the step.
+NOTES = ('\n## Де сценарії свідомо відступили від цього шляху (21.11.2026)\n\n'
+         '- `resistor/law` — два резистори замість чотирьох → `chapters/resistor.md`.\n'
+         '- `resistor/limit`, `prologue/quiet` — інша дія; друге речення\n'
+         '  перенесено в «Докладніше» → `chapters/resistor.md`.\n')
 CARD = '| резистор | `\\bрезистор\\w*` | `resistor/limit` | шлях | Деталь, що стримує струм. |\n'
 TERMS = '## Терміни шляху\n\n| Термін | Форми | Крок | Тип | Картка |\n|---|---|---|---|---|\n' + CARD
 # Topics the course never touches (rule 5), and innocent words close to them.
@@ -86,8 +91,19 @@ class CheckTest(unittest.TestCase):
                          ['PATH.md: heading `sensors`: title differs from volume.json'])
         self.assertEqual(K.rule2(V, PATH + '### `ghost` — Що це?\n'),
                          ['PATH.md: heading for `ghost` is not in the journey'])
+        # a step item under any other H2 is a misplaced step (the deviations: test_deviations)
         self.assertEqual(K.rule2(V, PATH + '\n## Ризики\n\n- `resistor/law` — ще раз.\n'),
                          ['PATH.md:47: step `resistor/law` stands outside a chapter heading',
+                          'PATH.md: step `resistor/law` appears 2 times'])
+
+    def test_deviations(self):  # the lines of «Де сценарії свідомо відступили…» are notes, not steps
+        doc = PATH + NOTES
+        self.assertEqual(K.parse_path(doc), K.parse_path(PATH))
+        self.assertEqual(K.rule1(V, doc) + K.rule2(V, doc) + K.rule3(V, doc, LEDGER, TERMS) + K.rule5(doc, {}, TERMS),
+                         [])
+        # the section ends at the next H2: an item after it is a step again
+        self.assertEqual(K.rule2(V, doc + '\n## Ризики\n\n- `resistor/law` — ще раз.\n'),
+                         ['PATH.md:53: step `resistor/law` stands outside a chapter heading',
                           'PATH.md: step `resistor/law` appears 2 times'])
 
     def test_steps(self):
