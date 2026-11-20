@@ -18,7 +18,11 @@ step, a lamp whose filament warms in time, parts that burn (and electrolytic cap
 source for the oracle. E1-6 adds the bipolar transistor — NPN BC547B, 2N3904 and BC337-25, PNP BC557B, 2N3906 and
 BC327-25 — and the amplifier of the volume (`amplifier.ts`): the netlist the stand builds in the chapter `amplifier`,
 which ngspice checks at rest, playing a tone from a whisper to past clipping, switched off and with its battery the
-wrong way round; the player's test tone (a sine behind an internal resistance) drives it.
+wrong way round; the player's test tone (a sine behind an internal resistance) drives it. E1-7 adds the volume's own
+melody (`music.ts`) and the player that plays it (`player`), the model playing it in blocks at the audio rate, and the
+measure of its speed (`__tests__/speed.bench.ts`) — with what made it fast enough: Newton's iterations of a moment start
+where the last two moments point and stop by a rule of their own, a linear circuit keeps the factors of its matrix, and
+the factorization skips the zeros (The melody and the player; Speed).
 
 ## Units and conventions
 
@@ -37,7 +41,8 @@ wrong way round; the player's test tone (a sine behind an internal resistance) d
 - **Settings** (`PartInstance.setting`): a pot — the share of its track from `ccw` to the wiper, 0…1 (0 is the knob
   turned fully counter-clockwise; 0.5 when absent; outside 0…1 it is held to the range). A switch — 0 open, 1
   closed (from 0.5 up counts as closed; open when absent). A sine source (the player's test tone too) — its frequency
-  in Hz (its catalog `hz` when absent, never below 0). Other parts ignore it.
+  in Hz (its catalog `hz` when absent, never below 0). The player — its amplitude in V (its catalog `amplitude`, 0.3 V,
+  when absent, never below 0: at 0 it is stopped). Other parts ignore it.
 - **A capacitor's reading:** `i` is the current into its first pin — what flows through its ESR, the leak's and the
   capacitance's together; `u` is the voltage on its pins, the ESR's drop included; `p` is `u·i`, positive while it
   charges. Its charge is in the state (`volts`, the voltage across the capacitance alone).
@@ -170,7 +175,8 @@ burnt across a battery leaves the battery `open`.
 | `battery-aa` | `battery` | plus, minus | 1.5 V, internal 0.15 Ω, 1 cell | 3 A (the same) | the same |
 | `ideal-9v`, `ideal-5v` | `source` | plus, minus | 9 V or 5 V, no internal resistance | — | the reference of hand calculations and of the oracle (5 V for the LEDs and diodes of E1-4); the bench never offers them (batteries only, the design §3.4) |
 | `ideal-ac-6v` | `sine` | plus, minus | 6 V amplitude, 50 Hz unless its setting gives another frequency, no internal resistance | — | the plan's sine for the rectifier (batch E1, task E1-5), and the generator of the filters' tests; the reference of the oracle in time — the bench never offers it: the safe adapter of the rectifier's branch (the design §3.4) is the decision of the task that builds that branch |
-| `player-tone` | `sine` | plus, minus | 0.3 V amplitude behind 32 Ω (`ohms`), 1 kHz unless its setting gives another frequency | — | the plan's player (batch E1, task E1-6: 0.3 V amplitude, 32 Ω) playing a tone: the input of the amplifier's tests and of their oracle; the player with its melody is E1-7's |
+| `player-tone` | `sine` | plus, minus | 0.3 V amplitude behind 32 Ω (`ohms`), 1 kHz unless its setting gives another frequency | — | the plan's player (batch E1, task E1-6: 0.3 V amplitude, 32 Ω) playing a tone: the input of the amplifier's tests and of their oracle; the player with its melody is `player` |
+| `player` | `player` | plus, minus | the volume's melody (`music.ts`, within ±1) times 0.3 V (`amplitude`, the setting when given) behind 32 Ω (`ohms`) | — | the plan's player (batch E1, task E1-7: the melody × the amplitude, 0.3 V by default, behind 32 Ω): what the stand's player plays (The melody and the player) |
 | `resistor-<code>` | `resistor` | a, b | every value of E24 from 1 Ω to 9.1 MΩ, and 10 MΩ: 169 parts; `series` E12 or E24; `tolerance` 0.05 | 0.25 W | values: IEC 60063 (E12, E24); key: the letter code of IEC 60062; 0.25 W and 5 % (gold band): the usual through-hole resistor of the kits, the design §5.2 |
 | `pot-10k` | `pot` | ccw, wiper, cw | a linear track of 10 kΩ; each part of the track at least 1 mΩ | 0.2 W | Bourns PDB181 series, for example PDB181-K420K-103B: 10 kΩ, linear, 0.2 W (Digi-Key listing; datasheet bourns.com «PDB18») |
 | `switch` | `switch` | a, b | open: no path; closed: 1 mΩ | — | the decision of this task (below) |
@@ -531,7 +537,7 @@ pins (a real one often shorts from the collector to the emitter; the gap is the 
 |i| / `currentA`, |u| / `voltageV` and (−u) / `reverseV`, of the limits the part has. Resistors, the pot (its whole
 track), the speaker, the earphone and the lamp have a power; LEDs, diodes and batteries a current; diodes a reverse
 voltage too; capacitors a voltage either way, an electrolytic a reverse voltage too; transistors a collector current
-and a power. The ideal sources, the sines (the player's tone too), the switch and the jumper have none.
+and a power. The ideal sources, the sines (the player's tone too), the player, the switch and the jumper have none.
 
 **The condition** (`conditionOf(load, damage)`): `'ok'` up to half the limit (`WARM_LOAD` 0.5), `'warm'` above it,
 `'hot'` above the limit, `'burnt'` once the part burnt (`damage` true or `'burnt'`), `'bulged'` once an electrolytic
@@ -615,9 +621,8 @@ answers» below). Then:
 
 **The step** (the plan: a fixed step, the trapezoid, backward Euler after a jump). A capacitor and a lamp keep their
 history; at every step of integration they stamp the companion of the step from it, and the matrix gives the next
-moment: one solve for a linear circuit, Newton's iterations of the operating point (`newton` of `dc.ts`, the same
-stopping rules) from the solution of the last step for a nonlinear one — two to three iterations a step on the
-oracle's circuits, five at most. The steps of integration go by the trapezoid; the first `EULER_STEPS` = 2 of them
+moment: one solve for a linear circuit, Newton's iterations (`newton` of `dc.ts`) for a nonlinear one (how many, and
+what makes them few: «Moments fast», below). The steps of integration go by the trapezoid; the first `EULER_STEPS` = 2 of them
 after `start` and after any change on the board (a setting, `rebuild`, a part that burnt or bulged) by backward Euler.
 With `substeps` the moments of the steps of integration are counted from the start, so a transient of `dt` in
 `substeps` gives, at every sample, the very numbers (bit for bit) of a transient of `dt / substeps` at every
@@ -652,10 +657,10 @@ samples every 1/48000 s:
 The plan asks for the filters within 1 % of `.ac` at 100 Hz, 1 kHz and 10 kHz at 1/48000 s: `substeps: 4` meets it at
 all six points (the test checks them), for four times the work of a sample. A sample of 1/48000 s in four steps is the
 same, bit for bit, as four samples of 1/192 000 s (above), so nothing else changes. The default stays one step a
-sample: the speed of the model at the audio rate is measured in E1-7, and a stand chooses there what it can afford. A
-stand that shows a response at high frequencies — a filter swept up to 10 kHz, the sound through a filter — takes
-`substeps: 4` or more, and a page that quotes the response there takes ngspice's numbers or the model's at
-`substeps` ≥ 4, not the default's.
+sample. A stand that shows a response at high frequencies — a filter swept up to 10 kHz, the sound through a filter —
+takes `substeps: 4` or more at 48 kHz, and eight at 24 kHz, the volume's rate (Speed: the same moments, 1/192 000 s
+apart), and a page that quotes the response there takes ngspice's numbers or the model's with those substeps, not the
+default's.
 
 **Heat in time.** After every step of `dt` (once a sample, whatever the `substeps`) the heat of every part moves toward
 its load of that moment by the exact step of `limits.ts` (with e^(−dt/τ) computed once), and a part that reaches 1
@@ -663,8 +668,49 @@ fails at that step: 1 W in a 0.25 W resistor
 (75 Ω on the 9 V battery) burns it at 2.756 s, as `burnSeconds` says to the millisecond; the red LED on the battery
 burns after 0.066 s; an electrolytic bulges as in Capacitors. The next steps know it (a change on the board: Euler).
 
+**Moments fast** (E1-7; the numbers of speed: Speed, below). Three things keep a moment cheap, and none changes what
+the model computes beyond the last nanovolts:
+
+- *A linear circuit keeps its factors.* Its matrix depends on the settings, the damage, the ties, the step and the
+  method of integration only, so while none of them changes the transient stamps the right-hand side of each new moment
+  alone (`assembleRight`: the same numbers, added in the same order, as `assemble` gives) and solves it with the
+  factors it kept — the same numbers, bit for bit, as factoring every moment. An RC circuit takes two factorizations for
+  a hundred steps (one for backward Euler's two, one for the trapezoid's 98), and two more after a knob is turned.
+  `LinearSystem.factorizations` counts every factorization, so the transient knows when another one (an operating point
+  of the same circuit, say) has taken the place of its own: it factors again, and nothing else changes (the test).
+- *Newton's iterations start where the last two moments point:* v(t) + (v(t) − v(t − h)), the predictor of SPICE —
+  from the third step of integration after a change on the board (the two before are the line's two points), and never
+  in a step taken again in pieces. The guess is then off by about h²·v″, where the last moment is off by h·v′.
+- *They stop by the transient's own rule* (`TRANSIENT_EXACTNESS`): no unknown moved by more than 1e-6 of itself plus
+  1e-6 (V or A) — a thousandth of SPICE's RELTOL and its VNTOL — where the operating point asks for 1e-9 and 1e-12
+  (`OPERATING_EXACTNESS`). Near the solution an iteration squares the error (every part stamps its exact slope), err' ≈
+  C·err² with C up to 1/(2·Vt) ≈ 20 per volt for a junction, so the iteration that moved by at most 10 μV leaves an
+  error of nanovolts — where the operating point's rule would ask for one iteration more, every moment, to see a step
+  below a nanovolt. Against the moments solved by the operating point's rule from the last moment (the transient before
+  E1-7), the amplifier playing ngspice's seven tones (`amplifier-v10` … `amplifier-off`) keeps every node within
+  9.3e-10 V, and playing the melody for two seconds within 5.2e-10 V (the table below); its agreement with ngspice (The
+  amplifier) is the same to the digits given there.
+
+What they do to the amplifier playing the melody at half volume over two seconds (the mean number of factorizations a
+moment, two at least: the first iteration of a go never counts as settled; in brackets, the largest difference of any
+node from the first row, the rule before E1-7):
+
+| Newton's iterations | 48 kHz | 24 kHz |
+|---|---|---|
+| start at the last moment, stop by the operating point's rule (before E1-7) | 3.93 | 4.21 |
+| start on the predictor's line, stop by the operating point's rule | 3.60 (3.0e-11 V) | 3.99 (1.6e-11 V) |
+| start at the last moment, stop by the transient's rule | 2.98 (5.1e-10 V) | 3.26 (8.2e-10 V) |
+| start on the predictor's line, stop by the transient's rule (now) | 2.67 (5.2e-10 V) | 3.05 (5.7e-10 V) |
+
+On the oracle's circuits in time every moment now takes two: the LED emptying 470 μF (at 0.1 ms) 2.00 against 3.00,
+the rectifier (at 1/48000 s) 2.01 against 2.30, four at most against five; their agreement with ngspice is the same to
+the digits given in Tests.
+
+The rule of the transient makes one difference a test sees: the rollback of a step that fails in its second half
+(«what a stand does with the transient») needs two iterations allowed, not three, to fail there.
+
 Nothing in a step allocates: the matrix, the readings, the scratch of Newton's iterations and the copy of a step to
-take again are made once per board; `run` writes into the stand's own arrays.
+take again are made once per board; `run` writes into the stand's own arrays and keeps its list of what to record.
 
 ## The amplifier (`amplifier.ts`)
 
@@ -808,7 +854,7 @@ speed floor (§5.5: an amplifier «на 1–2 транзисторах (≈ 10�
 board: B has 13 nodes. A quick measure in vitest on this machine (E1-6, fix round 1; E1-7 measures properly), one
 second of the tone at 48 kHz from rest at half volume, in two sessions of three runs: B in 0.63–0.78 s, C (two
 transistors, the same 13 nodes) in 0.44–0.48 s, B with the first pair in 0.69–0.76 s (three runs) — all faster than
-real time, none at E1-7's 3×.
+real time, none at E1-7's 3×. E1-7's measure, after what it made faster: Speed.
 
 B as it was tried while choosing (`amplifier.py`; the first output pair is in «Within the parts' ratings» above):
 
@@ -868,22 +914,167 @@ R3) also flows through R3's 47 kΩ and adds about 1.3 V. R3 / R2 = 31.3 is the g
 driver of endless gain; one driver gives the feedback too little to spare, so the gain is 15.6 and moves with β from
 13.4 to 17.6, as the rest point moves from 4.17 to 3.41 V. The roles of R2, R3 and R4 say this.
 
+## The melody and the player (`music.ts`)
+
+```ts
+import { AMPLIFIER_NODES, amplifierNetlist, melodyAt, renderMelody, Transient } from '@electronics/sim/core';
+
+melodyAt(0); // 0: silence at the start, so the operating point of a board with the player is its rest
+melodyAt(1.0214375); // 0.98: the loudest moment of the loop (MELODY_PEAK)
+const block = new Float32Array(2048);
+renderMelody(48000, 0, 2048, block); // the first 2048 samples at 48 kHz, into the stand's own array (it comes back)
+renderMelody(48000, 2048, 2048, block); // the next block: the same numbers as that stretch of one long render
+
+// the amplifier playing it: the player in the test tone's place, in blocks of 2048 samples at 24 kHz
+const t = new Transient(amplifierNetlist({ source: 'player', volume: 0.5 }), { dt: 1 / 24000 });
+t.start('dc');
+const sound = new Float32Array(2048); // the speaker's current: what a sound output plays
+const scope = new Float32Array(2048); // the output's voltage: what a probe shows
+const probes = [
+  { part: 'LS1', out: sound },
+  { node: AMPLIFIER_NODES.output, out: scope },
+];
+t.run(2048, probes); // 85 ms of sound; the next call goes on from there, into the same arrays, making nothing new
+t.time; // 0.08533 s
+```
+
+The melody is the volume's own: its notes are written in `music.ts` and synthesised there — no recording, nobody
+else's tune (the design §6.3) — with low notes and high ones in it, so that a filter on the board is heard. A loop of
+`MELODY_SECONDS` = 8 s: four bars of 4/4 at 120 beats a minute in A minor, one chord a bar — Am, Fmaj7, Dm, E — in
+five voices:
+
+| Voice | Notes | Sound |
+|---|---|---|
+| bass | E1 … A2, 41.2–110 Hz; one figure of dotted eighths, sixteenths and eighths a bar | a sine with a quarter of its octave |
+| chords | Am (A3 C4 E4), Fmaj7 (F3 A3 C4 E4), Dm (F3 A3 D4), E (G♯3 B3 E4), 175–330 Hz, struck on the off-beat of every beat | sines, each with a fifth of its third harmonic |
+| melody | D5 … E6, 587 Hz – 1.32 kHz | a sine with its second (0.35) and third (0.25) harmonics: up to 3.96 kHz |
+| kick | beats 1 and 3, and a push a sixteenth before the fourth beat of bars 2 and 4 | a tone falling from 120 Hz to 45 Hz, with a click of noise |
+| snare, hi-hat | beats 2 and 4; every eighth, the off-beats louder | the noise of the generator: as it is for the snare (with a tone of 190 Hz), its differences — its high frequencies — for the hi-hat |
+
+Every note swells in a straight line over its first milliseconds, fades as e^(−τ/decay) and falls to zero in a
+straight line over its last tens of milliseconds: the melody is a continuous function of time, silent at its start and
+at the turn of the loop, and any moment can be computed alone — the operating point (t = 0), a moment inside a step of
+the transient, any sample of any block. The noise is the generator mulberry32 read by its index — its j-th number from
+the seed 0x2F6B9E1D is a mix of the seed and j·0x6D2B79F5 — 48 000 numbers a second joined by straight lines: the
+noise at a moment needs no number before it, and it repeats with the loop. No chance, no clock: the purity test reads
+this file too.
+
+Its numbers (the test checks them): within ±1, the loudest moment `MELODY_PEAK` = 0.98 at 1.0214 s (the third beat of
+the first bar: the kick, the bass and the melody's E5 together; the gain of 0.8475 puts it there), sampled every
+1/192 000 s; the RMS 0.271; of its RMS 0.77 below 150 Hz and 0.12 above 2 kHz (through two second-order Butterworth
+sections each way, at 48 and at 24 kHz alike; a tone of 600 Hz has under 0.01 in either); continuous — at every
+sixteenth, where notes begin and end, to its slope over two nanoseconds, and its largest step between neighbouring
+samples halves with the sample (0.07 at 192 kHz: the snare's noise). Rendering it costs about 4 ms a second of sound
+(«Speed»).
+
+`melodyAt(t)` is the melody at the moment `t` (s), the loop repeating (and before 0 too). `renderMelody(fs,
+startSample, n, out)` writes `n` samples at `fs` (Hz) into `out` — a `Float32Array` or a `Float64Array` of the stand's,
+which comes back — the k-th at (startSample + k)/fs s: it allocates nothing, and blocks from any sample are, number for
+number, one long render. A rate that is not a finite number above 0, a start that is not a whole number, or `n` not a
+whole number from 0 to `out.length` is a `RangeError`.
+
+**The player** (`player`, its own kind): the melody times its amplitude — the setting, 0.3 V when absent — behind
+32 Ω, in the Norton form of a battery (the plan: «напруга = мелодія × амплітуда (0,3 V за замовчуванням) з внутрішнім
+опором 32 Ω»). Straight on 10 kΩ it gives 0.3 V × the melody × 10 000 / 10 032 at every sample (the test: within 1e-7
+V, the precision of a `Float32Array`); at the operating point 0 V; at the setting 0 it is stopped. Newton's iterations
+solve one moment several times: the part keeps the melody of the last moment it was asked for.
+`amplifierNetlist({ source: 'player' })` puts it in the amplifier. It has no case of the oracle: what it gives is
+checked against `renderMelody`, and the circuits it drives are checked against ngspice with the tone `player-tone`.
+
+**Playing in blocks.** A block is `run(n, probes)`: a stand asks for n samples — 2048 at 24 kHz are 85 ms, at 48 kHz
+43 ms (the design: blocks of 50–100 ms) — with the probes it reads, the speaker's current for the sound and node
+voltages for the scope, into its own arrays; the next call goes on from the last moment, and the blocks joined are one
+long run (the test: six blocks of 2048 samples of the amplifier playing the melody, to the last bit). A run in blocks
+makes nothing new: the transient's arrays, readings, matrix and state and the probes' arrays are the same objects block
+after block (the test holds them by reference), and `run` keeps its list of what to record, growing it only for more
+probes than it was ever given.
+
+## Speed
+
+The sound and the oscilloscope live only if the model computes the board at the audio rate faster than the sound plays
+(the design §5.5, §6.3). The measure is `__tests__/speed.bench.ts` (`vitest bench`, after the radio volume's
+`fm-link.bench.ts`: its name does not end in `.test.ts`, so `pnpm test` does not run it):
+
+```bash
+cd app && pnpm exec vitest bench src/volumes/electronics/sim --run --reporter verbose
+```
+
+It plays in blocks of 2048 samples, from the operating point and after a second of sound to warm up: the amplifier of
+the volume with the melody at half volume (the probes: the speaker's current, the speaker's and the output's voltage)
+and, beside it, an RC low-pass on the player (1 kΩ and 100 nF; the capacitor's and the player's voltage), at 48 000 and
+24 000 samples a second, the low-pass at 48 kHz in four substeps too, and the melody alone. Each in five runs of a
+second; a run's speed is seconds of sound per second of computing, the blocks a second (tinybench's mean throughput)
+× 2048 / the rate. Node 24.22.3, vitest 5.1.0; an Intel Core i9-13900KS (eight cores to 5.6–6 GHz and sixteen of
+4.3 GHz), one thread; the machine ran other work at the same time (load average 14 at the start of the run, 8 at its
+end); 20.11.2026. The amplifier at 24 kHz is the case the bench asserts (median ≥ 3).
+
+| Board | Rate (Hz) | The five runs | Min / median / max | Before E1-7: median (two runs) |
+|---|---|---|---|---|
+| amplifier, melody | 48 000 | 3.26 3.25 3.27 3.19 3.24 | 3.19 / **3.25** / 3.27 | 1.33; 1.31 |
+| amplifier, melody | 24 000 | 5.15 5.34 5.59 5.40 5.45 | 5.15 / **5.40** / 5.59 | 2.34; 1.31 (0.95–2.37: a burst of other work) |
+| RC low-pass | 48 000 | 54.7 53.5 53.6 53.0 52.6 | 52.6 / 53.5 / 54.7 | 25.9; 12.4 |
+| RC low-pass | 24 000 | 104.7 105.2 105.0 105.0 105.8 | 104.7 / 105.0 / 105.8 | 49.5; 25.2 |
+| RC low-pass, four substeps | 48 000 | 19.1 19.0 18.1 18.9 19.7 | 18.1 / 19.0 / 19.7 | —; 5.8 |
+| the melody alone | 48 000 | 251 254 252 250 249 | 249 / 251 / 254 | 176; 184 (the same code) |
+
+«Before E1-7» is the model of E1-6 with only the melody and the player added, measured by the same bench: once before
+any change (load average 16) and once in one session with the final code (the before-run first, load 3 to 12). The
+same in plain Node, without the test runner, on one core of 6 GHz (`taskset`), five runs of two seconds of sound:
+the amplifier with the melody 3.09 at 48 kHz and 5.61 at 24 kHz; with the tone of 1 kHz, which takes more iterations
+than the melody, 2.78 against 1.94 before at 48 kHz and 4.84 against 3.51 at 24 kHz.
+
+**Live, at 24 000 samples a second** (the decision of E1-7, by the plan's rule: at least three times real time on this
+machine at the chosen rate — the margin for a phone and a background thread). The amplifier playing the melody runs
+5.4 times faster than it plays at 24 kHz: a block of 2048 samples, 85 ms of sound, takes about 16 ms. At 48 kHz it runs
+3.25 times — over the floor on this machine, but with nothing to spare beyond it (3.11 in a run beside heavier work),
+so 48 kHz is not the volume's rate. The loop computed beforehand (the design §6.3, the fallback) is not needed here;
+whether a phone plays live is for E1-9 and E2 to measure — a phone four times slower than this core would still play
+the amplifier at 1.35 times real time at 24 kHz. At 24 kHz the speaker hears up to 12 kHz: the melody's notes reach
+4 kHz and its hi-hat beyond. A stand that shows a filter's response near 10 kHz takes `substeps` (What the trapezoid
+answers): the same moments as 48 kHz in four substeps are 24 kHz in eight, and a linear board can afford them — the
+RC low-pass plays at 105 times real time at 24 kHz in one step a sample.
+
+What made it fast (each measured by the bench or the profiler of Node on the amplifier):
+
+- **Fewer of Newton's iterations** (Moments fast): the predictor's line and the transient's rule of exactness, 3.93 →
+  2.67 factorizations a moment at 48 kHz; every moment of the oracle's circuits in time now takes two.
+- **No lookup of an import in a loop.** Under the test runner every read of an import is a lookup on the module's object
+  (vitest warns: «accessed module export getters too many times»), and the transient read some for every part at every
+  moment (`readPart`, `loadOf`, `conditionOf`, `checkSetting`) and the transistor at every iteration (`GMIN`,
+  `THERMAL_VOLTAGE`, `pnjlim`). They are read once per module now (the radio volume's rule: no loop over samples reads an
+  import): the amplifier at 48 kHz went from 1.84 to 2.76 under the test runner by this alone. A bundled build (the site,
+  the worker) has no such lookup; the bench no longer prints the warning.
+- **A factorization that skips the zeros** (`mna.ts`): 704 ns against 846 for the amplifier's 20 × 20 matrix (64 numbers
+  that are not zero, 133 after the factorization), the same factors to the bit. The residual of the guess
+  (`quietAt`, about 300 ns) is computed only when a step of Newton is not exact, from a copy of the rows kept before the
+  factorization — the same answers as before.
+- **A linear circuit keeps its factors** (Moments fast): the RC low-pass from 25.9 to 53.5 times real time at 48 kHz.
+
+Tried and left out: a parabola through the last three moments as the predictor (2.62 iterations against the line's 2.67
+with the melody: not worth a third array), SPICE's own RELTOL of 1e-3 as the transient's rule (2.19 iterations, but
+nodes 1e-4 V away from the operating point's rule), skipping the zeros in the solve and the residual (no faster: the
+branches cost what the products saved), and the rows under a pivot listed during its search (no faster). What remains:
+the factorization (about 30 % of the time), the solve and the residual (about 20 %), the parts' stamps with their
+exponentials (about 20 %); a sparse factorization that keeps its order of pivots from one iteration to the next would
+take most of the first, but it needs to know when the pattern of the matrix changes — left for when a phone needs it.
+
 ## Modules
 
 | Module | What it does |
 |---|---|
 | `netlist.ts` | `Netlist`, `PartInstance`, `GROUND`; `checkNetlist` and `checkSetting` (the `RangeError`s above) |
-| `parts.ts` | The catalog `PARTS`, `E12`, `E24`, `resistorKey`, `WIRE_OHMS`; the types of the parts (`PartSpec`, one interface per kind, `JunctionParams`, `TransistorParams`, `Polarity`, `Limits`, `Dielectric`); `Behaviour`, `FailedForm`, `Placement`, `Operating`; `behaviour(spec)` — how a kind of part sits in the matrix; the sine source, ideal or behind its internal resistance |
-| `mna.ts` | The dense LU with partial pivoting (`createSystem`, `factor`, `solveFactored`); `compile` (unknowns: the nodes in use, the parts' own nodes, then the currents of the parts that need one; the parts' memory and history; the scratch of the iterations); the `Stamper` the parts write with (conductance, current, transconductance, ideal source); `readSettings`, `updateSettings`; `assemble` (clear, stamp every part around a guess, leave the burnt ones out, stamp the bulged ones' failed form, tie); the damage codes `BURNT`, `BULGED` |
+| `parts.ts` | The catalog `PARTS`, `E12`, `E24`, `resistorKey`, `WIRE_OHMS`; the types of the parts (`PartSpec`, one interface per kind, `JunctionParams`, `TransistorParams`, `Polarity`, `Limits`, `Dielectric`); `Behaviour`, `FailedForm`, `Placement`, `Operating`; `behaviour(spec)` — how a kind of part sits in the matrix; the sine source, ideal or behind its internal resistance; the player (`PlayerSpec`) |
+| `mna.ts` | The dense LU with partial pivoting that skips the zeros (`createSystem`, `factor`, `solveFactored`; `LinearSystem.factorizations` counts the factorizations); `compile` (unknowns: the nodes in use, the parts' own nodes, then the currents of the parts that need one; the parts' memory and history; the scratch of the iterations); the `Stamper` the parts write with (conductance, current, transconductance, ideal source); `readSettings`, `updateSettings`; `assemble` (clear, stamp every part around a guess, leave the burnt ones out, stamp the bulged ones' failed form, tie) and `assembleRight` (the right-hand side alone, for factors kept); the damage codes `BURNT`, `BULGED` |
 | `topology.ts` | `analyse` — the issues and the nodes to tie, by union–find over the links of the parts (a burnt part has none) |
-| `dc.ts` | `solveDC` — one solve, or Newton's iterations with source stepping — `DcSolution`, `PartReading`, `DcOptions`, `MAX_ITERATIONS`; `newton` (one go of the iterations, which the transient takes at every step; `Go`, `newGo`), `readPart`, `damageIn`, `failureIn` |
+| `dc.ts` | `solveDC` — one solve, or Newton's iterations with source stepping — `DcSolution`, `PartReading`, `DcOptions`, `MAX_ITERATIONS`; `newton` (one go of the iterations, which the transient takes at every step; `Go`, `newGo`; its rule of exactness `Exactness`, the operating point's `OPERATING_EXACTNESS`), `readPart`, `damageIn`, `failureIn` |
 | `diode.ts` | SPICE's junction: `ROOM_KELVIN`, `THERMAL_VOLTAGE`, `GMIN`, `junctionOf`, `junctionCurrent`, `pnjlim`, `limitJunction`, `forwardVoltage`, `ledLumens`, `diodeBehaviour` |
 | `lamp.ts` | The tungsten filament, steady and in time: `TUNGSTEN_EXPONENT`, `filament`, `filamentCapacity`, `lampBehaviour` |
 | `capacitor.ts` | The capacitor — ESR, capacitance, leak; its companion in time; its bulged form: `capacitorBehaviour`, `BULGED_OHMS` |
 | `limits.ts` | `loadOf`, `conditionOf`, `WARM_LOAD`, `HEAT_SECONDS`, `heatStep`, `burnSeconds`, `limited`, `canBurn`, `failureOf`, `damageOf`, `fail`, `advanceHeat`; `Condition`, `Failure`, `PartStatus` |
-| `transient.ts` | `Transient` with `TransientOptions`, `TransientStart`, `Probe`; `EULER_STEPS` |
+| `transient.ts` | `Transient` with `TransientOptions`, `TransientStart`, `Probe`; `EULER_STEPS`, `TRANSIENT_EXACTNESS` |
 | `transistor.ts` | The bipolar transistor, the transport form of Ebers–Moll: `transistorAt`, `TransistorPoint`, `transistorVcrit`, `transistorBehaviour` |
 | `amplifier.ts` | The amplifier of the volume: `amplifierNetlist`, `AmplifierOptions`, `AMPLIFIER_NODES`, `AMPLIFIER_ROLES`, `AmplifierRole` |
+| `music.ts` | The volume's melody: `melodyAt`, `renderMelody`, `MELODY_SECONDS`, `MELODY_PEAK` |
 | `state.ts` | `ModelState`, `PartMemory`, `createModelState`, `memoryOf`, `levelOf`, `keepLevel` |
 | `index.ts` | the public entry |
 
@@ -926,10 +1117,11 @@ as a conductance (a transistor: as transconductances) and the current that makes
 cd app && pnpm vitest run src/volumes/electronics/sim                                 # the whole model
 python3 tools/ref-models/electronics/spice.py --check                                 # are the samples fresh?
 python3 tools/ref-models/electronics/amplifier.py                                     # the amplifier's tables
+cd app && pnpm exec vitest bench src/volumes/electronics/sim --run --reporter verbose  # the speed (Speed)
 ```
 
 `__tests__/`: `purity` (the text of every file), `parts` (the catalog, the published diodes, the fitted LEDs, the
-player's tone), `mna` (the LU and the stamps; both legs in one row stamp nothing; a transconductance), `dc` (linear
+player's tone and the player), `mna` (the LU and the stamps; both legs in one row stamp nothing; a transconductance), `dc` (linear
 circuits by hand: a divider, the batteries under load, a grid of five resistors, the pot at 0 / 0.5 / 1, a switch, the
 speaker; the worked example above; a
 singular circuit; the state; malformed netlists), `topology` (open, short, floating — a pot's free wiper among them —
@@ -962,7 +1154,12 @@ R·C; the LED fed by 470 μF within 2 %; the rectifier's output, mean and ripple
 `.ac` where the trapezoid answers, within 1e-5 — the low-pass at 10 kHz then 14.4 % low, tested as such; halving the
 step, under 0.1 %; the trapezoid's second order; no ringing after a stiff jump; the lamp's inrush; parts that burn in
 time; the worked example above; start, run, set, rebuild, a failed step, `substeps` as the shorter step bit for bit
-and a step that fails in its second step of integration undone whole), `oracle` (every sample of `__fixtures__/` at the
+and a step that fails in its second step of integration undone whole; a linear board keeping the factors of its
+matrix, and the amplifier playing the melody in fewer than three iterations a moment), `music` (the melody: two
+renders bit for bit and blocks as one render, within ±1 from 24 to 192 kHz with its peak at 0.98, its bass below
+150 Hz and its high notes above 2 kHz, silent at the start, looping every 8 s, continuous; the player: a source without
+limits, the melody × its amplitude behind 32 Ω at every sample, its setting; the amplifier playing it in six blocks of
+2048 samples as one long run, and a run in blocks that makes nothing new; the worked example above), `oracle` (every sample of `__fixtures__/` at the
 operating point against the model: relative difference ≤ 1e-6 for the linear samples and ≤ 1e-3 for the nonlinear
 ones — the plan's tolerances — for every number, the smallest too, with no absolute allowance; where ngspice gives an
 exact zero — the ground, a part behind an open switch — the model must give an exact zero; at most 50 iterations and

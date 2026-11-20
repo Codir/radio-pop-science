@@ -46,8 +46,8 @@ export interface AmplifierOptions {
   on?: boolean;
   /** The battery the wrong way round: its plus on the ground row (false when absent). */
   reversed?: boolean;
-  /** The catalog key of the source in the player's place: a sine source (its setting is its frequency) or, later, the
-   * player itself. The test tone `player-tone` when absent. */
+  /** The catalog key of the source in the player's place: a sine source (its setting is its frequency) or the player
+   * `player` with the volume's melody (its setting is its amplitude). The test tone `player-tone` when absent. */
   source?: string;
 }
 

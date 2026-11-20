@@ -12,3 +12,4 @@ export * from './limits';
 export * from './transient';
 export * from './transistor';
 export * from './amplifier';
+export * from './music';

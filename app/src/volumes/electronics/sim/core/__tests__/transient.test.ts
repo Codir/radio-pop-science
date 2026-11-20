@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  amplifierNetlist,
   burnSeconds,
   createModelState,
   EULER_STEPS,
@@ -491,6 +492,53 @@ describe('what a stand does with the transient', () => {
     expect(() => t.set('nobody', 1)).toThrow(RangeError);
   });
 
+  it('a linear board keeps the factors of its matrix while nothing on it changes, and solves each moment with them', () => {
+    const board = (): Netlist =>
+      net(
+        3,
+        part('B', 'ideal-9v', [1, 0]),
+        part('P', 'pot-10k', [0, 2, 1], 0.5),
+        part('C', 'ceramic-100n', [2, 0]),
+      );
+    const t = new Transient(board(), { dt: 1e-4 });
+    const twin = new Transient(board(), { dt: 1e-4 });
+    t.start('zero');
+    twin.start('zero');
+    const system = t.circuit.system;
+    const before = system.factorizations;
+    expect(t.run(100)).toBe(100);
+    // one factorization for the two steps of backward Euler, one for the 98 of the trapezoid
+    expect(system.factorizations - before).toBe(2);
+    close(t.v[2], 4.5 * (1 - Math.exp(-0.01 / 250e-6)), 1e-4, 'charging through the halves of the pot');
+    t.set('P', 1); // a knob: a new matrix, two new factorizations
+    expect(t.run(100)).toBe(100);
+    expect(system.factorizations - before).toBe(4);
+    // whoever factors the matrix in between (here the operating point of the same circuit) costs one more, no error:
+    // the same numbers as a twin that kept its factors
+    expect(twin.run(100)).toBe(100);
+    twin.set('P', 1);
+    expect(twin.run(100)).toBe(100);
+    expect(solveDC(t.circuit).ok).toBe(true);
+    expect(t.run(50)).toBe(50);
+    expect(twin.run(50)).toBe(50);
+    expect([...t.v]).toEqual([...twin.v]);
+    expect(t.parts.C).toEqual(twin.parts.C);
+  });
+
+  it('Newton’s iterations of a moment start where the last two moments point: the amplifier playing the melody settles a moment in fewer than three', () => {
+    const t = new Transient(amplifierNetlist({ source: 'player', volume: 0.5 }), { dt: 1 / 48000 });
+    expect(t.start('dc')).toBe(true);
+    const system = t.circuit.system;
+    const before = system.factorizations;
+    expect(t.run(12000)).toBe(12000); // a quarter of a second
+    // every moment takes two at least (the first iteration never counts as settled); started from the last moment
+    // and stopped by the operating point's rule of exactness it took 3.9, on the predictor's line 3.6, and now 2.7 over
+    // two seconds (README.md, «Moments fast»)
+    const mean = (system.factorizations - before) / 12000;
+    expect(mean).toBeGreaterThanOrEqual(2);
+    expect(mean).toBeLessThan(3);
+  });
+
   it('a new part on the board: the charges, the heat and the damage carry over, and time runs on', () => {
     const state = createModelState();
     const t = new Transient(rc(), { dt: 1e-3, state });
@@ -584,9 +632,10 @@ describe('what a stand does with the transient', () => {
   });
 
   it('a step in substeps that fails in a later one goes back to where it began: time, voltages, charges, memory', () => {
-    // a sine of 6 V at 50 Hz through 1 kΩ into a red LED with 100 nF across it, allowed three iterations: of 1 ms in two
+    // a sine of 6 V at 50 Hz through 1 kΩ into a red LED with 100 nF across it, allowed two iterations: of 1 ms in two
     // halves, the first half settles (the capacitor charges, the LED stays dark) and the second, where the LED wakes,
-    // does not, even in 64 pieces — as a transient stepping by half a millisecond shows
+    // does not, even in 64 pieces — as a transient stepping by half a millisecond shows (with the transient's rule of
+    // exactness, TRANSIENT_EXACTNESS, three iterations would let the second half settle)
     const board = (): Netlist =>
       net(
         3,
@@ -595,7 +644,7 @@ describe('what a stand does with the transient', () => {
         part('D', 'led-red', [2, 0]),
         part('C', 'ceramic-100n', [2, 0]),
       );
-    const halves = new Transient(board(), { dt: 5e-4, maxIterations: 3 });
+    const halves = new Transient(board(), { dt: 5e-4, maxIterations: 2 });
     expect(halves.start('dc')).toBe(true);
     expect(halves.step()).toBe(true);
     close(
@@ -605,7 +654,7 @@ describe('what a stand does with the transient', () => {
       'the first half charges the capacitor (the sine is at 0.93 V)',
     );
     expect(halves.step()).toBe(false);
-    const t = new Transient(board(), { dt: 1e-3, substeps: 2, maxIterations: 3 });
+    const t = new Transient(board(), { dt: 1e-3, substeps: 2, maxIterations: 2 });
     expect(t.start('dc')).toBe(true);
     const c = t.circuit;
     const before = {

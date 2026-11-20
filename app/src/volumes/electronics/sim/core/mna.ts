@@ -8,10 +8,17 @@
  * `compile` allocates the matrix of a circuit once, and with it the scratch of Newton's iterations and the history of
  * the parts in time. A solve clears the matrix, stamps again and factors it in place, so the transient
  * (`transient.ts`) solves thousands of times without allocating; the Newton iterations of nonlinear parts (`dc.ts`)
- * stamp the parts again around each new guess.
+ * stamp the parts again around each new guess. A circuit's matrix is mostly zeros — a part touches two or three
+ * nodes — so the factorization skips them; and the matrix of a linear circuit stays the same from one step of the
+ * transient to the next while nothing on the board changes, so the transient keeps its factors and stamps the
+ * right-hand side alone (`assembleRight`).
  */
 import { checkNetlist, checkSetting, GROUND, type Netlist, type PartInstance } from './netlist';
 import { behaviour, PARTS, type Behaviour, type Operating, type PartSpec, type Placement } from './parts';
+
+/** Read here once: the transient checks every part's setting at every moment, and under the test runner (vitest)
+ * every read of an import is a lookup (README.md, «Speed»). */
+const check = checkSetting;
 
 /** The smallest pivot the factorization takes, in the unit of the matrix (S): the default PIVTOL of SPICE. */
 export const PIVOT_MIN = 1e-13;
@@ -34,6 +41,11 @@ export interface LinearSystem {
   readonly x: Float64Array;
   /** The row of A that became row k of the factors. */
   readonly perm: Int32Array;
+  /** Scratch of `factor`: the columns where the pivot row is not zero. */
+  readonly columns: Int32Array;
+  /** How many times `factor` has factored A: whoever keeps the factors to solve again knows whether another
+   * factorization has taken their place since. */
+  factorizations: number;
 }
 
 export function createSystem(n: number): LinearSystem {
@@ -43,16 +55,22 @@ export function createSystem(n: number): LinearSystem {
     b: new Float64Array(n),
     x: new Float64Array(n),
     perm: new Int32Array(n),
+    columns: new Int32Array(n),
+    factorizations: 0,
   };
 }
 
 /**
  * Factors A in place into L·U with the rows exchanged (partial pivoting: in each column the largest number becomes
  * the pivot). False when a pivot is smaller than PIVOT_MIN or is not a number: the matrix is singular, and nothing
- * is divided by it. `b` is left as it is.
+ * is divided by it. `b` is left as it is. Most of a circuit's matrix is zeros: a row with a zero under the pivot is
+ * left alone, and a row below the pivot changes only in the columns where the pivot row is not zero. A term skipped is
+ * a product with a zero, which would not have changed the number it was taken from: the factors are the same, number
+ * for number, as those of the whole loops, in a fraction of the time.
  */
 export function factor(s: LinearSystem): boolean {
-  const { n, a, perm } = s;
+  const { n, a, perm, columns } = s;
+  s.factorizations++;
   for (let k = 0; k < n; k++) perm[k] = k;
   for (let k = 0; k < n; k++) {
     let pivot = k;
@@ -75,12 +93,20 @@ export function factor(s: LinearSystem): boolean {
       perm[k] = perm[pivot]!;
       perm[pivot] = t;
     }
-    const d = a[k * n + k]!;
+    const row = k * n;
+    const d = a[row + k]!;
+    let m = 0;
+    for (let c = k + 1; c < n; c++) if (a[row + c] !== 0) columns[m++] = c;
     for (let r = k + 1; r < n; r++) {
-      const f = a[r * n + k]! / d;
+      const below = a[r * n + k]!;
+      if (below === 0) continue;
+      const f = below / d;
       a[r * n + k] = f;
-      if (f === 0) continue;
-      for (let c = k + 1; c < n; c++) a[r * n + c] -= f * a[k * n + c]!;
+      const base = r * n;
+      for (let j = 0; j < m; j++) {
+        const c = columns[j]!;
+        a[base + c] -= f * a[row + c]!;
+      }
     }
   }
   return true;
@@ -134,12 +160,17 @@ export interface Circuit {
   readonly index: Int32Array;
   readonly system: LinearSystem;
   readonly stamper: Stamper;
+  /** A stamper of the right-hand side alone: what a part puts into the matrix goes nowhere (`assembleRight`). */
+  readonly right: Stamper;
   /** The memory of every part, one array (each element's `memory` is a view of its share). */
   readonly memory: Float64Array;
   /** The history of every part in time, one array (each element's `history` is a view of its share). */
   readonly history: Float64Array;
   /** Scratch of Newton's iterations, as long as the unknowns: the last guess. */
   readonly scratch: Float64Array;
+  /** Scratch of Newton's iterations: the matrix and the right-hand side as assembled, before `factor` overwrote the
+   * matrix — to ask afterwards whether the guess already satisfied them. */
+  readonly kept: { readonly a: Float64Array; readonly b: Float64Array };
   /** The guess the parts stamp around: its `v` holds the last solution of this circuit, the parts' own nodes too. */
   readonly operating: Operating;
   /** Whether `operating.v` and `memory` hold a solution of this circuit (a later solve may start from it). */
@@ -185,9 +216,11 @@ export function compile(net: Netlist): Circuit {
     index,
     system,
     stamper: stamperOf(system, index),
+    right: rightOf(system, index),
     memory,
     history,
     scratch: new Float64Array(unknowns),
+    kept: { a: new Float64Array(unknowns * unknowns), b: new Float64Array(unknowns) },
     operating: {
       v: new Float64Array(size),
       sources: 1,
@@ -257,6 +290,27 @@ function stamperOf(system: LinearSystem, index: Int32Array): Stamper {
   };
 }
 
+/** The stamper of the right-hand side of `stamperOf` alone: the same currents and source voltages into `b`, added in
+ * the same order, and nothing into the matrix. */
+function rightOf(system: LinearSystem, index: Int32Array): Stamper {
+  const { b } = system;
+  const none = (): void => undefined;
+  return {
+    conductance: none,
+    current(p, q, i) {
+      if (p === q) return;
+      const from = index[p]!;
+      const to = index[q]!;
+      if (from >= 0) b[from] -= i;
+      if (to >= 0) b[to] += i;
+    },
+    transconductance: none,
+    voltage(_plus, _minus, k, volts) {
+      b[k] += volts;
+    },
+  };
+}
+
 /** The setting every part works with now, in the order of the elements, into `out` (a new array when absent); a
  * setting that is not a finite number is a RangeError. */
 export function readSettings(
@@ -273,7 +327,7 @@ export function updateSettings(c: Circuit, out: Float64Array): boolean {
   const { elements } = c;
   for (let k = 0; k < elements.length; k++) {
     const e = elements[k]!;
-    checkSetting(e.part);
+    check(e.part);
     const setting = e.behaviour.setting(e.part.setting);
     if (setting !== out[k]) changed = true;
     out[k] = setting;
@@ -305,4 +359,26 @@ export function assemble(
     else for (let j = 0; j < e.inner.length; j++) stamper.conductance(e.inner[j]!, e.nodes[0]!, 1);
   }
   for (let j = 0; j < ties.length; j++) stamper.conductance(ties[j]!, GROUND, 1 / TIE_OHMS);
+}
+
+/**
+ * `assemble` for the right-hand side alone: clears `b` and stamps every part at its setting around `op` with the
+ * stamper `right`, so `b` comes out as `assemble` would make it, number for number, and the matrix with its factors is
+ * left as it is. For a linear circuit whose matrix has not changed since it was factored — the same settings, damage,
+ * ties and step of integration — `solveFactored` then solves the new moment.
+ */
+export function assembleRight(
+  c: Circuit,
+  settings: Float64Array,
+  op: Operating = c.operating,
+  damage?: Uint8Array,
+): void {
+  const { system, right, elements } = c;
+  system.b.fill(0);
+  for (let k = 0; k < elements.length; k++) {
+    const e = elements[k]!;
+    const failed = damage?.[k] ?? 0;
+    if (failed === 0) e.behaviour.stamp(settings[k]!, e, right, op);
+    else if (failed === BULGED && e.behaviour.failed) e.behaviour.failed.stamp(e, right);
+  }
 }

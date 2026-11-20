@@ -86,7 +86,7 @@ describe('how loaded a part is', () => {
       1e-15,
       '2N3906: 0.5 W of 0.625 W',
     );
-    for (const key of ['jumper', 'switch', 'ideal-9v', 'ideal-5v', 'player-tone'])
+    for (const key of ['jumper', 'switch', 'ideal-9v', 'ideal-5v', 'player-tone', 'player'])
       expect(loadOf(PARTS[key]!, reading(9, 100)), key).toBe(0);
   });
 

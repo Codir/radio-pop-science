@@ -2,8 +2,10 @@
  * The transient: the circuit in time, with a fixed step `dt`. A capacitor and a lamp's filament carry a state from one
  * moment to the next; at every step of integration they stamp the companion of the step from it (`capacitor.ts`,
  * `lamp.ts`), and the matrix gives the next moment — one solve for a linear circuit, Newton's iterations of the
- * operating point (`dc.ts`) for a nonlinear one, from the solution of the last step. A step of `dt` is `substeps` steps
- * of integration of `dt / substeps` (one when not asked otherwise). They integrate by the trapezoid; the first
+ * operating point (`dc.ts`) for a nonlinear one, from where the last two moments point (a straight line through them:
+ * the predictor of SPICE). A linear circuit keeps the factors of its matrix while nothing on the board changes and
+ * stamps only the right-hand side of each new moment. A step of `dt` is `substeps` steps of integration of
+ * `dt / substeps` (one when not asked otherwise). They integrate by the trapezoid; the first
  * EULER_STEPS of them after the start and after any change on the board (a knob turned, a switch flipped, a part put in
  * or burnt) by backward Euler, which leaves no ringing of the trapezoid after a jump. A step of integration whose
  * iterations do not settle is taken again in 2, 4, … 64 steps of backward Euler; only then does the step of `dt` fail.
@@ -26,6 +28,7 @@ import {
   readPart,
   solveDC,
   type DcFailure,
+  type Exactness,
   type PartReading,
 } from './dc';
 import {
@@ -40,6 +43,7 @@ import {
 } from './limits';
 import {
   assemble,
+  assembleRight,
   BULGED,
   BURNT,
   compile,
@@ -54,11 +58,37 @@ import type { PartKind } from './parts';
 import { createModelState, keepLevel, levelOf, memoryOf, type ModelState, type PartMemory } from './state';
 import { analyse, type TopologyIssue } from './topology';
 
+/** What a moment calls, some of it for every part: read here once, since under the test runner (vitest) every read of
+ * an import is a lookup, which the measure of speed would carry (README.md, «Speed»). */
+const call = {
+  newton,
+  assemble,
+  assembleRight,
+  factor,
+  solveFactored,
+  readPart,
+  updateSettings,
+  loadOf,
+  conditionOf,
+  keepLevel,
+} as const;
+
 /** How many steps of integration after the start and after a change go by backward Euler before the trapezoid takes
  * over. */
 export const EULER_STEPS = 2;
 /** A step of integration that fails is taken again in 2, 4, … 2^RETRIES steps of backward Euler. */
 const RETRIES = 6;
+
+/**
+ * When Newton's iterations of a moment have settled exactly: no unknown moved by more than 1e-6 of itself plus 1e-6 (V
+ * or A) — a thousandth of SPICE's own RELTOL and its VNTOL, and looser than the operating point's 1e-9 of itself plus
+ * 1e-12, which costs every moment about one iteration more. Near the solution each iteration squares the error (the
+ * parts stamp their exact slopes), about err' = C·err² with C up to 1/(2·Vt) ≈ 20 per volt for a junction, so the
+ * iteration that moved by δ ≤ 10 μV leaves an error of nanovolts: the amplifier playing the melody for two seconds
+ * keeps every node within 5.2e-10 V of the moments the operating point's rule gives, in 2.7 iterations a moment
+ * against 3.6 (README.md, «Moments fast»).
+ */
+export const TRANSIENT_EXACTNESS: Exactness = Object.freeze({ relative: 1e-6, absolute: 1e-6 });
 
 /** Where the transient starts: at the operating point (every capacitor charged, every filament steady); from zero (every
  * capacitor empty, every filament at room temperature, as when a board is first switched on); or from the charges and
@@ -113,6 +143,8 @@ interface Board {
   readonly saved: Snapshot;
   /** The start of the step of `dt`, for one that fails in a later step of integration than its first. */
   readonly begun: Snapshot;
+  /** The unknowns one step of integration before the last moment: with the last moment, the predictor's line. */
+  readonly previous: Float64Array;
   ties: readonly number[];
   issues: TopologyIssue[];
   nonlinear: boolean;
@@ -148,6 +180,17 @@ export class Transient {
   private euler = EULER_STEPS;
   private started = false;
   private failure: DcFailure = 'singular';
+  /** Steps of integration in a row, each the whole step at once, since the last change on the board (at most 2): from
+   * 2 on, `previous` and the last moment are two moments of the same board, and the predictor may draw its line. */
+  private clean = 0;
+  /** The count of factorizations of the matrix (`LinearSystem.factorizations`) when this transient factored a linear
+   * circuit last, with the step and the method then: while the count, the step and the method are the same, the
+   * factors serve again. −1 after any change on the board. */
+  private factoredAt = -1;
+  private factoredH = 0;
+  private factoredTrapezoid = false;
+  /** What `run` records, by probe: a node n as n, a part k as −(k + 1). Grows to the most probes ever asked for. */
+  private targets = new Int32Array(0);
 
   /** Compiles the board (a malformed netlist is a RangeError, as for `solveDC`); `start` begins its time. */
   constructor(net: Netlist, options: TransientOptions) {
@@ -257,7 +300,7 @@ export class Transient {
     if (!this.started) throw new Error('the transient has not started: call start() first');
     const b = this.board;
     const c = b.circuit;
-    if (updateSettings(c, b.settings)) {
+    if (call.updateSettings(c, b.settings)) {
       this.retopologize();
       this.euler = EULER_STEPS;
     }
@@ -291,9 +334,12 @@ export class Transient {
     if (!Number.isInteger(steps) || steps < 0)
       throw new RangeError(`steps must be a whole number ≥ 0: ${steps}`);
     const b = this.board;
-    // a node n as n, a part k as −(k + 1)
-    const targets = new Int32Array(probes.length);
-    probes.forEach((probe, j) => {
+    // a block after a block with as many probes makes nothing new
+    if (this.targets.length < probes.length) this.targets = new Int32Array(probes.length);
+    const targets = this.targets;
+    const count = probes.length;
+    for (let j = 0; j < count; j++) {
+      const probe = probes[j]!;
       if (probe.out.length < steps)
         throw new RangeError(`a probe's array holds ${probe.out.length} samples, not ${steps}`);
       if ('node' in probe) {
@@ -305,10 +351,10 @@ export class Transient {
         if (k === undefined) throw new RangeError(`no part ${probe.part} on the board`);
         targets[j] = -(k + 1);
       }
-    });
+    }
     for (let k = 0; k < steps; k++) {
       if (!this.step()) return k;
-      for (let j = 0; j < targets.length; j++) {
+      for (let j = 0; j < count; j++) {
         const target = targets[j]!;
         probes[j]!.out[k] = target >= 0 ? this.board.v[target]! : this.board.readings[-target - 1]!.i;
       }
@@ -389,6 +435,7 @@ export class Transient {
       scratch: new Float64Array(Math.max(3, ...elements.map((e) => e.nodes.length))),
       saved: snapshotOf(circuit),
       begun: snapshotOf(circuit),
+      previous: new Float64Array(circuit.size),
       ties: [],
       issues: [],
       nonlinear: false,
@@ -398,8 +445,11 @@ export class Transient {
     return board;
   }
 
-  /** The issues, the ties and whether Newton's iterations are needed, at the settings and damage now. */
+  /** The issues, the ties and whether Newton's iterations are needed, at the settings and damage now. Called at every
+   * change on the board, which also ends the predictor's line and the life of the factors of a linear circuit. */
   private retopologize(): void {
+    this.clean = 0;
+    this.factoredAt = -1;
     const b = this.board;
     const { issues, ties } = analyse(b.circuit, b.settings, b.damage);
     b.issues = issues;
@@ -421,6 +471,7 @@ export class Transient {
       if (!this.integrate(this.count * substeps + j, j === substeps - 1)) {
         if (substeps > 1) this.restore(b.begun, initial);
         this.euler = euler;
+        this.clean = 0;
         return false;
       }
       c.operating.initial = false;
@@ -436,12 +487,17 @@ export class Transient {
     const { h } = this;
     const initial = b.circuit.operating.initial;
     this.save(b.saved);
-    if (this.solveAt((index + 1) * h, h, this.euler === 0, read)) return true;
+    if (this.solveAt((index + 1) * h, h, this.euler === 0, read, this.clean >= 2)) {
+      b.previous.set(b.saved.v);
+      if (this.clean < 2) this.clean++;
+      return true;
+    }
+    this.clean = 0; // the moment before the last is no longer a step of integration back
     for (let pieces = 2; pieces <= 2 ** RETRIES && this.failure !== 'singular'; pieces *= 2) {
       this.restore(b.saved, initial);
       let ok = true;
       for (let j = 1; j <= pieces && ok; j++)
-        ok = this.solveAt((index + j / pieces) * h, h / pieces, false, read && j === pieces);
+        ok = this.solveAt((index + j / pieces) * h, h / pieces, false, read && j === pieces, false);
       if (ok) return true;
     }
     this.restore(b.saved, initial);
@@ -466,8 +522,10 @@ export class Transient {
   }
 
   /** Solves the moment `time` a step `h` after the history, reads the parts when `read` (before their history moves
-   * on: a lamp reads its current from it) and moves their history on. */
-  private solveAt(time: number, h: number, trapezoid: boolean, read: boolean): boolean {
+   * on: a lamp reads its current from it) and moves their history on. A nonlinear circuit starts Newton's iterations
+   * on the line through the last two moments when `predict`, else at the last moment; a linear one solves with the
+   * factors it kept when its matrix cannot have changed since. */
+  private solveAt(time: number, h: number, trapezoid: boolean, read: boolean, predict: boolean): boolean {
     const b = this.board;
     const c = b.circuit;
     const { system, elements } = c;
@@ -477,18 +535,35 @@ export class Transient {
     op.trapezoid = trapezoid;
     op.sources = 1;
     if (b.nonlinear) {
-      const go = newton(c, b.settings, b.ties, b.damage, this.maxIterations, this.go);
+      if (predict) {
+        // v(t + h) ≈ v(t) + (v(t) − v(t − h)): the guess is off by about h²·v″ where the last moment was off by h·v′
+        const { v } = op;
+        const before = b.previous;
+        for (let k = 0; k < v.length; k++) v[k] = v[k]! + (v[k]! - before[k]!);
+      }
+      const go = call.newton(c, b.settings, b.ties, b.damage, this.maxIterations, this.go, TRANSIENT_EXACTNESS);
       if (!go.settled) {
         this.failure = go.singular ? 'singular' : 'no-convergence';
         return false;
       }
     } else {
-      assemble(c, b.settings, b.ties, op, b.damage);
-      if (!factor(system)) {
-        this.failure = 'singular';
-        return false;
+      if (
+        this.factoredAt === system.factorizations &&
+        this.factoredH === h &&
+        this.factoredTrapezoid === trapezoid
+      ) {
+        call.assembleRight(c, b.settings, op, b.damage);
+      } else {
+        call.assemble(c, b.settings, b.ties, op, b.damage);
+        if (!call.factor(system)) {
+          this.failure = 'singular';
+          return false;
+        }
+        this.factoredAt = system.factorizations;
+        this.factoredH = h;
+        this.factoredTrapezoid = trapezoid;
       }
-      solveFactored(system);
+      call.solveFactored(system);
       for (let node = 0; node < c.size; node++) {
         const k = c.index[node]!;
         const x = k >= 0 ? system.x[k]! : 0;
@@ -501,7 +576,7 @@ export class Transient {
     }
     if (read)
       for (let k = 0; k < elements.length; k++)
-        readPart(c, k, b.settings[k]!, b.damage[k]!, b.scratch, b.readings[k]!);
+        call.readPart(c, k, b.settings[k]!, b.damage[k]!, b.scratch, b.readings[k]!);
     for (let k = 0; k < elements.length; k++) {
       const e = elements[k]!;
       if (b.damage[k] === 0 && e.behaviour.accept) e.behaviour.accept(b.settings[k]!, e, op.v, op);
@@ -520,13 +595,13 @@ export class Transient {
       const status = b.statuses[k]!;
       if (b.damage[k]) continue;
       const memory = b.memories[k]!;
-      const load = loadOf(e.spec, b.readings[k]!);
-      status.load = load;
-      status.condition = conditionOf(load, false);
-      if (e.behaviour.history > 0) keepLevel(memory, e.spec.kind, e.history[0]!);
+      const now = call.loadOf(e.spec, b.readings[k]!);
+      status.load = now;
+      status.condition = call.conditionOf(now, false);
+      if (e.behaviour.history > 0) call.keepLevel(memory, e.spec.kind, e.history[0]!);
       const decay = b.decay[k]!;
       if (Number.isNaN(decay)) continue;
-      memory.heat = load + (memory.heat - load) * decay;
+      memory.heat = now + (memory.heat - now) * decay;
       if (memory.heat >= 1 && b.burnable[k]) {
         const failure = failureOf(e.spec);
         fail(memory, failure);

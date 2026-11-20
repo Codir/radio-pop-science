@@ -17,6 +17,12 @@
 import { GMIN, pnjlim, THERMAL_VOLTAGE } from './diode';
 import type { Behaviour, Link, TransistorParams, TransistorSpec } from './parts';
 
+// Every iteration of every moment reads these: read here once, since under the test runner (vitest) each read of an
+// import is a lookup that the speed of the transient would carry (README.md, «Speed»).
+const VT = THERMAL_VOLTAGE;
+const G = GMIN;
+const limit = pnjlim;
+
 /** A transistor at its junction voltages, in the frame of an NPN: its currents and their slopes. */
 export interface TransistorPoint {
   /** The current into the collector (A). */
@@ -35,19 +41,18 @@ export interface TransistorPoint {
 
 /** The voltage above which a step of a junction is limited: Vt·ln(Vt / (√2·IS)) (V), as ngspice's `BJTtVcrit`. */
 export function transistorVcrit(p: TransistorParams): number {
-  const vt = THERMAL_VOLTAGE;
-  return vt * Math.log(vt / (Math.SQRT2 * p.is));
+  return VT * Math.log(VT / (Math.SQRT2 * p.is));
 }
 
 /** One junction without GMIN at `v`: SPICE's exponential IS·(e^(v/Vt) − 1), and its cubic below −3·Vt. */
 function junctionCurrent(is: number, v: number): number {
-  const vt = THERMAL_VOLTAGE;
+  const vt = VT;
   return v >= -3 * vt ? is * Math.expm1(v / vt) : -is * (1 + ((3 * vt) / (v * Math.E)) ** 3);
 }
 
 /** The slope of `junctionCurrent` at `v` (S). */
 function junctionSlope(is: number, v: number): number {
-  const vt = THERMAL_VOLTAGE;
+  const vt = VT;
   if (v >= -3 * vt) return (is * Math.exp(v / vt)) / vt;
   const cubic = ((3 * vt) / (v * Math.E)) ** 3;
   return (is * 3 * cubic) / v;
@@ -62,12 +67,12 @@ export function transistorAt(p: TransistorParams, vbe: number, vbc: number, out:
   const ibc = junctionCurrent(p.is, vbc);
   const gbc = junctionSlope(p.is, vbc);
   const share = 1 - vbc * early; // 1/qb of SPICE: the Early effect on the transport current
-  out.ic = (ibe - ibc) * share - ibc / p.br - GMIN * vbc;
-  out.ib = ibe / p.bf + ibc / p.br + GMIN * (vbe + vbc);
+  out.ic = (ibe - ibc) * share - ibc / p.br - G * vbc;
+  out.ib = ibe / p.bf + ibc / p.br + G * (vbe + vbc);
   out.icVbe = gbe * share;
-  out.icVbc = -gbc * share - (ibe - ibc) * early - gbc / p.br - GMIN;
-  out.ibVbe = gbe / p.bf + GMIN;
-  out.ibVbc = gbc / p.br + GMIN;
+  out.icVbc = -gbc * share - (ibe - ibc) * early - gbc / p.br - G;
+  out.ibVbe = gbe / p.bf + G;
+  out.ibVbc = gbc / p.br + G;
 }
 
 /** Pins 0 (collector) and 2 (emitter) each meet pin 1 (the base) in a junction: both are paths for direct current. */
@@ -85,7 +90,7 @@ const JUNCTIONS: readonly Link[] = [
 export function transistorBehaviour(spec: TransistorSpec): Behaviour {
   const sign = spec.polarity === 'npn' ? 1 : -1;
   const vcrit = transistorVcrit(spec);
-  const vt = THERMAL_VOLTAGE;
+  const vt = VT;
   const at: TransistorPoint = { ic: 0, ib: 0, icVbe: 0, icVbc: 0, ibVbe: 0, ibVbc: 0 };
   return {
     branches: 0,
@@ -111,8 +116,8 @@ export function transistorBehaviour(spec: TransistorSpec): Behaviour {
       if (!op.initial) {
         const guessBe = sign * (op.v[b]! - op.v[e]!);
         const guessBc = sign * (op.v[b]! - op.v[c]!);
-        vbe = pnjlim(guessBe, vbe, vt, vcrit);
-        vbc = pnjlim(guessBc, vbc, vt, vcrit);
+        vbe = limit(guessBe, vbe, vt, vcrit);
+        vbc = limit(guessBc, vbc, vt, vcrit);
         if (vbe !== guessBe || vbc !== guessBc) op.limited = true;
       }
       place.memory[0] = vbe;

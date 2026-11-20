@@ -9,7 +9,12 @@ import { capacitorBehaviour } from './capacitor';
 import { diodeBehaviour } from './diode';
 import { lampBehaviour } from './lamp';
 import type { Stamper } from './mna';
+import { melodyAt } from './music';
 import { transistorBehaviour } from './transistor';
+
+/** Read here once: the player asks for the melody at every moment, and under the test runner (vitest) every read of an
+ * import is a lookup (README.md, «Speed»). */
+const melodyOf = melodyAt;
 
 /** The resistance of a wire: a jumper, a closed switch, the end of a pot's track (Ω). */
 export const WIRE_OHMS = 1e-3;
@@ -51,6 +56,16 @@ export interface SineSpec {
   readonly amplitude: number;
   readonly hz: number;
   readonly ohms?: number;
+  readonly limits: Limits;
+}
+
+/** The player: the volume's melody (`music.ts`), `amplitude`·m(t) with m within ±1, behind its internal resistance
+ * `ohms`. The setting is the amplitude (V), `amplitude` when absent, never below 0: at 0 the player is stopped. */
+export interface PlayerSpec {
+  readonly kind: 'player';
+  readonly pins: readonly ['plus', 'minus'];
+  readonly amplitude: number;
+  readonly ohms: number;
   readonly limits: Limits;
 }
 
@@ -198,6 +213,7 @@ export type PartSpec =
   | BatterySpec
   | SourceSpec
   | SineSpec
+  | PlayerSpec
   | ResistorSpec
   | PotSpec
   | SwitchSpec
@@ -414,6 +430,38 @@ function sine(amplitude: number, hz: number): Behaviour {
   };
 }
 
+/** The player behind its internal resistance, in the Norton form as a battery: the conductance 1/r and the current
+ * e(t)/r, e(t) = amplitude·m(t) at the moment of the solve; the setting is the amplitude (V), never below 0. Newton's
+ * iterations solve one moment many times, so the part keeps the melody at the last moment it was asked for. */
+function player(amplitude: number, ohms: number): Behaviour {
+  const g = 1 / ohms;
+  let moment = Number.NaN;
+  let melody = 0;
+  const e = (volts: number, op: Operating): number => {
+    if (op.time !== moment) {
+      moment = op.time;
+      melody = melodyOf(moment);
+    }
+    return volts * melody * op.sources;
+  };
+  return {
+    ...LINEAR,
+    branches: 0,
+    source: true,
+    setting: (raw) => Math.max(raw ?? amplitude, 0),
+    links: () => ONE_LINK,
+    wire: () => false,
+    stamp: (volts, at, s, op) => {
+      s.conductance(at.nodes[0]!, at.nodes[1]!, g);
+      s.current(at.nodes[1]!, at.nodes[0]!, e(volts, op) * g);
+    },
+    currents: (volts, at, v, _, out, op) => {
+      out[0] = (v[at.nodes[0]!]! - v[at.nodes[1]!]! - e(volts, op)) * g;
+      out[1] = -out[0];
+    },
+  };
+}
+
 /** The two parts of a pot's track, each at least a wire. */
 function sections(ohms: number, setting: number): readonly [number, number] {
   return [Math.max(setting * ohms, WIRE_OHMS), Math.max((1 - setting) * ohms, WIRE_OHMS)];
@@ -470,6 +518,8 @@ export function behaviour(spec: PartSpec): Behaviour {
       return source(spec.volts);
     case 'sine':
       return spec.ohms ? sineBehind(spec.amplitude, spec.hz, spec.ohms) : sine(spec.amplitude, spec.hz);
+    case 'player':
+      return player(spec.amplitude, spec.ohms);
     case 'resistor':
     case 'speaker':
       return resistive(spec.ohms, false);
@@ -653,6 +703,7 @@ export const PARTS: Readonly<Record<string, PartSpec>> = Object.freeze({
   'ideal-5v': { kind: 'source', pins: ['plus', 'minus'], volts: 5, limits: {} },
   'ideal-ac-6v': { kind: 'sine', pins: ['plus', 'minus'], amplitude: 6, hz: 50, limits: {} },
   'player-tone': { kind: 'sine', pins: ['plus', 'minus'], amplitude: 0.3, hz: 1000, ohms: 32, limits: {} },
+  player: { kind: 'player', pins: ['plus', 'minus'], amplitude: 0.3, ohms: 32, limits: {} },
   ...Object.fromEntries(resistors()),
   'pot-10k': { kind: 'pot', pins: ['ccw', 'wiper', 'cw'], ohms: 10e3, limits: { powerW: 0.2 } },
   switch: { kind: 'switch', pins: ['a', 'b'], limits: {} },

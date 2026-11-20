@@ -17,11 +17,14 @@ import {
   readSettings,
   solveFactored,
   type Circuit,
-  type LinearSystem,
 } from './mna';
 import type { Netlist } from './netlist';
 import { keepLevel, memoryOf, type ModelState } from './state';
 import { analyse, type TopologyIssue } from './topology';
+
+/** What an iteration of Newton calls: read here once, since under the test runner (vitest) every read of an import is
+ * a lookup, which the measure of speed would carry (README.md, «Speed»). */
+const call = { assemble, factor, solveFactored } as const;
 
 /** What a meter would read on a part. */
 export interface PartReading {
@@ -72,9 +75,18 @@ export interface DcOptions {
 
 /** The iterations of one go (SPICE's ITL1). */
 export const MAX_ITERATIONS = 100;
+
+/** How near two iterations of Newton must come for the last to count as the solution: no unknown moved by more than
+ * `relative` of itself plus `absolute` (V or A). */
+export interface Exactness {
+  readonly relative: number;
+  readonly absolute: number;
+}
+
 /**
  * When Newton has settled (no junction limited its step, and the iteration did not start from nothing):
- * - exact: no unknown moved by more than `EXACT` of itself plus `FLOOR` (V or A);
+ * - exact: no unknown moved by more than `EXACT` of itself plus `FLOOR` (V or A) — the operating point's rule,
+ *   `OPERATING_EXACTNESS`; the transient asks for its own (`transient.ts`);
  * - quiet: the guess already satisfies every row of the matrix linearized around it to the rounding of the solve — what
  *   is left of the rows is no more than `QUIET` of the largest row's terms (the backward error of the guess) — and no
  *   voltage moved by more than SPICE's tolerance (`SPICE_RELTOL` plus `SPICE_VNTOL`) of the largest voltage of the
@@ -88,6 +100,8 @@ export const MAX_ITERATIONS = 100;
  */
 const EXACT = 1e-9;
 const FLOOR = 1e-12;
+/** The operating point's rule of exactness: to the rounding of the solve. */
+export const OPERATING_EXACTNESS: Exactness = Object.freeze({ relative: EXACT, absolute: FLOOR });
 const QUIET = 16 * Number.EPSILON;
 const NOISE_RUN = 20;
 const SPICE_RELTOL = 1e-3;
@@ -117,10 +131,9 @@ const end = (go: Go, settled: boolean, singular: boolean, iterations: number): G
   return go;
 };
 
-/** Whether the guess `x` leaves every row of A·x = b, just assembled around it, at the rounding: the largest row's
- * remainder against the largest row's sum of the magnitudes of its terms. */
-function quietAt(system: LinearSystem, x: Float64Array): boolean {
-  const { n, a, b } = system;
+/** Whether the guess `x` leaves every row of A·x = b, assembled around it, at the rounding: the largest row's remainder
+ * against the largest row's sum of the magnitudes of its terms. */
+function quietAt(n: number, a: Float64Array, b: Float64Array, x: Float64Array): boolean {
   let left = 0;
   let terms = 0;
   for (let i = 0; i < n; i++) {
@@ -139,8 +152,9 @@ function quietAt(system: LinearSystem, x: Float64Array): boolean {
 
 /**
  * Newton's iterations from the guess in `c.operating` (its `v`, `initial`, the moment it is for and the parts' memory),
- * at most `max` of them, written into `go` (a new one when absent). The circuit's last solution is left in
- * `c.operating.v` and `c.system.x`. It allocates nothing: the transient calls it at every step.
+ * at most `max` of them, written into `go` (a new one when absent); `exactness` is the rule of the exact stop
+ * (`OPERATING_EXACTNESS` when absent). The circuit's last solution is left in `c.operating.v` and `c.system.x`. It
+ * allocates nothing: the transient calls it at every step.
  */
 export function newton(
   c: Circuit,
@@ -149,8 +163,10 @@ export function newton(
   damage: Uint8Array,
   max: number,
   go: Go = newGo(),
+  exactness: Exactness = OPERATING_EXACTNESS,
 ): Go {
-  const { system, index, operating: op } = c;
+  const { relative, absolute } = exactness;
+  const { system, index, operating: op, kept } = c;
   const { v } = op;
   const x = system.x;
   const before = c.scratch;
@@ -160,14 +176,19 @@ export function newton(
   let quietRun = 0;
   for (let iterations = 1; iterations <= max; iterations++) {
     op.limited = false;
-    assemble(c, settings, ties, op, damage);
-    // from the second iteration of a go on, `x` is the guess the parts were just stamped around
-    const quiet = iterations > 1 && quietAt(system, x);
-    if (!factor(system)) return end(go, false, true, iterations);
+    call.assemble(c, settings, ties, op, damage);
+    // from the second iteration of a go on, `x` is the guess the parts were just stamped around: the rows are kept,
+    // and whether the guess already satisfied them is asked only when the step that follows is not exact
+    const later = iterations > 1;
+    if (later) {
+      kept.a.set(system.a);
+      kept.b.set(system.b);
+    }
+    if (!call.factor(system)) return end(go, false, true, iterations);
     before.set(x);
-    solveFactored(system);
-    let exact = iterations > 1;
-    let small = quiet;
+    call.solveFactored(system);
+    let exact = later;
+    let small = true;
     let scale = 0;
     for (let k = 0; k < voltages; k++) scale = Math.max(scale, Math.abs(x[k]!), Math.abs(before[k]!));
     for (let k = 0; k < x.length; k++) {
@@ -175,7 +196,7 @@ export function newton(
       if (!Number.isFinite(now)) return end(go, false, false, iterations);
       const step = Math.abs(now - before[k]!);
       const size = Math.max(Math.abs(now), Math.abs(before[k]!));
-      if (step > EXACT * size + FLOOR) exact = false;
+      if (step > relative * size + absolute) exact = false;
       const allowed = k < voltages ? SPICE_RELTOL * scale + SPICE_VNTOL : SPICE_RELTOL * size + SPICE_ABSTOL;
       if (step > allowed) small = false;
     }
@@ -185,8 +206,11 @@ export function newton(
     }
     const steady = !op.limited && !op.initial;
     op.initial = false;
-    if (steady && (exact || small)) return end(go, true, false, iterations);
-    quietRun = steady && quiet ? quietRun + 1 : 0;
+    if (steady && exact) return end(go, true, false, iterations);
+    // an iteration that limited a junction or started from nothing settles nothing, quiet or not
+    const quiet = steady && later && quietAt(system.n, kept.a, kept.b, before);
+    if (quiet && small) return end(go, true, false, iterations);
+    quietRun = quiet ? quietRun + 1 : 0;
   }
   return end(go, quietRun >= NOISE_RUN, false, max);
 }

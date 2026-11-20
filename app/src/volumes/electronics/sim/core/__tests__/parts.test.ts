@@ -82,6 +82,14 @@ describe('the catalog of parts', () => {
       ohms: 32,
       limits: {},
     });
+    // the player itself (E1-7): the volume's melody at the same 0.3 V behind the same 32 Ω; its setting is the amplitude
+    expect(PARTS.player).toEqual({
+      kind: 'player',
+      pins: ['plus', 'minus'],
+      amplitude: 0.3,
+      ohms: 32,
+      limits: {},
+    });
   });
 
   it('the diodes: the parameters of their published SPICE models', () => {
@@ -173,6 +181,7 @@ describe('the catalog of parts', () => {
       'jumper',
       'lamp',
       'led',
+      'player',
       'pot',
       'resistor',
       'sine',
