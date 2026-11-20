@@ -2,7 +2,7 @@
 /* global process, console, window, document */
 // Browser check and measurements of the sandbox `_dev/_sandbox-electronics-bench` (a dev or preview server up; the
 // skeleton — arguments, `report` / `check` / verdict, `open`, `held` — is copied from the radio sandbox's
-// `qa/measure.mjs`, electronics/shared/README.md «Копії»; the sections are the bench's own):
+// `qa/measure.mjs`, docs/volumes/electronics/REUSE.md «Копії»; the sections are the bench's own):
 //
 //   node app/src/volumes/_dev/chapters/_sandbox-electronics-bench/qa/measure.mjs --port 5480 --out <dir>
 //        [--only room,…] [--size 1280x720] [--touch]
@@ -18,14 +18,16 @@
 //           `board` and every world text ≥ 16 px-equivalent; none on a phone), the instrument's stand-in inside the
 //           free area of its shot (not on a phone, where every shot is `phone`), the console; snapshots
 //           `<step>-<size>.jpg`.
-//   parts — step `parts` on a held page (E2-4): `electronics-board` lists every part placed with the sockets of its
-//           legs and every model shown outside the circuit; each one has a model; draw calls ≤ 350 with all of them on
-//           the board; every world text shown ≥ 16 px-equivalent (none on a phone), and no print shown under something
-//           that covers it (rays from the camera, `electronics-parts`); the hue families (reported); snapshot
-//           `parts-<size>.jpg`. On a desktop then every part and permanent thing close (the camera put in front of it
-//           and above, from `electronics-parts`; a print too small or covered there, once more at the print): its print
-//           shown whole, seen with nothing drawn in front of it, and ≥ 16 px-equivalent, snapshots
-//           `close-<id>[-print]-<size>.jpg` for the reader of the parts' look; the console.
+//   parts — step `parts` on a held page (E2-4, E2-M): `electronics-board` lists every part placed with the sockets of
+//           its legs — one of every kind of the model's catalog, the capacitors and the transistor too — and nothing
+//           shown outside the circuit; each one has a model; the model solves the board with all of them (`ok`, every
+//           number finite, every part in its netlist); draw calls ≤ 350 with all of them on the board; every world text
+//           shown ≥ 16 px-equivalent (none on a phone), and no print shown under something that covers it (rays from
+//           the camera, `electronics-parts`); the hue families (reported); snapshot `parts-<size>.jpg`. On a desktop
+//           then every part and permanent thing close (the camera put in front of it and above, from
+//           `electronics-parts`; a print too small or covered there, once more at the print): its print shown whole,
+//           seen with nothing drawn in front of it, and ≥ 16 px-equivalent, snapshots `close-<id>[-print]-<size>.jpg`
+//           for the reader of the parts' look; the console.
 //   hand  — step `hand` on a held page (E2-5), every gesture by a real pointer (a mouse, or a finger with --touch, the
 //           thing then riding `LIFT` px above it): a 1 kΩ from the tray (on a phone from the dock's button: it waits
 //           over the board) carried to a3 — while it is carried its preview is a3 and a7 with their rows lit; let go,
@@ -345,8 +347,8 @@ async function shots(context) {
 
 /* ------------------------------------------------------------------------------------- section parts */
 
-/** Step `parts` of the scene: every part on the board with the sockets of its legs, and the models shown outside the
- * circuit (the kinds the model's catalog gains in E1-5, E1-6). */
+/** Step `parts` of the scene: every part on the board with the sockets of its legs, one of every kind of the model's
+ * catalog that stands on the board. */
 const PLACED = {
   LED1: ['a1', 'a2'],
   LED2: ['a4', 'a5'],
@@ -354,6 +356,10 @@ const PLACED = {
   LED4: ['a10', 'a11'],
   LED5: ['a13', 'a14'],
   P1: ['d1', 'd3', 'd5'],
+  C1: ['d7', 'd9'],
+  C2: ['d11', 'd13'],
+  C3: ['a16', 'a17'],
+  Q1: ['d15', 'd16', 'd17'],
   R1: ['f1', 'f5'],
   R2: ['f7', 'f11'],
   R3: ['f13', 'f17'],
@@ -365,7 +371,6 @@ const PLACED = {
   D2: ['j13', 'j17'],
   J1: ['f6', 'j6'],
 };
-const SHOWN = ['C1', 'C2', 'C3', 'Q1'];
 /** Close-ups: from the front and above (the direction of the shot `board`), the subject's sphere filling the frame;
  * a print too small for that, once more at the print, its em ≈ `printPx` px-equivalent. */
 const CLOSE = { dir: [0, 0.62, 0.78], fill: 4.2, least: 0.42, fov: 27, printPx: 30 };
@@ -387,9 +392,19 @@ async function parts(context) {
     `${Object.keys(board?.parts ?? {}).length} parts${wrong.length ? `; wrong: ${wrong.join(', ')}` : ''}`,
   );
   check(
-    'every part has its model, the shown ones too',
-    ids.every((id) => board?.models?.includes(id)) && SHOWN.every((id) => board?.shown?.includes(id)),
-    `models ${board?.models?.length}, shown ${board?.shown?.join(' ')}`,
+    'every part has its model, and nothing is shown outside the circuit',
+    ids.every((id) => board?.models?.includes(id)) && board?.shown?.length === 0,
+    `models ${board?.models?.length}, shown ${board?.shown?.join(' ') || 'none'}`,
+  );
+  // the circuit model takes them all: a board with capacitors and transistors compiles and has its operating point
+  const model = (n.model = await read(page, 'electronics-model'));
+  const numbers = Object.values(model?.parts ?? {}).flatMap((r) => [r.u, r.i, r.p]);
+  const missing = ids.filter((id) => !(id in (model?.parts ?? {})));
+  const solved = `ok ${model?.ok}, ${Object.keys(model?.parts ?? {}).length} parts`;
+  check(
+    'the model solves the board with every kind: ok, every part in it, no NaN',
+    model?.ok === true && missing.length === 0 && numbers.length > 0 && numbers.every(Number.isFinite),
+    `${solved}${missing.length ? `; missing ${missing.join(' ')}` : ''}, dcMs ${round(model?.dcMs, 3)}, issues ${model?.issues?.length}`,
   );
 
   const calls = (n.drawCalls = await drawCalls(page));

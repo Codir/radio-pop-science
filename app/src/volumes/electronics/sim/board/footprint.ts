@@ -2,7 +2,8 @@
  * How each kind of part stands in the board's sockets (docs/volumes/electronics/VISUAL.md §4, «Відбитки», and §4.7 for
  * the transistors): where its legs go from leg 0, which pin of the catalog every leg carries, how far one leg may be
  * moved on its own, and the letters of its id on the board. A kind the table does not know has no footprint (`null`):
- * the catalog grows in other tasks, and this file never lists the kinds exhaustively.
+ * the catalog may grow, and this file never lists the kinds exhaustively. Every key of the catalog has its place on the
+ * bench — a footprint here, a fixed part (`netlist.ts`) or a reason it is not shown: `shared/__tests__/catalog.test.ts`.
  */
 import { PARTS, type PartKind, type PartSpec } from '../core';
 import type { BoardLayout, SocketSpec } from './layout';
@@ -32,10 +33,6 @@ export interface Footprint {
   /** The letters of a placed part's id: `R` gives R1, R2 …; empty for a thing that is never placed. */
   readonly prefix: string;
 }
-
-/** The kinds this table knows: the catalog's, and those the model's catalog gains with capacitors (E1-5), transistors
- * (E1-6) and the player (E1-7), so the board is ready for them before they arrive. */
-type Kind = PartKind | 'capacitor' | 'transistor' | 'player';
 
 type Rule = (key: string, spec: PartSpec) => Footprint | null;
 
@@ -87,14 +84,13 @@ function to92(key: string, spec: PartSpec): Footprint | null {
 
 /** A capacitor's dielectric: an electrolytic one stands on legs 1 P apart, the others 2 P (VISUAL.md §4.7). */
 function capacitor(_: string, spec: PartSpec): Footprint | null {
-  const dielectric = 'dielectric' in spec ? spec.dielectric : undefined;
-  if (dielectric === 'electrolytic') return ELECTROLYTIC;
-  return dielectric === 'ceramic' || dielectric === 'film' ? DISC : null;
+  if (spec.kind !== 'capacitor') return null;
+  return spec.dielectric === 'electrolytic' ? ELECTROLYTIC : DISC;
 }
 
 /** A battery and its switch have none: they are fixed to the rails (`netlist.ts`); nor have the ideal sources of the
  * model's references, which the bench never offers. */
-const RULES: Partial<Record<Kind, Rule>> = {
+const RULES: Partial<Record<PartKind, Rule>> = {
   resistor: () => RESISTOR,
   diode: () => DIODE,
   led: () => LED,

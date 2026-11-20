@@ -14,7 +14,8 @@ Rules (after docs/volumes/radio/check.py):
 4 — no micro sign U+00B5 and no straight apostrophe between two Cyrillic letters in docs/volumes/electronics/,
     app/src/volumes/electronics/ or the volume's sandboxes (app/src/volumes/_dev/chapters/_sandbox-electronics-*);
 5 — no topic the course never touches (the mains, recipes of fire, smoke or explosion: the design §3.4) in the steps of
-    PATH.md, in chapters/*.md or in the cards of chapters/_terms.md; the rest of PATH.md may name what it forbids.
+    PATH.md, in chapters/*.md or in the cards of chapters/_terms.md; the rest of PATH.md may name what it forbids;
+6 — VISUAL.md has all its ten sections (H2 headings, a leading number allowed), as rule 6 of the radio volume's check.
 A step item is «- `chapter/step` — <idea>» with continuation lines indented by two spaces and fields «**Дія:**»,
 «**Висновок:**», «**Терміни:**» (a comma list or «—»), «**Формула:**» (the formula in backticks or «—»), «**Д:**».
 The H2 «Де сценарії свідомо відступили від цього шляху» (a date may follow) holds one line per deviation, as circuit's
@@ -36,7 +37,10 @@ DOCS = 'docs/volumes/electronics'
 APP = 'app/src/volumes/electronics'
 SANDBOXES = ('app/src/volumes/_dev/chapters', '_sandbox-electronics-*')
 SUFFIXES = {'.md', '.tsv', '.json', '.ts', '.mjs', '.py'}
-DOCUMENTS = ('VOLUME.md', 'PATH.md', 'PATH-ledger.md', 'PATH-NOTES.md', 'REUSE.md')  # under docs/volumes/electronics/
+DOCUMENTS = ('VOLUME.md', 'PATH.md', 'PATH-ledger.md', 'PATH-NOTES.md', 'REUSE.md',
+             'VISUAL.md')  # under docs/volumes/electronics/
+VISUAL_SECTIONS = ['Принципи', 'Кімната й стенд', 'Плата', 'Деталі', 'Прилади', 'Рука', 'Поверхи й лупа', 'Ракурси',
+                   'Телефон', 'Чек-лист аудитора']
 TERMS = 'chapters/_terms.md'  # written by batch E3 (task E3-0); rule 3 reads it once it exists
 DEVIATIONS = 'Де сценарії свідомо відступили від цього шляху'  # the H2 of PATH.md whose list items are not steps
 MICRO = chr(0xB5)
@@ -304,6 +308,11 @@ def rule5(path_md, chapters, terms_md):
     return out
 
 
+def rule6(visual_md):
+    have = {h2(line) for line in visual_md.split('\n') if line.startswith('## ')}
+    return ['VISUAL.md: section «%s» missing' % s for s in VISUAL_SECTIONS if s not in have]
+
+
 def read(path):
     return path.read_text(encoding='utf-8') if path.is_file() else None
 
@@ -340,6 +349,8 @@ def main():
             problems += rule3(volume, path_md, ledger_md, terms_md) + missing_terms(ledger_md, terms_md)
     problems += rule4(checked_files())
     problems += rule5(path_md or '', chapters, terms_md)
+    if texts['VISUAL.md'] is not None:
+        problems += rule6(texts['VISUAL.md'])
     for p in problems:
         print('electronics check: %s' % p)
 

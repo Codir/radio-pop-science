@@ -6,9 +6,10 @@
  *           by the meter (E2-6): they may be taken, the meter reads «—» until both are in sockets; the dial's switch
  *           `meter-mode` and the number `meter` are in the panel;
  *   scope — the oscilloscope's stand-in comes in from behind on the right, shot `scope`;
- *   parts — one part of every kind on the board and a row of resistors 1 Ω … 1 MΩ (`PARTS`), shot `board`: the tall
- *           parts at the far half, the low ones at the near half, a jumper across the near half; the capacitors and the
- *           transistor (`SHOWN`) stand on the board outside the circuit until the model's catalog has them (E1-5, E1-6);
+ *   parts — one part of every kind of the model's catalog on the board and a row of resistors 1 Ω … 1 MΩ (`PARTS`),
+ *           shot `board`: the tall parts at the far half — the LEDs, the pot, the three capacitors and the transistor —,
+ *           the low ones at the near half, a jumper across the near half; every one a part of the circuit (the switch
+ *           open);
  *   hand  — the reader's hand (E2-5), shot `stand`: an empty board, the tray (`TRAY`: three resistors and a jumper in
  *           front, two LEDs behind), the plugs of the speaker, the player and the lamp lying loose, the switch open;
  *           everything may be taken. On a phone the tray's slots are buttons of the dock (`tray-<key>`, VISUAL §9), and
@@ -55,7 +56,6 @@ import {
   type BenchShot,
   type HandKey,
   type PresetPart,
-  type SocketId,
 } from '@electronics/shared/bench';
 import {
   LENS_LEG,
@@ -67,15 +67,9 @@ import {
 } from '@electronics/shared/dive';
 import { SANDBOX } from './index';
 import { METER_MODES, type MeterMode } from '@electronics/shared/instruments';
-import {
-  createCeramic,
-  createElectrolytic,
-  createFilm,
-  createTransistor,
-  type PartModel,
-} from '@electronics/shared/parts';
+import { buildPart } from '@electronics/shared/parts';
 
-/** Step `parts`: the circuit's own parts of the catalog. */
+/** Step `parts`: one part of every kind of the model's catalog that stands on the board. */
 const PARTS: readonly PresetPart[] = [
   // the far half: the tall parts, so they hide nothing behind them
   { id: 'LED1', spec: 'led-red', at: 'a1' },
@@ -84,6 +78,10 @@ const PARTS: readonly PresetPart[] = [
   { id: 'LED4', spec: 'led-blue', at: 'a10' },
   { id: 'LED5', spec: 'led-white', at: 'a13' },
   { id: 'P1', spec: 'pot-10k', at: 'd1', setting: 0.3 },
+  { id: 'C1', spec: 'ceramic-100n', at: 'd7' },
+  { id: 'C2', spec: 'film-100n', at: 'd11' },
+  { id: 'C3', spec: 'electrolytic-470u-16v', at: 'a16' },
+  { id: 'Q1', spec: 'transistor-bc547b', at: 'd15' },
   // the near half: the row of resistors 1 Ω … 1 MΩ, the two diodes, a jumper across the strips
   { id: 'R1', spec: 'resistor-1', at: 'f1' },
   { id: 'R2', spec: 'resistor-10', at: 'f7' },
@@ -95,14 +93,6 @@ const PARTS: readonly PresetPart[] = [
   { id: 'D1', spec: 'diode-1n4148', at: 'j7' },
   { id: 'D2', spec: 'diode-1n4007', at: 'j13' },
   { id: 'J1', spec: 'jumper', at: 'f6', o: 1 },
-];
-
-/** Step `parts`: the kinds the catalog gains in E1-5 and E1-6, shown on the board outside the circuit. */
-const SHOWN: readonly { id: string; make: () => PartModel; sockets: readonly SocketId[] }[] = [
-  { id: 'C1', make: () => createCeramic(100e-9), sockets: ['d7', 'd9'] },
-  { id: 'C2', make: () => createFilm(100e-9), sockets: ['d11', 'd13'] },
-  { id: 'C3', make: () => createElectrolytic(470e-6, 16), sockets: ['a16', 'a17'] },
-  { id: 'Q1', make: () => createTransistor('transistor-bc547b'), sockets: ['d15', 'd16', 'd17'] },
 ];
 
 /** Step `hand`: the tray's kinds — the low ones go to its front row, the LEDs behind (the tray picks by size). */
@@ -159,6 +149,7 @@ const LAMP_LEADS = { lamp1: '+2', lamp2: 'a3' } as const;
 
 /** Step `bulged-look`: two electrolytics outside the circuit, a whole one and one under the look of the state `bulged`. */
 const CANS = { whole: ['a5', 'a6'], bulged: ['a10', 'a11'] } as const;
+const CAN = 'electrolytic-470u-16v';
 
 /** Step `loupe`: the part the magnifier leads into, a 4.7 kΩ in a5 … a9. */
 const LOUPE: readonly PresetPart[] = [{ id: 'R1', spec: 'resistor-4k7', at: 'a5' }];
@@ -347,16 +338,12 @@ export default defineScene((ctx) => {
       const preset = PRESETS[id];
       if (preset) bench.preset(preset, id === 'lamp' ? LAMP_LEADS : undefined);
       else bench.clear();
-      for (const s of SHOWN) {
-        if (id === 'parts') bench.parts.show(s.id, s.make(), s.sockets);
-        else bench.parts.hide(s.id);
-      }
       for (const [name, sockets] of Object.entries(CANS)) {
         if (id !== 'bulged-look') {
           bench.parts.hide(`C-${name}`);
           continue;
         }
-        const can = createElectrolytic(470e-6, 16);
+        const can = buildPart(CAN)!;
         bench.parts.show(`C-${name}`, can, sockets);
         // the look of the state and nothing more (VISUAL §4.8): its steam is the model's event, E2-9's
         if (name === 'bulged') can.setLook({ status: 'bulged' }, 0);

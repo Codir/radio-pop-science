@@ -96,6 +96,9 @@ export interface PartView {
   readonly body: readonly KToonMaterial[];
   /** The print (empty where the fonts are not loaded: unit tests). */
   readonly prints: readonly Text3D[];
+  /** What the print says, text by text, made or not (the fonts are not loaded in unit tests): the marks the code made
+   * from the part's data. */
+  readonly printed: readonly string[];
   /**
    * The hook of the model's state, every frame (`dt` may be 0): the heat on the body's surface, the burnt marks and
    * the bulged electrolytic (`look.ts`), an LED's light and halo, a pot's knob.
@@ -147,6 +150,8 @@ export interface PrintStyle {
  */
 export class Prints {
   readonly texts: Text3D[] = [];
+  /** Every text asked for, in order, whether it was made or not. */
+  readonly words: string[] = [];
   private readonly base: Color[] = [];
   private legible = -1;
   private room = -1;
@@ -155,6 +160,7 @@ export class Prints {
   private readonly v = new Vector3();
 
   add(parent: Object3D, text: string, style: PrintStyle): Text3D | null {
+    this.words.push(text);
     if (!fontsReady()) return null;
     const t = new Text3D(text, {
       font: style.font ?? 'bodyBold',
@@ -425,6 +431,7 @@ export function assemble(a: Assembly): PartModel {
     materials: kMaterials(group),
     body: a.bodyMaterials,
     prints: a.prints.texts,
+    printed: a.prints.words,
     fit(next) {
       if (next.length !== tips.length) {
         throw new RangeError(`${a.key}: ${next.length} tips for ${tips.length} legs`);
@@ -493,6 +500,7 @@ export function fixedView(
     materials: kMaterials(group),
     body: bodyMaterials,
     prints: prints.texts,
+    printed: prints.words,
     setLook(next, dt) {
       Object.assign(state, next);
       heat.set(state, Math.max(dt, 0));

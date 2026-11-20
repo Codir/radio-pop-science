@@ -2,55 +2,12 @@
  * How each kind of part stands in the sockets (docs/volumes/electronics/VISUAL.md §4, «Відбитки», and §4.7 for the
  * transistors): its legs in grid steps, the catalog pin in every leg, how far one leg may move, the letters of its id.
  */
-import { describe, expect, it, vi } from 'vitest';
-import type * as PartsModule from '../../core/parts';
+import { describe, expect, it } from 'vitest';
 import { PARTS } from '../../core';
 import { footprintOf, legSockets, type Footprint } from '../footprint';
 import { createLayout } from '../layout';
 import { netlistOf } from '../netlist';
 import { createBoardState, place, seatLeg } from '../seat';
-
-// Capacitors (E1-5), transistors and the test tone (E1-6) and the player (E1-7) come to the model's catalog in tasks of
-// another batch. Until the catalog these tests run against has them, stand-ins shaped as those parts let the board's
-// rules for them run; a key the real catalog has wins over its stand-in, so the tests then check the real parts.
-vi.mock('../../core/parts', async (importOriginal) => {
-  const real = await importOriginal<typeof PartsModule>();
-  const transistor = (polarity: 'npn' | 'pnp') => ({
-    kind: 'transistor',
-    pins: ['collector', 'base', 'emitter'],
-    polarity,
-    is: 1e-14,
-    bf: 300,
-    br: 5,
-    vaf: 60,
-    limits: { currentA: 0.1, powerW: 0.5 },
-  });
-  const capacitor = (dielectric: 'ceramic' | 'film' | 'electrolytic') => ({
-    kind: 'capacitor',
-    pins: dielectric === 'electrolytic' ? ['plus', 'minus'] : ['a', 'b'],
-    dielectric,
-    polar: dielectric === 'electrolytic',
-    farads: 100e-9,
-    esrOhms: 0.03,
-    leakOhms: 10e9,
-    ratedV: 16,
-    limits: {},
-  });
-  const standIns = {
-    'ceramic-100n': capacitor('ceramic'),
-    'film-100n': capacitor('film'),
-    'electrolytic-470u-16v': capacitor('electrolytic'),
-    'transistor-bc547b': transistor('npn'),
-    'transistor-bc557b': transistor('pnp'),
-    'transistor-2n3904': transistor('npn'),
-    'transistor-2n3906': transistor('pnp'),
-    'transistor-bc337-25': transistor('npn'),
-    'transistor-bc327-25': transistor('pnp'),
-    'player-tone': { kind: 'sine', pins: ['plus', 'minus'], amplitude: 0.3, hz: 1000, ohms: 32, limits: {} },
-    player: { kind: 'player', pins: ['plus', 'minus'], amplitude: 0.3, ohms: 32, limits: {} },
-  };
-  return { ...real, PARTS: Object.freeze({ ...standIns, ...real.PARTS }) };
-});
 
 const layout = createLayout();
 
@@ -171,7 +128,7 @@ describe('transistors in TO-92 (VISUAL.md §4.7)', () => {
   };
 
   it('knows the pinout of every transistor of the catalog', () => {
-    const transistors = Object.entries(PARTS).filter(([, spec]) => spec.kind === ('transistor' as string));
+    const transistors = Object.entries(PARTS).filter(([, spec]) => spec.kind === 'transistor');
     expect(transistors.map(([key]) => key).sort()).toEqual(Object.keys(PINOUT).sort());
     for (const [key] of transistors) {
       const fp = footprintOf(key)!;

@@ -5,11 +5,12 @@ import { defineChapter } from '@/engine/api';
  * of `@electronics/shared/**` in a real browser, with the measurements of `qa/measure.mjs`. Batch E2 grows it step by
  * step; E2-3: the dark room, the base with the breadboard, the magnifier in its holder and the stand-ins of the
  * permanent things, from the bench's shots (steps `room`, `board`, `meter`, `scope`); E2-4: the parts with their real
- * marks on the board (step `parts`); E2-5: the hand, the tray, the plug leads and the switch (step `hand`); E2-6: the
- * circuit model on the bench and the multimeter with its probes (steps `meter`, `divider`); E2-7: the light, the heat
- * and the burn from the model's state (steps `led`, `overload`, `lamp`) and the bulged electrolytic's look alone
- * (`bulged-look`; E2-9 binds the state to the model in its own step `bulged` and takes this one away); E2-8: the
- * magnifier as the door from the board to a resistor and into it, with the ladder «де ми» (step `loupe`).
+ * marks on the board (step `parts`; E2-M: one of every kind of the model's catalog, all in the circuit); E2-5: the hand,
+ * the tray, the plug leads and the switch (step `hand`); E2-6: the circuit model on the bench and the multimeter with its
+ * probes (steps `meter`, `divider`); E2-7: the light, the heat and the burn from the model's state (steps `led`,
+ * `overload`, `lamp`) and the bulged electrolytic's look alone (`bulged-look`; E2-9 binds the state to the model in its
+ * own step `bulged` and takes this one away); E2-8: the magnifier as the door from the board to a resistor and into it,
+ * with the ladder «де ми» (step `loupe`).
  * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
@@ -35,7 +36,7 @@ export const SANDBOX = {
     parts: {
       title: 'Деталі на платі',
       blurb:
-        'По одній деталі кожного виду й ряд резисторів від 1 Ω до 1 MΩ: смужки за номіналом, полярність, друк. Конденсатори й транзистор стоять на платі, але поза схемою, доки їх немає в каталозі моделі.',
+        'По одній деталі кожного виду з каталогу моделі й ряд резисторів від 1 Ω до 1 MΩ: смужки за номіналом, полярність, друк. Конденсатори й транзистор — такі самі деталі кола, як і решта; вимикач розімкнено.',
     },
     hand: {
       title: 'Рука й лоток',

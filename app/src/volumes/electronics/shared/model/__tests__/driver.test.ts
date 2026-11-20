@@ -7,10 +7,20 @@
  * every part, a part that burns solved out at once) and tells the state of each part (`part`).
  */
 import { describe, expect, it } from 'vitest';
-import { HEAT_SECONDS, WIRE_OHMS, burnSeconds, memoryOf } from '@electronics/sim/core';
+import {
+  AMPLIFIER_NODES,
+  HEAT_SECONDS,
+  WIRE_OHMS,
+  amplifierNetlist,
+  burnSeconds,
+  memoryOf,
+  solveDC,
+  type Netlist,
+} from '@electronics/sim/core';
 import {
   createBoardState,
   createLayout,
+  footprintOf,
   nextId,
   place,
   put,
@@ -20,6 +30,8 @@ import {
   setSetting,
   type BoardState,
   type FixedPart,
+  type RowId,
+  type SocketId,
 } from '@electronics/sim/board';
 import { createBenchModel } from '../driver';
 
@@ -456,5 +468,165 @@ describe('the ohmmeter’s own solve', () => {
     model.sync();
     expect(model.ohms(node('7ae'), 0)).toBe(Infinity);
     expect(model.state.parts.get('R2')!.burnt).toBe(true);
+  });
+});
+
+/**
+ * A transistor switch with capacitors (sim/core/README.md, «Transistors»: BC547B, its base through 10 kΩ from the
+ * + rail, the red LED with 330 Ω in its collector), a reservoir of 100 μF across the supply, 100 nF from the base to the
+ * − rail and a film capacitor of 1 μF across the rails: + rail → J1 → 3ae → R1 10 kΩ → 7ae, the base; Q1 C · B · E in
+ * c6 · c7 · c8; + rail → R2 330 Ω → 5ae → LED1 → 6ae, the collector; J2 from the emitter's 8ae to the − rail.
+ */
+function ledSwitch(closed: boolean): BoardState {
+  const s = createBoardState();
+  expect(put(layout, s, { id: 'J1', spec: 'jumper', legs: ['+3', 'a3'] })).toBe(true);
+  expect(place(layout, s, { id: 'R1', spec: 'resistor-10k', anchor: 'b3', o: 0 })).toBe(true);
+  expect(place(layout, s, { id: 'Q1', spec: 'transistor-bc547b', anchor: 'c6', o: 0 })).toBe(true);
+  expect(put(layout, s, { id: 'J2', spec: 'jumper', legs: ['e8', '-8'] })).toBe(true);
+  expect(place(layout, s, { id: 'R2', spec: 'resistor-330', anchor: '+5', o: 1 })).toBe(true);
+  expect(place(layout, s, { id: 'LED1', spec: 'led-red', anchor: 'a5', o: 0 })).toBe(true);
+  expect(place(layout, s, { id: 'C1', spec: 'electrolytic-100u-16v', anchor: 'd3', o: 0 })).toBe(true);
+  expect(put(layout, s, { id: 'J3', spec: 'jumper', legs: ['e4', '-4'] })).toBe(true);
+  expect(place(layout, s, { id: 'C2', spec: 'ceramic-100n', anchor: 'd7', o: 0 })).toBe(true);
+  expect(put(layout, s, { id: 'J4', spec: 'jumper', legs: ['e9', '-9'] })).toBe(true);
+  expect(place(layout, s, { id: 'C3', spec: 'film-1u', anchor: '+14', o: 1 })).toBe(true);
+  expect(put(layout, s, { id: 'J5', spec: 'jumper', legs: ['c14', '-14'] })).toBe(true);
+  setSetting(s, 'SW', closed ? 1 : 0);
+  return s;
+}
+
+/** Every number of a solve: no NaN, no infinity. */
+function finite(model: ReturnType<typeof createBenchModel>): boolean {
+  const dc = model.solution!;
+  return (
+    [...dc.v].every(Number.isFinite) &&
+    Object.values(dc.parts).every((r) => Number.isFinite(r.u) && Number.isFinite(r.i) && Number.isFinite(r.p))
+  );
+}
+
+describe('capacitors and transistors on the board (E1-5, E1-6)', () => {
+  it('compile and have an operating point: the switch opens the LED by its base, the capacitors hold their voltage', () => {
+    const board = ledSwitch(false);
+    const model = createBenchModel({ layout, board });
+    model.sync();
+    expect(model.ok).toBe(true);
+    expect(finite(model)).toBe(true);
+    expect(Math.abs(model.reading('LED1')!.i)).toBeLessThan(1e-9);
+    setSetting(board, 'SW', 1);
+    model.sync();
+    expect(model.ok).toBe(true);
+    expect(model.failure).toBeNull();
+    expect(finite(model)).toBe(true);
+    expect(model.net!.net.parts.map((p) => p.id)).toEqual(
+      expect.arrayContaining(['Q1', 'C1', 'C2', 'C3', 'LED1', 'R1', 'R2']),
+    );
+    // saturated: the LED takes the 21.1 mA of the model's own sample (the jumpers' and the leaks' share is far below)
+    expect(Math.abs(model.reading('LED1')!.i / 0.02111 - 1)).toBeLessThan(0.01);
+    expect(model.reading('Q1')!.i).toBeCloseTo(model.reading('LED1')!.i, 9);
+    // the base at a junction's voltage, the collector a few tens of millivolts above the emitter
+    expect(model.rowVolts('7ae')).toBeGreaterThan(0.6);
+    expect(model.rowVolts('7ae')).toBeLessThan(0.8);
+    expect(model.rowVolts('6ae')).toBeLessThan(0.2);
+    // the reservoir and the film across the supply at its voltage, the ceramic at the base's
+    expect(model.reading('C1')!.u).toBeCloseTo(model.rowVolts('3ae')!, 6);
+    expect(model.reading('C3')!.u).toBeCloseTo(model.rowVolts('+')!, 6);
+    expect(model.reading('C2')!.u).toBeCloseTo(model.rowVolts('7ae')!, 6);
+    for (const id of ['Q1', 'C1', 'C2', 'C3']) expect(model.part(id)!.condition, id).not.toBe('burnt');
+    // the ohmmeter across the reservoir: its leak beside the rest of the circuit, a finite number
+    expect(Number.isFinite(model.ohms(node('3ae'), 0)!)).toBe(true);
+  });
+});
+
+/** The amplifier's nodes in the rows of the board: the ground on the − rail, the switched supply on the + rail (the
+ * bench's own switch feeds it), every other node a strip of its own; the battery's plus is the bench's own node. */
+const AMP_ROWS: Readonly<Record<number, RowId>> = {
+  [AMPLIFIER_NODES.switched]: '+',
+  [AMPLIFIER_NODES.supply]: '2ae',
+  [AMPLIFIER_NODES.led]: '3ae',
+  [AMPLIFIER_NODES.player]: '4ae',
+  [AMPLIFIER_NODES.volume]: '5ae',
+  [AMPLIFIER_NODES.coupled]: '6ae',
+  [AMPLIFIER_NODES.base]: '7ae',
+  [AMPLIFIER_NODES.top]: '8ae',
+  [AMPLIFIER_NODES.middle]: '9ae',
+  [AMPLIFIER_NODES.driver]: '10ae',
+  [AMPLIFIER_NODES.output]: '11ae',
+  [AMPLIFIER_NODES.speaker]: '12ae',
+  0: '-',
+};
+/** The amplifier's parts that are the bench's own fixed parts, and the pot's id on the board (its letter is P). */
+const AMP_IDS: Readonly<Record<string, string>> = {
+  B1: 'BAT',
+  S1: 'SW',
+  PL: 'PLAYER',
+  LS1: 'SPK',
+  VR1: 'P1',
+};
+/** The plugs of the fixed parts on the board, by the amplifier's id: the lead on each pin, in the catalog's order. */
+const AMP_LEADS: Readonly<Record<string, readonly [string, string]>> = {
+  PL: ['pl+', 'pl-'],
+  LS1: ['spk+', 'spk-'],
+};
+
+/** The amplifier of E1-6 (`sim/core` `amplifierNetlist`, playing the bench's player) on the board: every leg of every
+ * part — the footprint's leg k carries the pin `pins[k]` — in a free socket of its pin's node's row, the plugs of the
+ * player and the speaker likewise; no jumper, so every node is one row and nothing is added to the circuit. */
+function amplifierOnBoard(net: Netlist): BoardState {
+  const s = createBoardState();
+  const free = new Map<RowId, SocketId[]>();
+  for (const socket of layout.sockets) free.set(socket.row, [...(free.get(socket.row) ?? []), socket.id]);
+  const take = (n: number): SocketId => {
+    const row = AMP_ROWS[n];
+    const socket = row === undefined ? undefined : free.get(row)?.shift();
+    if (socket === undefined) throw new RangeError(`no free socket for node ${n}`);
+    return socket;
+  };
+  for (const p of net.parts) {
+    const leads = AMP_LEADS[p.id];
+    if (leads) {
+      leads.forEach((lead, k) => expect(seatLead(layout, s, lead, take(p.pins[k]!)), lead).toBe(true));
+      continue;
+    }
+    if (p.id === 'B1' || p.id === 'S1') continue; // the bench's battery and its switch, fixed to the rails
+    const fp = footprintOf(p.spec)!;
+    const id = AMP_IDS[p.id] ?? p.id;
+    const legs = fp.pins.map((pin) => take(p.pins[pin]!));
+    expect(put(layout, s, { id, spec: p.spec, legs }), id).toBe(true);
+    if (p.setting !== undefined) setSetting(s, id, p.setting);
+  }
+  setSetting(s, 'SW', 1);
+  return s;
+}
+
+describe('the amplifier of E1-6 on the board', () => {
+  it('has the very operating point of sim/core without the board, node by node and part by part (within 1e-9)', () => {
+    const net = amplifierNetlist({ source: 'player' });
+    const alone = solveDC(net);
+    expect(alone.ok).toBe(true);
+    const board = amplifierOnBoard(net);
+    const model = createBenchModel({ layout, board });
+    model.sync();
+    expect(model.ok).toBe(true);
+    expect(model.net!.pending).toEqual([]);
+    expect(finite(model)).toBe(true);
+    // every part of the amplifier is in the circuit, the bench's fixed ones in place of the amplifier's own
+    const ids = new Set(model.net!.net.parts.map((p) => p.id));
+    for (const p of net.parts) expect(ids.has(AMP_IDS[p.id] ?? p.id), p.id).toBe(true);
+    const near = (a: number, b: number) => Math.abs(a - b) <= 1e-9 * Math.max(Math.abs(a), Math.abs(b));
+    for (const [n, row] of Object.entries(AMP_ROWS)) {
+      const want = alone.v[Number(n)]!;
+      const got = model.rowVolts(row)!;
+      expect(near(got, want), `node ${n} (${row}): ${got} V, sim/core ${want} V`).toBe(true);
+    }
+    expect(near(model.nodeVolts(layout.rows.length)!, alone.v[AMPLIFIER_NODES.battery]!)).toBe(true);
+    for (const p of net.parts) {
+      const want = alone.parts[p.id]!;
+      const got = model.reading(AMP_IDS[p.id] ?? p.id)!;
+      for (const k of ['u', 'i', 'p'] as const)
+        expect(near(got[k], want[k]), `${p.id} ${k}: ${got[k]}, sim/core ${want[k]}`).toBe(true);
+    }
+    // the amplifier at rest (sim/core/README.md, «The amplifier»): the output near half the supply, 13.3 mA
+    expect(model.rowVolts('11ae')).toBeCloseTo(3.771, 3);
+    expect(model.reading('BAT')!.i).toBeCloseTo(-0.01331, 5);
   });
 });

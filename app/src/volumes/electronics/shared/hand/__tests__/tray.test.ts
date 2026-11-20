@@ -8,14 +8,7 @@ import { Box3, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { NBSP } from '@/content';
 import { createBoardState, createLayout, place } from '@electronics/sim/board';
-import {
-  buildPart,
-  createCeramic,
-  createElectrolytic,
-  createFilm,
-  createTransistor,
-  type PartModel,
-} from '../../parts';
+import { buildPart, type PartModel } from '../../parts';
 import { PLACES } from '../../bench/layout';
 import { TRAY, createTray, partSize, trayLabel, trayRow } from '../tray';
 
@@ -28,15 +21,17 @@ describe('which row of the tray a part takes, from its size', () => {
       ['diode-1n4148', model('diode-1n4148')],
       ['diode-1n4007', model('diode-1n4007')],
       ['jumper', model('jumper')],
-      ['ceramic 100 nF', createCeramic(100e-9)],
-      ['BC547B', createTransistor('transistor-bc547b')],
+      ['ceramic-100n', model('ceramic-100n')],
+      ['transistor-bc547b', model('transistor-bc547b')],
+      ['transistor-2n3906', model('transistor-2n3906')],
     ];
     const back: [string, PartModel][] = [
       ['led-red', model('led-red')],
       ['pot-10k', model('pot-10k')],
-      ['film 100 nF', createFilm(100e-9)],
-      ['470 μF', createElectrolytic(470e-6, 16)],
-      ['1000 μF', createElectrolytic(1000e-6, 16)],
+      ['film-100n', model('film-100n')],
+      ['film-1u', model('film-1u')],
+      ['electrolytic-470u-16v', model('electrolytic-470u-16v')],
+      ['electrolytic-1000u-16v', model('electrolytic-1000u-16v')],
     ];
     for (const [name, m] of front) {
       const s = partSize(m);
@@ -51,19 +46,25 @@ describe('which row of the tray a part takes, from its size', () => {
     }
     // the sizes VISUAL names: the top of the body above the face the legs stand on
     expect(partSize(model('led-red')).height).toBeCloseTo(1.3, 6);
-    expect(partSize(createCeramic(100e-9)).height).toBeCloseTo(0.88, 6);
-    expect(partSize(createTransistor('transistor-bc547b')).height).toBeCloseTo(0.82, 6);
+    expect(partSize(model('ceramic-100n')).height).toBeCloseTo(0.88, 6);
+    expect(partSize(model('transistor-bc547b')).height).toBeCloseTo(0.82, 6);
   });
 });
 
 describe('the labels: numbers and units made by the code', () => {
-  it('a resistor’s value, a diode’s model, a pot’s value; nothing on an LED or a jumper', () => {
+  it('a resistor’s value, a diode’s or transistor’s model, a pot’s or capacitor’s value; nothing on an LED or a jumper', () => {
     expect(trayLabel('resistor-4k7')).toBe(`4,7${NBSP}kΩ`);
     expect(trayLabel('resistor-1k')).toBe(`1${NBSP}kΩ`);
     expect(trayLabel('resistor-330')).toBe(`330${NBSP}Ω`);
     expect(trayLabel('resistor-1M')).toBe(`1${NBSP}MΩ`);
     expect(trayLabel('diode-1n4007')).toBe('1N4007');
     expect(trayLabel('pot-10k')).toBe(`10${NBSP}kΩ`);
+    expect(trayLabel('transistor-bc337-25')).toBe('BC337-25');
+    expect(trayLabel('transistor-2n3904')).toBe('2N3904');
+    expect(trayLabel('ceramic-100n')).toBe(`100${NBSP}nF`);
+    expect(trayLabel('ceramic-100p')).toBe(`100${NBSP}pF`);
+    expect(trayLabel('film-1u')).toBe(`1${NBSP}μF`);
+    expect(trayLabel('electrolytic-470u-16v')).toBe(`470${NBSP}μF`);
     expect(trayLabel('led-red')).toBe('');
     expect(trayLabel('jumper')).toBe('');
   });

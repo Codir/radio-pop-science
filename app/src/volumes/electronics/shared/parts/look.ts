@@ -12,10 +12,10 @@
  * vertex colours, the three mixes of a state folded into one colour and one amount (`mixOf`). It is written into the
  * shader before the part is first drawn, so a part that burns compiles nothing.
  *
- * **The kinds** of the catalog are bound by a table, partial by kind (never an exhaustive switch: the kinds E1-5 and
- * E1-6 add are listed by name): whether a hot body scorches and how far a burnt one chars. A battery only warms (it
- * never burns, the model says so), and a burnt speaker or lamp shows its own marks (a dark ring on the cone; a broken
- * filament and a greyed top of the glass) instead of a charred body.
+ * **The kinds** of the catalog are bound by a table, partial by kind (never an exhaustive switch): whether a hot body
+ * scorches and how far a burnt one chars. A battery only warms (it never burns, the model says so), and a burnt speaker
+ * or lamp shows its own marks (a dark ring on the cone; a broken filament and a greyed top of the glass) instead of a
+ * charred body.
  *
  * **Light** comes from the model only: an LED's brightness b = min(1, (Φ / Φ₀)^(1/3)) from its luminous flux Φ
  * (`ledLumens`), Φ₀ the red LED's flux at 20 mA; b < 0.02 is no light at all. The lamp's glow is the place of its
@@ -55,11 +55,8 @@ export interface KindLook {
 
 const CHARRED: KindLook = { scorch: true, char: HEAT_LOOK.char };
 
-/** The kinds the table knows: the catalog's, and those it gains in other tasks (E1-5, E1-6). */
-type Kind = PartKind | 'capacitor' | 'transistor';
-
 /** VISUAL §4.8, by kind; a kind not listed takes `CHARRED`. */
-export const KIND_LOOK: Readonly<Partial<Record<Kind, KindLook>>> = {
+export const KIND_LOOK: Readonly<Partial<Record<PartKind, KindLook>>> = {
   resistor: CHARRED,
   pot: CHARRED,
   diode: CHARRED,
@@ -75,10 +72,10 @@ export const KIND_LOOK: Readonly<Partial<Record<Kind, KindLook>>> = {
   lamp: { scorch: false, char: 0 },
 };
 
-/** How the part of a key of the catalog takes heat; a key the catalog has not (yet), as a charring body. */
+/** How the part of a key of the catalog takes heat; a key the catalog has not, as a charring body. */
 export function kindLook(key: string): KindLook {
   const spec = Object.hasOwn(PARTS, key) ? PARTS[key] : undefined;
-  return (spec && KIND_LOOK[spec.kind as Kind]) ?? CHARRED;
+  return (spec && KIND_LOOK[spec.kind]) ?? CHARRED;
 }
 
 /** t of the heat tint: 0 up to half the limit, 1 at the limit and beyond (a shorted battery's heat goes past 1). */

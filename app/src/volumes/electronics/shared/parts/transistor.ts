@@ -1,16 +1,17 @@
 /**
- * A transistor in TO-92 (docs/volumes/electronics/VISUAL.md §4.7) — the catalog gains them in E1-6; `buildPart` binds
- * this model to their keys. A black half cylinder 0.52 wide, 0.42 deep and 0.52 high, its bottom 0.3 above the board,
- * three legs 1 P apart in the board that leave the case's bottom 1.27 mm apart (the outer two bend in at a knee and meet
- * the case under it). At the orientation 0 the flat side faces the reader (+z) and carries the model's name; leg 0 is
- * the leftmost seen on the flat side with the legs down, then 1 and 2 to the right (+x). Which lead is in which leg is
- * the board's own table (`sim/board` `TO92_LEGS`): the board and the model never part.
+ * A transistor in TO-92 (docs/volumes/electronics/VISUAL.md §4.7): every transistor of the catalog (E1-6) takes this
+ * model by its key (`buildPart`). A black half cylinder 0.52 wide, 0.42 deep and 0.52 high, its bottom 0.3 above the
+ * board, three legs 1 P apart in the board that leave the case's bottom 1.27 mm apart (the outer two bend in at a knee
+ * and meet the case under it). At the orientation 0 the flat side faces the reader (+z) and carries the model's name;
+ * leg 0 is the leftmost seen on the flat side with the legs down, then 1 and 2 to the right (+x). Which lead is in which
+ * leg is the board's own table (`sim/board` `TO92_LEGS`): the board and the model never part.
  *
  * Draw calls: the case, the legs, the print.
  */
 import { Box3, Group, Mesh, Shape, Vector3 } from 'three';
 import { G } from '@/kit';
 import { K } from '@/style';
+import { PARTS } from '@electronics/sim/core';
 import { BOARD_SPEC, TO92_LEGS } from '@electronics/sim/board';
 import { MM, Prints, RADIAL_Y, assemble, radialLegs, type PartModel } from './part';
 
@@ -25,16 +26,32 @@ export const TO92 = {
   lead: 1.27 * MM,
 } as const;
 
-/** What is printed on the flat side, and the type, by catalog key (VISUAL §4.7). */
-export const TRANSISTORS: Readonly<Record<string, { readonly print: string; readonly type: 'NPN' | 'PNP' }>> =
-  {
-    'transistor-bc547b': { print: 'BC547B', type: 'NPN' },
-    'transistor-bc557b': { print: 'BC557B', type: 'PNP' },
-    'transistor-2n3904': { print: '2N3904', type: 'NPN' },
-    'transistor-2n3906': { print: '2N3906', type: 'PNP' },
-    'transistor-bc337-25': { print: 'BC337-25', type: 'NPN' },
-    'transistor-bc327-25': { print: 'BC327-25', type: 'PNP' },
-  };
+const KEY_PREFIX = 'transistor-';
+
+/** What a transistor shows: the model's name on its flat side, and its type. */
+export interface TransistorLook {
+  readonly print: string;
+  readonly type: 'NPN' | 'PNP';
+}
+
+/**
+ * The look of every transistor of the catalog whose pinout the board knows (VISUAL §4.7), read off the catalog: the
+ * model's name is its key's after `transistor-` in capitals (`transistor-bc337-25` → «BC337-25»), the type its
+ * `polarity`.
+ */
+export const TRANSISTORS: Readonly<Record<string, TransistorLook>> = Object.freeze(transistorLooks());
+
+function transistorLooks(): Record<string, TransistorLook> {
+  const out: Record<string, TransistorLook> = {};
+  for (const [key, spec] of Object.entries(PARTS)) {
+    if (spec.kind !== 'transistor' || !key.startsWith(KEY_PREFIX) || !Object.hasOwn(TO92_LEGS, key)) continue;
+    out[key] = {
+      print: key.slice(KEY_PREFIX.length).toUpperCase(),
+      type: spec.polarity === 'npn' ? 'NPN' : 'PNP',
+    };
+  }
+  return out;
+}
 
 export interface TransistorModel extends PartModel {
   /** The model's name on the flat side. */

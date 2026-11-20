@@ -1,6 +1,7 @@
 /**
- * The capacitors (docs/volumes/electronics/VISUAL.md §4.7) — the catalog gains them in E1-5; `buildPart` binds these
- * models to its keys by the spec's dielectric. Every body's bottom is 0.3 above the board.
+ * The capacitors (docs/volumes/electronics/VISUAL.md §4.7) of the catalog (E1-5): `buildPart` binds these models to its
+ * keys by the spec's dielectric, with the spec's capacitance and rated voltage. Every body's bottom is 0.3 above the
+ * board.
  * - ceramic: a disc 0.58 across and 0.15 thick of muted ochre, standing face to the reader, its legs 2 P apart; the
  *   code «104» (`capacitorCode`) on its face;
  * - film: a dark cherry box 0.83 × 0.29 × 0.75, legs 2 P, the code on its front;

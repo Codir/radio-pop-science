@@ -37,18 +37,22 @@ function divider(closed: boolean): BoardState {
 }
 
 describe('the fixed parts of the bench', () => {
-  it('are the battery behind its switch on the rails, and the speaker and the lamp on plug leads', () => {
+  it('are the battery behind its switch on the rails, and the speaker, the lamp and the player on plug leads', () => {
     expect(BENCH_FIXED.map((f) => [f.id, f.spec])).toEqual([
       ['BAT', 'battery-9v'],
       ['SW', 'switch'],
       ['SPK', 'speaker-8'],
       ['LAMP', 'lamp-6v'],
+      ['PLAYER', 'player'],
     ]);
-    const [bat, sw, spk, lamp] = BENCH_FIXED;
+    const [bat, sw, spk, lamp, player] = BENCH_FIXED;
     expect(bat!.pins).toEqual([{ private: 'bat+' }, { row: '-' }]);
     expect(sw!.pins).toEqual([{ private: 'bat+' }, { row: '+' }]);
     expect(spk!.pins).toEqual([{ lead: 'spk+' }, { lead: 'spk-' }]);
     expect(lamp!.pins).toEqual([{ lead: 'lamp1' }, { lead: 'lamp2' }]);
+    // the signal (plus) and the common (minus) of the player (VISUAL §4.1), in the catalog's order of its pins
+    expect(player!.pins).toEqual([{ lead: 'pl+' }, { lead: 'pl-' }]);
+    expect(PARTS.player!.pins).toEqual(['plus', 'minus']);
     for (const f of BENCH_FIXED) {
       expect(PARTS[f.spec]?.pins, f.id).toHaveLength(f.pins.length);
       expect(f.id, 'never an id a part from the tray can get').not.toMatch(/^[A-Z]+[1-9]\d*$/);
@@ -129,6 +133,23 @@ describe('a circuit on the board for the model', () => {
     b = netlistOf(layout, s); // both plugs back at the speaker: out of the circuit, nothing in the air
     expect(ids(b)).toEqual(['BAT', 'SW']);
     expect(b.pending).toEqual([]);
+  });
+
+  it('takes the player in on its two plugs, its signal on the plus: at the operating point it gives 0 V behind 32 Ω', () => {
+    const s = createBoardState();
+    seatLead(layout, s, 'pl+', 'c14');
+    expect(netlistOf(layout, s).pending).toEqual(['PLAYER']);
+    seatLead(layout, s, 'pl-', '-14');
+    seatLead(layout, s, 'spk+', 'a14');
+    seatLead(layout, s, 'spk-', '-15');
+    const b = netlistOf(layout, s);
+    expect(partOf(b, 'PLAYER')).toEqual({ id: 'PLAYER', spec: 'player', pins: [node('14ae'), GROUND] });
+    expect(b.pending).toEqual([]);
+    // the melody is silent at its start (sim/core music.ts): the player is its 32 Ω between the rows
+    const dc = solveDC(b.net);
+    expect(dc.ok).toBe(true);
+    expect(Math.abs(dc.parts.PLAYER!.i)).toBeLessThan(1e-12);
+    expect(Math.abs(dc.v[node('14ae')]!)).toBeLessThan(1e-12);
   });
 
   it('gives each part its setting by id: the pot’s knob, the switch', () => {

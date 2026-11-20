@@ -21,15 +21,17 @@ export interface FixedPart {
 }
 
 /**
- * The fixed parts of the bench (VISUAL.md §2): the 9 V battery's minus on the − rail, its plus through the slide switch
- * `SW` (open until a setting closes it) to the + rail; the speaker and the lamp stand off the board, each with two plug
- * leads. None has an id a part from the tray can get. The player joins when the catalog has it (E1-7).
+ * The fixed parts of the bench (VISUAL.md §2, §4.1): the 9 V battery's minus on the − rail, its plus through the slide
+ * switch `SW` (open until a setting closes it) to the + rail; the speaker, the lamp and the player stand off the board,
+ * each with two plug leads — the speaker's `spk+` on its plus, the player's signal `pl+` on its plus and its common `pl-`
+ * on its minus. None has an id a part from the tray can get.
  */
 export const BENCH_FIXED: readonly FixedPart[] = [
   { id: 'BAT', spec: 'battery-9v', pins: [{ private: 'bat+' }, { row: '-' }] },
   { id: 'SW', spec: 'switch', pins: [{ private: 'bat+' }, { row: '+' }] },
   { id: 'SPK', spec: 'speaker-8', pins: [{ lead: 'spk+' }, { lead: 'spk-' }] },
   { id: 'LAMP', spec: 'lamp-6v', pins: [{ lead: 'lamp1' }, { lead: 'lamp2' }] },
+  { id: 'PLAYER', spec: 'player', pins: [{ lead: 'pl+' }, { lead: 'pl-' }] },
 ];
 
 export interface BoardNet {

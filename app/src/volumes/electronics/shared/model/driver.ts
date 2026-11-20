@@ -142,7 +142,7 @@ const OHM_SOURCE = 'OHM-V';
 const OHM_SERIES = 'OHM-R';
 /** A current smaller than this (A) is the rounding of none: no path between the probes. */
 const NO_CURRENT = 1e-15;
-/** The kinds the ohmmeter takes out of the circuit: what gives power (the player joins the catalog in E1-7). */
+/** The kinds the ohmmeter takes out of the circuit: what gives power (the batteries, the references, the player). */
 const SOURCES: ReadonlySet<string> = new Set(['battery', 'source', 'player']);
 
 const clock = (): number => globalThis.performance?.now() ?? 0;

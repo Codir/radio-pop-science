@@ -9,26 +9,23 @@ import { describe, expect, it } from 'vitest';
 import { col } from '@/style';
 import { fontsReady } from '@/text';
 import { BOARD_SPEC, createLayout, footprintOf, legSockets, type Orientation } from '@electronics/sim/board';
-import type { PartSpec } from '@electronics/sim/core';
+import { PARTS, type CapacitorSpec } from '@electronics/sim/core';
 import {
   LEG,
   MM,
   bandColor,
   buildPart,
-  createCeramic,
-  createElectrolytic,
-  createFilm,
   createLed,
   createPot,
   createResistor,
-  createTransistor,
   resistorBands,
+  type ElectrolyticModel,
   type PartModel,
 } from '..';
 
 const P = BOARD_SPEC.pitch;
 
-/** Every key of the catalog (as it is in this clone) that stands in sockets. */
+/** A key of every kind and look of the catalog that stands in sockets (every key: `shared/__tests__/catalog.test.ts`). */
 const CATALOG = [
   'resistor-1',
   'resistor-4k7',
@@ -42,26 +39,21 @@ const CATALOG = [
   'led-white',
   'pot-10k',
   'jumper',
+  'ceramic-100n',
+  'film-100n',
+  'electrolytic-10u-16v',
+  'electrolytic-1000u-16v',
+  'transistor-bc547b',
+  'transistor-2n3904',
 ] as const;
-
-/** The kinds E1-5 and E1-6 add to the catalog: built from VISUAL's tables, bound to their keys by `buildPart`. */
-const UNBOUND: Readonly<Record<string, { make: () => PartModel; pitches: readonly number[] }>> = {
-  ceramic: { make: () => createCeramic(100e-9), pitches: [0, 2] },
-  film: { make: () => createFilm(100e-9), pitches: [0, 2] },
-  'electrolytic 10 μF': { make: () => createElectrolytic(10e-6, 16), pitches: [0, 1] },
-  'electrolytic 1000 μF': { make: () => createElectrolytic(1000e-6, 16), pitches: [0, 1] },
-  'transistor BC547B': { make: () => createTransistor('transistor-bc547b'), pitches: [0, 1, 2] },
-};
 
 /** Every model of the test with the pitch of its legs. */
 function everyModel(): { name: string; model: PartModel; pitches: readonly number[] }[] {
-  const out: { name: string; model: PartModel; pitches: readonly number[] }[] = [];
-  for (const key of CATALOG) {
-    const fp = footprintOf(key)!;
-    out.push({ name: key, model: buildPart(key)!, pitches: fp.offsets.map(([dx]) => dx) });
-  }
-  for (const [name, u] of Object.entries(UNBOUND)) out.push({ name, model: u.make(), pitches: u.pitches });
-  return out;
+  return CATALOG.map((key) => ({
+    name: key,
+    model: buildPart(key)!,
+    pitches: footprintOf(key)!.offsets.map(([dx]) => dx),
+  }));
 }
 
 const isMesh = (o: Object3D): o is Mesh => (o as Mesh).isMesh === true;
@@ -136,7 +128,7 @@ describe('legs at the footprint’s pitch (VISUAL §4, the table of footprints)'
     }
   });
 
-  it('the catalog’s pitch is the footprint’s: resistor and diodes 4 P, LEDs 1 P, the pot’s legs 2 P apart', () => {
+  it('the catalog’s pitch is the footprint’s: 4 P axial, 1 P LEDs, electrolytics and TO-92, 2 P the pot and film', () => {
     const at = (key: string) => buildPart(key)!.nominal.map((t) => Math.round((t.x / P) * 1e6) / 1e6);
     expect(at('resistor-4k7')).toEqual([0, 4]);
     expect(at('diode-1n4148')).toEqual([0, 4]);
@@ -144,6 +136,10 @@ describe('legs at the footprint’s pitch (VISUAL §4, the table of footprints)'
     expect(at('led-green')).toEqual([0, 1]);
     expect(at('pot-10k')).toEqual([0, 2, 4]);
     expect(at('jumper')).toEqual([0, 4]);
+    expect(at('ceramic-1n')).toEqual([0, 2]);
+    expect(at('film-1u')).toEqual([0, 2]);
+    expect(at('electrolytic-470u-16v')).toEqual([0, 1]);
+    expect(at('transistor-bc327-25')).toEqual([0, 1, 2]);
   });
 
   it('stands at every quarter turn and across the channel: the legs end in their sockets, the body between them', () => {
@@ -220,33 +216,16 @@ describe('the catalog binds models to keys', () => {
     }
   });
 
-  it('binds the capacitors and transistors as soon as the catalog has them (E1-5, E1-6)', () => {
-    const fake = (spec: Record<string, unknown>) => spec as unknown as PartSpec;
-    const ceramic = buildPart(
-      'ceramic-100n',
-      fake({ kind: 'capacitor', pins: ['a', 'b'], dielectric: 'ceramic', farads: 100e-9, ratedV: 50 }),
-    );
-    expect(ceramic?.key).toBe('ceramic-100n');
-    expect(ceramic?.nominal.map((t) => t.x)).toEqual([0, 2 * P]);
-    const film = buildPart(
-      'film-1u',
-      fake({ kind: 'capacitor', pins: ['a', 'b'], dielectric: 'film', farads: 1e-6, ratedV: 63 }),
-    );
+  it('binds the capacitors by their spec and the transistors by their key, and nothing it has no model for', () => {
+    for (const [key, spec] of Object.entries(PARTS)) {
+      if (spec.kind !== 'capacitor' && spec.kind !== 'transistor') continue;
+      expect(buildPart(key)?.key, key).toBe(key);
+    }
+    // a spec given in the catalog's place (a test's own): a capacitor of a value the catalog has not
+    const film = buildPart('film-2u2', { ...(PARTS['film-1u'] as CapacitorSpec), farads: 2.2e-6 });
     expect(film?.nominal.map((t) => t.x)).toEqual([0, 2 * P]);
-    const can = buildPart(
-      'electrolytic-470u-16v',
-      fake({
-        kind: 'capacitor',
-        pins: ['plus', 'minus'],
-        dielectric: 'electrolytic',
-        farads: 470e-6,
-        ratedV: 16,
-      }),
-    );
-    expect(can?.nominal.map((t) => t.x)).toEqual([0, P]);
-    const npn = fake({ kind: 'transistor', pins: ['collector', 'base', 'emitter'], polarity: 'npn' });
-    expect(buildPart('transistor-bc547b', npn)?.nominal.map((t) => t.x)).toEqual([0, P, 2 * P]);
-    expect(buildPart('transistor-unknown', npn)).toBeNull();
+    // a transistor the board has no pinout for has no model
+    expect(buildPart('transistor-unknown', PARTS['transistor-bc547b'])).toBeNull();
   });
 });
 
@@ -307,11 +286,11 @@ describe('the marks come from the data', () => {
 
   it('the electrolytic’s stripe runs over the minus leg (1), on the side and over the top rim; its size is its value’s', () => {
     // a real can three times over (VISUAL §4.7): 5 × 11 mm for 10 μF 16 V, 10 × 16 mm for 1000 μF 16 V
-    for (const [farads, d, h] of [
-      [10e-6, 5, 11],
-      [1000e-6, 10, 16],
+    for (const [key, d, h] of [
+      ['electrolytic-10u-16v', 5, 11],
+      ['electrolytic-1000u-16v', 10, 16],
     ] as const) {
-      const can = createElectrolytic(farads, 16);
+      const can = buildPart(key) as ElectrolyticModel;
       const stripe = coloured(can.sleeve, col('mist'));
       expect(stripe.length).toBeGreaterThan(0);
       expect(stripe.every((v) => v.x > 0)).toBe(true);

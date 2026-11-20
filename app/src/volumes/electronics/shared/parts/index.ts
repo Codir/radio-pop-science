@@ -4,10 +4,11 @@
  * transistors in TO-92 that stand in the board's sockets, and the permanent things of the base — the 9 V battery in its
  * box, the player, the speaker and the lamp (the circuit's bulb, made smaller).
  *
- * `buildPart(key)` makes the model of a key of the circuit model's catalog (`sim/core` `PARTS`); a key it has no model
- * for — a thing that does not stand in sockets, or a key the catalog does not have (yet) — gives null. Its table is
- * partial by kind, never an exhaustive switch: the kinds the catalog gains in other tasks (capacitors E1-5, transistors
- * E1-6) are bound here already, by the fields of their specs, and their models are built from VISUAL's tables.
+ * `buildPart(key)` makes the model of a key of the circuit model's catalog (`sim/core` `PARTS`) with the marks read off
+ * the key's spec: a resistor's bands from its ohms and tolerance, a capacitor's code, or its value and voltage, from its
+ * farads and rated volts, a transistor's name and type from its key and polarity (`TRANSISTORS`), a pot's value. A key
+ * it has no model for — a thing that does not stand in sockets, or a key the catalog does not have — gives null. Its
+ * table is partial by kind, never an exhaustive switch.
  */
 import { PARTS, type PartKind, type PartSpec } from '@electronics/sim/core';
 import { TO92_LEGS } from '@electronics/sim/board';
@@ -50,28 +51,18 @@ export * from './bulb';
 export * from './heat-scale';
 export * from './look';
 
-/** The kinds the table knows: the catalog's, and those it gains in other tasks. */
-type Kind = PartKind | 'capacitor' | 'transistor';
 type Maker = (key: string, spec: PartSpec) => PartModel | null;
 
-/** A finite number field of a spec, read by name (a kind the catalog's types do not list yet). */
-function numberField(spec: PartSpec, name: string): number | undefined {
-  const v = (spec as unknown as Record<string, unknown>)[name];
-  return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
-}
-
+/** A capacitor by its dielectric, with its own capacitance and rated voltage (an electrolytic's can and print). */
 function capacitor(key: string, spec: PartSpec): PartModel | null {
-  const dielectric = (spec as unknown as Record<string, unknown>).dielectric;
-  const farads = numberField(spec, 'farads');
-  if (farads === undefined || farads <= 0) return null;
-  if (dielectric === 'ceramic') return createCeramic(farads, key);
-  if (dielectric === 'film') return createFilm(farads, key);
-  const volts = numberField(spec, 'ratedV');
-  return dielectric === 'electrolytic' && volts !== undefined ? createElectrolytic(farads, volts, key) : null;
+  if (spec.kind !== 'capacitor' || !(spec.farads > 0)) return null;
+  if (spec.dielectric === 'ceramic') return createCeramic(spec.farads, key);
+  if (spec.dielectric === 'film') return createFilm(spec.farads, key);
+  return spec.ratedV > 0 ? createElectrolytic(spec.farads, spec.ratedV, key) : null;
 }
 
 /** A battery, a switch, a source, a speaker, a lamp or the player stand off the board (or never on the bench). */
-const MAKERS: Partial<Record<Kind, Maker>> = {
+const MAKERS: Partial<Record<PartKind, Maker>> = {
   resistor: (key, spec) => (spec.kind === 'resistor' ? createResistor(spec.ohms, spec.tolerance, key) : null),
   diode: (key) => (Object.hasOwn(DIODES, key) ? createDiode(DIODES[key]!, key) : null),
   led: (key, spec) => (spec.kind === 'led' ? createLed(spec.color, key) : null),
@@ -89,5 +80,5 @@ const MAKERS: Partial<Record<Kind, Maker>> = {
 export function buildPart(key: string, spec?: PartSpec): PartModel | null {
   const s = spec ?? (Object.hasOwn(PARTS, key) ? PARTS[key] : undefined);
   if (s === undefined) return null;
-  return MAKERS[s.kind as Kind]?.(key, s) ?? null;
+  return MAKERS[s.kind]?.(key, s) ?? null;
 }

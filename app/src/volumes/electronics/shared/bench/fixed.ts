@@ -11,7 +11,7 @@
  *   on the board (`mounds.ts`); its wire is rebuilt when its ends move or that ground changes.
  *
  * The plugs' names are the board's state's (`spk+`, `spk-`, `pl+`, `pl-`, `lamp1`, `lamp2`); the netlist reads the
- * speaker's and the lamp's from `BENCH_FIXED`, the player's when the catalog has it (E1-7).
+ * speaker's, the lamp's and the player's from `BENCH_FIXED`, the coral plug on the catalog's plus.
  *
  * Frame: the board's own (the breadboard's group); the things stand on the base, 0.3 below the board's face.
  */

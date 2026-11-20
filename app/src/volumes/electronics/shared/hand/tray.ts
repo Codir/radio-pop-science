@@ -65,10 +65,10 @@ export function trayLabel(spec: string): string {
   const s = Object.hasOwn(PARTS, spec) ? PARTS[spec]! : undefined;
   if (s === undefined) return '';
   if (s.kind === 'resistor' || s.kind === 'pot') return fmtSI(s.ohms, 'Ω');
+  if (s.kind === 'capacitor') return fmtSI(s.farads, 'F');
   if (Object.hasOwn(DIODES, spec)) return DIODES[spec]!;
   if (Object.hasOwn(TRANSISTORS, spec)) return TRANSISTORS[spec]!.print;
-  const farads = (s as unknown as Record<string, unknown>).farads;
-  return typeof farads === 'number' && Number.isFinite(farads) ? fmtSI(farads, 'F') : '';
+  return '';
 }
 
 export interface TraySlot {

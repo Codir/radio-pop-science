@@ -168,7 +168,7 @@ describe('the parts on the board follow its state', () => {
     ).toThrow(RangeError);
   });
 
-  it('shows a model the state does not hold (a kind the catalog has not yet), outside the circuit', () => {
+  it('shows a model the state does not hold (a look alone), outside the circuit', () => {
     const { ctx, read } = stubContext();
     const bench = mountBench(ctx);
     bench.parts.show('C1', createCeramic(100e-9), ['d7', 'd9']);
