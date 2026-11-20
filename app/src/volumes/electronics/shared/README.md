@@ -42,13 +42,15 @@ What a chapter writes (plain numbers, read every frame by `bench.update`):
 
 What the bench has (read-only): `room`, `base` (`base.frame` is the tilted base frame: whatever stands on the base
 goes there, then `tameAll(bench.group)`), `light` (the rig owns `ctx.env.tune`; never tune the environment from a
-chapter), `layout` (the board as data, `sim/board`), `board` (the 3D breadboard: `socketWorld(id)`, `socketLocal(id)`,
-the instanced `mouths`, the `print`), `props` (the permanent things — for now stand-ins of their size and colour:
-the battery box with the switch, the player, the speaker, the lamp's post, glass and `filament`, the tray, the
-multimeter and the oscilloscope) and `tools` (the magnifier and its `holder` pose).
+chapter; the lamp light hangs at the `filament`, and `mountBench` puts the shadowless `bounce` above the lamp's pool
+every frame), `layout` (the board as data, `sim/board`), `board` (the 3D breadboard: `socketWorld(id)`,
+`socketLocal(id)`, the instanced `mouths`, the `print`), `props` (the permanent things — for now stand-ins of their
+size and colour: the battery box with the switch, the player, the speaker, the lamp's post, glass and `filament`, the
+tray, the multimeter and the oscilloscope) and `tools` (the magnifier and its `holder` pose).
 
 The board's print (the letters of the lines, the column numbers) is drawn only where all of it has ≥ 16 px-equivalent
-per em (`chapter-check`'s rule): on `board`, not on `stand`, never on a phone. The rails' «+» and «−» are geometry.
+per em (`chapter-check`'s rule): on `board`, not on `stand`, never on a phone. The rails' «+» and «−» are not print
+but marks of the body, like the stripes (VISUAL §3): flat geometry 0.1 wide in the rail's colour, always shown.
 
 For checks: `__app.read('electronics-bench')` → `{ sockets, rows, drawCalls, print, phone }` (the mouths drawn, 36
 rows, the last frame's draw calls, the print's texts shown, a phone's page); probes `socket:<id>` for all 204 sockets
@@ -78,7 +80,7 @@ from «заплановано» to «зроблено» in the same commit and c
 | `circuit/shared/stage/air.ts` | `electronics/shared/bench/air.ts` | без променя ліхтарика; коли лампа темна, порошинок не малює зовсім | E2-3 | зроблено |
 | `circuit/shared/stage/tools/lens.ts` | `electronics/shared/bench/tools/lens.ts` | нічого (`LENS` — з нового `layout`) | E2-3 | зроблено |
 | `circuit/shared/stage/tools/index.ts` | `electronics/shared/bench/tools/index.ts` | лишено перетворення «основа ↔ світ», тримач лупи й позу лупи над точкою основи (`overPose`); вимірювач, рамку, равлика, повзання й лупу-збільшувач прибрано | E2-3 | зроблено |
-| `circuit/shared/stage/index.ts` | `electronics/shared/bench/index.ts` | `mountBench` замість `mountStage`: без ліхтарика, розкладання, равлика, розрізу батарейки й лампи зблизька; постійні речі — поки заготовки (`props.ts`) | E2-3 | зроблено |
+| `circuit/shared/stage/index.ts` | `electronics/shared/bench/index.ts` | `mountBench` замість `mountStage`: без ліхтарика, розкладання, равлика, розрізу батарейки й лампи зблизька; постійні речі — поки заготовки (`props.ts`); відбите світло лампи (`light.bounce`) щокадру висить над її плямою зі зсувом `circuit` для лампи без променя, дзеркальним по x (`BOUNCE_OFFSET`: лампа стенда — у дальньому лівому куті) | E2-3 | зроблено |
 | `circuit/shared/stage/mounts.ts` (частини) | `electronics/shared/bench/mounts.ts` | лише гвинтовий затискач, стійка лампи (менша, під скло 0,38) і тримач лупи | E2-3 | зроблено |
 | `circuit/shared/stage/small-parts.ts` (`createSlider`) | `electronics/shared/bench/switch-slider.ts` | щілина й хід повзунка з нового `layout`: вимикач на кришці боксу батареї; пружини немає | E2-3 | зроблено |
 | `radio/shared/world/index.ts` (`fnv1a`, `meanOf`) | `electronics/shared/model/hash.ts` | `meanOf` бере `ArrayLike<number>` | E2-3 | зроблено |

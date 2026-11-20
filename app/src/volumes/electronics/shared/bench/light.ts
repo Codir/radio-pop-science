@@ -57,7 +57,7 @@ export interface LightState {
 
 export interface LightRig {
   lamp: PointLight;
-  /** The shadowless bounce light; the stage places it above the lamp's pool every frame. */
+  /** The shadowless bounce light; `mountBench` places it above the lamp's pool every frame (`BOUNCE_OFFSET`). */
   bounce: PointLight;
   /** Light output 0…1 for the current glow (what the pool, the motes and the glare follow). */
   readonly output: number;

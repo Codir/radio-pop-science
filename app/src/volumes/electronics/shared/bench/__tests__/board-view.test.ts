@@ -135,6 +135,41 @@ describe('the body (VISUAL §3)', () => {
     expect(floorWidth).toBeLessThan(half + 0.02);
   });
 
+  it('marks each rail «+» / «−» at both ends: flat signs of the body, 0.1 wide, on the rail’s line', () => {
+    const { layout, view } = mounted();
+    const pos = plastic(view).geometry.getAttribute('position');
+    const { x: ends, size } = BOARD_LOOK.signs;
+    expect(BOARD_LOOK.signs).toEqual({ x: [-2.62, 2.55], size: 0.1 });
+    const rail = layout.socket('+1')!.z; // the far rail `+`; the near rail `−` is at −rail
+    expect(rail).toBe(-1.95);
+    for (const [z, plus] of [
+      [rail, true],
+      [-rail, false],
+    ] as const)
+      for (const x of ends) {
+        // what stands up from the face (the stripes and the signs, 0.004 high) near this end of this rail; the
+        // stripes themselves run further out, past |z| 2.03
+        const box = new Box3();
+        for (let i = 0; i < pos.count; i++) {
+          const [px, py, pz] = [pos.getX(i), pos.getY(i), pos.getZ(i)];
+          const here = Math.sign(px) === Math.sign(x) && Math.sign(pz) === Math.sign(z);
+          if (here && py > 0.002 && Math.abs(pz) < 2.03) box.expandByPoint(new Vector3(px, py, pz));
+        }
+        const where = `${plus ? '+' : '-'} at x ${x}`;
+        expect(box.isEmpty(), where).toBe(false);
+        expect(box.max.x - box.min.x, where).toBeCloseTo(size, 6);
+        // «+» has the upright bar, «−» only the dash, a fifth of the sign's width
+        expect(box.max.z - box.min.z, where).toBeCloseTo(plus ? size : size * 0.2, 6);
+        expect((box.min.x + box.max.x) / 2, where).toBeCloseTo(x, 6);
+        expect((box.min.z + box.max.z) / 2, where).toBeCloseTo(z, 6);
+      }
+    // the left pair in line with the letters, the right pair between column 17's mouth and the post's base ring
+    expect(ends[0]).toBe(-BOARD_LOOK.print.lettersX);
+    const lastMouth = layout.socket('+17')!.x + BOARD_LOOK.mouth.side / 2 + BOARD_LOOK.mouth.rim;
+    expect(ends[1] - size / 2).toBeGreaterThan(lastMouth);
+    expect(ends[1] + size / 2).toBeLessThan(BOARD_LOOK.post.x - BOARD_LOOK.post.radius * 1.6);
+  });
+
   it('carries the two power posts on the right end of the rails, beyond column 17', () => {
     const { layout, view } = mounted();
     const steel = view.group.getObjectByName('breadboard:metal') as Mesh;

@@ -37,8 +37,9 @@ export const BOARD_LOOK = {
   /** The print: letters of the lines at x = ∓`lettersX`, the column numbers at z = ∓`numbersZ`, 1 em high. */
   print: { lettersX: 2.62, numbersZ: 1.72, size: 0.16, columns: [1, 5, 10, 15] },
   /**
-   * The rails' «+» and «−» (geometry in the rail's colour, a glyph's size): at the left end in line with the letters,
-   * at the right end between column 17 and the power post.
+   * The rails' «+» and «−» (VISUAL §3, the rails' signs): not print but marks of the body, like the stripes — flat
+   * geometry in the rail's colour, about the size of the display font's «+» at the print's 0.16, always shown. At the
+   * left end in line with the letters, at the right end between column 17 and the power post.
    */
   signs: { x: [-2.62, 2.55], size: 0.1 },
 } as const;

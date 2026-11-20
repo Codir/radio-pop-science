@@ -92,6 +92,13 @@ export function tameAll(root: Group): void {
 /** Subject scale of the environment: the circuit's 3.6 grown with the base (8.4 against 6.6). */
 const ENV_SCALE = 4.6;
 
+/**
+ * Where the lamp's bounce light hangs, from the filament (world units): above the middle of the lamp's pool, toward
+ * the middle of the board and a little higher than the glass. The circuit's offset for its lamp shining all around,
+ * (−1.1; 0.5; 0.9), mirrored in x: the bench's lamp stands in the far LEFT corner, the circuit's in the far right.
+ */
+const BOUNCE_OFFSET = [1.1, 0.5, 0.9] as const;
+
 export function mountBench(ctx: ChapterContext): Bench {
   const group = new Group();
   group.name = 'electronics-bench';
@@ -130,6 +137,7 @@ export function mountBench(ctx: ChapterContext): Bench {
   let time = 0;
   const unit = (v: number): number => Math.min(Math.max(v, 0), 1);
   const lampWorld = new Vector3();
+  const bounceOffset = new Vector3(...BOUNCE_OFFSET);
   const apply = (): void => {
     light.set({ glow, moon: bench.moon, ambient: bench.ambient });
     const room = Math.min(1, 0.25 + 0.75 * Math.max(bench.moon, glow ** 2));
@@ -138,6 +146,8 @@ export function mountBench(ctx: ChapterContext): Bench {
     props.setSwitch(slider);
     props.place(bench.meter, bench.scope);
     props.filament.getWorldPosition(lampWorld);
+    // the bounce light (shadowless, in `ctx.root`): above the middle of the lamp's pool, every frame
+    light.bounce.position.copy(lampWorld).add(bounceOffset);
     air.set(lampWorld, light.lamp.color, light.output ** 1.5);
     tools.set({ use: bench.lens, target: bench.lensTarget, dive: bench.dive, call: bench.lensCall }, time);
     board.update(ctx.camera.camera, room);
