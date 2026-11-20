@@ -143,6 +143,7 @@ export function diodeBehaviour(spec: DiodeSpec | LedSpec): Behaviour {
     branches: 0,
     inner,
     memory: 1,
+    history: 0,
     nonlinear: true,
     source: false,
     setting: () => 0,

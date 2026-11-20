@@ -64,6 +64,32 @@ describe('the catalog of parts', () => {
     expect(PARTS['battery-aa']).toMatchObject({ volts: 1.5, ohms: 0.15, cells: 1 });
     expect(PARTS['ideal-9v']).toEqual({ kind: 'source', pins: ['plus', 'minus'], volts: 9, limits: {} });
     expect(PARTS['ideal-5v']).toEqual({ kind: 'source', pins: ['plus', 'minus'], volts: 5, limits: {} });
+    // a sine of 6 V amplitude, 50 Hz unless its setting says another frequency: the reference of the oracle in time
+    expect(PARTS['ideal-ac-6v']).toEqual({
+      kind: 'sine',
+      pins: ['plus', 'minus'],
+      amplitude: 6,
+      hz: 50,
+      limits: {},
+    });
+    // the player's level and internal resistance (the plan: 0.3 V amplitude behind 32 Ω) as a test tone of 1 kHz: the
+    // source of the amplifier's tests and of their oracle
+    expect(PARTS['player-tone']).toEqual({
+      kind: 'sine',
+      pins: ['plus', 'minus'],
+      amplitude: 0.3,
+      hz: 1000,
+      ohms: 32,
+      limits: {},
+    });
+    // the player itself (E1-7): the volume's melody at the same 0.3 V behind the same 32 Ω; its setting is the amplitude
+    expect(PARTS.player).toEqual({
+      kind: 'player',
+      pins: ['plus', 'minus'],
+      amplitude: 0.3,
+      ohms: 32,
+      limits: {},
+    });
   });
 
   it('the diodes: the parameters of their published SPICE models', () => {
@@ -150,15 +176,19 @@ describe('the catalog of parts', () => {
     }
     expect([...kinds].sort()).toEqual([
       'battery',
+      'capacitor',
       'diode',
       'jumper',
       'lamp',
       'led',
+      'player',
       'pot',
       'resistor',
+      'sine',
       'source',
       'speaker',
       'switch',
+      'transistor',
     ]);
     expect(Object.isFrozen(PARTS)).toBe(true);
   });

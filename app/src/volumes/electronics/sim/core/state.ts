@@ -1,9 +1,10 @@
 /**
  * What the model remembers between solves. One object per stand — two copies of a chapter side by side at a chapter
  * boundary hold two — and never a variable of a module. It lives longer than a netlist: the board changes, the state
- * stays, so what it keeps is by node number and by part id. E1-4 keeps here how warm every part is, whether it burnt,
- * and the temperature of a lamp's filament; the transient (E1-5) adds the charge of the capacitors.
+ * stays, so what it keeps is by node number and by part id: how warm every part is, whether it burnt or bulged, the
+ * temperature of a lamp's filament and the charge of a capacitor.
  */
+import type { PartKind } from './parts';
 
 /** What the model remembers of one part, by its id. */
 export interface PartMemory {
@@ -12,8 +13,13 @@ export interface PartMemory {
   heat: number;
   /** The part burnt: from now on it is a gap in the circuit, until the stand forgets it (a new part). */
   burnt: boolean;
+  /** An electrolytic capacitor bulged: from now on it has no capacitance, only a large leak (`capacitor.ts`), until
+   * the stand forgets it. */
+  bulged?: boolean;
   /** A lamp: the temperature of its filament (K). */
   kelvin?: number;
+  /** A capacitor: the voltage across its capacitance (V) — its charge over its capacitance. */
+  volts?: number;
 }
 
 export interface ModelState {
@@ -37,4 +43,17 @@ export function memoryOf(state: ModelState, id: string): PartMemory {
     state.parts.set(id, memory);
   }
   return memory;
+}
+
+/** The level of a part with a state in time as its memory keeps it — a capacitor's voltage, a lamp's temperature —
+ * or `otherwise` when it keeps none (a part the state has not seen in time: empty, cold). */
+export function levelOf(memory: PartMemory, kind: PartKind, otherwise: number): number {
+  const level = kind === 'capacitor' ? memory.volts : kind === 'lamp' ? memory.kelvin : undefined;
+  return level ?? otherwise;
+}
+
+/** Keeps the level of a part with a state in time in its memory. */
+export function keepLevel(memory: PartMemory, kind: PartKind, level: number): void {
+  if (kind === 'capacitor') memory.volts = level;
+  else if (kind === 'lamp') memory.kelvin = level;
 }

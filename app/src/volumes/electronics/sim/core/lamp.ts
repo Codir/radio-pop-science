@@ -6,11 +6,18 @@
  *
  * At the operating point the filament is steady: the power V²/R(T) it takes is what it radiates. For a voltage this
  * gives one temperature (found by Newton's method, held by bisection), and so the lamp's current and its slope —
- * the steady lamp is a nonlinear resistor that Newton's iterations of the circuit linearize like a diode. In time
- * (E1-5) the filament warms with its thermal time constant instead. Numbers and sources: README.md, «The lamp».
+ * the steady lamp is a nonlinear resistor that Newton's iterations of the circuit linearize like a diode.
+ *
+ * In time the filament has a heat capacity Cth = τ·4·K·T_hot³ (τ the lamp's `tauS`, so that a small change about the
+ * hot filament settles with τ): Cth·dT/dt = V²/R(T) − K·(T⁴ − T0⁴). Over a step h, by backward Euler or the trapezoid
+ * like the capacitors, the temperature at the end of the step solves
+ *   (a·T − base + K·(T⁴ − T0⁴))·R(T) = V²,   a = Cth/h (Euler) or 2·Cth/h (trapezoid),
+ *   base = a·T_last (Euler) or a·T_last + Q_last (trapezoid; Q the heat the filament gained, V²/R − K·(T⁴ − T0⁴)),
+ * and the steady filament is the same equation with a = base = 0. So a cold filament switched on draws the current
+ * of its cold resistance and warms within milliseconds. Numbers and sources: README.md, «The lamp».
  */
 import { ROOM_KELVIN } from './diode';
-import type { Behaviour, LampSpec, Link } from './parts';
+import type { Behaviour, LampSpec, Link, Operating, Placement } from './parts';
 
 /** R ∝ T^1.21: the resistivity of tungsten from 300 to 3000 K (README.md, «The lamp»). */
 export const TUNGSTEN_EXPONENT = 1.21;
@@ -33,37 +40,48 @@ interface FilamentModel {
   readonly k: number;
   /** The temperature at the rated voltage (K). */
   readonly hot: number;
+  /** The heat capacity of the filament (J/K): τ·4·K·T_hot³. */
+  readonly capacity: number;
 }
 
 function filamentModel(spec: LampSpec): FilamentModel {
   const hot = ROOM_KELVIN * (spec.volts / spec.amps / spec.coldOhms) ** (1 / TUNGSTEN_EXPONENT);
-  return { cold: spec.coldOhms, k: (spec.volts * spec.amps) / (hot ** 4 - ROOM_KELVIN ** 4), hot };
+  const k = (spec.volts * spec.amps) / (hot ** 4 - ROOM_KELVIN ** 4);
+  return { cold: spec.coldOhms, k, hot, capacity: spec.tauS * 4 * k * hot ** 3 };
 }
 
 const ohmsAt = (m: FilamentModel, kelvin: number): number =>
   m.cold * (kelvin / ROOM_KELVIN) ** TUNGSTEN_EXPONENT;
 
-/** The steady temperature at the voltage `volts`, from the temperature `guess`: K·(T⁴ − T0⁴)·R(T) = V². */
-function steadyKelvin(m: FilamentModel, volts: number, guess: number): number {
-  const square = volts * volts;
-  if (square === 0) return ROOM_KELVIN;
-  const t0 = ROOM_KELVIN ** 4;
-  const excess = (t: number): number => m.k * (t ** 4 - t0) * ohmsAt(m, t) - square;
-  // a bracket: the room is too cold for any voltage; double the hot temperature until it is too hot
+const ROOM4 = ROOM_KELVIN ** 4;
+
+/** (a·T − base + K·(T⁴ − T0⁴))·R(T) − V²: below zero the filament at T is too cold for the balance. */
+const excessAt = (m: FilamentModel, t: number, a: number, base: number, square: number): number =>
+  (a * t - base + m.k * (t ** 4 - ROOM4)) * ohmsAt(m, t) - square;
+
+/** The derivative of `excessAt` in T. */
+const slopeAt = (m: FilamentModel, t: number, a: number, base: number, r: number): number =>
+  (a + 4 * m.k * t ** 3) * r + ((a * t - base + m.k * (t ** 4 - ROOM4)) * TUNGSTEN_EXPONENT * r) / t;
+
+/** The temperature that balances the filament's heat at V² = `square`, from the temperature `guess`: the steady
+ * filament for a = base = 0, the end of a step otherwise. Never below the room: a filament that would cool past it
+ * (only a trapezoid step far longer than the filament's time constant could ask that) stays at the room. */
+function balanceKelvin(m: FilamentModel, square: number, a: number, base: number, guess: number): number {
+  if (excessAt(m, ROOM_KELVIN, a, base, square) >= 0) return ROOM_KELVIN;
+  // a bracket: the room is too cold; double the hot temperature until it is too hot
   let low = ROOM_KELVIN;
   let high = m.hot;
-  while (excess(high) < 0) {
+  while (excessAt(m, high, a, base, square) < 0) {
     low = high;
     high *= 2;
   }
   let t = guess > low && guess < high ? guess : (low + high) / 2;
   for (let k = 0; k < 100; k++) {
     const r = ohmsAt(m, t);
-    const f = m.k * (t ** 4 - t0) * r - square;
+    const f = (a * t - base + m.k * (t ** 4 - ROOM4)) * r - square;
     if (f < 0) low = t;
     else high = t;
-    const slope = 4 * m.k * t ** 3 * r + (m.k * (t ** 4 - t0) * TUNGSTEN_EXPONENT * r) / t;
-    let next = t - f / slope;
+    let next = t - f / slopeAt(m, t, a, base, r);
     if (!(next > low && next < high)) next = (low + high) / 2;
     const done = Math.abs(next - t) <= 1e-14 * t;
     t = next;
@@ -72,59 +90,94 @@ function steadyKelvin(m: FilamentModel, volts: number, guess: number): number {
   return t;
 }
 
-/** The steady filament at `volts` and the slope of its current (S) into `out`. */
-function steady(m: FilamentModel, volts: number, guess: number, out: Filament & { g: number }): void {
-  const kelvin = steadyKelvin(m, Math.abs(volts), guess);
+/** The filament at `volts` and the slope of its current (S) into `out`: steady for a = base = 0, at the end of a
+ * step otherwise. */
+function balance(
+  m: FilamentModel,
+  volts: number,
+  a: number,
+  base: number,
+  guess: number,
+  out: Filament & { g: number },
+): void {
+  const kelvin = balanceKelvin(m, volts * volts, a, base, guess);
   const ohms = ohmsAt(m, kelvin);
-  // dI/dV = 1/R − V·R′(T)·(dT/dV)/R², where dT/dV = 2V / (d/dT of K·(T⁴ − T0⁴)·R(T))
+  // dI/dV = 1/R − V·R′(T)·(dT/dV)/R², where dT/dV = 2V / (d/dT of the balance's left side)
   const dr = (TUNGSTEN_EXPONENT * ohms) / kelvin;
-  const slope = 4 * m.k * kelvin ** 3 * ohms + m.k * (kelvin ** 4 - ROOM_KELVIN ** 4) * dr;
   out.kelvin = kelvin;
   out.ohms = ohms;
   out.amps = volts / ohms;
   out.watts = (volts * volts) / ohms;
-  out.g = 1 / ohms - (volts * dr * ((2 * volts) / slope)) / (ohms * ohms);
+  out.g = 1 / ohms - (volts * dr * ((2 * volts) / slopeAt(m, kelvin, a, base, ohms))) / (ohms * ohms);
 }
 
 /** The steady filament of the lamp `spec` at the voltage `volts` across it: what a stand needs for its glow. */
 export function filament(spec: LampSpec, volts: number): Filament {
   const out = { kelvin: 0, ohms: 0, amps: 0, watts: 0, g: 0 };
   const m = filamentModel(spec);
-  steady(m, volts, m.hot, out);
+  balance(m, volts, 0, 0, m.hot, out);
   return { kelvin: out.kelvin, ohms: out.ohms, amps: out.amps, watts: out.watts };
+}
+
+/** The heat capacity of the lamp's filament (J/K): τ·4·K·T_hot³. */
+export function filamentCapacity(spec: LampSpec): number {
+  return filamentModel(spec).capacity;
 }
 
 const ONE_LINK: readonly Link[] = [[0, 1]];
 
-/** The lamp in the matrix: the steady filament linearized around the guess; its memory is the last temperature. */
+/**
+ * The lamp in the matrix: the filament linearized around the guess — steady at the operating point, at the end of the
+ * step in time. Its memory is the last temperature it found (the guess of the next); its history is the temperature
+ * at the last moment and the heat it was gaining then (W).
+ */
 export function lampBehaviour(spec: LampSpec): Behaviour {
   const m = filamentModel(spec);
   const out = { kelvin: 0, ohms: 0, amps: 0, watts: 0, g: 0 };
+  /** The filament at `volts` for the moment of `op`. */
+  const at = (place: Placement, volts: number, op: Operating): void => {
+    const a = op.dt > 0 ? ((op.trapezoid ? 2 : 1) * m.capacity) / op.dt : 0;
+    const base = op.dt > 0 ? a * place.history[0]! + (op.trapezoid ? place.history[1]! : 0) : 0;
+    balance(m, volts, a, base, place.memory[0]!, out);
+  };
+  const across = (place: Placement, v: Float64Array): number => v[place.nodes[0]!]! - v[place.nodes[1]!]!;
   return {
     branches: 0,
     inner: 0,
     memory: 1,
+    history: 2,
     nonlinear: true,
     source: false,
     setting: () => 0,
     links: () => ONE_LINK,
     wire: () => false,
-    start: (at) => {
-      at.memory[0] = m.hot;
+    start: (place) => {
+      place.memory[0] = m.hot;
     },
-    stamp: (_, at, s, op) => {
-      const a = at.nodes[0]!;
-      const b = at.nodes[1]!;
+    stamp: (_, place, s, op) => {
+      const a = place.nodes[0]!;
+      const b = place.nodes[1]!;
       const u = op.v[a]! - op.v[b]!;
-      steady(m, u, at.memory[0]!, out);
-      at.memory[0] = out.kelvin;
+      at(place, u, op);
+      place.memory[0] = out.kelvin;
       s.conductance(a, b, out.g);
       s.current(a, b, out.amps - out.g * u);
     },
-    currents: (_, at, v, __, pins) => {
-      steady(m, v[at.nodes[0]!]! - v[at.nodes[1]!]!, at.memory[0]!, out);
+    currents: (_, place, v, __, pins, op) => {
+      at(place, across(place, v), op);
       pins[0] = out.amps;
       pins[1] = -pins[0];
+    },
+    settle: (_, place, v, op) => {
+      at(place, across(place, v), op);
+      place.history[0] = out.kelvin;
+      place.history[1] = 0;
+    },
+    accept: (_, place, v, op) => {
+      at(place, across(place, v), op);
+      place.memory[0] = out.kelvin;
+      place.history[0] = out.kelvin;
+      place.history[1] = out.watts - m.k * (out.kelvin ** 4 - ROOM4);
     },
   };
 }
