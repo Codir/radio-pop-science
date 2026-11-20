@@ -60,6 +60,8 @@ jobs:
           python3 tools/content/doccheck.py --all
           python3 docs/volumes/radio/test_check.py
           python3 docs/volumes/radio/check.py
+          python3 docs/volumes/electronics/test_check.py
+          python3 docs/volumes/electronics/check.py
 
       - name: Pages settings
         id: pages
