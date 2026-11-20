@@ -22,7 +22,34 @@ wrong way round; the player's test tone (a sine behind an internal resistance) d
 melody (`music.ts`) and the player that plays it (`player`), the model playing it in blocks at the audio rate, and the
 measure of its speed (`__tests__/speed.bench.ts`) — with what made it fast enough: Newton's iterations of a moment start
 where the last two moments point and stop by a rule of their own, a linear circuit keeps the factors of its matrix, and
-the factorization skips the zeros (The melody and the player; Speed).
+the factorization skips the zeros (The melody and the player; Speed). The volume's own sound output and the background
+thread that plays the model in blocks are not here but in `shared/sound` (E1-9, its README); the numbers of the whole
+batch: `docs/volumes/electronics/reports/batch-E1.md`.
+
+## For the stand: where each thing is
+
+What a builder of the bench (batch E2) takes from this model, and the section that says it:
+
+- **The board is a `Netlist`:** a row of sockets is a node (0 the ground; a node no pin uses costs nothing), a part is a
+  catalog key with its pins in the catalog's order (Units and conventions; Catalog). A knob or a switch is the part's
+  `setting`, which a compiled circuit and a transient read live; a part put in, taken out or moved is a new netlist —
+  `compile` it again, or `Transient.rebuild` in time (The netlist and the operating point; The transient).
+- **At rest:** `solveDC(circuit, { state })` after every change, and `advanceHeat(state, net, dc, seconds)` once a frame
+  with the frame's time: the heat gathers and the parts that failed now come back; solve again then (Limits).
+- **In time:** `Transient` at 24 000 samples a second, the volume's rate, in blocks with `run(n, probes)` into the
+  stand's own arrays (The transient; The melody and the player; Speed); a response near 10 kHz on show takes
+  `substeps: 8` (What the trapezoid answers).
+- **What to show:** the meters read `v` and `parts[id]` (`u`, `i`, `p`: a meter shows the magnitude, the sign is the
+  direction). Glow, heat and damage come from the part's memory (`heat`, `burnt`, `bulged`), not from the moment's
+  `status`, which may read `'hot'` for moments while a part is within its ratings (Limits; Within the parts' ratings). A
+  capacitor is `'warm'` by its voltage, which does not heat a real one: `docs/volumes/electronics/PATH-ledger.md`,
+  «Чесна фізика», asks the stand not to draw it as warmth. Light: `ledLumens`; the lamp: `kelvin` (`filament`).
+- **The shape of the board:** `issues` (Topology); the numbers are valid all the same. `ok: false` comes with a
+  `reason`, never an exception or `NaN`: the stand keeps its last good view.
+- **A part in place of a burnt one:** delete the old entry, `state.parts.delete(id)`, then `compile` or `rebuild`.
+- **One state per stand**, never a variable of a module (The netlist and the operating point).
+- **Times are compressed:** a part burns or bulges in seconds where a real one takes minutes or hours (The lamp;
+  Capacitors; Limits) — the bench's seconds, never quoted as real.
 
 ## Units and conventions
 
@@ -192,6 +219,7 @@ burnt across a battery leaves the battery `open`.
 | `electrolytic-1u-16v` … `electrolytic-1000u-16v` (1, 10, 100, 470, 1000 μF), `electrolytic-100u-6v3` | `capacitor` | plus, minus | ESR from tan δ, leak from the leakage current: the table below | the rated voltage; 1 V the wrong way round | Nichicon VR and Vishay 048 RML, below |
 | `transistor-bc547b`, `transistor-bc557b` | `transistor` (`polarity` npn, pnp) | collector, base, emitter | IS 23.9 fA, BF 294.3, BR 7.946, VAF 63.2 V; IS 38.34 fA, BF 344.4, BR 14.84, VAF 21.11 V | 100 mA, 0.5 W | Philips' SPICE library and datasheets: Transistors, below |
 | `transistor-2n3904`, `transistor-2n3906` | `transistor` (npn, pnp) | collector, base, emitter | IS 6.734 fA, BF 416.4, BR 0.7371, VAF 74.03 V; IS 1.41 fA, BF 180.7, BR 4.977, VAF 18.7 V | 200 mA, 0.625 W | Fairchild's datasheets and their SPICE models: Transistors, below |
+| `transistor-bc337-25`, `transistor-bc327-25` | `transistor` (npn, pnp) | collector, base, emitter | IS 41.3 fA, BF 292.4, BR 23.68, VAF 145.7 V; IS 108 fA, BF 385.7, BR 20.57, VAF 31.29 V | 500 mA, 0.625 W | Philips' SPICE library and LTspice's `standard.bjt`, the datasheets of Philips, onsemi and Multicomp: Transistors, below; the output pair of the amplifier |
 
 `resistorKey(ohms)` gives the key of a value (`resistorKey(4700)` is `'resistor-4k7'`; a value the catalog has not
 is a `RangeError`). The codes: `4R7` 4.7 Ω, `47` 47 Ω, `470` 470 Ω, `4k7` 4.7 kΩ, `47k`, `470k`, `4M7` 4.7 MΩ, `10M`.
@@ -761,12 +789,13 @@ nodes and parts (ids as on a schematic):
 | `LS1` | `speaker-8` | plus `speaker` (13), minus ground | turns its current into sound | `prologue` |
 
 **What ngspice says of it** (the samples `amplifier-*.json`; the model agrees within 3.6e-10 at rest and within 8.3e-5
-playing — the amplitudes of every probed node, the waveform within 1.1e-4 of its swing — at one step of integration a
-sample of 1/48000 s). At rest the supply after the protection diode is 8.337 V, the output 3.771 V, the base of the
-driver 0.686 V; the driver takes 8.36 mA, the output pair 1.94 mA (the two diodes hold 1.24 V), the LED 2.99 mA: the
-battery gives 13.31 mA, which an alkaline 9 V battery feeds **in silence** for about 44 hours (Energizer 522, form
-522GL1019: about 600 mAh at 10 mA and 565 mAh at 25 mA to 4.8 V, read off its chart). Playing, it takes more: the
-push-pull pair draws from the battery only what the speaker needs, so the battery's current grows with the volume.
+playing — the amplitudes of the tone on the volume control, the output and the speaker, their waveform within 1.1e-4
+of its swing; the supply's small ripple within 3.7e-4 of its amplitude and 1.1e-3 of its swing, 0.2 mV — at one step
+of integration a sample of 1/48000 s). At rest the supply after the protection diode is 8.337 V, the output 3.771 V,
+the base of the driver 0.686 V; the driver takes 8.36 mA, the output pair 1.94 mA (the two diodes hold 1.24 V), the LED
+2.99 mA: the battery gives 13.31 mA, which an alkaline 9 V battery feeds **in silence** for about 44 hours (Energizer
+522, form 522GL1019: about 600 mAh at 10 mA and 565 mAh at 25 mA to 4.8 V, read off its chart). Playing, it takes more:
+the push-pull pair draws from the battery only what the speaker needs, so the battery's current grows with the volume.
 Playing the tone (the distortion, THD — the harmonics up to the tenth against the tone — and the currents from
 `tools/ref-models/electronics/amplifier.py`; the battery's mean current over the last 20 ms; the largest collector
 current of each output transistor):
@@ -1029,10 +1058,14 @@ machine at the chosen rate — the margin for a phone and a background thread). 
 3.25 times — over the floor on this machine, but with nothing to spare beyond it (3.11 in a run beside heavier work),
 so 48 kHz is not the volume's rate. The loop computed beforehand (the design §6.3, the fallback) is not needed here;
 whether a phone plays live is for E1-9 and E2 to measure — a phone four times slower than this core would still play
-the amplifier at 1.35 times real time at 24 kHz. At 24 kHz the speaker hears up to 12 kHz: the melody's notes reach
-4 kHz and its hi-hat beyond. A stand that shows a filter's response near 10 kHz takes `substeps` (What the trapezoid
-answers): the same moments as 48 kHz in four substeps are 24 kHz in eight, and a linear board can afford them — the
-RC low-pass plays at 105 times real time at 24 kHz in one step a sample.
+the amplifier at 1.35 times real time at 24 kHz. In the browser (E1-9, `shared/sound`, its README) the background
+thread computes a block of 1536 samples of the amplifier with the melody — 64 ms of sound — in 12–14 ms on this
+machine, 4.6–5.2 times real time, and 10 s of it played with no underrun; no phone has been measured. The same bench
+again at the end of batch E1 (E1-10, on a quiet machine, load average 0.25; the code unchanged since E1-7): the
+amplifier 5.77 at 24 kHz and 3.56 at 48 kHz (medians of five runs). At 24 kHz the speaker hears up to 12 kHz: the
+melody's notes reach 4 kHz and its hi-hat beyond. A stand that shows a filter's response near 10 kHz takes `substeps`
+(What the trapezoid answers): the same moments as 48 kHz in four substeps are 24 kHz in eight, and a linear board can
+afford them — the RC low-pass plays at 105 times real time at 24 kHz in one step a sample.
 
 What made it fast (each measured by the bench or the profiler of Node on the amplifier):
 
@@ -1174,5 +1207,6 @@ most 1 ms, 0.1 ms and 5 μs with its tolerances tightened). With transistors (th
 ngspice with its tolerances tightened, `spice.py`): the seven transistors in their regions to 3.5e-10, the amplifier
 at rest to 3.6e-10, the switch to 5.4e-5 — the current of the LED behind the transistor that is off, 8.3 pA, whose last
 digits are the rounding of nodes at 9 V on either side; the amplifier playing to 8.3e-5 in the amplitudes and 1.1e-4
-of the swing in the waveform at 1/48000 s; with the battery the wrong way round, where every node behind the protection
+of the swing in the waveform at 1/48000 s (the volume control, the output and the speaker; the supply's ripple to
+3.7e-4 and 1.1e-3); with the battery the wrong way round, where every node behind the protection
 diode is a rounding of next to nothing, the diode's and the battery's current to 7e-5 (`amplifier` tests those).
