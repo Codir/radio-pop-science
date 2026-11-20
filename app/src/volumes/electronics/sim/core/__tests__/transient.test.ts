@@ -4,7 +4,7 @@
  * discharging, a capacitor emptying through an LED, a low-pass and a high-pass filter on a sine, a half-wave
  * rectifier. Against the plan's numbers and a calculation by hand: R·C, the step's convergence, the inrush of a cold
  * lamp, parts that burn in time. And what a stand does with it: start, step, run blocks into its own arrays, turn a
- * knob, change the board.
+ * knob, change the board, take a step in shorter steps of integration.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -163,12 +163,13 @@ describe('capacitors in time against ngspice', () => {
     close(s.swing['2']!, 0.2091, 0.0001, 'ngspice: 0.209 V');
   });
 
-  /** The gains of the low-pass (node 2) and the high-pass (node 3) of `filters` for a sine of `hertz`, stepped `rate`
-   * times a second: 50 ms to settle (500 times R·C), then 20 ms of whole periods fitted. */
-  function gains(s: AcSample, hertz: number, rate: number): [number, number] {
+  /** The gains of the low-pass (node 2) and the high-pass (node 3) of `filters` for a sine of `hertz`, sampled `rate`
+   * times a second in `substeps` steps of integration each: 50 ms to settle (500 times R·C), then 20 ms of whole
+   * periods fitted. */
+  function gains(s: AcSample, hertz: number, rate: number, substeps = 1): [number, number] {
     const board = structuredClone(s.netlist);
     board.parts.find((p) => p.id === s.source)!.setting = hertz;
-    const t = new Transient(board, { dt: 1 / rate });
+    const t = new Transient(board, { dt: 1 / rate, substeps });
     expect(t.start('zero')).toBe(true);
     const settle = rate / 20;
     const low = new Float32Array(rate / 50);
@@ -186,11 +187,21 @@ describe('capacitors in time against ngspice', () => {
     ];
   }
 
-  it('a low-pass and a high-pass filter of 1 kΩ and 100 nF at 1/48000 s: ngspice’s .ac where the trapezoid answers', () => {
+  it('a low-pass and a high-pass filter of 1 kΩ and 100 nF sampled at 1/48000 s in four steps of the trapezoid: ngspice’s .ac within 1 % at 100 Hz, 1 kHz and 10 kHz', () => {
+    // the plan's tolerance at every one of the six points; the worst is the low-pass at 10 kHz, 0.87 % low
+    const s = sample<AcSample>('filters');
+    expect(s.frequencies.slice(0, 3)).toEqual([100, 1000, 10000]);
+    for (const [k, hertz] of [100, 1000, 10000].entries()) {
+      const [low, high] = gains(s, hertz, 48000, 4);
+      close(low, s.gain['2']![k]!, 0.01 * s.gain['2']![k]!, `low-pass at ${hertz} Hz`);
+      close(high, s.gain['3']![k]!, 0.01 * s.gain['3']![k]!, `high-pass at ${hertz} Hz`);
+    }
+  });
+
+  it('in one step of the trapezoid a sample, the filters are ngspice’s .ac where the trapezoid answers — and the low-pass at 10 kHz is 14.4 % low', () => {
     // A trapezoid with the step h answers a sine of f exactly as the circuit answers (1/(π·h))·tan(π·f·h): at 48 kHz,
     // 100.0014 Hz, 1001.43 Hz and 11 723.9 Hz for 100 Hz, 1 kHz and 10 kHz. There the model is ngspice to 1e-5
     const s = sample<AcSample>('filters');
-    expect(s.frequencies.slice(0, 3)).toEqual([100, 1000, 10000]);
     for (const [k, hertz] of [100, 1000, 10000].entries()) {
       const warped = s.frequencies[k + 3]!;
       close(warped, (48000 / Math.PI) * Math.tan((Math.PI * hertz) / 48000), 1e-5, `where ${hertz} Hz goes`);
@@ -207,18 +218,18 @@ describe('capacitors in time against ngspice', () => {
         1e-5 * s.gain['3']![k + 3]!,
         `high-pass at ${hertz} Hz, ngspice at ${warped}`,
       );
-      // and against ngspice at the frequency itself: within 1 %, but for the low-pass at 10 kHz (below)
+      // at the frequency itself, within 1 % where the response is gentle; the low-pass at 10 kHz, far above its
+      // cut-off, falls steeply, and the stretch of the frequency shows: −1.35 dB, which `substeps` takes away (above)
       close(high, s.gain['3']![k]!, 0.01 * s.gain['3']![k]!, `high-pass at ${hertz} Hz`);
       if (hertz < 10000) close(low, s.gain['2']![k]!, 0.01 * s.gain['2']![k]!, `low-pass at ${hertz} Hz`);
+      else
+        close(
+          low / s.gain['2']![k]!,
+          0.856,
+          0.0005,
+          'the low-pass at 10 kHz: the trapezoid’s warping at 48 kHz',
+        );
     }
-  });
-
-  it('the low-pass at 10 kHz is 14.4 % under ngspice at 1/48000 s, within 1 % at a step four times shorter', () => {
-    const s = sample<AcSample>('filters');
-    const [atAudio] = gains(s, 10000, 48000);
-    close(atAudio / s.gain['2']![2]!, 0.856, 0.0005, 'the trapezoid’s warping at 48 kHz: −1.35 dB');
-    const [fine] = gains(s, 10000, 192000);
-    close(fine, s.gain['2']![2]!, 0.01 * s.gain['2']![2]!, 'at 192 kHz');
   });
 });
 
@@ -536,6 +547,95 @@ describe('what a stand does with the transient', () => {
     expect([...stuck.v]).toEqual([0, 0, 0]);
   });
 
+  it('a step in substeps is that many steps of integration: the moments of the shorter step exactly, one sample a step', () => {
+    const s = sample<AcSample>('filters');
+    const board = structuredClone(s.netlist);
+    board.parts.find((p) => p.id === s.source)!.setting = 10000;
+    const sampled = new Transient(structuredClone(board), { dt: AUDIO, substeps: 4 });
+    const fine = new Transient(structuredClone(board), { dt: AUDIO / 4 });
+    expect(sampled.substeps).toBe(4);
+    expect(fine.substeps).toBe(1);
+    sampled.start('zero');
+    fine.start('zero');
+    const low = new Float32Array(480);
+    const high = new Float32Array(480);
+    const lowFine = new Float32Array(4 * 480);
+    const highFine = new Float32Array(4 * 480);
+    expect(
+      sampled.run(480, [
+        { node: 2, out: low },
+        { node: 3, out: high },
+      ]),
+    ).toBe(480);
+    expect(
+      fine.run(4 * 480, [
+        { node: 2, out: lowFine },
+        { node: 3, out: highFine },
+      ]),
+    ).toBe(4 * 480);
+    // the same numbers, bit for bit: Euler's first two steps, the sine's moments and the trapezoid's steps all agree
+    for (let k = 0; k < 480; k++) {
+      expect(low[k]).toBe(lowFine[4 * k + 3]);
+      expect(high[k]).toBe(highFine[4 * k + 3]);
+    }
+    close(sampled.time, 0.01, 1e-15, '480 samples of 1/48000 s');
+    close(fine.time, 0.01, 1e-15, 'and 1920 steps of a quarter of it');
+    expect(sampled.parts.C1).toEqual(fine.parts.C1);
+  });
+
+  it('a step in substeps that fails in a later one goes back to where it began: time, voltages, charges, memory', () => {
+    // a sine of 6 V at 50 Hz through 1 kΩ into a red LED with 100 nF across it, allowed three iterations: of 1 ms in two
+    // halves, the first half settles (the capacitor charges, the LED stays dark) and the second, where the LED wakes,
+    // does not, even in 64 pieces — as a transient stepping by half a millisecond shows
+    const board = (): Netlist =>
+      net(
+        3,
+        part('S', 'ideal-ac-6v', [1, 0], 50),
+        part('R', 'resistor-1k', [1, 2]),
+        part('D', 'led-red', [2, 0]),
+        part('C', 'ceramic-100n', [2, 0]),
+      );
+    const halves = new Transient(board(), { dt: 5e-4, maxIterations: 3 });
+    expect(halves.start('dc')).toBe(true);
+    expect(halves.step()).toBe(true);
+    close(
+      halves.memory('C')!.volts,
+      0.782,
+      0.001,
+      'the first half charges the capacitor (the sine is at 0.93 V)',
+    );
+    expect(halves.step()).toBe(false);
+    const t = new Transient(board(), { dt: 1e-3, substeps: 2, maxIterations: 3 });
+    expect(t.start('dc')).toBe(true);
+    const c = t.circuit;
+    const before = {
+      v: [...t.v],
+      unknowns: [...c.operating.v],
+      memory: [...c.memory],
+      history: [...c.history],
+      initial: c.operating.initial,
+      parts: structuredClone(t.parts),
+      volts: t.memory('C')!.volts,
+    };
+    expect(before.history[0]).toBe(0);
+    expect(t.step()).toBe(false);
+    expect(t.ok).toBe(false);
+    expect(t.reason).toBe('no-convergence');
+    expect(t.time).toBe(0);
+    expect({
+      v: [...t.v],
+      unknowns: [...c.operating.v],
+      memory: [...c.memory],
+      history: [...c.history],
+      initial: c.operating.initial,
+      parts: structuredClone(t.parts),
+      volts: t.memory('C')!.volts,
+    }).toEqual(before);
+    // and the next step tries the same again, from the same place
+    expect(t.step()).toBe(false);
+    expect([...c.history]).toEqual(before.history);
+  });
+
   it('a circuit with no solution makes the step fail without an exception, and time stands', () => {
     const t = new Transient(net(2, part('A', 'ideal-9v', [1, 0]), part('B', 'ideal-5v', [1, 0])), {
       dt: 1e-3,
@@ -548,6 +648,8 @@ describe('what a stand does with the transient', () => {
     expect(t.run(10)).toBe(0);
     expect(() => new Transient(rc(), { dt: 0 })).toThrow(RangeError);
     expect(() => new Transient(rc(), { dt: Number.NaN })).toThrow(RangeError);
+    for (const substeps of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])
+      expect(() => new Transient(rc(), { dt: 1e-3, substeps })).toThrow(RangeError);
     expect(() => new Transient(rc(), { dt: 1e-3 }).step()).toThrow(Error); // not started
   });
 });

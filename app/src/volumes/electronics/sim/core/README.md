@@ -506,46 +506,71 @@ t.status.R1; // { condition: 'ok', load: 0.0297 }
 state.parts.get('C1')!.volts; // 0.3757 V across the capacitance, kept for the next board
 ```
 
-`new Transient(net, { dt, state?, maxIterations? })` compiles the board (a malformed netlist is the same `RangeError`
-as for `solveDC`; a step that is not a finite number above 0 is one too). Then:
+`new Transient(net, { dt, substeps?, state?, maxIterations? })` compiles the board (a malformed netlist is the same
+`RangeError` as for `solveDC`; a step that is not a finite number above 0 is one too, and so are `substeps` that are
+not a whole number from 1). `dt` is the time between two samples; each step of `dt` is `substeps` steps of integration
+of `dt / substeps` (1 when absent: one step of integration a sample; why a stand may want more — «What the trapezoid
+answers» below). Then:
 
 | Member | What it does |
 |---|---|
 | `start(from)` | begins time at 0: `'dc'` from the operating point (every capacitor charged, every filament steady — `solveDC` with the state), `'zero'` from nothing (every capacitor empty, every filament at room temperature, the nodes at 0 V: a board just switched on), `'state'` from the charges and temperatures the state holds (empty and cold for a part it does not know). False with `reason` when the operating point has no solution |
-| `step()` | one step of `dt`; false with `ok` false and `reason` (`'singular'`, `'no-convergence'`) when the next moment has no solution — the board then stays at its last moment and the next step tries again. Before `start` it throws |
+| `step()` | one step of `dt`, in `substeps` steps of integration; false with `ok` false and `reason` (`'singular'`, `'no-convergence'`) when a moment of it has no solution — the board then stays at its last moment (the steps of integration already taken are undone) and the next step tries again. Before `start` it throws |
 | `run(steps, probes?)` | `steps` steps; after step k it writes every probe's sample into `out[k]`: `{ node, out }` the node's voltage, `{ part, out }` the current into the part's first pin. Returns how many steps succeeded. A probe of a node or part the board has not, or an array shorter than `steps`, is a `RangeError` before any step |
 | `set(id, setting)` | a knob, a switch, a sine's frequency: writes the setting into the netlist (a stand may write `part.setting` itself too); the next step takes it |
 | `rebuild(net)` | a new board (a part put in or taken out): compiles it and carries over, by node number and by id, the node voltages, every capacitor's charge and filament's temperature, heat and damage (all from the state), and the guess of Newton's iterations; time runs on; the readings are those of the next step. A new part in place of a burnt one: delete the old entry from the state (`state.parts.delete(id)`), then `rebuild` (or `start`) |
 | `time`, `v`, `parts`, `status`, `issues` | the moment of the last step (s), the node voltages, `{ id: { u, i, p } }`, `{ id: { condition, load } }`, the shape of the board — the same objects at every step, updated in place (new ones after `rebuild`) |
+| `dt`, `substeps` | the step and how many steps of integration make it, as given |
 | `state`, `memory(id)` | the stand's memory — heat, damage, `volts` of a capacitor, `kelvin` of a lamp, node voltages — written after every step; `memory(id)` is the entry of one part (every part on the board has one) |
 | `ok`, `reason` | how the last step (or the start) went |
 
 **The step** (the plan: a fixed step, the trapezoid, backward Euler after a jump). A capacitor and a lamp keep their
-history; at every step they stamp the companion of the step from it, and the matrix gives the next moment: one solve
-for a linear circuit, Newton's iterations of the operating point (`newton` of `dc.ts`, the same stopping rules) from
-the solution of the last step for a nonlinear one — two to three iterations a step on the oracle's circuits, five at
-most. The steps integrate by the trapezoid; the first `EULER_STEPS` = 2 steps after `start` and after any change on
-the board (a setting, `rebuild`, a part that burnt or bulged) go by backward Euler. One step of Euler would not do
+history; at every step of integration they stamp the companion of the step from it, and the matrix gives the next
+moment: one solve for a linear circuit, Newton's iterations of the operating point (`newton` of `dc.ts`, the same
+stopping rules) from the solution of the last step for a nonlinear one — two to three iterations a step on the
+oracle's circuits, five at most. The steps of integration go by the trapezoid; the first `EULER_STEPS` = 2 of them
+after `start` and after any change on the board (a setting, `rebuild`, a part that burnt or bulged) by backward Euler.
+With `substeps` the moments of the steps of integration are counted from the start, so a transient of `dt` in
+`substeps` gives, at every sample, the very numbers (bit for bit) of a transient of `dt / substeps` at every
+`substeps`-th step; the test checks this at 4. One step of Euler would not do
 (the decision of E1-5, where the plan said «the step after a change»): a part much faster than the step — 1 nF behind
 1 kΩ is R·C = 1 μs against 20.8 μs — is left 1/(1 + h/R·C) short of its jump by one step of Euler, 4.6 % there, and
 the trapezoid swings that remainder from one side to the other, shrinking it by less than a fifth a step (× −0.825):
 a ringing of 3.8 % of the jump. After two steps of Euler 0.21 % is left, and the swing that follows stays under 0.2 %
 and dies out (the test switches exactly that circuit on). The second step of Euler costs nothing that shows: a step
-of Euler leaves an error of (h/R·C)²/2 of the jump in a slow part, 0.7 mV of 9 V at 80 steps per R·C. A step whose
-iterations do not settle is taken again in 2, 4, … 64 steps of Euler before it fails.
+of Euler leaves an error of (h/R·C)²/2 of the jump in a slow part, 0.7 mV of 9 V at 80 steps per R·C. A step of
+integration whose iterations do not settle is taken again in 2, 4, … 64 steps of Euler before the step of `dt` fails;
+when it fails, everything goes back to the start of that step of `dt`, the steps of integration already taken in it
+too.
 
 **What the trapezoid answers.** A trapezoid with a fixed step h answers a sine of f exactly as the circuit itself
 answers (1/(π·h))·tan(π·f·h) — the frequency warping of the bilinear transform. At 1/48000 s that is 100.0014 Hz for
-100 Hz, 1001.4 Hz for 1 kHz and 11 724 Hz for 10 kHz, and there the model is ngspice's `.ac` to better than 10⁻⁸ (the
-samples `filters.json` hold both). Against `.ac` at the frequency itself, the low-pass and the high-pass of 1 kΩ and
-100 nF are within 0.1 % at 100 Hz and 1 kHz and the high-pass within 0.34 % at 10 kHz; the low-pass at 10 kHz, far
-above its cut-off of 1.59 kHz, is 14.4 % low (0.1345 against 0.1572, −1.35 dB): where a response falls steeply, the
-stretch of the frequency shows. A step four times shorter (1/192 000 s) brings it within 0.9 %. The melody's highs
-(E1-7) and the stand's filters do not hinge on a decibel at 10 kHz, but a page that quotes the response there should
-take ngspice's numbers, not the model's.
+100 Hz, 1001.4 Hz for 1 kHz and 11 724 Hz for 10 kHz, and there the model in one step of integration a sample is
+ngspice's `.ac` to better than 10⁻⁸ (the samples `filters.json` hold both). Against `.ac` at the frequency itself, the
+low-pass and the high-pass of 1 kΩ and 100 nF are then within 0.1 % at 100 Hz and 1 kHz and the high-pass within
+0.34 % at 10 kHz; the low-pass at 10 kHz, far above its cut-off of 1.59 kHz, is 14.4 % low (0.1345 against 0.1572,
+−1.35 dB): where a response falls steeply, the stretch of the frequency shows. Shorter steps of integration inside
+each sample take it away — the stretch falls with the square of the step. Against `.ac` at the frequency itself, the
+samples every 1/48000 s:
 
-**Heat in time.** After every step the heat of every part moves toward its load of that moment by the exact step of
-`limits.ts` (with e^(−dt/τ) computed once), and a part that reaches 1 fails at that step: 1 W in a 0.25 W resistor
+| `substeps` | low-pass, 10 kHz | high-pass, 10 kHz | worst at 100 Hz and 1 kHz |
+|---|---|---|---|
+| 1 (the default) | −14.4 % | +0.34 % | +0.10 % (high-pass, 1 kHz) |
+| 2 | −3.5 % | +0.087 % | +0.026 % |
+| 4 | −0.87 % | +0.022 % | +0.0064 % |
+| 8 | −0.22 % | +0.0055 % | +0.0016 % |
+
+The plan asks for the filters within 1 % of `.ac` at 100 Hz, 1 kHz and 10 kHz at 1/48000 s: `substeps: 4` meets it at
+all six points (the test checks them), for four times the work of a sample. A sample of 1/48000 s in four steps is the
+same, bit for bit, as four samples of 1/192 000 s (above), so nothing else changes. The default stays one step a
+sample: the speed of the model at the audio rate is measured in E1-7, and a stand chooses there what it can afford. A
+stand that shows a response at high frequencies — a filter swept up to 10 kHz, the sound through a filter — takes
+`substeps: 4` or more, and a page that quotes the response there takes ngspice's numbers or the model's at
+`substeps` ≥ 4, not the default's.
+
+**Heat in time.** After every step of `dt` (once a sample, whatever the `substeps`) the heat of every part moves toward
+its load of that moment by the exact step of `limits.ts` (with e^(−dt/τ) computed once), and a part that reaches 1
+fails at that step: 1 W in a 0.25 W resistor
 (75 Ω on the 9 V battery) burns it at 2.756 s, as `burnSeconds` says to the millisecond; the red LED on the battery
 burns after 0.066 s; an electrolytic bulges as in Capacitors. The next steps know it (a change on the board: Euler).
 
@@ -623,11 +648,12 @@ stands), `capacitor` (the catalog — ESR and leak of the electrolytics from the
 operating point, the loads by voltage, an electrolytic over its rating and the wrong way round: bulged after 12.0 and
 1.2 s, then a leak of 1 kΩ, at the operating point too), `transient` (every sample in time against ngspice, the
 plan's tolerances: the RC charge and discharge within 1 % at 20 moments with 63.2 % and 36.8 % ± 0.5 % after
-R·C; the LED fed by 470 μF within 2 %; the rectifier's output, mean and ripple within 3 %; the filters against `.ac`
-where the trapezoid answers, within 1e-5, and at the frequency itself within 1 % but for the low-pass at 10 kHz,
-whose 14.4 % and its 0.9 % at a step four times shorter are tested as such; halving the step, under 0.1 %; the
-trapezoid's second order; no ringing after a stiff jump; the lamp's inrush; parts that burn in time; the worked
-example above; start, run, set, rebuild and a failed step), `oracle` (every sample of `__fixtures__/` at the
+R·C; the LED fed by 470 μF within 2 %; the rectifier's output, mean and ripple within 3 %; the filters sampled at
+1/48000 s in four steps of integration within 1 % of `.ac` at 100 Hz, 1 kHz and 10 kHz, and in one step against
+`.ac` where the trapezoid answers, within 1e-5 — the low-pass at 10 kHz then 14.4 % low, tested as such; halving the
+step, under 0.1 %; the trapezoid's second order; no ringing after a stiff jump; the lamp's inrush; parts that burn in
+time; the worked example above; start, run, set, rebuild, a failed step, `substeps` as the shorter step bit for bit
+and a step that fails in its second step of integration undone whole), `oracle` (every sample of `__fixtures__/` at the
 operating point against the model: relative difference ≤ 1e-6 for the linear samples and ≤ 1e-3 for the nonlinear
 ones — the plan's tolerances — for every number, the smallest too, with no absolute allowance; where ngspice gives an
 exact zero — the ground, a part behind an open switch — the model must give an exact zero; at most 50 iterations and

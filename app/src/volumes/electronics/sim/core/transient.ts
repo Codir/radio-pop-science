@@ -1,11 +1,12 @@
 /**
  * The transient: the circuit in time, with a fixed step `dt`. A capacitor and a lamp's filament carry a state from one
- * moment to the next; at every step they stamp the companion of the step from it (`capacitor.ts`, `lamp.ts`), and the
- * matrix gives the next moment — one solve for a linear circuit, Newton's iterations of the operating point (`dc.ts`)
- * for a nonlinear one, from the solution of the last step. The steps integrate by the trapezoid; the first EULER_STEPS
- * steps after the start and after any change on the board (a knob turned, a switch flipped, a part put in or burnt)
- * by backward Euler, which leaves no ringing of the trapezoid after a jump. A step whose iterations do not settle is
- * taken again in 2, 4, … 64 steps of backward Euler; only then does it fail.
+ * moment to the next; at every step of integration they stamp the companion of the step from it (`capacitor.ts`,
+ * `lamp.ts`), and the matrix gives the next moment — one solve for a linear circuit, Newton's iterations of the
+ * operating point (`dc.ts`) for a nonlinear one, from the solution of the last step. A step of `dt` is `substeps` steps
+ * of integration of `dt / substeps` (one when not asked otherwise). They integrate by the trapezoid; the first
+ * EULER_STEPS of them after the start and after any change on the board (a knob turned, a switch flipped, a part put in
+ * or burnt) by backward Euler, which leaves no ringing of the trapezoid after a jump. A step of integration whose
+ * iterations do not settle is taken again in 2, 4, … 64 steps of backward Euler; only then does the step of `dt` fail.
  *
  * At every step the heat of the parts gathers in time as `advanceHeat` gathers it at the operating point
  * (`limits.ts`), and a part that reaches its limit fails there and then: it burns, or an electrolytic capacitor bulges.
@@ -53,9 +54,10 @@ import type { PartKind } from './parts';
 import { createModelState, keepLevel, levelOf, memoryOf, type ModelState, type PartMemory } from './state';
 import { analyse, type TopologyIssue } from './topology';
 
-/** How many steps after the start and after a change go by backward Euler before the trapezoid takes over. */
+/** How many steps of integration after the start and after a change go by backward Euler before the trapezoid takes
+ * over. */
 export const EULER_STEPS = 2;
-/** A step that fails is taken again in 2, 4, … 2^RETRIES steps of backward Euler. */
+/** A step of integration that fails is taken again in 2, 4, … 2^RETRIES steps of backward Euler. */
 const RETRIES = 6;
 
 /** Where the transient starts: at the operating point (every capacitor charged, every filament steady); from zero (every
@@ -64,8 +66,13 @@ const RETRIES = 6;
 export type TransientStart = 'dc' | 'zero' | 'state';
 
 export interface TransientOptions {
-  /** The step (s): a finite number above 0, fixed for the life of the transient. */
+  /** The step (s): a finite number above 0, fixed for the life of the transient — the time between two samples. */
   dt: number;
+  /** How many steps of integration make one step of `dt`: a whole number from 1 (1 when absent). The trapezoid with a
+   * step h answers a sine of f as the circuit answers (1/(π·h))·tan(π·f·h); shorter steps inside a sample bring a
+   * response that falls steeply at high frequencies to the circuit's own, for as many times the work (README.md, «What
+   * the trapezoid answers»). */
+  substeps?: number;
   /** The memory of the stand; a new one when absent. */
   state?: ModelState;
   /** Newton's iterations at most in one step (MAX_ITERATIONS when absent). */
@@ -77,6 +84,13 @@ export interface TransientOptions {
 export type Probe =
   | { readonly node: number; readonly out: Float32Array }
   | { readonly part: string; readonly out: Float32Array };
+
+/** A moment of the circuit to go back to: its unknowns, the parts' memory and their history. */
+interface Snapshot {
+  readonly v: Float64Array;
+  readonly memory: Float64Array;
+  readonly history: Float64Array;
+}
 
 /** Everything the transient holds for one circuit; a new board makes a new one. */
 interface Board {
@@ -95,8 +109,10 @@ interface Board {
   readonly status: Record<string, PartStatus>;
   readonly v: Float64Array;
   readonly scratch: Float64Array;
-  /** The start of the step, for a step taken again. */
-  readonly saved: { readonly v: Float64Array; readonly memory: Float64Array; readonly history: Float64Array };
+  /** The start of the step of integration, for one taken again. */
+  readonly saved: Snapshot;
+  /** The start of the step of `dt`, for one that fails in a later step of integration than its first. */
+  readonly begun: Snapshot;
   ties: readonly number[];
   issues: TopologyIssue[];
   nonlinear: boolean;
@@ -105,9 +121,17 @@ interface Board {
 /** The level of a part with a state in time that starts from nothing: an empty capacitor, a filament at the room. */
 const emptyLevel = (kind: PartKind): number => (kind === 'lamp' ? ROOM_KELVIN : 0);
 
+const snapshotOf = (c: Circuit): Snapshot => ({
+  v: new Float64Array(c.size),
+  memory: new Float64Array(c.memory.length),
+  history: new Float64Array(c.history.length),
+});
+
 export class Transient {
   /** The step (s). */
   readonly dt: number;
+  /** How many steps of integration, each of `dt / substeps`, make one step. */
+  readonly substeps: number;
   /** The memory of the stand: heat, damage, charges, temperatures, node voltages; written after every step. */
   readonly state: ModelState;
   readonly maxIterations: number;
@@ -118,6 +142,8 @@ export class Transient {
 
   private board: Board;
   private readonly go = newGo();
+  /** The step of integration (s): `dt / substeps`. */
+  private readonly h: number;
   private count = 0;
   private euler = EULER_STEPS;
   private started = false;
@@ -127,7 +153,12 @@ export class Transient {
   constructor(net: Netlist, options: TransientOptions) {
     if (!(options.dt > 0 && Number.isFinite(options.dt)))
       throw new RangeError(`the step must be a finite number of seconds above 0: ${options.dt}`);
+    const substeps = options.substeps ?? 1;
+    if (!(Number.isInteger(substeps) && substeps >= 1))
+      throw new RangeError(`substeps must be a whole number from 1: ${substeps}`);
     this.dt = options.dt;
+    this.substeps = substeps;
+    this.h = options.dt / substeps;
     this.state = options.state ?? createModelState();
     this.maxIterations = options.maxIterations ?? MAX_ITERATIONS;
     this.board = this.build(net);
@@ -218,9 +249,9 @@ export class Transient {
   }
 
   /**
-   * One step of `dt`. False when the circuit has no solution at the next moment (`ok` false, `reason`): the board
-   * then stays at its last moment, and the next step tries again. A setting that is not a finite number is a
-   * RangeError.
+   * One step of `dt` (in `substeps` steps of integration). False when the circuit has no solution at a moment of it
+   * (`ok` false, `reason`): the board then stays at its last moment, and the next step tries again. A setting that is
+   * not a finite number is a RangeError.
    */
   step(): boolean {
     if (!this.started) throw new Error('the transient has not started: call start() first');
@@ -238,8 +269,6 @@ export class Transient {
     this.ok = true;
     this.reason = undefined;
     this.count++;
-    if (this.euler > 0) this.euler--;
-    c.operating.initial = false;
     const nodes = b.v.length;
     if (this.state.v.length !== nodes) this.state.v = new Float64Array(nodes);
     for (let node = 0; node < nodes; node++) {
@@ -358,11 +387,8 @@ export class Transient {
       status: Object.fromEntries(elements.map((e, k) => [e.part.id, statuses[k]!])),
       v: new Float64Array(net.nodes),
       scratch: new Float64Array(Math.max(3, ...elements.map((e) => e.nodes.length))),
-      saved: {
-        v: new Float64Array(circuit.size),
-        memory: new Float64Array(circuit.memory.length),
-        history: new Float64Array(circuit.history.length),
-      },
+      saved: snapshotOf(circuit),
+      begun: snapshotOf(circuit),
       ties: [],
       issues: [],
       nonlinear: false,
@@ -381,33 +407,61 @@ export class Transient {
     b.nonlinear = b.circuit.elements.some((e, k) => e.behaviour.nonlinear && b.damage[k] !== BURNT);
   }
 
-  /** The next moment, the whole step at once or, when that fails, in shorter steps of backward Euler. */
+  /** The next moment, `dt` on: `substeps` steps of integration. When one fails, back to the start of the step. */
   private advance(): boolean {
     const b = this.board;
     const c = b.circuit;
+    const { substeps } = this;
     const initial = c.operating.initial;
-    b.saved.v.set(c.operating.v);
-    b.saved.memory.set(c.memory);
-    b.saved.history.set(c.history);
-    if (this.solveAt((this.count + 1) * this.dt, this.dt, this.euler === 0, true)) return true;
+    const euler = this.euler;
+    if (substeps > 1) this.save(b.begun);
+    // the steps of integration are counted from the start: the j-th of this step is the (count·substeps + j)-th, and
+    // its moment that number of steps h on — exactly the moments of a transient with the step h itself
+    for (let j = 0; j < substeps; j++) {
+      if (!this.integrate(this.count * substeps + j, j === substeps - 1)) {
+        if (substeps > 1) this.restore(b.begun, initial);
+        this.euler = euler;
+        return false;
+      }
+      c.operating.initial = false;
+      if (this.euler > 0) this.euler--;
+    }
+    return true;
+  }
+
+  /** The step of integration that ends at the moment (`index` + 1)·h: the whole step at once or, when that fails, in
+   * shorter steps of backward Euler; reads the parts at its end when `read`. */
+  private integrate(index: number, read: boolean): boolean {
+    const b = this.board;
+    const { h } = this;
+    const initial = b.circuit.operating.initial;
+    this.save(b.saved);
+    if (this.solveAt((index + 1) * h, h, this.euler === 0, read)) return true;
     for (let pieces = 2; pieces <= 2 ** RETRIES && this.failure !== 'singular'; pieces *= 2) {
-      this.restore(initial);
+      this.restore(b.saved, initial);
       let ok = true;
       for (let j = 1; j <= pieces && ok; j++)
-        ok = this.solveAt((this.count + j / pieces) * this.dt, this.dt / pieces, false, j === pieces);
+        ok = this.solveAt((index + j / pieces) * h, h / pieces, false, read && j === pieces);
       if (ok) return true;
     }
-    this.restore(initial);
+    this.restore(b.saved, initial);
     return false;
   }
 
-  /** Back to the start of the step, as `advance` saved it. */
-  private restore(initial: boolean): void {
-    const b = this.board;
-    const c = b.circuit;
-    c.operating.v.set(b.saved.v);
-    c.memory.set(b.saved.memory);
-    c.history.set(b.saved.history);
+  /** Keeps the moment now in `to`. */
+  private save(to: Snapshot): void {
+    const c = this.board.circuit;
+    to.v.set(c.operating.v);
+    to.memory.set(c.memory);
+    to.history.set(c.history);
+  }
+
+  /** Back to the moment `save` kept in `from`. */
+  private restore(from: Snapshot, initial: boolean): void {
+    const c = this.board.circuit;
+    c.operating.v.set(from.v);
+    c.memory.set(from.memory);
+    c.history.set(from.history);
     c.operating.initial = initial;
   }
 
