@@ -107,6 +107,9 @@ export interface Stamper {
   conductance(a: number, b: number, g: number): void;
   /** A current `i` (A) that flows through the part from node `a` to node `b`: it leaves `a` and comes into `b`. */
   current(a: number, b: number, i: number): void;
+  /** A current g·(v(`p`) − v(`q`)) that flows through the part from node `a` to node `b`, `g` in S: the voltage of
+   * another pair of nodes controls it (a transistor's collector current, which its base–emitter voltage sets). */
+  transconductance(a: number, b: number, p: number, q: number, g: number): void;
   /** An ideal source: v(plus) − v(minus) = `volts`; its current, into `plus`, is the unknown `branch`. */
   voltage(plus: number, minus: number, branch: number, volts: number): void;
 }
@@ -201,7 +204,8 @@ export function compile(net: Netlist): Circuit {
 function stamperOf(system: LinearSystem, index: Int32Array): Stamper {
   const { n, a, b } = system;
   // a conductance or a current from a node to itself (a part with both legs in one row) carries nothing: it is not
-  // stamped, since adding and taking away a large g would round away the GMIN that alone may hold that node
+  // stamped, since adding and taking away a large g would round away the GMIN that alone may hold that node; nor is a
+  // transconductance from a node to itself or controlled by a node against itself
   return {
     conductance(p, q, g) {
       if (p === q) return;
@@ -220,6 +224,22 @@ function stamperOf(system: LinearSystem, index: Int32Array): Stamper {
       const to = index[q]!;
       if (from >= 0) b[from] -= i;
       if (to >= 0) b[to] += i;
+    },
+    transconductance(from, to, p, q, g) {
+      if (from === to || p === q) return;
+      const i = index[from]!;
+      const j = index[to]!;
+      const cp = index[p]!;
+      const cq = index[q]!;
+      // the current leaves `from` (its row: +g·v(p) − g·v(q)) and comes into `to` (the same, negated)
+      if (i >= 0) {
+        if (cp >= 0) a[i * n + cp] += g;
+        if (cq >= 0) a[i * n + cq] -= g;
+      }
+      if (j >= 0) {
+        if (cp >= 0) a[j * n + cp] -= g;
+        if (cq >= 0) a[j * n + cq] += g;
+      }
     },
     voltage(plus, minus, k, volts) {
       const i = index[plus]!;

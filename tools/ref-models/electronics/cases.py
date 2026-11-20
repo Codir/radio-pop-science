@@ -27,14 +27,18 @@ def pot_divider(setting):
                part('RL', 'resistor-4k7', [2, 0]))
 
 
-def tran(netlist, step, stop, times=(), nodes=(), parts=(), charges=None, window=()):
+def tran(netlist, step, stop, times=(), nodes=(), parts=(), charges=None, window=(), start=None, hertz=None):
     """A transient from t = 0: ngspice's largest step `step` (s) up to `stop` (s); the voltages of `nodes` and the
     currents into the first pin of `parts` at each of `times`; over `window` (from, to), when given, the mean and the
-    swing of every node of `nodes`. `charges` is the voltage of a capacitor at t = 0 by id: none — every capacitor
-    empty, the model's start 'zero'; some — the model's start 'state'."""
-    return {'analysis': 'tran', 'netlist': netlist, 'step': step, 'stop': stop, 'times': list(times),
-            'nodes': list(nodes), 'parts': list(parts), 'start': 'state' if charges else 'zero',
+    swing of every node of `nodes`, and with `hertz` the amplitude of that frequency in each. `charges` is the voltage
+    of a capacitor at t = 0 by id: none — every capacitor empty, the model's start 'zero'; some — the model's start
+    'state'. `start='dc'` begins at the operating point instead (every capacitor charged, as the model's start 'dc')."""
+    case = {'analysis': 'tran', 'netlist': netlist, 'step': step, 'stop': stop, 'times': list(times),
+            'nodes': list(nodes), 'parts': list(parts), 'start': start or ('state' if charges else 'zero'),
             'charges': dict(charges or {}), 'window': list(window)}
+    if hertz is not None:
+        case['hertz'] = hertz
+    return case
 
 
 def ac(netlist, source, frequencies, nodes):
@@ -52,6 +56,46 @@ def trapezoid_frequency(hertz, rate):
 def every(step, count):
     """count moments step, 2·step, … (s), each written as the nearest double to its decimal."""
     return [round(step * k, 12) for k in range(1, count + 1)]
+
+
+def amplifier(volume, on=True, reversed=False):
+    """The amplifier of the volume, as app/src/volumes/electronics/sim/core/amplifier.ts builds it (its README tells
+    every part): the 9 V battery (the wrong way round when `reversed`) through the switch (closed when `on`) and the
+    protection diode onto the supply with its reservoir capacitor and the LED «on»; the player's test tone into the
+    volume control (the pot at `volume`); a coupling capacitor and the driver BC547B with its feedback; two diodes
+    between the bases of the push-pull pair 2N3904 / 2N3906; the output capacitor into the 8 Ω speaker."""
+    return net(14, part('B1', 'battery-9v', [0, 1] if reversed else [1, 0]),
+               part('S1', 'switch', [1, 2], 1 if on else 0),
+               part('D1', 'diode-1n4007', [2, 3]),
+               part('C3', 'electrolytic-470u-16v', [3, 0]),
+               part('R1', 'resistor-2k2', [3, 4]),
+               part('LED1', 'led-red', [4, 0]),
+               part('PL', 'player-tone', [5, 0]),
+               part('VR1', 'pot-10k', [0, 6, 5], volume),
+               part('C1', 'electrolytic-10u-16v', [7, 6]),
+               part('R2', 'resistor-1k5', [7, 8]),
+               part('R3', 'resistor-47k', [12, 8]),
+               part('R4', 'resistor-18k', [8, 0]),
+               part('Q1', 'transistor-bc547b', [11, 8, 0]),
+               part('R5', 'resistor-470', [3, 9]),
+               part('D2', 'diode-1n4148', [9, 10]),
+               part('D3', 'diode-1n4148', [10, 11]),
+               part('Q2', 'transistor-2n3904', [3, 9, 12]),
+               part('Q3', 'transistor-2n3906', [0, 11, 12]),
+               part('C2', 'electrolytic-470u-16v', [12, 13]),
+               part('LS1', 'speaker-8', [13, 0]))
+
+
+AUDIO_RATE = 48000  # the rate of the model's samples in the amplifier's tests (Hz)
+
+
+def amplifier_tone(volume, on=True):
+    """The amplifier playing the test tone of 1 kHz from its operating point for 60 ms: the supply (node 3), the volume
+    control's wiper (6), the output (12) and the speaker (13) at 24 moments of the last millisecond, every second sample
+    of the model; over the last 20 ms (20 periods) their mean, swing and the amplitude of 1 kHz."""
+    last = [round((2832 + 2 * k) / AUDIO_RATE, 12) for k in range(1, 25)]  # 59 ms … 60 ms
+    return tran(amplifier(volume, on), step=2e-6, stop=0.06, times=last, nodes=[3, 6, 12, 13], parts=['LS1', 'B1'],
+                window=(0.04, 0.06), start='dc', hertz=1000)
 
 
 def led_loops(color):
@@ -131,4 +175,34 @@ CASES = {
                       part('R2', 'resistor-1k', [3, 0])),
                   'V1', [100, 1000, 10000, *(trapezoid_frequency(f, 48000) for f in (100, 1000, 10000))],
                   nodes=[2, 3]),
+
+    # ── E1-6: transistors and the amplifier ──────────────────────────────────────────────────────────────────────
+    # each transistor of the catalog in its forward active region from the 9 V battery — an NPN with its base through
+    # 1 MΩ from the plus and 1 kΩ in its collector, a PNP the same way down from the plus — and a 2N3904 the wrong way
+    # round (collector and emitter swapped: the reverse gain BR)
+    'transistor-bias': net(12, part('B1', 'battery-9v', [1, 0]),
+                           part('RB1', 'resistor-1M', [1, 2]), part('RC1', 'resistor-1k', [1, 3]),
+                           part('Q1', 'transistor-bc547b', [3, 2, 0]),
+                           part('RB2', 'resistor-1M', [1, 4]), part('RC2', 'resistor-1k', [1, 5]),
+                           part('Q2', 'transistor-2n3904', [5, 4, 0]),
+                           part('RB3', 'resistor-1M', [6, 0]), part('RC3', 'resistor-1k', [7, 0]),
+                           part('Q3', 'transistor-bc557b', [7, 6, 1]),
+                           part('RB4', 'resistor-1M', [8, 0]), part('RC4', 'resistor-1k', [9, 0]),
+                           part('Q4', 'transistor-2n3906', [9, 8, 1]),
+                           part('RB5', 'resistor-100k', [1, 10]), part('RC5', 'resistor-1k', [1, 11]),
+                           part('Q5', 'transistor-2n3904', [0, 10, 11])),
+    # the transistor as a switch: BC547B with the red LED and 330 Ω in its collector, its base through 10 kΩ from the
+    # plus of the 9 V battery (on: the LED lights) and, beside it, the same with the 10 kΩ to the ground (off)
+    'transistor-switch': net(8, part('B1', 'battery-9v', [1, 0]),
+                             part('RB1', 'resistor-10k', [1, 2]), part('R1', 'resistor-330', [1, 3]),
+                             part('D1', 'led-red', [3, 4]), part('Q1', 'transistor-bc547b', [4, 2, 0]),
+                             part('RB2', 'resistor-10k', [0, 5]), part('R2', 'resistor-330', [1, 6]),
+                             part('D2', 'led-red', [6, 7]), part('Q2', 'transistor-bc547b', [7, 5, 0])),
+    # the amplifier at rest (the tone is 0 V at the operating point), the volume control in the middle
+    'amplifier-op': amplifier(0.5),
+    # … and with the battery the wrong way round: the protection diode lets nothing through
+    'amplifier-reversed': amplifier(0.5, reversed=True),
+    # the amplifier playing 1 kHz from the volume control at 10 % (small signal) up to full (clipped), and switched off
+    **{'amplifier-v%d' % round(100 * volume): amplifier_tone(volume) for volume in (0.1, 0.5, 0.8, 0.9, 0.95, 1)},
+    'amplifier-off': amplifier_tone(1, on=False),
 }

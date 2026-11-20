@@ -171,6 +171,31 @@ describe('stamps of a compiled circuit', () => {
     expect([...circuit.system.b]).toEqual([-9 / 1.5, 9 / 1.5]);
   });
 
+  it('a transconductance: a current through the part that another pair of nodes controls', () => {
+    // three rows in use (1, 2, 3) and a resistor on each so that the circuit compiles; then g·(v3 − v2) from 1 to 0
+    // and from 1 to 2, and stamps that would carry nothing: from a node to itself, or controlled by a node and itself
+    const circuit = compile({
+      nodes: 4,
+      parts: [
+        { id: 'A', spec: 'resistor-1', pins: [1, 2] },
+        { id: 'B', spec: 'resistor-1', pins: [2, 3] },
+      ],
+    });
+    const { a, n } = circuit.system;
+    a.fill(0);
+    circuit.stamper.transconductance(1, 0, 3, 2, 0.5);
+    // row 1 (unknown 0): +g at v3, −g at v2; the ground's row is not there
+    expect([...a]).toEqual([0, -0.5, 0.5, 0, 0, 0, 0, 0, 0]);
+    a.fill(0);
+    circuit.stamper.transconductance(1, 2, 3, 2, 0.25);
+    expect([...a]).toEqual([0, -0.25, 0.25, 0, 0.25, -0.25, 0, 0, 0]);
+    a.fill(0);
+    circuit.stamper.transconductance(2, 2, 3, 1, 7);
+    circuit.stamper.transconductance(1, 3, 2, 2, 7);
+    expect(a.every((x) => x === 0)).toBe(true);
+    expect(n).toBe(3);
+  });
+
   it('a part with both legs in one row stamps nothing: the GMIN beside it is not rounded away', () => {
     // a jumper (1000 S) and a battery (its 6 A) with both legs on node 1, which a reversed LED alone holds
     const parts: Netlist['parts'] = [

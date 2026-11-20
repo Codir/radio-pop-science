@@ -10,3 +10,5 @@ export * from './lamp';
 export * from './capacitor';
 export * from './limits';
 export * from './transient';
+export * from './transistor';
+export * from './amplifier';

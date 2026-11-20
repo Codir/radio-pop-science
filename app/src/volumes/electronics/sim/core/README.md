@@ -15,7 +15,10 @@ What E1-3 gives: the linear parts, the operating point (`solveDC`), the checks o
 incandescent lamp — with Newton's iterations at the operating point, and the limits of every part: how loaded it is,
 how its heat gathers, and when it burns. E1-5 adds time: capacitors of three kinds, the transient (`Transient`) with
 a fixed step, a lamp whose filament warms in time, parts that burn (and electrolytic capacitors that bulge) in time,
-and a sine source for the oracle. Transistors and the amplifier come with E1-6.
+and a sine source for the oracle. E1-6 adds the bipolar transistor — NPN BC547B and 2N3904, PNP BC557B and 2N3906 — and
+the amplifier of the volume (`amplifier.ts`): the netlist the stand builds in the chapter `amplifier`, which ngspice
+checks at rest, playing a tone from a whisper to past clipping, switched off and with its battery the wrong way round;
+the player's test tone (a sine behind an internal resistance) drives it.
 
 ## Units and conventions
 
@@ -23,8 +26,8 @@ and a sine source for the oracle. Transistors and the amplifier come with E1-6.
 - **Node 0 is the ground.** Nodes are numbered by the board, `0 … nodes − 1`; a node that no pin uses costs nothing
   (it is left out of the matrix and reads 0 V), so the board may give every row of its sockets a number.
 - **Pins** of a part come in the order of the catalog (`PARTS[key].pins`): `['plus', 'minus']`, `['a', 'b']`,
-  `['ccw', 'wiper', 'cw']`, `['anode', 'cathode']`. An electrolytic capacitor has `['plus', 'minus']`, a ceramic or
-  film one `['a', 'b']`.
+  `['ccw', 'wiper', 'cw']`, `['anode', 'cathode']`, `['collector', 'base', 'emitter']`. An electrolytic capacitor has
+  `['plus', 'minus']`, a ceramic or film one `['a', 'b']`.
 - **Readings** (`PartReading`): `u` — the voltage from the first pin to the second; `i` — the current into the part
   through its first pin; `p` — the power the part takes, the sum over its pins of voltage × current into the pin.
   A resistor has `p = u·i > 0`. A battery that feeds a circuit has the current coming *out* of its plus pin, so its
@@ -33,11 +36,15 @@ and a sine source for the oracle. Transistors and the amplifier come with E1-6.
   sign says which way the current goes.
 - **Settings** (`PartInstance.setting`): a pot — the share of its track from `ccw` to the wiper, 0…1 (0 is the knob
   turned fully counter-clockwise; 0.5 when absent; outside 0…1 it is held to the range). A switch — 0 open, 1
-  closed (from 0.5 up counts as closed; open when absent). A sine source — its frequency in Hz (its catalog `hz` when
-  absent, never below 0). Other parts ignore it.
+  closed (from 0.5 up counts as closed; open when absent). A sine source (the player's test tone too) — its frequency
+  in Hz (its catalog `hz` when absent, never below 0). Other parts ignore it.
 - **A capacitor's reading:** `i` is the current into its first pin — what flows through its ESR, the leak's and the
   capacitance's together; `u` is the voltage on its pins, the ESR's drop included; `p` is `u·i`, positive while it
   charges. Its charge is in the state (`volts`, the voltage across the capacitance alone).
+- **A transistor's reading:** `i` is the collector current (into the collector: positive for an NPN that conducts,
+  negative for a PNP, whose collector current comes out); `u` is V(collector) − V(base); `p` the power it turns into
+  heat, Vce·Ic + Vbe·Ib. Its base current is the current of the part on its base (a base resistor's `i`), or
+  `transistorAt` at its junction voltages; Vce is the difference of two node voltages.
 
 ## The netlist and the operating point
 
@@ -163,6 +170,7 @@ burnt across a battery leaves the battery `open`.
 | `battery-aa` | `battery` | plus, minus | 1.5 V, internal 0.15 Ω, 1 cell | 3 A (the same) | the same |
 | `ideal-9v`, `ideal-5v` | `source` | plus, minus | 9 V or 5 V, no internal resistance | — | the reference of hand calculations and of the oracle (5 V for the LEDs and diodes of E1-4); the bench never offers them (batteries only, the design §3.4) |
 | `ideal-ac-6v` | `sine` | plus, minus | 6 V amplitude, 50 Hz unless its setting gives another frequency, no internal resistance | — | the plan's sine for the rectifier (batch E1, task E1-5), and the generator of the filters' tests; the reference of the oracle in time — the bench never offers it: the safe adapter of the rectifier's branch (the design §3.4) is the decision of the task that builds that branch |
+| `player-tone` | `sine` | plus, minus | 0.3 V amplitude behind 32 Ω (`ohms`), 1 kHz unless its setting gives another frequency | — | the plan's player (batch E1, task E1-6: 0.3 V amplitude, 32 Ω) playing a tone: the input of the amplifier's tests and of their oracle; the player with its melody is E1-7's |
 | `resistor-<code>` | `resistor` | a, b | every value of E24 from 1 Ω to 9.1 MΩ, and 10 MΩ: 169 parts; `series` E12 or E24; `tolerance` 0.05 | 0.25 W | values: IEC 60063 (E12, E24); key: the letter code of IEC 60062; 0.25 W and 5 % (gold band): the usual through-hole resistor of the kits, the design §5.2 |
 | `pot-10k` | `pot` | ccw, wiper, cw | a linear track of 10 kΩ; each part of the track at least 1 mΩ | 0.2 W | Bourns PDB181 series, for example PDB181-K420K-103B: 10 kΩ, linear, 0.2 W (Digi-Key listing; datasheet bourns.com «PDB18») |
 | `switch` | `switch` | a, b | open: no path; closed: 1 mΩ | — | the decision of this task (below) |
@@ -176,6 +184,8 @@ burnt across a battery leaves the battery `open`.
 | `ceramic-100p`, `ceramic-1n`, `ceramic-10n`, `ceramic-100n` | `capacitor` | a, b | 100 pF, 1 nF (C0G), 10 nF, 100 nF (X7R); ESR 0.03 Ω; leak 10 GΩ | 50 V either way | the plan's values; the numbers: Capacitors, below |
 | `film-100n`, `film-1u` | `capacitor` | a, b | 100 nF, 1 μF polyester; ESR 0.03 Ω; leak 10 GΩ and 1.25 GΩ | 63 V either way | WIMA MKS 2, below |
 | `electrolytic-1u-16v` … `electrolytic-1000u-16v` (1, 10, 100, 470, 1000 μF), `electrolytic-100u-6v3` | `capacitor` | plus, minus | ESR from tan δ, leak from the leakage current: the table below | the rated voltage; 1 V the wrong way round | Nichicon VR and Vishay 048 RML, below |
+| `transistor-bc547b`, `transistor-bc557b` | `transistor` (`polarity` npn, pnp) | collector, base, emitter | IS 23.9 fA, BF 294.3, BR 7.946, VAF 63.2 V; IS 38.34 fA, BF 344.4, BR 14.84, VAF 21.11 V | 100 mA, 0.5 W | Philips' SPICE library and datasheets: Transistors, below |
+| `transistor-2n3904`, `transistor-2n3906` | `transistor` (npn, pnp) | collector, base, emitter | IS 6.734 fA, BF 416.4, BR 0.7371, VAF 74.03 V; IS 1.41 fA, BF 180.7, BR 4.977, VAF 18.7 V | 200 mA, 0.625 W | Fairchild's datasheets and their SPICE models: Transistors, below |
 
 `resistorKey(ohms)` gives the key of a value (`resistorKey(4700)` is `'resistor-4k7'`; a value the catalog has not
 is a `RangeError`). The codes: `4R7` 4.7 Ω, `47` 47 Ω, `470` 470 Ω, `4k7` 4.7 kΩ, `47k`, `470k`, `4M7` 4.7 MΩ, `10M`.
@@ -440,13 +450,78 @@ vent): 100 μF / 6.3 V straight on the 9 V battery (load 1.43) bulges after 12.0
 model's leak stays the plain resistance above, and the load carries the overload instead. A ceramic or film capacitor
 over its rating burns as any other part — a gap; on the bench (9 V at most against 50 V and 63 V) that never happens.
 
+## Transistors (`transistor.ts`)
+
+The DC part of SPICE's bipolar transistor: the Gummel–Poon model of ngspice-42 (`src/spicelib/devices/bjt/bjtload.c`,
+`bjttemp.c`) with four parameters — the saturation current IS, the forward and reverse current gains BF and BR, the
+forward Early voltage VAF — and every other one at its default: NF = NR = 1; no series resistances RB, RC, RE; no
+recombination currents ISE, ISC (which lower β at small currents); no high injection IKF, IKR (which lowers β at large
+ones); no VAR; no capacitances and transit times. With these defaults Gummel–Poon is the transport form of Ebers–Moll
+with the Early effect, the plan's model. In the frame of an NPN, with Vbe and Vbc the voltages of its two junctions:
+
+| Current | Formula |
+|---|---|
+| the junctions | Ibe = IS·(e^(Vbe/Vt) − 1), Ibc = IS·(e^(Vbc/Vt) − 1); below −3·Vt SPICE's cubic −IS·(1 + (3·Vt / (e·V))³), as a diode's |
+| into the collector | Ic = (Ibe − Ibc)·(1 − Vbc/VAF) − Ibc/BR − GMIN·Vbc |
+| into the base | Ib = Ibe/BF + Ibc/BR + GMIN·(Vbe + Vbc) |
+| into the emitter | −(Ic + Ib) |
+
+A PNP is the same with every voltage and current reversed. In the forward active region (Vbe about 0.6–0.75 V, the
+collector junction the wrong way round) Ic = BF·Ib·(1 + Vcb/VAF): the collector current is BF times the base current,
+a little more as the collector rises (the Early effect). Saturated — both junctions forward, a switch that is on — the
+collector takes less than BF·Ib and keeps a few tens of millivolts; cut off (Vbe near 0) only GMIN and IS leak,
+picoamperes. At the node voltages ngspice prints for the samples this formula gives the current its probe measures
+within 1e-6 (`spice.py --selftest`; the TypeScript test within 1e-4, ngspice's own tolerance on the node voltages).
+
+`transistorAt(params, vbe, vbc, out)` gives the currents and their four slopes (`TransistorPoint`);
+`transistorVcrit(params)` the knee Vcrit = Vt·ln(Vt / (√2·IS)): 0.708 V for BC547B, 0.696 V BC557B, 0.741 V 2N3904,
+0.781 V 2N3906. In the matrix a transistor adds no unknowns: its stamp is the linearization of its collector and base
+currents around the guess — transconductances controlled by Vbe and Vbc (`Stamper.transconductance`) and the rest as a
+current. Newton's iterations limit the step of both junction voltages as ngspice does (`pnjlim` with Vt and Vcrit),
+and a solve from nothing starts the base–emitter junction at Vcrit and the base–collector one at 0 V (ngspice's
+MODEINITJCT). From cold the samples settle in 12 iterations (five transistors in their regions), 24 (the switch) and 8
+(the amplifier at rest). 2000 random boards of up to seven parts — transistors with their legs anywhere among
+batteries, LEDs, diodes, resistors and jumpers — all settle; seven end one go of 100 iterations by the noise rule (a
+group that only junction leakage and GMIN hold to the ground while amperes flow inside it, as in Diodes and LEDs) and
+one board without a transistor steps its sources.
+
+ngspice gives every transistor a substrate junction (ISS = 0: only GMIN across it) from the ground to the collector
+of an NPN (vertical) or the base of a PNP (lateral). A discrete transistor has no substrate: the oracle's decks tie it
+to the node that junction faces, which takes it out, and the rest of the decks is the formula above.
+
+**The catalog** (sources read 20.11.2026):
+
+| Key | The maker's SPICE model | IS | BF | BR | VAF | Limits: the maker's datasheet |
+|---|---|---|---|---|---|---|
+| `transistor-bc547b` | Philips Semiconductors, «SPICE Parameter Library for PHILIPS' Low Frequency Small Signal Transistors» (`phil_bjt.lib`, revision 1.0, 21 Nov 1996, for MicroSim PSpice), `.MODEL QBC547B/PLP NPN` | 23.9 fA | 294.3 | 7.946 | 63.2 V | IC 100 mA, Ptot 500 mW: Philips «BC546; BC547 NPN general purpose transistors», product specification 2004 Nov 25 (hFE of BC547B 200–450 at 2 mA) |
+| `transistor-bc557b` | the same library, `.MODEL QBC557B/PLP PNP` | 38.34 fA | 344.4 | 14.84 | 21.11 V | −100 mA, 500 mW: Philips «BC556; BC557 PNP general purpose transistors», 1999 Apr 15 (hFE 220–475) |
+| `transistor-2n3904` | Fairchild Semiconductor, datasheet «2N3904 / MMBT3904 / PZT3904», 2001 Rev A, «Spice Model» | 6.734 fA | 416.4 | 0.7371 | 74.03 V | IC 200 mA, PD 625 mW, the same datasheet |
+| `transistor-2n3906` | Fairchild, «2N3906 / MMBT3906 / PZT3906», 2001 Rev A, «Spice Model» | 1.41 fA | 180.7 | 4.977 | 18.7 V | −200 mA, 625 mW, the same datasheet |
+
+Philips' library was read from the KiCad SPICE library on GitHub (`kicad-spice-library/KiCad-Spice-Library`,
+`Models/uncategorized/spice_complete/phil_bjt.lib`); LTspice's `standard.bjt` has the same BC547B and BC557B
+(«mfg=Philips»). Nexperia, Philips' successor, refused this machine (HTTP 403), as for 1N4148. Fairchild's datasheets
+were read from CERN's copies (`sy-dep-epc-lpc.web.cern.ch`, «2N3904 Transistor (FAIRCHILD).pdf» and «2N3906 Transistor
+(FAIRCHILD).pdf»); the 2N3904 one prints `Ise=6.734` without the f of femto, which the same model in PSpice's eval.lib
+(`Q2N3904`) has. A BC547B with IS 7.049 fA, BF 374.6, VAF 62.79 V circulates as well (on forums, as an ORCAD model of
+BC546B); its source could not be traced to a maker, so the maker's own library was taken. The makers' whole models,
+which only `tools/ref-models/electronics/amplifier.py` runs, are in `spice.py` (`TRANSISTORS[key]['vendor']`); how far
+the model is from them in the amplifier: The amplifier, below.
+
+**Limits.** The collector current and the power, the plan's two: the datasheets' continuous IC and their Ptot at
+25 °C. No voltage limit: the bench has 9 V at most against VCEO 40–45 V, and SPICE's model has no breakdown (a
+base–emitter junction the wrong way round past its VEBO of 6 V is not modelled). `HEAT_SECONDS.transistor` = 5 s (the
+decision of E1-6, as a diode's: a junction in a small package; a TO-92 on its leads, Rth(j-a) 200–250 K/W, warms
+through in tens of seconds, so this is a compression like the others). A burnt transistor is a gap between all three
+pins (a real one often shorts from the collector to the emitter; the gap is the decision of E1-6, as for every part).
+
 ## Limits (`limits.ts`)
 
 **The load** (`loadOf(spec, reading)`) is the share of its limit a part is under: the largest of |p| / `powerW`,
 |i| / `currentA`, |u| / `voltageV` and (−u) / `reverseV`, of the limits the part has. Resistors, the pot (its whole
 track), the speaker, the earphone and the lamp have a power; LEDs, diodes and batteries a current; diodes a reverse
-voltage too; capacitors a voltage either way, an electrolytic a reverse voltage too. The ideal sources, the sine, the
-switch and the jumper have none.
+voltage too; capacitors a voltage either way, an electrolytic a reverse voltage too; transistors a collector current
+and a power. The ideal sources, the sines (the player's tone too), the switch and the jumper have none.
 
 **The condition** (`conditionOf(load, damage)`): `'ok'` up to half the limit (`WARM_LOAD` 0.5), `'warm'` above it,
 `'hot'` above the limit, `'burnt'` once the part burnt (`damage` true or `'burnt'`), `'bulged'` once an electrolytic
@@ -467,16 +542,19 @@ for the capacitors, of E1-5):
 | `capacitor` | 10 s | 100 μF / 6.3 V on the 9 V battery bulges after 12.0 s, the wrong way round after 1.2 s; on 16 V it is warm for ever |
 | `led` | 2 s | an LED straight on the 9 V battery takes 0.93 A (red) or 0.51 A (blue) and burns after 0.07 or 0.12 s: a flash |
 | `diode` | 5 s | 1N4148 straight on the 9 V battery takes 3.7 A and burns after 0.28 s; 1N4007 5.2 A, 1.1 s |
+| `transistor` | 5 s | BC547B with 10 kΩ from the 9 V battery on its base and only 10 Ω in its collector takes 0.25 A and 1.53 W (load 3.07) and burns after 2.0 s; 2N3904 with 100 Ω on its base and its collector straight on the battery, 4.7 A, 0.22 s |
 | `lamp` | 2 s | the 6 V lamp on the 9 V battery: 2.1 s |
 | `battery` | 2 s | a short warms the battery to its load (6 for the 9 V one) in a few seconds; it never burns |
 
 `advanceHeat(state, net, dc, seconds)` lets model time pass at an operating point: every limited part of the board
 moves its heat toward its load in `dc.status`, a part that reaches 1 fails, and the ids of the parts that failed now
-come back. The next solve with the state knows them — a burnt resistor, LED, diode or lamp is a gap (its reading is
-the voltage across the gap, no current), a bulged capacitor a leak of 1 kΩ. In the operating point the stand calls it
-once a frame with the frame's time. The transient takes the same step at every step of its own, with the load of that
-moment: in time the heat is the load filtered by τ, so a part takes the mean of a load that swings faster than τ (a
-rectifier's diode, at 50 Hz, its mean current). Time runs forward: a negative or infinite step is a `RangeError`.
+come back. The next solve with the state knows them — a burnt resistor, LED, diode, lamp or transistor is a gap (its
+reading is the voltage across the gap, no current), a bulged capacitor a leak of 1 kΩ. In the operating point the
+stand calls it once a frame with the frame's time. The transient takes the same step at every step of its own, with the
+load of that moment: in time the heat is the load filtered by τ, so a part takes the mean of a load that swings faster
+than τ (a rectifier's diode, at 50 Hz, its mean current; the amplifier's output pair, the mean of its half waves).
+`status` in time is the load of the moment, so it may read `'hot'` at the peaks of a tone while the heat stays far
+below 1 (the amplifier at full volume, below). Time runs forward: a negative or infinite step is a `RangeError`.
 
 ## The transient (`transient.ts`)
 
@@ -577,13 +655,134 @@ burns after 0.066 s; an electrolytic bulges as in Capacitors. The next steps kno
 Nothing in a step allocates: the matrix, the readings, the scratch of Newton's iterations and the copy of a step to
 take again are made once per board; `run` writes into the stand's own arrays.
 
+## The amplifier (`amplifier.ts`)
+
+The thread of the volume: the amplifier the reader builds in the chapter `amplifier`, which plays the player into the
+8 Ω speaker from the 9 V battery on three transistors (the plan: the simplest that really plays, three transistors at
+most, a volume control, coupling capacitors, an LED «on» with its resistor and a diode against the battery the wrong
+way round). `amplifierNetlist(options?)` gives its netlist, a new object each time; `AMPLIFIER_NODES` names its nodes
+for the probe; `AMPLIFIER_ROLES` says what every part does there and which chapter of its own kind explains it.
+
+```ts
+import { AMPLIFIER_NODES, amplifierNetlist, Transient } from '@electronics/sim/core';
+
+const board = amplifierNetlist({ volume: 0.5 }); // switched on, the volume control in the middle, the tone of 1 kHz
+const t = new Transient(board, { dt: 1 / 48000 });
+t.start('dc'); // at rest: the tone gives 0 V at t = 0
+t.v[AMPLIFIER_NODES.output]; // 3.755 V: near half the supply
+t.parts.B1!.i; // −0.01513: 15.1 mA from the battery
+const speaker = new Float32Array(2880);
+t.run(2880, [{ node: AMPLIFIER_NODES.speaker, out: speaker }]); // 60 ms
+// the last 20 ms of `speaker`: 1 kHz of 1.017 V amplitude on the 8 Ω speaker, 65 mW
+board.parts.find((p) => p.id === 'VR1')!.setting = 0.9; // louder: 60 ms later, 2.71 V
+```
+
+`amplifierNetlist({ volume?, on?, reversed?, source? })`: `volume` the setting of the volume control (0.5 when
+absent; 0 silent, 1 full), `on` the switch (closed when absent), `reversed` the battery with its plus on the ground row,
+`source` the catalog key in the player's place (`player-tone` when absent; the player with its melody is E1-7's). The
+nodes and parts (ids as on a schematic):
+
+| Part | Key | Pins → nodes | Role (`AMPLIFIER_ROLES`) | Chapter |
+|---|---|---|---|---|
+| `B1` | `battery-9v` | plus `battery` (1), minus ground | all the energy the speaker gets comes from it | `prologue` |
+| `S1` | `switch` | `battery` (1) → `switched` (2) | off, the battery gives nothing | `prologue` |
+| `D1` | `diode-1n4007` | anode `switched` (2), cathode `supply` (3) | protection: a battery the wrong way round finds it shut | `diode` |
+| `C3` | `electrolytic-470u-16v` | plus `supply` (3), minus ground | the reservoir: it gives the loud peaks their current at once | `capacitor` |
+| `R1`, `LED1` | `resistor-2k2`, `led-red` | `supply` (3) → `led` (4) → ground | the light «on»: 3 mA are enough for a lamp that only says «on» | `resistor-pick`, `led` |
+| `PL` | `player-tone` | plus `player` (5), minus ground | the player: 0.3 V at most behind 32 Ω | `prologue` |
+| `VR1` | `pot-10k` | ccw ground, wiper `volume` (6), cw `player` (5) | the volume control: a divider that passes on a share of the signal | `divider` |
+| `C1` | `electrolytic-10u-16v` | plus `coupled` (7), minus `volume` (6) | lets the music in, keeps the driver's 0.7 V of bias from the volume control | `filter` |
+| `R2` | `resistor-1k5` | `coupled` (7) → `base` (8) | the input resistor: with R3 it sets the gain | `resistor` |
+| `R3`, `R4` | `resistor-47k`, `resistor-18k` | `output` (12) → `base` (8) → ground | a divider from the output to the base: feedback that holds the output near half the supply | `divider` |
+| `Q1` | `transistor-bc547b` | collector `driver` (11), base `base` (8), emitter ground | the driver: a small current into its base controls the large one of its collector | `amplifier` |
+| `R5` | `resistor-470` | `supply` (3) → `top` (9) | the driver's load: the current that opens the upper output transistor | `resistor` |
+| `D2`, `D3` | `diode-1n4148` | `top` (9) → `middle` (10) → `driver` (11) | 1.4 V that hold both output transistors just open: no step where the current changes hands | `diode` |
+| `Q2` | `transistor-2n3904` | collector `supply` (3), base `top` (9), emitter `output` (12) | pushes current from the supply into the speaker | `transistor` |
+| `Q3` | `transistor-2n3906` | collector ground, base `driver` (11), emitter `output` (12) | pulls it back through the speaker to the ground | `transistor` |
+| `C2` | `electrolytic-470u-16v` | plus `output` (12), minus `speaker` (13) | passes the music to the speaker, keeps the steady half supply off it | `filter` |
+| `LS1` | `speaker-8` | plus `speaker` (13), minus ground | turns its current into sound | `prologue` |
+
+**What ngspice says of it** (the samples `amplifier-*.json`; the model agrees within 3.2e-10 at rest and within 6e-5
+playing — the amplitudes of every probed node, the waveform within 8e-5 of its swing — at one step of integration a
+sample of 1/48000 s). At rest the supply after the protection diode is 8.328 V, the output 3.755 V, the base of the
+driver 0.686 V; the driver takes 8.25 mA, the output pair 3.89 mA (the two diodes hold 1.44 V), the LED 2.99 mA: the
+battery gives 15.13 mA, which an alkaline 9 V battery feeds for about 39 hours (Energizer 522, form 522GL1019: about
+600 mAh at 10 mA and 565 mAh at 25 mA to 4.8 V, read off its chart). Playing the tone (the distortion, THD — the
+harmonics up to the tenth against the tone — from `tools/ref-models/electronics/amplifier.py`):
+
+| Volume | The tone on the volume control | On the speaker | Gain | Power | THD |
+|---|---|---|---|---|---|
+| 10 % | 20.1 mV | 0.315 V | 15.72 | 6.2 mW | 0.8 % |
+| 30 % | 41.7 mV | 0.669 V | 16.03 | 28 mW | 0.7 % |
+| 50 % | 63.1 mV | 1.017 V | 16.12 | 65 mW | 0.6 % |
+| 70 % | 97.5 mV | 1.567 V | 16.08 | 153 mW | 0.7 % |
+| 80 % | 128.0 mV | 2.035 V | 15.90 | 259 mW | 1.5 % |
+| 90 % | 181.8 mV | 2.709 V | 14.90 | 459 mW | 4.8 % |
+| 95 % | 227.4 mV | 2.997 V | 13.18 | 562 mW | 10.5 % |
+| 100 % | 294.8 mV | 3.196 V | 10.84 | 638 mW | 18.8 % |
+
+Clipping sets in — the gain down to 90 % of its 15.72 on a small signal — with 0.202 V of the tone on the volume
+control, between 90 % and 95 % of the knob: about 0.5 W on the speaker. At full volume the speaker swings 5.55 V from
+peak to peak and the output transistors pass 0.33 and 0.36 A at the peaks, 1.7 and 1.8 times their 200 mA: in a
+second of the tone `status` reads `'hot'` at about 40 % of the moments, while their heat, the mean of the load, settles
+at 0.67 (`'warm'`, never burnt); at 80 % of the knob 0.41, `'hot'` at 21 % of the moments; at 50 % about 0.22. The
+speaker takes a third of its 2 W at full volume. The reservoir C3 reads `'warm'` at rest: 8.3 V of its 16 V (load
+0.52, the capacitors' rule of E1-5). Switched off, the speaker gets 45 μV of the tone, 6600 times less than the volume
+control has: nothing amplifies. With the battery the wrong way round, 14.4 nA leak through the protection diode and
+nothing behind it gets more than 13 mV the wrong way round.
+
+**Why this circuit** (the decision of E1-6; `amplifier.py` prints the numbers). The plan asked to compare at least two:
+
+| | A: one stage, the 32 Ω earphone | B: driver and push-pull pair, the 8 Ω speaker (chosen) |
+|---|---|---|
+| transistors | 2N3904 | BC547B, 2N3904, 2N3906 |
+| parts but the supply, the LED and the volume control | 8 | 12 |
+| gain at 1 kHz, volume at 10 % | 3.92 (THD 0.1 %) | 15.72 (THD 0.8 %) |
+| power at 10 % THD | not reached: 17 mW at full volume (THD 6.8 %) | 552 mW |
+| battery current at rest | 47.8 mA | 15.1 mA |
+| hours of the 9 V battery at rest | 10 | 39 |
+
+A is one common-emitter stage — a 2N3904 biased by 6.8 kΩ and 1 kΩ, 4.7 Ω in its emitter, 68 Ω in its collector and
+the earphone through 470 μF, on the same supply and volume control. It is the easiest to explain — one transistor, one
+idea — but it plays an earphone, not the speaker, at 17 mW at most, and it keeps 44 mA flowing through its collector
+all the time to have a swing at all: the battery lasts a quarter as long. B gives the 8 Ω speaker half a watt, takes
+a third of the current at rest, and adds three ideas, each in one part's sentence (the table above): feedback from the
+output to the base (R3, R4), a push-pull pair that takes current from the supply only while the speaker needs it (Q2,
+Q3), and two diodes that keep the pair just open. Also tried and dropped (`amplifier.py` prints them too): without
+the reservoir capacitor the distortion at 30–70 % of the knob is 1.6–1.9 % instead of 0.6–0.7 %; with the speaker
+returned to the supply instead of the ground (which feeds the driver's load from the speaker, a bootstrap) the
+amplifier gives more — 0.94 W at full volume — but the battery's internal resistance then reaches the speaker, and the
+distortion at 30–70 % is 2.3–2.4 %.
+
+**The model's transistor against the makers' whole models** in B (`amplifier.py`, the same netlist with each
+transistor's whole SPICE model):
+
+| | The model (IS, BF, BR, VAF) | The makers' whole models | Difference |
+|---|---|---|---|
+| the output at rest | 3.755 V | 3.867 V | +3 % |
+| battery current at rest | 15.13 mA | 14.49 mA | −4 % |
+| the driver's collector current | 8.25 mA | 8.01 mA | −3 % |
+| the output pair at rest | 3.89 mA | 3.48 mA | −11 % |
+| gain at 1 kHz, volume at 10 % | 15.72 | 13.51 | −14 % |
+| clipping sets in: the tone on the volume control | 0.202 V | 0.119 V | −41 % |
+| power at 10 % THD | 552 mW | 247 mW | −55 % |
+| power at full volume | 638 mW | 348 mW | −45 % |
+
+At rest the two agree within a few per cent, and the small-signal gain within 14 %: the loop of the feedback is not
+strong enough to hide the transistors (RE of 0.47 Ω in BC547B's whole model and its NF of 1.008 lower the driver's
+gain; ISE lowers the 2N3904's β at small currents). Near clipping they part: the β of the real 2N3904 and 2N3906 falls
+above their IKF of 67 and 80 mA, and their RB of 10 Ω and RC of 1 and 2.5 Ω take part of the swing, so a real
+amplifier of these parts clips at about a quarter of a watt where the model gives half a watt. The stand shows the
+model's numbers; a page that quotes the amplifier's power should quote the whole models' (about 0.25 W), or say that
+the model's half a watt is the upper end.
+
 ## Modules
 
 | Module | What it does |
 |---|---|
 | `netlist.ts` | `Netlist`, `PartInstance`, `GROUND`; `checkNetlist` and `checkSetting` (the `RangeError`s above) |
-| `parts.ts` | The catalog `PARTS`, `E12`, `E24`, `resistorKey`, `WIRE_OHMS`; the types of the parts (`PartSpec`, one interface per kind, `JunctionParams`, `Limits`, `Dielectric`); `Behaviour`, `FailedForm`, `Placement`, `Operating`; `behaviour(spec)` — how a kind of part sits in the matrix; the sine source |
-| `mna.ts` | The dense LU with partial pivoting (`createSystem`, `factor`, `solveFactored`); `compile` (unknowns: the nodes in use, the parts' own nodes, then the currents of the parts that need one; the parts' memory and history; the scratch of the iterations); the `Stamper` the parts write with; `readSettings`, `updateSettings`; `assemble` (clear, stamp every part around a guess, leave the burnt ones out, stamp the bulged ones' failed form, tie); the damage codes `BURNT`, `BULGED` |
+| `parts.ts` | The catalog `PARTS`, `E12`, `E24`, `resistorKey`, `WIRE_OHMS`; the types of the parts (`PartSpec`, one interface per kind, `JunctionParams`, `TransistorParams`, `Polarity`, `Limits`, `Dielectric`); `Behaviour`, `FailedForm`, `Placement`, `Operating`; `behaviour(spec)` — how a kind of part sits in the matrix; the sine source, ideal or behind its internal resistance |
+| `mna.ts` | The dense LU with partial pivoting (`createSystem`, `factor`, `solveFactored`); `compile` (unknowns: the nodes in use, the parts' own nodes, then the currents of the parts that need one; the parts' memory and history; the scratch of the iterations); the `Stamper` the parts write with (conductance, current, transconductance, ideal source); `readSettings`, `updateSettings`; `assemble` (clear, stamp every part around a guess, leave the burnt ones out, stamp the bulged ones' failed form, tie); the damage codes `BURNT`, `BULGED` |
 | `topology.ts` | `analyse` — the issues and the nodes to tie, by union–find over the links of the parts (a burnt part has none) |
 | `dc.ts` | `solveDC` — one solve, or Newton's iterations with source stepping — `DcSolution`, `PartReading`, `DcOptions`, `MAX_ITERATIONS`; `newton` (one go of the iterations, which the transient takes at every step; `Go`, `newGo`), `readPart`, `damageIn`, `failureIn` |
 | `diode.ts` | SPICE's junction: `ROOM_KELVIN`, `THERMAL_VOLTAGE`, `GMIN`, `junctionOf`, `junctionCurrent`, `pnjlim`, `limitJunction`, `forwardVoltage`, `ledLumens`, `diodeBehaviour` |
@@ -591,6 +790,8 @@ take again are made once per board; `run` writes into the stand's own arrays.
 | `capacitor.ts` | The capacitor — ESR, capacitance, leak; its companion in time; its bulged form: `capacitorBehaviour`, `BULGED_OHMS` |
 | `limits.ts` | `loadOf`, `conditionOf`, `WARM_LOAD`, `HEAT_SECONDS`, `heatStep`, `burnSeconds`, `limited`, `canBurn`, `failureOf`, `damageOf`, `fail`, `advanceHeat`; `Condition`, `Failure`, `PartStatus` |
 | `transient.ts` | `Transient` with `TransientOptions`, `TransientStart`, `Probe`; `EULER_STEPS` |
+| `transistor.ts` | The bipolar transistor, the transport form of Ebers–Moll: `transistorAt`, `TransistorPoint`, `transistorVcrit`, `transistorBehaviour` |
+| `amplifier.ts` | The amplifier of the volume: `amplifierNetlist`, `AmplifierOptions`, `AMPLIFIER_NODES`, `AMPLIFIER_ROLES`, `AmplifierRole` |
 | `state.ts` | `ModelState`, `PartMemory`, `createModelState`, `memoryOf`, `levelOf`, `keepLevel` |
 | `index.ts` | the public entry |
 
@@ -599,8 +800,8 @@ take again are made once per board; `run` writes into the stand's own arrays.
 A kind is four things:
 
 1. its spec interface in `parts.ts`, added to the union `PartSpec`, and its entries in `PARTS`;
-2. a `Behaviour` (`parts.ts` for a simple linear kind, a module of its own otherwise, as `diode.ts`, `lamp.ts` and
-   `capacitor.ts`) and one more `case` in `behaviour(spec)`;
+2. a `Behaviour` (`parts.ts` for a simple linear kind, a module of its own otherwise, as `diode.ts`, `lamp.ts`,
+   `capacitor.ts` and `transistor.ts`) and one more `case` in `behaviour(spec)`;
 3. its limits and, if it has any, its time constant in `HEAT_SECONDS` (`limits.ts`) — and, if it fails otherwise than
    by burning, its case in `failureOf` and its `failed` form;
 4. its numbers in the oracle's own catalog (`tools/ref-models/electronics/spice.py`) and its cases in `cases.py`.
@@ -614,26 +815,31 @@ sources), which pins conduct direct current at a setting (`links`), whether it i
 memory starts a solve (`start`), its stamp, the currents into its pins from a solution (`currents`), and, for a part
 with a state in time, its history at an operating point (`settle`) and after a step (`accept`); `failed`, when it
 fails otherwise than into a gap. The stamp writes through the `Stamper` — `conductance(a, b, g)`, `current(a, b, i)`
-(a current through the part from node `a` to node `b`), `voltage(plus, minus, branch, volts)` — by node numbers, the
-part's own nodes (`at.inner`) too; a conductance or a current from a node to itself (a part with both legs in one
-row) is not stamped at all, since adding and taking away a jumper's 1000 S would round away the GMIN beside it. A part
+(a current through the part from node `a` to node `b`), `transconductance(a, b, p, q, g)` (a current g·(v(p) − v(q))
+through the part from `a` to `b`: a transistor's collector current, which its junctions control), `voltage(plus,
+minus, branch, volts)` — by node numbers, the part's own nodes (`at.inner`) too; a conductance or a current from a node
+to itself (a part with both legs in one row) is not stamped at all, since adding and taking away a jumper's 1000 S
+would round away the GMIN beside it, nor a transconductance from a node to itself or controlled by a node against
+itself. A part
 stamps around the guess `op: Operating`: the node voltages `op.v`, the share `op.sources` a source gives (it
 multiplies its voltage by it), `op.initial` (the first iteration from nothing: a junction linearizes at its memory),
 `op.limited` (a part that limited its step sets it: the iterations go on), and the moment: `op.time` (a sine reads
 it), `op.dt` (0 at the operating point; the step in time, when a part with a state stamps its companion from its
 history) and `op.trapezoid` (the trapezoid, or backward Euler). A nonlinear part stamps its linearization: its slope
-as a conductance and the current that makes up the rest.
+as a conductance (a transistor: as transconductances) and the current that makes up the rest.
 
 ## Tests
 
 ```bash
 cd app && pnpm vitest run src/volumes/electronics/sim                                 # the whole model
 python3 tools/ref-models/electronics/spice.py --check                                 # are the samples fresh?
+python3 tools/ref-models/electronics/amplifier.py                                     # the amplifier's tables
 ```
 
-`__tests__/`: `purity` (the text of every file), `parts` (the catalog, the published diodes, the fitted LEDs), `mna`
-(the LU and the stamps; both legs in one row stamp nothing), `dc` (linear circuits by hand: a divider, the batteries
-under load, a grid of five resistors, the pot at 0 / 0.5 / 1, a switch, the speaker; the worked example above; a
+`__tests__/`: `purity` (the text of every file), `parts` (the catalog, the published diodes, the fitted LEDs, the
+player's tone), `mna` (the LU and the stamps; both legs in one row stamp nothing; a transconductance), `dc` (linear
+circuits by hand: a divider, the batteries under load, a grid of five resistors, the pot at 0 / 0.5 / 1, a switch, the
+speaker; the worked example above; a
 singular circuit; the state; malformed netlists), `topology` (open, short, floating — a pot's free wiper among them —
 ungrounded), `diode` (the junction against SPICE's formulas in every region, the knee, `pnjlim`; the LEDs' windows
 and light; an LED of each colour with 330 Ω from 9 V against ngspice — 21.24 mA red, 20.94 yellow, 20.65 green, 17.89
@@ -646,7 +852,16 @@ power from 3 V, the state's temperature, the lamp's limit), `limits` (conditions
 heat in time, the 0.25 W resistor at 0.2 W for an hour and at 1 W, a burnt part as a gap, a shorted battery, two
 stands), `capacitor` (the catalog — ESR and leak of the electrolytics from their makers' rules —, a capacitor at the
 operating point, the loads by voltage, an electrolytic over its rating and the wrong way round: bulged after 12.0 and
-1.2 s, then a leak of 1 kΩ, at the operating point too), `transient` (every sample in time against ngspice, the
+1.2 s, then a leak of 1 kΩ, at the operating point too), `transistor` (the catalog with the makers' numbers;
+the formula against SPICE's equations in every region, the Early effect, the slopes against differences, the
+formula at ngspice's node voltages within 1e-4; Vcrit and the start; both junctions limited by `pnjlim`, an NPN's and a
+PNP's; a transistor driven hard from cold; 2000 random boards; the switch — BC547B, its base through 10 kΩ from 9 V,
+the red LED with 330 Ω in its collector — against ngspice within ± 3 % (21.11 mA), and with its base on the ground
+under 1 μA; a transistor over its limits burns into a gap), `amplifier` (the netlist of the stand is the one ngspice
+solved; every node named and every part's role in a chapter of its kind; at rest every node within 1 % of ngspice;
+the gain at 1 kHz on a small signal within 2 %; the output against the input at 50, 80, 90, 95 and 100 % of the
+volume and the waveform within 3 %; where clipping sets in within 5 %; switched off, 45 μV; the battery the wrong way
+round, under 1 μA; the worked example above), `transient` (every sample in time against ngspice, the
 plan's tolerances: the RC charge and discharge within 1 % at 20 moments with 63.2 % and 36.8 % ± 0.5 % after
 R·C; the LED fed by 470 μF within 2 %; the rectifier's output, mean and ripple within 3 %; the filters sampled at
 1/48000 s in four steps of integration within 1 % of `.ac` at 100 Hz, 1 kHz and 10 kHz, and in one step against
@@ -657,11 +872,16 @@ and a step that fails in its second step of integration undone whole), `oracle` 
 operating point against the model: relative difference ≤ 1e-6 for the linear samples and ≤ 1e-3 for the nonlinear
 ones — the plan's tolerances — for every number, the smallest too, with no absolute allowance; where ngspice gives an
 exact zero — the ground, a part behind an open switch — the model must give an exact zero; at most 50 iterations and
-no source steps; and that every sample on disk is compared here or in `transient`). The samples are written by
-`tools/ref-models/electronics/spice.py` from `cases.py` (its README); the model and ngspice agree on them to 4e-10
-for the linear ones, the rounding of the samples, and to 1.6e-8 for the nonlinear ones, the tolerance to which both
-sides settle — but for the power in the 1 kΩ before the reversed LED of `diode-reverse` (8.1e-20 W: 9 pA and 9 nV,
+no source steps; and that every sample on disk is compared here, in `transient` or in `amplifier`). The samples are
+written by `tools/ref-models/electronics/spice.py` from `cases.py` (its README); the model and ngspice agree on them
+to 4e-10 for the linear ones, the rounding of the samples, and to 1.6e-8 for the nonlinear ones, the tolerance to which
+both sides settle — but for the power in the 1 kΩ before the reversed LED of `diode-reverse` (8.1e-20 W: 9 pA and 9 nV,
 the difference of two nodes at 9 V), where the rounding of those nodes on either side leaves 8e-7. In time they agree
 far inside the plan's tolerances: the RC curves to 3.2e-6, the LED's current to 3.9e-7, the rectifier's output to
 9.5e-7 and its mean and ripple to 0.01 %, at the steps the tests take (1 ms, 0.1 ms, 1/48000 s; ngspice steps at
-most 1 ms, 0.1 ms and 5 μs with its tolerances tightened).
+most 1 ms, 0.1 ms and 5 μs with its tolerances tightened). With transistors (their operating points too are solved by
+ngspice with its tolerances tightened, `spice.py`): the five transistors in their regions to 4.0e-10, the amplifier at
+rest to 3.2e-10, the switch to 5.4e-5 — the current of the LED behind the transistor that is off, 8.3 pA, whose last
+digits are the rounding of nodes at 9 V on either side; the amplifier playing to 6e-5 in the amplitudes and 8e-5 of
+the swing in the waveform at 1/48000 s; with the battery the wrong way round, where every node behind the protection
+diode is a rounding of next to nothing, the diode's and the battery's current to 7e-5 (`amplifier` tests those).

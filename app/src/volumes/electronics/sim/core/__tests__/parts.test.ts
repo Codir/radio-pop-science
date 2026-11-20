@@ -72,6 +72,16 @@ describe('the catalog of parts', () => {
       hz: 50,
       limits: {},
     });
+    // the player's level and internal resistance (the plan: 0.3 V amplitude behind 32 Ω) as a test tone of 1 kHz: the
+    // source of the amplifier's tests and of their oracle
+    expect(PARTS['player-tone']).toEqual({
+      kind: 'sine',
+      pins: ['plus', 'minus'],
+      amplitude: 0.3,
+      hz: 1000,
+      ohms: 32,
+      limits: {},
+    });
   });
 
   it('the diodes: the parameters of their published SPICE models', () => {
@@ -169,6 +179,7 @@ describe('the catalog of parts', () => {
       'source',
       'speaker',
       'switch',
+      'transistor',
     ]);
     expect(Object.isFrozen(PARTS)).toBe(true);
   });

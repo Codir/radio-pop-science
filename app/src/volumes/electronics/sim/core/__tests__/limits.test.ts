@@ -73,7 +73,20 @@ describe('how loaded a part is', () => {
     close(loadOf(PARTS['battery-9v']!, reading(0.009, -6)), 6, 1e-12, 'the 9 V battery shorted');
     close(loadOf(PARTS['battery-aa']!, reading(1.2, -1.5)), 0.5, 1e-15, 'an AA cell at 1.5 A');
     // parts without limits are never loaded
-    for (const key of ['jumper', 'switch', 'ideal-9v', 'ideal-5v'])
+    // a transistor by its collector current or by the power it takes, whichever is nearer its limit
+    close(
+      loadOf(PARTS['transistor-bc547b']!, { u: 4, i: 0.05, p: 0.2 }),
+      0.5,
+      1e-15,
+      'BC547B: 50 mA of 100 mA',
+    );
+    close(
+      loadOf(PARTS['transistor-2n3906']!, { u: -5, i: -0.1, p: 0.5 }),
+      0.8,
+      1e-15,
+      '2N3906: 0.5 W of 0.625 W',
+    );
+    for (const key of ['jumper', 'switch', 'ideal-9v', 'ideal-5v', 'player-tone'])
       expect(loadOf(PARTS[key]!, reading(9, 100)), key).toBe(0);
   });
 
@@ -88,6 +101,10 @@ describe('how loaded a part is', () => {
     for (const color of ['red', 'yellow', 'green', 'blue', 'white'])
       expect(PARTS[`led-${color}`]!.limits, color).toEqual({ currentA: 0.03 });
     expect(PARTS['lamp-6v']!.limits).toEqual({ powerW: 0.7 });
+    for (const key of ['transistor-bc547b', 'transistor-bc557b'])
+      expect(PARTS[key]!.limits, key).toEqual({ currentA: 0.1, powerW: 0.5 });
+    for (const key of ['transistor-2n3904', 'transistor-2n3906'])
+      expect(PARTS[key]!.limits, key).toEqual({ currentA: 0.2, powerW: 0.625 });
     // what can burn: every limited part but a battery
     expect(canBurn(PARTS['resistor-1k']!)).toBe(true);
     expect(canBurn(PARTS['led-blue']!)).toBe(true);
@@ -95,6 +112,7 @@ describe('how loaded a part is', () => {
     expect(canBurn(PARTS['diode-1n4007']!)).toBe(true);
     expect(canBurn(PARTS['pot-10k']!)).toBe(true);
     expect(canBurn(PARTS['speaker-8']!)).toBe(true);
+    expect(canBurn(PARTS['transistor-2n3904']!)).toBe(true);
     for (const key of ['battery-9v', 'battery-4aa', 'battery-aa', 'jumper', 'switch', 'ideal-9v'])
       expect(canBurn(PARTS[key]!), key).toBe(false);
   });
@@ -111,6 +129,7 @@ describe('heat in time', () => {
       lamp: 2,
       led: 2,
       diode: 5,
+      transistor: 5,
     });
     // the exact step of dH/dt = (load − H)/τ for a constant load
     close(heatStep(0, 4, 10, 10), 4 * (1 - Math.exp(-1)), 1e-15, 'one time constant');

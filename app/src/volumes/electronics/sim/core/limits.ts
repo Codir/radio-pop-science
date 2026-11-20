@@ -43,6 +43,7 @@ export const HEAT_SECONDS: Readonly<Partial<Record<PartKind, number>>> = Object.
   lamp: 2,
   led: 2,
   diode: 5,
+  transistor: 5,
 });
 
 /** Whether the part has any limit. */
