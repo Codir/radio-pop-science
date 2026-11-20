@@ -130,6 +130,22 @@ TRANSISTORS = {
         'vendor': 'Is=1.41f Xti=3 Eg=1.11 Vaf=18.7 Bf=180.7 Ne=1.5 Ise=0 Ikf=80m Xtb=1.5 Br=4.977 Nc=2 Isc=0 Ikr=0 '
                   'Rc=2.5 Cjc=9.728p Mjc=.5776 Vjc=.75 Fc=.5 Cje=8.063p Mje=.3677 Vje=.75 Tr=33.42n Tf=179.3p Itf=.4 '
                   'Vtf=4 Xtf=6 Rb=10'},
+    # the output pair of the amplifier (E1-6, fix round 1: 2N3904 / 2N3906 pass more than their 200 mA there).
+    # Philips' library above: .MODEL QBC337-25/PLP NPN
+    'transistor-bc337-25': {
+        'type': 'npn', 'is': 4.13e-14, 'bf': 292.4, 'br': 23.68, 'vaf': 145.7,
+        'vendor': 'IS=4.13E-14 NF=0.9822 ISE=3.534E-15 NE=1.35 BF=292.4 IKF=0.9 VAF=145.7 NR=0.982 ISC=1.957E-13 '
+                  'NC=1.3 BR=23.68 IKR=0.1 VAR=20 RB=60 IRB=0.0002 RBM=8 RE=0.1129 RC=0.25 XTB=0 EG=1.11 XTI=3 '
+                  'CJE=3.799E-11 VJE=0.6752 MJE=0.3488 TF=5.4E-10 XTF=4 VTF=4.448 ITF=0.665 PTF=90 CJC=1.355E-11 '
+                  'VJC=0.3523 MJC=0.3831 XCJC=0.455 TR=3E-08 CJS=0 VJS=0.75 MJS=0.333 FC=0.643'},
+    # Philips' BC327-25 as LTspice's standard.bjt carries it («mfg=Philips»; phil_bjt.lib has no BC327), read from
+    # LTwiki's copy and from the KiCad SPICE library's Models/Transistor/BJT/BJT.lib
+    'transistor-bc327-25': {
+        'type': 'pnp', 'is': 1.08e-13, 'bf': 385.7, 'br': 20.57, 'vaf': 31.29,
+        'vendor': 'IS=1.08E-13 NF=0.99 ISE=2.713E-14 NE=1.4 BF=385.7 IKF=0.3603 VAF=31.29 NR=0.9849 ISC=5.062E-13 '
+                  'NC=1.295 BR=20.57 IKR=0.054 VAR=11.62 RB=1 IRB=1.00E-06 RBM=0.5 RE=0.1415 RC=0.2623 XTB=0 EG=1.11 '
+                  'XTI=3 CJE=5.114E-11 VJE=0.8911 MJE=0.4417 TF=7.359E-10 XTF=1.859 VTF=3.813 ITF=0.4393 PTF=0 '
+                  'CJC=2.656E-11 VJC=0.62 MJC=0.4836 XCJC=0.459 TR=5.00E-08 CJS=0 VJS=0.75 MJS=0.333 FC=0.99'},
 }
 
 # A transient is solved with tolerances far tighter than ngspice's defaults, so that the reference is much closer to
@@ -656,10 +672,10 @@ def selftest():
     near(switch['parts']['D1']['i'], 21.11e-3, 0.01e-3, 'the switch on')
     near(switch['parts']['Q2']['i'], GMIN * switch['parts']['Q2']['u'], 0.01 * GMIN * switch['parts']['Q2']['u'],
          'the switch off: picoamperes')
-    # the amplifier at rest: the output near half the supply, 15 mA from the battery; the wrong way round, only the
+    # the amplifier at rest: the output near half the supply, 13 mA from the battery; the wrong way round, only the
     # leakage of the protection diode
     rest = solve('amplifier-op', CASES['amplifier-op'])
-    assert 0.4 < rest['v'][12] / rest['v'][3] < 0.5 and 14e-3 < -rest['parts']['B1']['i'] < 16e-3, rest['v']
+    assert 0.4 < rest['v'][12] / rest['v'][3] < 0.5 and 12e-3 < -rest['parts']['B1']['i'] < 14e-3, rest['v']
     reverse = solve('amplifier-reversed', CASES['amplifier-reversed'])
     assert -20e-9 < reverse['parts']['D1']['i'] < -10e-9, reverse['parts']['D1']
     # playing: about 15.7 times on a small signal; the gain falls past clipping; switched off, microvolts

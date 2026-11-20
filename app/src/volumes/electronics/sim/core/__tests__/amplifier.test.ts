@@ -192,7 +192,7 @@ describe('the netlist of the stand', () => {
 });
 
 describe('the amplifier against ngspice', () => {
-  it('at rest: every node within 1 % of ngspice; the output near half the supply, 15 mA from the battery', () => {
+  it('at rest: every node within 1 % of ngspice; the output near half the supply, 13 mA from the battery', () => {
     const s = sample<OpSample>('amplifier-op');
     const dc = solveDC(amplifierNetlist({ volume: 0.5 }));
     expect(dc.ok).toBe(true);
@@ -201,14 +201,14 @@ describe('the amplifier against ngspice', () => {
     s.v.forEach((want, node) => close(dc.v[node], want, 0.01 * Math.abs(want), `node ${node}`));
     for (const [id, want] of Object.entries(s.parts))
       close(dc.parts[id]!.i, want.i, 0.01 * Math.abs(want.i), id);
-    // ngspice: 8.328 V on the supply after the protection diode, the output at 3.755 V; the battery gives 15.13 mA —
-    // the LED 2.99 mA, the driver 8.25 mA, the output pair 3.89 mA
-    close(s.v[supply], 8.328, 0.001, 'ngspice: the supply');
-    close(s.v[output], 3.755, 0.001, 'ngspice: the output');
-    close(-s.parts.B1!.i, 0.01513, 0.00001, 'ngspice: the battery');
+    // ngspice: 8.337 V on the supply after the protection diode, the output at 3.771 V; the battery gives 13.31 mA —
+    // the LED 2.99 mA, the driver 8.36 mA, the output pair 1.94 mA
+    close(s.v[supply], 8.337, 0.001, 'ngspice: the supply');
+    close(s.v[output], 3.771, 0.001, 'ngspice: the output');
+    close(-s.parts.B1!.i, 0.01331, 0.00001, 'ngspice: the battery');
     close(s.parts.LED1!.i, 0.00299, 0.00001, 'ngspice: the LED');
-    close(s.parts.Q1!.i, 0.00825, 0.00001, 'ngspice: the driver');
-    close(s.parts.Q2!.i, 0.00389, 0.00001, 'ngspice: the output pair');
+    close(s.parts.Q1!.i, 0.00836, 0.00001, 'ngspice: the driver');
+    close(s.parts.Q2!.i, 0.00194, 0.00001, 'ngspice: the output pair');
     for (const id of Object.keys(s.parts)) expect(dc.status[id]!.condition, id).not.toBe('hot');
   });
 
@@ -216,7 +216,7 @@ describe('the amplifier against ngspice', () => {
     const s = tone(10);
     const m = playing(10);
     const spice = s.amplitude[speaker]! / s.amplitude[wiper]!;
-    close(spice, 15.72, 0.01, 'ngspice: 15.72 times');
+    close(spice, 15.59, 0.01, 'ngspice: 15.59 times');
     close(m.amplitude[speaker]! / m.amplitude[wiper]!, spice, 0.02 * spice, 'the gain');
     close(m.amplitude[speaker], s.amplitude[speaker]!, 0.02 * s.amplitude[speaker]!, 'on the speaker');
   });
@@ -238,10 +238,10 @@ describe('the amplifier against ngspice', () => {
         close(m.swing[node], swing, 0.03 * swing, `${percent} %: the swing of node ${node}`);
       }
     }
-    // ngspice: 1.02 V on the speaker at 50 %, 2.04 V at 80 %, 3.20 V at full volume — 0.64 W at the tone
-    close(tone(50).amplitude[speaker], 1.017, 0.001, 'ngspice at 50 %');
-    close(tone(80).amplitude[speaker], 2.035, 0.001, 'ngspice at 80 %');
-    close(tone(100).amplitude[speaker], 3.196, 0.001, 'ngspice at 100 %');
+    // ngspice: 1.02 V on the speaker at 50 %, 2.05 V at 80 %, 3.20 V at full volume — 0.64 W at the tone
+    close(tone(50).amplitude[speaker], 1.023, 0.001, 'ngspice at 50 %');
+    close(tone(80).amplitude[speaker], 2.052, 0.001, 'ngspice at 80 %');
+    close(tone(100).amplitude[speaker], 3.203, 0.001, 'ngspice at 100 %');
   });
 
   it('clipping sets in where ngspice says, within 5 %', () => {
@@ -256,12 +256,12 @@ describe('the amplifier against ngspice', () => {
         ] as const,
     );
     const where = onset(spice);
-    // ngspice: the gain is down to 90 % with 0.20 V of the tone on the volume control, between 90 % and 95 % of it
-    close(where, 0.202, 0.002, 'ngspice: where clipping sets in');
+    // ngspice: the gain is down to 90 % with 0.21 V of the tone on the volume control, between 90 % and 95 % of it
+    close(where, 0.207, 0.002, 'ngspice: where clipping sets in');
     expect(where).toBeGreaterThan(tone(90).amplitude[wiper]!);
     expect(where).toBeLessThan(tone(95).amplitude[wiper]!);
     close(onset(model), where, 0.05 * where, 'the model');
-    // past it the output hardly grows: from 95 % to 100 % the input grows by 30 %, the output by 7 %
+    // past it the output hardly grows: from 95 % to 100 % the input grows by 29 %, the output by 6 %
     expect(model.at(-1)![1] / model.at(-2)![1]).toBeLessThan(0.85);
     // the limit of the swing on the speaker at full volume
     close(
@@ -304,18 +304,62 @@ describe('the amplifier against ngspice', () => {
   });
 });
 
+describe('the amplifier within its parts’ ratings', () => {
+  /** Over `steps` steps of the audio rate: the largest collector current of the output pair, the mean load of each of
+   * its transistors (where their heat settles) and the steps at which any part reads 'hot'. */
+  function watch(t: Transient, steps: number): { peak: number; mean: number[]; hot: number[] } {
+    let peak = 0;
+    const sum = [0, 0];
+    const hot: number[] = [];
+    for (let k = 0; k < steps; k++) {
+      expect(t.step()).toBe(true);
+      peak = Math.max(peak, Math.abs(t.parts.Q2!.i), Math.abs(t.parts.Q3!.i));
+      sum[0]! += t.status.Q2!.load;
+      sum[1]! += t.status.Q3!.load;
+      if (Object.values(t.status).some((s) => s.condition === 'hot')) hot.push(k);
+    }
+    return { peak, mean: sum.map((x) => x / steps), hot };
+  }
+
+  it('at full volume the output pair passes 0.37 A at the peaks, three quarters of its 0.5 A, and stays cool', () => {
+    const t = new Transient(amplifierNetlist({ volume: 1 }), { dt: 1 / RATE });
+    expect(t.start('dc')).toBe(true);
+    const { peak, mean, hot } = watch(t, 4800);
+    // ngspice (tools/ref-models/electronics/amplifier.py): 326 and 368 mA at the peaks of the tone
+    close(peak, 0.368, 0.01, 'the peaks');
+    expect(peak).toBeLessThan(0.75 * PARTS['transistor-bc337-25']!.limits.currentA!);
+    expect(PARTS['transistor-bc327-25']!.limits.currentA).toBe(0.5);
+    // the heat settles at the mean load: about a third of the limit, 'ok'
+    for (const m of mean) expect(m).toBeLessThan(0.4);
+    // only Q2's power of the moment touches its 625 mW (a rating for the mean), at two moments of the first period
+    expect(hot.every((k) => k < RATE / 1000)).toBe(true);
+    expect(hot.length).toBeLessThanOrEqual(2);
+  });
+
+  it('switched on with every capacitor empty, the output capacitor’s surge stays under the pair’s 0.5 A', () => {
+    const t = new Transient(amplifierNetlist({ volume: 0.5 }), { dt: 1 / RATE });
+    expect(t.start('zero')).toBe(true);
+    const { peak } = watch(t, 9600);
+    // ngspice (amplifier.py, from every capacitor empty): 438 mA through Q2 while the output rises to half the supply
+    // and charges the output capacitor through the speaker
+    close(peak, 0.438, 0.01, 'the surge');
+    expect(peak).toBeLessThan(PARTS['transistor-bc337-25']!.limits.currentA!);
+    for (const id of ['Q2', 'Q3']) expect(t.state.parts.get(id)!.heat, id).toBeLessThan(0.05);
+  });
+});
+
 describe('the worked example of sim/core/README.md, as written there', () => {
   it('the amplifier at rest, playing at half volume, then louder', () => {
     const board = amplifierNetlist({ volume: 0.5 });
     const t = new Transient(board, { dt: 1 / 48000 });
     expect(t.start('dc')).toBe(true);
-    close(t.v[AMPLIFIER_NODES.output], 3.755, 0.0005, 'the output at rest');
-    close(t.parts.B1!.i, -0.01513, 0.000005, 'from the battery');
+    close(t.v[AMPLIFIER_NODES.output], 3.771, 0.0005, 'the output at rest');
+    close(t.parts.B1!.i, -0.01331, 0.000005, 'from the battery');
     const trace = new Float32Array(2880);
     expect(t.run(2880, [{ node: AMPLIFIER_NODES.speaker, out: trace }])).toBe(2880);
-    close(amplitude(trace.subarray(1920), 1000, 1921), 1.017, 0.0005, '1 kHz on the speaker');
+    close(amplitude(trace.subarray(1920), 1000, 1921), 1.023, 0.0005, '1 kHz on the speaker');
     board.parts.find((p) => p.id === 'VR1')!.setting = 0.9;
     expect(t.run(2880, [{ node: AMPLIFIER_NODES.speaker, out: trace }])).toBe(2880);
-    close(amplitude(trace.subarray(1920), 1000, 2880 + 1921), 2.71, 0.005, 'louder, 60 ms later');
+    close(amplitude(trace.subarray(1920), 1000, 2880 + 1921), 2.73, 0.005, 'louder, 60 ms later');
   });
 });

@@ -63,7 +63,7 @@ def amplifier(volume, on=True, reversed=False):
     every part): the 9 V battery (the wrong way round when `reversed`) through the switch (closed when `on`) and the
     protection diode onto the supply with its reservoir capacitor and the LED «on»; the player's test tone into the
     volume control (the pot at `volume`); a coupling capacitor and the driver BC547B with its feedback; two diodes
-    between the bases of the push-pull pair 2N3904 / 2N3906; the output capacitor into the 8 Ω speaker."""
+    1N4007 between the bases of the push-pull pair BC337-25 / BC327-25; the output capacitor into the 8 Ω speaker."""
     return net(14, part('B1', 'battery-9v', [0, 1] if reversed else [1, 0]),
                part('S1', 'switch', [1, 2], 1 if on else 0),
                part('D1', 'diode-1n4007', [2, 3]),
@@ -78,10 +78,10 @@ def amplifier(volume, on=True, reversed=False):
                part('R4', 'resistor-18k', [8, 0]),
                part('Q1', 'transistor-bc547b', [11, 8, 0]),
                part('R5', 'resistor-470', [3, 9]),
-               part('D2', 'diode-1n4148', [9, 10]),
-               part('D3', 'diode-1n4148', [10, 11]),
-               part('Q2', 'transistor-2n3904', [3, 9, 12]),
-               part('Q3', 'transistor-2n3906', [0, 11, 12]),
+               part('D2', 'diode-1n4007', [9, 10]),
+               part('D3', 'diode-1n4007', [10, 11]),
+               part('Q2', 'transistor-bc337-25', [3, 9, 12]),
+               part('Q3', 'transistor-bc327-25', [0, 11, 12]),
                part('C2', 'electrolytic-470u-16v', [12, 13]),
                part('LS1', 'speaker-8', [13, 0]))
 
@@ -180,7 +180,7 @@ CASES = {
     # each transistor of the catalog in its forward active region from the 9 V battery — an NPN with its base through
     # 1 MΩ from the plus and 1 kΩ in its collector, a PNP the same way down from the plus — and a 2N3904 the wrong way
     # round (collector and emitter swapped: the reverse gain BR)
-    'transistor-bias': net(12, part('B1', 'battery-9v', [1, 0]),
+    'transistor-bias': net(16, part('B1', 'battery-9v', [1, 0]),
                            part('RB1', 'resistor-1M', [1, 2]), part('RC1', 'resistor-1k', [1, 3]),
                            part('Q1', 'transistor-bc547b', [3, 2, 0]),
                            part('RB2', 'resistor-1M', [1, 4]), part('RC2', 'resistor-1k', [1, 5]),
@@ -190,7 +190,11 @@ CASES = {
                            part('RB4', 'resistor-1M', [8, 0]), part('RC4', 'resistor-1k', [9, 0]),
                            part('Q4', 'transistor-2n3906', [9, 8, 1]),
                            part('RB5', 'resistor-100k', [1, 10]), part('RC5', 'resistor-1k', [1, 11]),
-                           part('Q5', 'transistor-2n3904', [0, 10, 11])),
+                           part('Q5', 'transistor-2n3904', [0, 10, 11]),
+                           part('RB6', 'resistor-1M', [1, 12]), part('RC6', 'resistor-1k', [1, 13]),
+                           part('Q6', 'transistor-bc337-25', [13, 12, 0]),
+                           part('RB7', 'resistor-1M', [14, 0]), part('RC7', 'resistor-1k', [15, 0]),
+                           part('Q7', 'transistor-bc327-25', [15, 14, 1])),
     # the transistor as a switch: BC547B with the red LED and 330 Ω in its collector, its base through 10 kΩ from the
     # plus of the 9 V battery (on: the LED lights) and, beside it, the same with the 10 kΩ to the ground (off)
     'transistor-switch': net(8, part('B1', 'battery-9v', [1, 0]),

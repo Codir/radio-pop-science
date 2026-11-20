@@ -2,9 +2,9 @@
  * The amplifier of the volume: the circuit the reader builds in the chapter `amplifier` and the thread of the whole
  * course, as data — the netlist a stand puts on its board, the names of its nodes for the probe and what every part
  * does there. Three transistors from a 9 V battery play the player into the 8 Ω speaker: the driver BC547B, its gain
- * set by feedback from the output, and the push-pull pair 2N3904 / 2N3906 that gives the speaker its current. ngspice
- * checks it (tools/ref-models/electronics/cases.py builds the same netlist); why this circuit and not another, and its
- * numbers: README.md, «The amplifier».
+ * set by feedback from the output, and the push-pull pair BC337-25 / BC327-25 that gives the speaker its current,
+ * within its makers' ratings at every setting of the volume. ngspice checks it (tools/ref-models/electronics/cases.py
+ * builds the same netlist); why this circuit and not another, and its numbers: README.md, «The amplifier».
  */
 import type { Netlist, PartInstance } from './netlist';
 
@@ -74,10 +74,10 @@ export function amplifierNetlist(options: AmplifierOptions = {}): Netlist {
       part('R4', 'resistor-18k', [n.base, 0]),
       part('Q1', 'transistor-bc547b', [n.driver, n.base, 0]),
       part('R5', 'resistor-470', [n.supply, n.top]),
-      part('D2', 'diode-1n4148', [n.top, n.middle]),
-      part('D3', 'diode-1n4148', [n.middle, n.driver]),
-      part('Q2', 'transistor-2n3904', [n.supply, n.top, n.output]),
-      part('Q3', 'transistor-2n3906', [0, n.driver, n.output]),
+      part('D2', 'diode-1n4007', [n.top, n.middle]),
+      part('D3', 'diode-1n4007', [n.middle, n.driver]),
+      part('Q2', 'transistor-bc337-25', [n.supply, n.top, n.output]),
+      part('Q3', 'transistor-bc327-25', [0, n.driver, n.output]),
       part('C2', 'electrolytic-470u-16v', [n.output, n.speaker]),
       part('LS1', 'speaker-8', [n.speaker, 0]),
     ],
@@ -120,13 +120,20 @@ export const AMPLIFIER_ROLES: Readonly<Record<string, AmplifierRole>> = Object.f
   },
   R2: {
     chapter: 'resistor',
-    role: 'the input resistor: with the feedback resistor it sets how many times the signal is amplified',
+    role:
+      'the input resistor: with R3 it caps the gain at R3/R2, about 31; one driver cannot give the feedback that ' +
+      'much to spare, so the gain is about 16 and follows the driver’s β (13 to 18 over its spread)',
   },
   R3: {
     chapter: 'divider',
-    role: 'the feedback resistor: with R4 a divider from the output to the base that holds the output near half the supply',
+    role:
+      'the feedback resistor: the output settles where R4’s current and the driver’s base current, both through ' +
+      'R3, hold the base at 0.69 V — a loaded divider, so the output rests at 3.8 V, not the 2.5 V of R3 and R4 alone',
   },
-  R4: { chapter: 'divider', role: 'the lower half of that divider, from the base to the ground' },
+  R4: {
+    chapter: 'divider',
+    role: 'the lower leg of that divider, from the base to the ground; the driver’s base current loads it',
+  },
   Q1: {
     chapter: 'amplifier',
     role: 'the driver: a small current into its base controls the large current of its collector',
@@ -137,16 +144,18 @@ export const AMPLIFIER_ROLES: Readonly<Record<string, AmplifierRole>> = Object.f
   },
   D2: {
     chapter: 'diode',
-    role: 'one of two diodes whose 1.4 V hold both output transistors just open, so that no step is heard',
+    role:
+      'one of two diodes whose 1.24 V keep both output transistors at the edge of opening, so the current ' +
+      'passes from one to the other without a gap',
   },
   D3: { chapter: 'diode', role: 'the second of those two diodes' },
   Q2: {
     chapter: 'transistor',
-    role: 'the upper output transistor: it pushes current from the supply into the speaker',
+    role: 'the upper output transistor: it pushes current from the supply into the speaker, up to 0.37 A of its 0.5 A',
   },
   Q3: {
     chapter: 'transistor',
-    role: 'the lower output transistor: it pulls the current back through the speaker to the ground',
+    role: 'the lower output transistor: it pulls the current back through the speaker to the ground, as much again',
   },
   C2: {
     chapter: 'filter',

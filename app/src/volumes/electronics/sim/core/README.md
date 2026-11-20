@@ -12,13 +12,13 @@ keeps this by reading the text of every file under `sim/` (comments too). The re
 
 What E1-3 gives: the linear parts, the operating point (`solveDC`), the checks of the shape of a circuit
 (`topology.ts`), and the comparison with ngspice. E1-4 adds the nonlinear parts — diodes, LEDs of five colours, an
-incandescent lamp — with Newton's iterations at the operating point, and the limits of every part: how loaded it is,
-how its heat gathers, and when it burns. E1-5 adds time: capacitors of three kinds, the transient (`Transient`) with
-a fixed step, a lamp whose filament warms in time, parts that burn (and electrolytic capacitors that bulge) in time,
-and a sine source for the oracle. E1-6 adds the bipolar transistor — NPN BC547B and 2N3904, PNP BC557B and 2N3906 — and
-the amplifier of the volume (`amplifier.ts`): the netlist the stand builds in the chapter `amplifier`, which ngspice
-checks at rest, playing a tone from a whisper to past clipping, switched off and with its battery the wrong way round;
-the player's test tone (a sine behind an internal resistance) drives it.
+incandescent lamp — with Newton's iterations at the operating point, and the limits of every part: how loaded it is, how
+its heat gathers, and when it burns. E1-5 adds time: capacitors of three kinds, the transient (`Transient`) with a fixed
+step, a lamp whose filament warms in time, parts that burn (and electrolytic capacitors that bulge) in time, and a sine
+source for the oracle. E1-6 adds the bipolar transistor — NPN BC547B, 2N3904 and BC337-25, PNP BC557B, 2N3906 and
+BC327-25 — and the amplifier of the volume (`amplifier.ts`): the netlist the stand builds in the chapter `amplifier`,
+which ngspice checks at rest, playing a tone from a whisper to past clipping, switched off and with its battery the
+wrong way round; the player's test tone (a sine behind an internal resistance) drives it.
 
 ## Units and conventions
 
@@ -475,15 +475,15 @@ within 1e-6 (`spice.py --selftest`; the TypeScript test within 1e-4, ngspice's o
 
 `transistorAt(params, vbe, vbc, out)` gives the currents and their four slopes (`TransistorPoint`);
 `transistorVcrit(params)` the knee Vcrit = Vt·ln(Vt / (√2·IS)): 0.708 V for BC547B, 0.696 V BC557B, 0.741 V 2N3904,
-0.781 V 2N3906. In the matrix a transistor adds no unknowns: its stamp is the linearization of its collector and base
-currents around the guess — transconductances controlled by Vbe and Vbc (`Stamper.transconductance`) and the rest as a
-current. Newton's iterations limit the step of both junction voltages as ngspice does (`pnjlim` with Vt and Vcrit),
-and a solve from nothing starts the base–emitter junction at Vcrit and the base–collector one at 0 V (ngspice's
-MODEINITJCT). From cold the samples settle in 12 iterations (five transistors in their regions), 24 (the switch) and 8
-(the amplifier at rest). 2000 random boards of up to seven parts — transistors with their legs anywhere among
-batteries, LEDs, diodes, resistors and jumpers — all settle; seven end one go of 100 iterations by the noise rule (a
-group that only junction leakage and GMIN hold to the ground while amperes flow inside it, as in Diodes and LEDs) and
-one board without a transistor steps its sources.
+0.781 V 2N3906, 0.694 V BC337-25, 0.669 V BC327-25. In the matrix a transistor adds no unknowns: its stamp is the
+linearization of its collector and base currents around the guess — transconductances controlled by Vbe and Vbc
+(`Stamper.transconductance`) and the rest as a current. Newton's iterations limit the step of both junction voltages as
+ngspice does (`pnjlim` with Vt and Vcrit), and a solve from nothing starts the base–emitter junction at Vcrit and the
+base–collector one at 0 V (ngspice's MODEINITJCT). From cold the samples settle in 12 iterations (seven transistors in
+their regions), 24 (the switch) and 8 (the amplifier at rest). 2000 random boards of up to seven parts — transistors
+with their legs anywhere among batteries, LEDs, diodes, resistors and jumpers — all settle; seven end one go of 100
+iterations by the noise rule (a group that only junction leakage and GMIN hold to the ground while amperes flow inside
+it, as in Diodes and LEDs) and one board without a transistor steps its sources.
 
 ngspice gives every transistor a substrate junction (ISS = 0: only GMIN across it) from the ground to the collector
 of an NPN (vertical) or the base of a PNP (lateral). A discrete transistor has no substrate: the oracle's decks tie it
@@ -497,6 +497,8 @@ to the node that junction faces, which takes it out, and the rest of the decks i
 | `transistor-bc557b` | the same library, `.MODEL QBC557B/PLP PNP` | 38.34 fA | 344.4 | 14.84 | 21.11 V | −100 mA, 500 mW: Philips «BC556; BC557 PNP general purpose transistors», 1999 Apr 15 (hFE 220–475) |
 | `transistor-2n3904` | Fairchild Semiconductor, datasheet «2N3904 / MMBT3904 / PZT3904», 2001 Rev A, «Spice Model» | 6.734 fA | 416.4 | 0.7371 | 74.03 V | IC 200 mA, PD 625 mW, the same datasheet |
 | `transistor-2n3906` | Fairchild, «2N3906 / MMBT3906 / PZT3906», 2001 Rev A, «Spice Model» | 1.41 fA | 180.7 | 4.977 | 18.7 V | −200 mA, 625 mW, the same datasheet |
+| `transistor-bc337-25` | Philips' `phil_bjt.lib` (above), `.MODEL QBC337-25/PLP NPN` | 41.3 fA | 292.4 | 23.68 | 145.7 V | IC 500 mA: Philips «BC337; BC337A; BC338 NPN general purpose transistors» (1999), «high current (max. 500 mA)»; 625 mW: Multicomp «BC327, BC337 Series» (Farnell, 2006: PD 625 mW, IC 800 mA, ICM 1 A) |
+| `transistor-bc327-25` | Philips' BC327-25 as LTspice's `standard.bjt` carries it («mfg=Philips», «Icrating=500m»; `phil_bjt.lib` has no BC327) | 108 fA | 385.7 | 20.57 | 31.29 V | −500 mA, as its complement BC337 and LTspice's «Icrating=500m»; 625 mW: onsemi «BC327», January 2024 Rev. 2 (PD 625 mW, IC −800 mA), and the Multicomp series above |
 
 Philips' library was read from the KiCad SPICE library on GitHub (`kicad-spice-library/KiCad-Spice-Library`,
 `Models/uncategorized/spice_complete/phil_bjt.lib`); LTspice's `standard.bjt` has the same BC547B and BC557B
@@ -504,9 +506,17 @@ Philips' library was read from the KiCad SPICE library on GitHub (`kicad-spice-l
 were read from CERN's copies (`sy-dep-epc-lpc.web.cern.ch`, «2N3904 Transistor (FAIRCHILD).pdf» and «2N3906 Transistor
 (FAIRCHILD).pdf»); the 2N3904 one prints `Ise=6.734` without the f of femto, which the same model in PSpice's eval.lib
 (`Q2N3904`) has. A BC547B with IS 7.049 fA, BF 374.6, VAF 62.79 V circulates as well (on forums, as an ORCAD model of
-BC546B); its source could not be traced to a maker, so the maker's own library was taken. The makers' whole models,
-which only `tools/ref-models/electronics/amplifier.py` runs, are in `spice.py` (`TRANSISTORS[key]['vendor']`); how far
-the model is from them in the amplifier: The amplifier, below.
+BC546B); its source could not be traced to a maker, so the maker's own library was taken.
+
+BC337-25 and BC327-25, the output pair of the amplifier (fix round 1 of E1-6: 2N3904 and 2N3906 passed their 200 mA
+there, The amplifier below), come from the same Philips library and from LTspice's `standard.bjt` (read from LTwiki's
+copy, «Standard.bjt», and from the KiCad library's `Models/Transistor/BJT/BJT.lib`: the same lines). Nexperia's
+datasheets refused this machine (HTTP 403), so the 500 mA is Philips' «high current (max. 500 mA)» as a datasheet
+archive quotes the 1999 specification's features, with LTspice's «Icrating=500m» beside it; the 625 mW is that of
+onsemi's BC327 datasheet and Multicomp's BC327/BC337 one (both read; both rate the collector for 800 mA continuous,
+more than Philips: the catalog keeps the smaller). The makers' whole models, which only
+`tools/ref-models/electronics/amplifier.py` runs, are in `spice.py` (`TRANSISTORS[key]['vendor']`); how far the model
+is from them in the amplifier: The amplifier, below.
 
 **Limits.** The collector current and the power, the plan's two: the datasheets' continuous IC and their Ptot at
 25 °C. No voltage limit: the bench has 9 V at most against VCEO 40–45 V, and SPICE's model has no breakdown (a
@@ -546,15 +556,16 @@ for the capacitors, of E1-5):
 | `lamp` | 2 s | the 6 V lamp on the 9 V battery: 2.1 s |
 | `battery` | 2 s | a short warms the battery to its load (6 for the 9 V one) in a few seconds; it never burns |
 
-`advanceHeat(state, net, dc, seconds)` lets model time pass at an operating point: every limited part of the board
-moves its heat toward its load in `dc.status`, a part that reaches 1 fails, and the ids of the parts that failed now
-come back. The next solve with the state knows them — a burnt resistor, LED, diode, lamp or transistor is a gap (its
-reading is the voltage across the gap, no current), a bulged capacitor a leak of 1 kΩ. In the operating point the
-stand calls it once a frame with the frame's time. The transient takes the same step at every step of its own, with the
-load of that moment: in time the heat is the load filtered by τ, so a part takes the mean of a load that swings faster
-than τ (a rectifier's diode, at 50 Hz, its mean current; the amplifier's output pair, the mean of its half waves).
-`status` in time is the load of the moment, so it may read `'hot'` at the peaks of a tone while the heat stays far
-below 1 (the amplifier at full volume, below). Time runs forward: a negative or infinite step is a `RangeError`.
+`advanceHeat(state, net, dc, seconds)` lets model time pass at an operating point: every limited part of the board moves
+its heat toward its load in `dc.status`, a part that reaches 1 fails, and the ids of the parts that failed now come
+back. The next solve with the state knows them — a burnt resistor, LED, diode, lamp or transistor is a gap (its reading
+is the voltage across the gap, no current), a bulged capacitor a leak of 1 kΩ. In the operating point the stand calls it
+once a frame with the frame's time. The transient takes the same step at every step of its own, with the load of that
+moment: in time the heat is the load filtered by τ, so a part takes the mean of a load that swings faster than τ (a
+rectifier's diode, at 50 Hz, its mean current; the amplifier's output pair, the mean of its half waves). `status` in
+time is the load of the moment, so it may read `'hot'` for moments while the heat stays far below 1 — the amplifier
+switched on, below: a transistor's power of the moment against its Ptot, which is a rating for the mean. Time runs
+forward: a negative or infinite step is a `RangeError`.
 
 ## The transient (`transient.ts`)
 
@@ -660,8 +671,9 @@ take again are made once per board; `run` writes into the stand's own arrays.
 The thread of the volume: the amplifier the reader builds in the chapter `amplifier`, which plays the player into the
 8 Ω speaker from the 9 V battery on three transistors (the plan: the simplest that really plays, three transistors at
 most, a volume control, coupling capacitors, an LED «on» with its resistor and a diode against the battery the wrong
-way round). `amplifierNetlist(options?)` gives its netlist, a new object each time; `AMPLIFIER_NODES` names its nodes
-for the probe; `AMPLIFIER_ROLES` says what every part does there and which chapter of its own kind explains it.
+way round; why three where the design's §10 says one or two: «Why this circuit», below). `amplifierNetlist(options?)`
+gives its netlist, a new object each time; `AMPLIFIER_NODES` names its nodes for the probe; `AMPLIFIER_ROLES` says what
+every part does there and which chapter of its own kind explains it.
 
 ```ts
 import { AMPLIFIER_NODES, amplifierNetlist, Transient } from '@electronics/sim/core';
@@ -669,12 +681,12 @@ import { AMPLIFIER_NODES, amplifierNetlist, Transient } from '@electronics/sim/c
 const board = amplifierNetlist({ volume: 0.5 }); // switched on, the volume control in the middle, the tone of 1 kHz
 const t = new Transient(board, { dt: 1 / 48000 });
 t.start('dc'); // at rest: the tone gives 0 V at t = 0
-t.v[AMPLIFIER_NODES.output]; // 3.755 V: near half the supply
-t.parts.B1!.i; // −0.01513: 15.1 mA from the battery
+t.v[AMPLIFIER_NODES.output]; // 3.771 V: near half the supply
+t.parts.B1!.i; // −0.01331: 13.3 mA from the battery
 const speaker = new Float32Array(2880);
 t.run(2880, [{ node: AMPLIFIER_NODES.speaker, out: speaker }]); // 60 ms
-// the last 20 ms of `speaker`: 1 kHz of 1.017 V amplitude on the 8 Ω speaker, 65 mW
-board.parts.find((p) => p.id === 'VR1')!.setting = 0.9; // louder: 60 ms later, 2.71 V
+// the last 20 ms of `speaker`: 1 kHz of 1.023 V amplitude on the 8 Ω speaker, 65 mW
+board.parts.find((p) => p.id === 'VR1')!.setting = 0.9; // louder: 60 ms later, 2.73 V
 ```
 
 `amplifierNetlist({ volume?, on?, reversed?, source? })`: `volume` the setting of the volume control (0.5 when
@@ -692,89 +704,169 @@ nodes and parts (ids as on a schematic):
 | `PL` | `player-tone` | plus `player` (5), minus ground | the player: 0.3 V at most behind 32 Ω | `prologue` |
 | `VR1` | `pot-10k` | ccw ground, wiper `volume` (6), cw `player` (5) | the volume control: a divider that passes on a share of the signal | `divider` |
 | `C1` | `electrolytic-10u-16v` | plus `coupled` (7), minus `volume` (6) | lets the music in, keeps the driver's 0.7 V of bias from the volume control | `filter` |
-| `R2` | `resistor-1k5` | `coupled` (7) → `base` (8) | the input resistor: with R3 it sets the gain | `resistor` |
-| `R3`, `R4` | `resistor-47k`, `resistor-18k` | `output` (12) → `base` (8) → ground | a divider from the output to the base: feedback that holds the output near half the supply | `divider` |
+| `R2` | `resistor-1k5` | `coupled` (7) → `base` (8) | the input resistor: with R3 it caps the gain at R3/R2 ≈ 31; one driver cannot give the feedback that much to spare, so the gain is about 16 and follows the driver's β | `resistor` |
+| `R3`, `R4` | `resistor-47k`, `resistor-18k` | `output` (12) → `base` (8) → ground | feedback: the output settles where R4's current and the driver's base current, both through R3, hold the base at 0.69 V — a loaded divider, not the unloaded one of the formula | `divider` |
 | `Q1` | `transistor-bc547b` | collector `driver` (11), base `base` (8), emitter ground | the driver: a small current into its base controls the large one of its collector | `amplifier` |
 | `R5` | `resistor-470` | `supply` (3) → `top` (9) | the driver's load: the current that opens the upper output transistor | `resistor` |
-| `D2`, `D3` | `diode-1n4148` | `top` (9) → `middle` (10) → `driver` (11) | 1.4 V that hold both output transistors just open: no step where the current changes hands | `diode` |
-| `Q2` | `transistor-2n3904` | collector `supply` (3), base `top` (9), emitter `output` (12) | pushes current from the supply into the speaker | `transistor` |
-| `Q3` | `transistor-2n3906` | collector ground, base `driver` (11), emitter `output` (12) | pulls it back through the speaker to the ground | `transistor` |
+| `D2`, `D3` | `diode-1n4007` | `top` (9) → `middle` (10) → `driver` (11) | 1.24 V that keep both output transistors at the edge of opening: the current passes from one to the other without a gap | `diode` |
+| `Q2` | `transistor-bc337-25` | collector `supply` (3), base `top` (9), emitter `output` (12) | pushes current from the supply into the speaker, 0.37 A at most of its 0.5 A | `transistor` |
+| `Q3` | `transistor-bc327-25` | collector ground, base `driver` (11), emitter `output` (12) | pulls it back through the speaker to the ground | `transistor` |
 | `C2` | `electrolytic-470u-16v` | plus `output` (12), minus `speaker` (13) | passes the music to the speaker, keeps the steady half supply off it | `filter` |
 | `LS1` | `speaker-8` | plus `speaker` (13), minus ground | turns its current into sound | `prologue` |
 
-**What ngspice says of it** (the samples `amplifier-*.json`; the model agrees within 3.2e-10 at rest and within 6e-5
-playing — the amplitudes of every probed node, the waveform within 8e-5 of its swing — at one step of integration a
-sample of 1/48000 s). At rest the supply after the protection diode is 8.328 V, the output 3.755 V, the base of the
-driver 0.686 V; the driver takes 8.25 mA, the output pair 3.89 mA (the two diodes hold 1.44 V), the LED 2.99 mA: the
-battery gives 15.13 mA, which an alkaline 9 V battery feeds for about 39 hours (Energizer 522, form 522GL1019: about
-600 mAh at 10 mA and 565 mAh at 25 mA to 4.8 V, read off its chart). Playing the tone (the distortion, THD — the
-harmonics up to the tenth against the tone — from `tools/ref-models/electronics/amplifier.py`):
+**What ngspice says of it** (the samples `amplifier-*.json`; the model agrees within 3.6e-10 at rest and within 8.3e-5
+playing — the amplitudes of every probed node, the waveform within 1.1e-4 of its swing — at one step of integration a
+sample of 1/48000 s). At rest the supply after the protection diode is 8.337 V, the output 3.771 V, the base of the
+driver 0.686 V; the driver takes 8.36 mA, the output pair 1.94 mA (the two diodes hold 1.24 V), the LED 2.99 mA: the
+battery gives 13.31 mA, which an alkaline 9 V battery feeds **in silence** for about 44 hours (Energizer 522, form
+522GL1019: about 600 mAh at 10 mA and 565 mAh at 25 mA to 4.8 V, read off its chart). Playing, it takes more: the
+push-pull pair draws from the battery only what the speaker needs, so the battery's current grows with the volume.
+Playing the tone (the distortion, THD — the harmonics up to the tenth against the tone — and the currents from
+`tools/ref-models/electronics/amplifier.py`; the battery's mean current over the last 20 ms; the largest collector
+current of each output transistor):
 
-| Volume | The tone on the volume control | On the speaker | Gain | Power | THD |
-|---|---|---|---|---|---|
-| 10 % | 20.1 mV | 0.315 V | 15.72 | 6.2 mW | 0.8 % |
-| 30 % | 41.7 mV | 0.669 V | 16.03 | 28 mW | 0.7 % |
-| 50 % | 63.1 mV | 1.017 V | 16.12 | 65 mW | 0.6 % |
-| 70 % | 97.5 mV | 1.567 V | 16.08 | 153 mW | 0.7 % |
-| 80 % | 128.0 mV | 2.035 V | 15.90 | 259 mW | 1.5 % |
-| 90 % | 181.8 mV | 2.709 V | 14.90 | 459 mW | 4.8 % |
-| 95 % | 227.4 mV | 2.997 V | 13.18 | 562 mW | 10.5 % |
-| 100 % | 294.8 mV | 3.196 V | 10.84 | 638 mW | 18.8 % |
+| Volume | The tone on the volume control | On the speaker | Gain | Power | THD | From the battery | Q2 / Q3 at the peaks |
+|---|---|---|---|---|---|---|---|
+| 10 % | 20.1 mV | 0.313 V | 15.59 | 6.1 mW | 1.9 % | 23.9 mA | 39 / 40 mA |
+| 30 % | 41.7 mV | 0.671 V | 16.08 | 28 mW | 1.6 % | 37.9 mA | 83 / 85 mA |
+| 50 % | 63.1 mV | 1.023 V | 16.22 | 65 mW | 1.5 % | 51.7 mA | 127 / 130 mA |
+| 70 % | 97.4 mV | 1.579 V | 16.20 | 156 mW | 1.9 % | 73.7 mA | 194 / 200 mA |
+| 80 % | 128.0 mV | 2.052 V | 16.03 | 263 mW | 2.7 % | 92.5 mA | 248 / 262 mA |
+| 90 % | 182.1 mV | 2.732 V | 15.00 | 466 mW | 5.7 % | 120.5 mA | 316 / 330 mA |
+| 95 % | 227.7 mV | 3.013 V | 13.23 | 567 mW | 11.2 % | 134.0 mA | 331 / 346 mA |
+| 100 % | 294.8 mV | 3.203 V | 10.87 | 641 mW | 19.7 % | 145.4 mA | 326 / 368 mA |
 
-Clipping sets in — the gain down to 90 % of its 15.72 on a small signal — with 0.202 V of the tone on the volume
-control, between 90 % and 95 % of the knob: about 0.5 W on the speaker. At full volume the speaker swings 5.55 V from
-peak to peak and the output transistors pass 0.33 and 0.36 A at the peaks, 1.7 and 1.8 times their 200 mA: in a
-second of the tone `status` reads `'hot'` at about 40 % of the moments, while their heat, the mean of the load, settles
-at 0.67 (`'warm'`, never burnt); at 80 % of the knob 0.41, `'hot'` at 21 % of the moments; at 50 % about 0.22. The
-speaker takes a third of its 2 W at full volume. The reservoir C3 reads `'warm'` at rest: 8.3 V of its 16 V (load
-0.52, the capacitors' rule of E1-5). Switched off, the speaker gets 45 μV of the tone, 6600 times less than the volume
-control has: nothing amplifies. With the battery the wrong way round, 14.4 nA leak through the protection diode and
-nothing behind it gets more than 13 mV the wrong way round.
+A steady tone at half volume takes 52 mA from the battery, as much as variant A below takes all the time; music's
+level is mostly far below its peaks, so with music B takes less than with a steady tone of the same peaks, but no
+number of hours playing is given here: it depends on the music and the volume. Clipping sets in — the gain down to
+90 % of its 15.59 on a small signal — with 0.207 V of the tone on the volume control, between 90 % and 95 % of the
+knob: 0.52 W on the speaker in the model, 0.45 W with the makers' whole models. It clips the upper half first: at full
+volume the speaker swings from +2.62 V to −2.95 V (whole models +2.41 V to −2.86 V), because near the top R5 has
+little voltage left to feed the upper transistor's base. The speaker takes a third of its 2 W at full volume. The
+reservoir C3 reads `'warm'` at rest: 8.3 V of its 16 V (load 0.52, the capacitors' rule of E1-5). Switched off, the
+speaker gets 45 μV of the tone, 6600 times less than the volume control has: nothing amplifies. With the battery the
+wrong way round, 14.4 nA leak through the protection diode and nothing behind it gets more than 13 mV the wrong way
+round.
 
-**Why this circuit** (the decision of E1-6; `amplifier.py` prints the numbers). The plan asked to compare at least two:
+**Within the parts' ratings** (the decision of E1-6, fix round 1). Every part works within its maker's ratings at every
+setting of the knob, so a stand and a chapter may show the whole range as normal use:
 
-| | A: one stage, the 32 Ω earphone | B: driver and push-pull pair, the 8 Ω speaker (chosen) |
-|---|---|---|
-| transistors | 2N3904 | BC547B, 2N3904, 2N3906 |
-| parts but the supply, the LED and the volume control | 8 | 12 |
-| gain at 1 kHz, volume at 10 % | 3.92 (THD 0.1 %) | 15.72 (THD 0.8 %) |
-| power at 10 % THD | not reached: 17 mW at full volume (THD 6.8 %) | 552 mW |
-| battery current at rest | 47.8 mA | 15.1 mA |
-| hours of the 9 V battery at rest | 10 | 39 |
+- the output pair passes 0.37 A at most at the peaks of the tone at full volume (0.36 A with the makers' whole
+  models), three quarters of the 500 mA of BC337-25 and BC327-25; the model's heat — the load of the moment filtered
+  over 5 s, so the mean load of a tone — settles at a third of the limit (0.33 and 0.31 at full volume, 0.35 at most,
+  at 80 %): `'ok'`;
+- switched on with every capacitor empty, the output rises to half the supply and charges C2 through the speaker:
+  Q2 passes 0.44 A for a moment (0.41 A with the whole models; the test checks the model's), within its rating too;
+- the model's `status` compares the power of the moment with Ptot, which is a rating for the mean: so it reads
+  `'hot'` for moments while the heat stays below 0.05 — when the amplifier is switched on with its capacitors empty
+  (the battery and D1 for the first 1.8 ms, the reservoir's inrush through the battery's 1.5 Ω; Q2 from 1.3 to
+  2.3 ms; Q3 at moments between 25 and 56 ms) and, above 94 % of the knob, Q2 at one or two moments of the first
+  period of the tone (0.63–0.64 W against 0.625 W). In steady playing no part reads `'hot'` at any setting. A stand
+  that glows a part by its condition should glow it by its heat (the memory), as E1-6's report asked of E2.
 
-A is one common-emitter stage — a 2N3904 biased by 6.8 kΩ and 1 kΩ, 4.7 Ω in its emitter, 68 Ω in its collector and
-the earphone through 470 μF, on the same supply and volume control. It is the easiest to explain — one transistor, one
-idea — but it plays an earphone, not the speaker, at 17 mW at most, and it keeps 44 mA flowing through its collector
-all the time to have a swing at all: the battery lasts a quarter as long. B gives the 8 Ω speaker half a watt, takes
-a third of the current at rest, and adds three ideas, each in one part's sentence (the table above): feedback from the
-output to the base (R3, R4), a push-pull pair that takes current from the supply only while the speaker needs it (Q2,
-Q3), and two diodes that keep the pair just open. Also tried and dropped (`amplifier.py` prints them too): without
-the reservoir capacitor the distortion at 30–70 % of the knob is 1.6–1.9 % instead of 0.6–0.7 %; with the speaker
-returned to the supply instead of the ground (which feeds the driver's load from the speaker, a bootstrap) the
-amplifier gives more — 0.94 W at full volume — but the battery's internal resistance then reaches the speaker, and the
-distortion at 30–70 % is 2.3–2.4 %.
+The first output pair tried, the plan's 2N3904 / 2N3906 with two 1N4148, played the same but did not stay within its
+ratings (its row in «Why this circuit»): its peaks passed 200 mA from 71 % of the knob (159 mW on the speaker; 82 %
+and 170 mW with the whole models), `status` read `'hot'` at 13–15 % of the moments at 75 % of the knob and at 38–42 %
+at full volume, and the switch-on drove 0.45 A through Q2, above 200 mA for 7 ms. Its makers' whole models also fell
+far from the model near clipping (IKF of 67 and 80 mA: less than half the model's power at 10 % THD, 247 mW against
+552 mW). BC337-25 and BC327-25 are the usual small output pair for an 8 Ω speaker, in TO-92 like the rest.
+
+**Why this circuit** (the decision of E1-6; `amplifier.py` prints the numbers). The plan asked to compare at least two;
+here are four, on the same supply and volume control:
+
+| | A: one stage, the 32 Ω earphone | C: driver and one follower in class A, the 8 Ω speaker | D: push-pull pair without a driver, the 8 Ω speaker | B: driver and push-pull pair, the 8 Ω speaker (chosen) |
+|---|---|---|---|---|
+| transistors | 2N3904 | BC547B, BC337-25 | BC337-25, BC327-25 | BC547B, BC337-25, BC327-25 |
+| parts but the supply, the LED and the volume control | 8 | 10 | 9 | 12 |
+| gain at 1 kHz, volume at 10 % | 3.92 (THD 0.1 %) | 16.04 (THD 0.4 %) | 0.60 (THD 0.1 %) | 15.59 (THD 1.9 %) |
+| power at 10 % THD | not reached: 17 mW at full volume (THD 6.8 %) | 12 mW | not reached: 2.5 mW at full volume (THD 2.8 %) | 545 mW (whole models 482 mW) |
+| power with every transistor within its ratings | up to full volume | up to full volume | up to full volume | up to full volume |
+| battery current at rest | 47.8 mA | 64.9 mA | 7.7 mA | 13.3 mA |
+| hours of the 9 V battery in silence | 10 | under 7 (beyond the chart: 445 mAh at 50 mA) | 79 | 44 |
+| battery current playing the tone, volume at 50 % | 47.8 mA (0.2 mW in the earphone) | 70.2 mA (23 mW) | 7.8 mA (0.0 mW) | 51.7 mA (65 mW) |
+
+A is one common-emitter stage — a 2N3904 biased by 6.8 kΩ and 1 kΩ, 4.7 Ω in its emitter, 68 Ω in its collector and the
+earphone through 470 μF, on the same supply and volume control. It is the easiest to explain — one transistor, one idea
+— but it plays an earphone, not the speaker, at 17 mW at most, and being class A it keeps 44 mA flowing through its
+collector whether it plays or not. In silence B's battery lasts about four times longer (44 hours against 10); playing a
+steady tone at half volume B draws about as much as A (52 mA against 48 mA). With one or two transistors the 8 Ω speaker
+is out of reach: C, B's driver with one BC337-25 following it in class A, must keep its emitter resistor's current
+flowing all the time to pull the speaker down (65 mA, a battery for under 7 hours) and still reaches 10 % THD at 12 mW:
+its 68 Ω (0.21 W of a 0.25 W resistor's rating, with 3.8 V on it) can pull only about 55 mA out of the speaker; D, B's
+push-pull pair without a driver, gives the speaker current but no gain in voltage, 2.5 mW at full volume. B gives the
+8 Ω speaker about half a watt (0.55 W in the model, 0.48 W with the whole models, at 10 % THD), takes the least
+current at rest of the ones that play the speaker aloud, and adds three ideas, each in one part's sentence (the table
+above): feedback from the output to the base (R3, R4), a push-pull pair that takes current from the supply only while
+the speaker needs it (Q2, Q3), and two diodes that keep the pair at the edge of opening.
+
+**Three transistors against the design's «1–2».** The design (§10) leaves the builders «1–2 транзистори, 9 V, динамік
+8 Ω чи навушник 32 Ω»; the plan (E1-6) narrows it to the simplest that really plays the 8 Ω speaker and allows «не
+більше трьох». Within one or two transistors only A plays aloud, and only an earphone; C and D show that on two the
+speaker gets tens of milliwatts at best. B therefore takes the plan's third transistor: a departure from §10 that the
+report of E1-6 records for the controller to ratify (its deviations), with this table as the evidence. The design's
+speed floor (§5.5: an amplifier «на 1–2 транзисторах (≈ 10–15 вузлів)», at least real time) is about the size of the
+board: B has 13 nodes. A quick measure in vitest on this machine (E1-6, fix round 1; E1-7 measures properly), one
+second of the tone at 48 kHz from rest at half volume, in two sessions of three runs: B in 0.63–0.78 s, C (two
+transistors, the same 13 nodes) in 0.44–0.48 s, B with the first pair in 0.69–0.76 s (three runs) — all faster than
+real time, none at E1-7's 3×.
+
+B as it was tried while choosing (`amplifier.py`; the first output pair is in «Within the parts' ratings» above):
+
+| B as tried while choosing | Battery at rest | 10 % | 30 % | 50 % | 70 % | Full volume |
+|---|---|---|---|---|---|---|
+| chosen | 13.3 mA | 6.1 mW, THD 1.9 % | 28 mW, THD 1.6 % | 65 mW, THD 1.5 % | 156 mW, THD 1.9 % | 641 mW, THD 19.7 % |
+| no reservoir | 13.3 mA | 5.6 mW, THD 3.4 % | 26 mW, THD 2.9 % | 61 mW, THD 2.8 % | 147 mW, THD 3.1 % | 601 mW, THD 20.9 % |
+| one diode 1N4148 | 23.3 mA | 6.8 mW, THD 0.9 % | 29 mW, THD 1.1 % | 67 mW, THD 1.3 % | 159 mW, THD 1.8 % | 642 mW, THD 19.9 % |
+| the speaker to the supply | 13.2 mA | 11 mW, THD 2.0 % | 50 mW, THD 1.4 % | 116 mW, THD 1.2 % | 282 mW, THD 1.0 % | 990 mW, THD 24.2 % |
+
+Without the reservoir capacitor the distortion is about twice as high. Two 1N4148, which held the first pair at 3.9 mA,
+would hold BC337-25 / BC327-25, whose IS is larger, at 68 mA; two 1N4007 (the kind of the protection diode) give
+1.24 V and 1.94 mA. One 1N4148 with one 1N4007 would keep the pair more open, 12 mA, and halve the distortion of a
+whisper (0.9 % against 1.9 % at 10 % of the knob) for 10 mA more from the battery at rest; the two alike were kept for
+the battery and for one kind of diode. With the speaker returned to the supply instead of the ground (which feeds the
+driver's load from the speaker, a bootstrap) the amplifier gives more — 0.99 W at full volume, with less distortion —
+but its peaks then reach 0.43 A, near the pair's 0.5 A, and the bootstrap is a fourth idea that one part's sentence
+does not explain.
 
 **The model's transistor against the makers' whole models** in B (`amplifier.py`, the same netlist with each
 transistor's whole SPICE model):
 
 | | The model (IS, BF, BR, VAF) | The makers' whole models | Difference |
 |---|---|---|---|
-| the output at rest | 3.755 V | 3.867 V | +3 % |
-| battery current at rest | 15.13 mA | 14.49 mA | −4 % |
-| the driver's collector current | 8.25 mA | 8.01 mA | −3 % |
-| the output pair at rest | 3.89 mA | 3.48 mA | −11 % |
-| gain at 1 kHz, volume at 10 % | 15.72 | 13.51 | −14 % |
-| clipping sets in: the tone on the volume control | 0.202 V | 0.119 V | −41 % |
-| power at 10 % THD | 552 mW | 247 mW | −55 % |
-| power at full volume | 638 mW | 348 mW | −45 % |
+| the output at rest | 3.771 V | 3.886 V | +3 % |
+| battery current at rest | 13.31 mA | 13.55 mA | +2 % |
+| the driver's collector current | 8.36 mA | 8.12 mA | −3 % |
+| the output pair at rest | 1.94 mA | 2.42 mA | +25 % |
+| gain at 1 kHz, volume at 10 % | 15.59 | 14.21 | −9 % |
+| THD at 10 % / 50 % of the volume | 1.88 / 1.51 % | 1.69 / 1.09 % | |
+| battery current playing, volume at 50 % | 51.7 mA | 48.4 mA | −6 % |
+| clipping sets in: the tone on the volume control | 0.207 V | 0.211 V | +2 % |
+| clipping sets in: the power on the speaker | 522 mW | 452 mW | −13 % |
+| power at 10 % THD | 545 mW | 482 mW | −11 % |
+| power at full volume | 641 mW | 564 mW | −12 % |
+| the speaker at full volume, highest / lowest | +2.62 / −2.95 V | +2.41 / −2.86 V | |
 
-At rest the two agree within a few per cent, and the small-signal gain within 14 %: the loop of the feedback is not
-strong enough to hide the transistors (RE of 0.47 Ω in BC547B's whole model and its NF of 1.008 lower the driver's
-gain; ISE lowers the 2N3904's β at small currents). Near clipping they part: the β of the real 2N3904 and 2N3906 falls
-above their IKF of 67 and 80 mA, and their RB of 10 Ω and RC of 1 and 2.5 Ω take part of the swing, so a real
-amplifier of these parts clips at about a quarter of a watt where the model gives half a watt. The stand shows the
-model's numbers; a page that quotes the amplifier's power should quote the whole models' (about 0.25 W), or say that
-the model's half a watt is the upper end.
+At rest the two agree within a few per cent (the idle current of the pair within 25 %: it hangs exponentially on a few
+millivolts between the diodes and the two junctions), the small-signal gain within 9 % (RE of 0.47 Ω in BC547B's whole
+model and its NF of 1.008 lower the driver's gain), and near clipping within 13 %: the high injection that lowers β
+(IKF) sets in at 0.9 and 0.36 A in BC337-25 and BC327-25, at or above the pair's 0.37 A. Both clip the upper half first.
+A page that quotes the amplifier's power should say «about half a watt»: the model's 0.55 W at 10 % THD, the whole
+models' 0.48 W.
+
+**How much it leans on the driver's β.** BC547B's datasheet gives hFE 200–450 at 2 mA; B with the driver's BF moved
+across that spread (the model, `amplifier.py`):
+
+| The driver's β (BF) | The base at rest | R4's current | The driver's base current | The output at rest | R3 and R4 alone would put it at | Gain at 1 kHz, volume at 10 % |
+|---|---|---|---|---|---|---|
+| 200 | 0.684 V | 38.0 μA | 36.0 μA | 4.169 V | 2.469 V | 13.44 |
+| 294.3 (the catalog) | 0.687 V | 38.1 μA | 27.3 μA | 3.771 V | 2.479 V | 15.59 |
+| 450 | 0.689 V | 38.3 μA | 19.6 μA | 3.414 V | 2.488 V | 17.58 |
+
+So two formulas a chapter might reach for give the wrong number here. The divider of R3 and R4 alone puts the output at
+0.687 V × (47 + 18) / 18 = 2.48 V; it rests at 3.77 V, because the driver's base current (27 μA, 42 % of the 65.6 μA in
+R3) also flows through R3's 47 kΩ and adds about 1.3 V. R3 / R2 = 31.3 is the gain the two resistors would set with a
+driver of endless gain; one driver gives the feedback too little to spare, so the gain is 15.6 and moves with β from
+13.4 to 17.6, as the rest point moves from 4.17 to 3.41 V. The roles of R2, R3 and R4 say this.
 
 ## Modules
 
@@ -861,7 +953,9 @@ under 1 μA; a transistor over its limits burns into a gap), `amplifier` (the ne
 solved; every node named and every part's role in a chapter of its kind; at rest every node within 1 % of ngspice;
 the gain at 1 kHz on a small signal within 2 %; the output against the input at 50, 80, 90, 95 and 100 % of the
 volume and the waveform within 3 %; where clipping sets in within 5 %; switched off, 45 μV; the battery the wrong way
-round, under 1 μA; the worked example above), `transient` (every sample in time against ngspice, the
+round, under 1 μA; within its parts' ratings — at full volume the output pair's peaks 0.37 A, under three quarters
+of its 0.5 A, its mean load under 0.4 and nothing `'hot'` after the first period, and switched on from empty
+capacitors a surge of 0.44 A; the worked example above), `transient` (every sample in time against ngspice, the
 plan's tolerances: the RC charge and discharge within 1 % at 20 moments with 63.2 % and 36.8 % ± 0.5 % after
 R·C; the LED fed by 470 μF within 2 %; the rectifier's output, mean and ripple within 3 %; the filters sampled at
 1/48000 s in four steps of integration within 1 % of `.ac` at 100 Hz, 1 kHz and 10 kHz, and in one step against
@@ -880,8 +974,8 @@ the difference of two nodes at 9 V), where the rounding of those nodes on either
 far inside the plan's tolerances: the RC curves to 3.2e-6, the LED's current to 3.9e-7, the rectifier's output to
 9.5e-7 and its mean and ripple to 0.01 %, at the steps the tests take (1 ms, 0.1 ms, 1/48000 s; ngspice steps at
 most 1 ms, 0.1 ms and 5 μs with its tolerances tightened). With transistors (their operating points too are solved by
-ngspice with its tolerances tightened, `spice.py`): the five transistors in their regions to 4.0e-10, the amplifier at
-rest to 3.2e-10, the switch to 5.4e-5 — the current of the LED behind the transistor that is off, 8.3 pA, whose last
-digits are the rounding of nodes at 9 V on either side; the amplifier playing to 6e-5 in the amplitudes and 8e-5 of
-the swing in the waveform at 1/48000 s; with the battery the wrong way round, where every node behind the protection
+ngspice with its tolerances tightened, `spice.py`): the seven transistors in their regions to 3.5e-10, the amplifier
+at rest to 3.6e-10, the switch to 5.4e-5 — the current of the LED behind the transistor that is off, 8.3 pA, whose last
+digits are the rounding of nodes at 9 V on either side; the amplifier playing to 8.3e-5 in the amplitudes and 1.1e-4
+of the swing in the waveform at 1/48000 s; with the battery the wrong way round, where every node behind the protection
 diode is a rounding of next to nothing, the diode's and the battery's current to 7e-5 (`amplifier` tests those).

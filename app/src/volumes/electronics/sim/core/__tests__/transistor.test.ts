@@ -42,7 +42,14 @@ function close(have: number | undefined, want: number, tolerance: number, what =
   expect(Math.abs(have! - want), `${what}: ${have} against ${want}`).toBeLessThanOrEqual(tolerance);
 }
 
-const KEYS = ['transistor-bc547b', 'transistor-bc557b', 'transistor-2n3904', 'transistor-2n3906'] as const;
+const KEYS = [
+  'transistor-bc547b',
+  'transistor-bc557b',
+  'transistor-2n3904',
+  'transistor-2n3906',
+  'transistor-bc337-25',
+  'transistor-bc327-25',
+] as const;
 const transistor = (key: string): TransistorSpec => PARTS[key] as TransistorSpec;
 const point = (): TransistorPoint => ({ ic: 0, ib: 0, icVbe: 0, icVbc: 0, ibVbe: 0, ibVbc: 0 });
 
@@ -63,7 +70,7 @@ function byHand(t: TransistorSpec, vbe: number, vbc: number): { ic: number; ib: 
   };
 }
 
-describe('the catalog: four transistors with their makers’ numbers', () => {
+describe('the catalog: six transistors with their makers’ numbers', () => {
   it('BC547B and BC557B from Philips’ SPICE library, 2N3904 and 2N3906 from Fairchild’s datasheets', () => {
     // Philips Semiconductors, phil_bjt.lib (1996): QBC547B IS = 2.39E-14 BF = 294.3 BR = 7.946 VAF = 63.2 …;
     // QBC557B IS = 3.834E-14 BF = 344.4 BR = 14.84 VAF = 21.11 …. The limits: Philips' datasheets BC546; BC547 (2004)
@@ -111,6 +118,32 @@ describe('the catalog: four transistors with their makers’ numbers', () => {
       limits: { currentA: 0.2, powerW: 0.625 },
     });
     expect(HEAT_SECONDS.transistor).toBe(5);
+  });
+
+  it('BC337-25 and BC327-25, the amplifier’s output pair, from Philips’ models', () => {
+    // phil_bjt.lib: QBC337-25 IS = 4.13E-14 BF = 292.4 BR = 23.68 VAF = 145.7 …; Philips' BC327-25 as LTspice's
+    // standard.bjt carries it: IS=1.08E-13 BF=385.7 BR=20.57 VAF=31.29 …. The limits: 500 mA (Philips «BC337; BC337A;
+    // BC338»: high current, max. 500 mA), 625 mW (onsemi «BC327»; Multicomp «BC327, BC337 Series»)
+    expect(PARTS['transistor-bc337-25']).toEqual({
+      kind: 'transistor',
+      pins: ['collector', 'base', 'emitter'],
+      polarity: 'npn',
+      is: 4.13e-14,
+      bf: 292.4,
+      br: 23.68,
+      vaf: 145.7,
+      limits: { currentA: 0.5, powerW: 0.625 },
+    });
+    expect(PARTS['transistor-bc327-25']).toEqual({
+      kind: 'transistor',
+      pins: ['collector', 'base', 'emitter'],
+      polarity: 'pnp',
+      is: 1.08e-13,
+      bf: 385.7,
+      br: 20.57,
+      vaf: 31.29,
+      limits: { currentA: 0.5, powerW: 0.625 },
+    });
   });
 });
 
@@ -199,8 +232,8 @@ describe('the transport form of Ebers–Moll', () => {
   });
 
   it('every transistor of the samples carries the currents of these equations at ngspice’s node voltages', () => {
-    // transistor-bias: each one in its active region and 2N3904 the wrong way round; the switch, on and off; the
-    // amplifier at rest. Its collector current from ngspice's probe, its base current from the base resistor's
+    // transistor-bias: each one of the catalog in its active region and 2N3904 the wrong way round; the switch, on and
+    // off; the amplifier at rest. Its collector current from ngspice's probe, its base current from the base resistor's
     for (const name of ['transistor-bias', 'transistor-switch', 'amplifier-op']) {
       const s = sample(name);
       const out = point();
@@ -224,6 +257,8 @@ describe('the transport form of Ebers–Moll', () => {
       ['Q3', 'RB3'],
       ['Q4', 'RB4'],
       ['Q5', 'RB5'],
+      ['Q6', 'RB6'],
+      ['Q7', 'RB7'],
     ] as const) {
       const p = bias.netlist.parts.find((x) => x.id === q)!;
       const t = transistor(p.spec);

@@ -710,6 +710,8 @@ export const PARTS: Readonly<Record<string, PartSpec>> = Object.freeze({
   'transistor-bc557b': transistor('pnp', 3.834e-14, 344.4, 14.84, 21.11, 0.1, 0.5),
   'transistor-2n3904': transistor('npn', 6.734e-15, 416.4, 0.7371, 74.03, 0.2, 0.625),
   'transistor-2n3906': transistor('pnp', 1.41e-15, 180.7, 4.977, 18.7, 0.2, 0.625),
+  'transistor-bc337-25': transistor('npn', 4.13e-14, 292.4, 23.68, 145.7, 0.5, 0.625),
+  'transistor-bc327-25': transistor('pnp', 1.08e-13, 385.7, 20.57, 31.29, 0.5, 0.625),
 } satisfies Record<string, PartSpec>);
 
 /** The catalog key of a resistor of `ohms` (a value of E24 from 1 Ω to 10 MΩ): `resistorKey(4700)` is

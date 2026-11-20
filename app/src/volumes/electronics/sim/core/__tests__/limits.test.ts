@@ -105,6 +105,8 @@ describe('how loaded a part is', () => {
       expect(PARTS[key]!.limits, key).toEqual({ currentA: 0.1, powerW: 0.5 });
     for (const key of ['transistor-2n3904', 'transistor-2n3906'])
       expect(PARTS[key]!.limits, key).toEqual({ currentA: 0.2, powerW: 0.625 });
+    for (const key of ['transistor-bc337-25', 'transistor-bc327-25'])
+      expect(PARTS[key]!.limits, key).toEqual({ currentA: 0.5, powerW: 0.625 });
     // what can burn: every limited part but a battery
     expect(canBurn(PARTS['resistor-1k']!)).toBe(true);
     expect(canBurn(PARTS['led-blue']!)).toBe(true);
