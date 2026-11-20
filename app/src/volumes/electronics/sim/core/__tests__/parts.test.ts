@@ -67,16 +67,18 @@ describe('the catalog of parts', () => {
   });
 
   it('the diodes: the parameters of their published SPICE models', () => {
-    // LTspice standard.dio: .model 1N4148 D(Is=2.52n Rs=.568 N=1.752 …); BV and IBV from the onsemi datasheet
+    // Nexperia (NXP) 1N4148: R1 1 2 5.827E+9 / .MODEL 1N4148 D IS = 4.352E-9 N = 1.906 BV = 110 IBV = 0.0001
+    // RS = 0.6458 …; the limits from its datasheet: IF 200 mA, VRRM 100 V
     expect(PARTS['diode-1n4148']).toEqual({
       kind: 'diode',
       pins: ['anode', 'cathode'],
-      is: 2.52e-9,
-      n: 1.752,
-      rs: 0.568,
-      bv: 100,
-      ibv: 100e-6,
-      limits: { currentA: 0.3, reverseV: 100 },
+      is: 4.352e-9,
+      n: 1.906,
+      rs: 0.6458,
+      bv: 110,
+      ibv: 1e-4,
+      leakOhms: 5.827e9,
+      limits: { currentA: 0.2, reverseV: 100 },
     });
     // Vishay (Thomatronik) d1n4007: is = 1.43733E-008 n = 1.80829 rs = 0.0414712 … bv = 1100 ibv = 10
     expect(PARTS['diode-1n4007']).toEqual({

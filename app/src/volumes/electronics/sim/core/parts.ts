@@ -83,7 +83,7 @@ export interface SpeakerSpec {
 }
 
 /** The DC parameters of SPICE's diode: the junction takes `is`·(e^(v/(`n`·Vt)) − 1) and breaks down at `bv` with
- * `ibv`; `rs` stands in front of it (`diode.ts`). */
+ * `ibv`; `rs` stands in front of it, and `leakOhms`, when given, across the whole part (`diode.ts`). */
 export interface JunctionParams {
   /** Saturation current IS (A). */
   readonly is: number;
@@ -95,6 +95,8 @@ export interface JunctionParams {
   readonly bv: number;
   /** The current at the breakdown voltage IBV (A). */
   readonly ibv: number;
+  /** A resistance across the whole part (Ω), when the maker's model has one for its leakage the wrong way round. */
+  readonly leakOhms?: number;
 }
 
 /** A rectifier or signal diode. */
@@ -435,12 +437,13 @@ export const PARTS: Readonly<Record<string, PartSpec>> = Object.freeze({
   'diode-1n4148': {
     kind: 'diode',
     pins: ['anode', 'cathode'],
-    is: 2.52e-9,
-    n: 1.752,
-    rs: 0.568,
-    bv: 100,
-    ibv: 100e-6,
-    limits: { currentA: 0.3, reverseV: 100 },
+    is: 4.352e-9,
+    n: 1.906,
+    rs: 0.6458,
+    bv: 110,
+    ibv: 1e-4,
+    leakOhms: 5.827e9,
+    limits: { currentA: 0.2, reverseV: 100 },
   },
   'diode-1n4007': {
     kind: 'diode',

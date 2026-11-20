@@ -3,7 +3,8 @@
  * `diotemp.c`, `devsup.c`) so that the model and its oracle solve the same equations.
  *
  * The part is a series resistance RS from the anode to a node of its own, the junction, and the junction from there
- * to the cathode. The junction takes
+ * to the cathode; a maker's model may add a resistance across the whole part for the leakage the wrong way round
+ * (`leakOhms`). The junction takes
  *   forward and slightly reverse (v ≥ −3·N·Vt):  IS·(e^(v/(N·Vt)) − 1)
  *   reverse (down to the knee):                   −IS·(1 + (3·N·Vt / (e·v))³)
  *   breakdown (v < −knee):                        −IS·e^(−(knee + v)/(N·Vt))
@@ -100,19 +101,24 @@ export function limitJunction(j: Junction, vnew: number, vold: number): number {
   return pnjlim(vnew, vold, j.vte, j.vcrit);
 }
 
-/** The voltage across a diode (junction and RS) that carries the forward current `amps` (> 0): what a meter shows. */
+/** The voltage across a diode (junction, RS and the leak) that carries the forward current `amps` (> 0): what a meter
+ * shows. */
 export function forwardVoltage(p: JunctionParams, amps: number): number {
   if (!(amps > 0)) throw new RangeError(`a forward current must be positive: ${amps}`);
   const j = junctionOf(p);
+  const leak = p.leakOhms ? 1 / p.leakOhms : 0;
   const out = { i: 0, g: 0 };
-  let v = j.vte * Math.log1p(amps / p.is); // without GMIN; Newton adds it
+  // Newton on the junction's voltage v: the part takes i(v) through RS and (v + RS·i(v))·leak beside it
+  let v = j.vte * Math.log1p(amps / p.is); // without GMIN and the leak; Newton adds them
   for (let k = 0; k < 50; k++) {
     junctionCurrent(j, v, out);
-    const step = (out.i - amps) / out.g;
+    const total = out.i + (v + p.rs * out.i) * leak;
+    const step = (total - amps) / (out.g + (1 + p.rs * out.g) * leak);
     v -= step;
     if (Math.abs(step) <= 1e-15 * Math.abs(v)) break;
   }
-  return v + amps * p.rs;
+  junctionCurrent(j, v, out);
+  return v + out.i * p.rs;
 }
 
 /** The light of an LED (lm) at the current `amps` through it: in proportion to the forward current, none backwards. */
@@ -124,13 +130,14 @@ const ONE_LINK: readonly Link[] = [[0, 1]];
 
 /**
  * A diode or an LED in the matrix. With RS it has a node of its own, the junction: RS from the anode to it, the
- * junction's linearization (its slope and the current that makes up the rest) from it to the cathode. Its memory is
- * the junction voltage it linearized at last.
+ * junction's linearization (its slope and the current that makes up the rest) from it to the cathode; the leak, when
+ * the part has one, from the anode to the cathode. Its memory is the junction voltage it linearized at last.
  */
 export function diodeBehaviour(spec: DiodeSpec | LedSpec): Behaviour {
   const j = junctionOf(spec);
   const inner = spec.rs > 0 ? 1 : 0;
   const gs = inner ? 1 / spec.rs : 0;
+  const leak = spec.leakOhms ? 1 / spec.leakOhms : 0;
   const out = { i: 0, g: 0 };
   return {
     branches: 0,
@@ -159,14 +166,17 @@ export function diodeBehaviour(spec: DiodeSpec | LedSpec): Behaviour {
       s.conductance(junction, cathode, out.g);
       s.current(junction, cathode, out.i - out.g * v);
       if (inner) s.conductance(anode, junction, gs);
+      if (leak) s.conductance(anode, cathode, leak);
     },
     currents: (_, at, v, __, pins) => {
       const anode = at.nodes[0]!;
+      const cathode = at.nodes[1]!;
       if (inner) pins[0] = (v[anode]! - v[at.inner[0]!]!) * gs;
       else {
-        junctionCurrent(j, v[anode]! - v[at.nodes[1]!]!, out);
+        junctionCurrent(j, v[anode]! - v[cathode]!, out);
         pins[0] = out.i;
       }
+      pins[0] += (v[anode]! - v[cathode]!) * leak;
       pins[1] = -pins[0];
     },
   };

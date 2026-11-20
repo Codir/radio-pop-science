@@ -175,8 +175,11 @@ export function compile(net: Netlist): Circuit {
 
 function stamperOf(system: LinearSystem, index: Int32Array): Stamper {
   const { n, a, b } = system;
+  // a conductance or a current from a node to itself (a part with both legs in one row) carries nothing: it is not
+  // stamped, since adding and taking away a large g would round away the GMIN that alone may hold that node
   return {
     conductance(p, q, g) {
+      if (p === q) return;
       const i = index[p]!;
       const j = index[q]!;
       if (i >= 0) a[i * n + i] += g;
@@ -187,6 +190,7 @@ function stamperOf(system: LinearSystem, index: Int32Array): Stamper {
       }
     },
     current(p, q, i) {
+      if (p === q) return;
       const from = index[p]!;
       const to = index[q]!;
       if (from >= 0) b[from] -= i;

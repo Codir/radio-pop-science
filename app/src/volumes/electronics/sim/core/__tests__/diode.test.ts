@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   advanceHeat,
   compile,
+  MAX_ITERATIONS,
   createModelState,
   forwardVoltage,
   GMIN,
@@ -84,7 +85,7 @@ describe('the junction is the diode of SPICE at 27 °C', () => {
       // breakdown: ngspice moves the knee a little below BV, to where IS·(e^((BV − knee)/(N·Vt)) − 1 + knee/Vt)
       // is IBV within 1e-3 of it; beyond the knee the current is −IS·e^(−(knee + v)/(N·Vt))
       expect(j.knee, key).toBeLessThan(spec.bv);
-      expect(j.knee, key).toBeGreaterThan(spec.bv - 2); // 1N4148: 0.47 V below; the red LED, IS 8.66e-18 A: 1.44 V
+      expect(j.knee, key).toBeGreaterThan(spec.bv - 2); // 1N4148: 0.49 V below; the red LED, IS 8.66e-18 A: 1.44 V
       const match = spec.is * (Math.expm1((spec.bv - j.knee) / vte) + j.knee / THERMAL_VOLTAGE);
       close(match, spec.ibv, 1e-3 * spec.ibv, `${key}: the knee`);
       for (const beyond of [1, 5, 20]) {
@@ -96,8 +97,8 @@ describe('the junction is the diode of SPICE at 27 °C', () => {
   });
 
   it('a step of the junction voltage is limited as by pnjlim of ngspice', () => {
-    const vt = 1.752 * THERMAL_VOLTAGE;
-    const vcrit = 0.74;
+    const vt = 1.906 * THERMAL_VOLTAGE;
+    const vcrit = 0.78;
     // a jump far above the knee is cut to a few N·Vt beyond the old voltage
     const cut = pnjlim(5, 0.6, vt, vcrit);
     close(cut, 0.6 + vt * (2 + Math.log((5 - 0.6) / vt - 2)), 1e-15, 'up from 0.6 V');
@@ -143,11 +144,22 @@ describe('the catalog: the published diodes and the LEDs fitted to the plan', ()
       close(forwardVoltage(led(color), 0.02), middle, 1e-3, `${color}: the middle`);
   });
 
-  it('1N4148 at 10 mA: about 0.69 V; 1N4007 at 1 A: under the 1.1 V of its datasheet', () => {
-    close(forwardVoltage(diode('diode-1n4148'), 0.01), 0.694, 1e-3, '1N4148');
+  it('1N4148 at 10 mA: about 0.73 V, under the 1 V of its datasheet; 1N4007 at 1 A: under the 1.1 V of its own', () => {
+    const small = forwardVoltage(diode('diode-1n4148'), 0.01);
+    close(small, 0.7286, 1e-4, '1N4148');
+    expect(small).toBeLessThan(1);
     const big = forwardVoltage(diode('diode-1n4007'), 1);
     expect(big).toBeGreaterThan(0.8);
     expect(big).toBeLessThan(1.1);
+  });
+
+  it('the leak of the maker’s model takes its share of the current beside the junction', () => {
+    // at 1 nA the 5.827 GΩ of the 1N4148 takes about 1.7 pA: the junction and RS carry the rest
+    const spec = diode('diode-1n4148');
+    const volts = forwardVoltage(spec, 1e-9);
+    const bare = { ...spec, leakOhms: undefined };
+    close(volts, forwardVoltage(bare, 1e-9 - volts / spec.leakOhms!), 1e-15, 'the same voltage');
+    expect(volts).toBeLessThan(forwardVoltage(bare, 1e-9));
   });
 
   it('light is proportional to the forward current, with the colour’s own yield', () => {
@@ -225,25 +237,34 @@ describe('diodes and LEDs on the board', () => {
       close(dc.parts[id]!.u, -9, 1e-4, `${id}: the whole battery across it`);
       expect(dc.status[id]!.condition, id).toBe('ok');
     }
-    // straight across the battery, with no resistor: still nanoamperes
+    // straight across the battery, with no resistor: still nanoamperes — IS, GMIN and the maker's leak of 5.827 GΩ
+    const spec = diode('diode-1n4148');
     const bare = solveDC(net(2, part('B', 'battery-9v', [1, 0]), part('D', 'diode-1n4148', [0, 1])));
     expect(Math.abs(bare.parts.D!.i)).toBeLessThan(1e-6);
-    close(bare.parts.D!.i, -(2.52e-9 + GMIN * 9), 1e-12, 'IS and GMIN');
+    close(bare.parts.D!.i, -(spec.is + GMIN * 9 + 9 / spec.leakOhms!), 1e-12, 'IS, GMIN and the leak');
+    close(bare.parts.D!.i, -5.906e-9, 0.001e-9, 'about 5.9 nA');
   });
 
   it('1N4148 at 10 mA: the forward voltage of ngspice within ± 2 %', () => {
-    // the sample diode-forward: 5 V through 430 Ω into 1N4148 (D2) gives 10.01 mA
+    // the sample diode-forward: 5 V through 430 Ω, the E24 value nearest to 10 mA, into 1N4148 (D2) gives 9.93 mA
     const reference = sample('diode-forward');
-    close(reference.parts.D2!.i, 10e-3, 0.02e-3, 'the sample is at 10 mA');
+    close(reference.parts.D2!.i, 9.934e-3, 0.001e-3, 'the sample is at about 10 mA');
     const dc = solveDC(structuredClone(reference.netlist));
     close(dc.parts.D2!.u, reference.parts.D2!.u, 0.02 * reference.parts.D2!.u, 'in the circuit');
     close(
       forwardVoltage(diode('diode-1n4148'), 10e-3),
       reference.parts.D2!.u,
       0.02 * reference.parts.D2!.u,
-      'alone',
+      'alone, at 10 mA',
     );
-    close(reference.parts.D2!.u, 0.6943, 1e-4, 'ngspice: 0.6943 V');
+    // and at the sample's own current, the same equations on both sides
+    close(
+      forwardVoltage(diode('diode-1n4148'), reference.parts.D2!.i),
+      reference.parts.D2!.u,
+      1e-8 * reference.parts.D2!.u,
+      'alone, at 9.93 mA',
+    );
+    close(reference.parts.D2!.u, 0.7282, 1e-4, 'ngspice: 0.7282 V');
   });
 });
 
@@ -349,11 +370,136 @@ describe('Newton’s iterations', () => {
       expect([...dc.v].every(Number.isFinite), name).toBe(true);
       for (const reading of Object.values(dc.parts)) expect(Math.abs(reading.i), name).toBeLessThan(1e-6);
     }
-    // the reversed chain: the current of the smaller IS (1N4148, 2.52 nA), the voltages add up to the battery's 9 V
+    // the reversed chain: each 1N4148 lets through its IS and what its leak and GMIN take at its voltage, nearly half
+    // the battery's; the 1N4007, whose IS is larger, passes the same current with a few tens of millivolts across it
     const chain = solveDC(boards[4]![1]);
-    close(chain.parts.D1!.i, -2.524e-9, 0.002e-9, 'the chain');
+    const small = diode('diode-1n4148');
+    const large = diode('diode-1n4007');
+    const across = -chain.parts.D1!.u;
+    // (the cubic of the reverse region adds 8e-15 A)
+    close(chain.parts.D1!.i, -(small.is + across * (1 / small.leakOhms! + GMIN)), 2e-14, 'the chain by hand');
+    close(chain.parts.D1!.i, -5.127e-9, 0.001e-9, 'about 5.1 nA');
+    close(
+      chain.parts.D2!.u,
+      large.n * THERMAL_VOLTAGE * Math.log1p(chain.parts.D2!.i / large.is),
+      1e-6,
+      'the 1N4007',
+    );
     close(chain.parts.D1!.u + chain.parts.D2!.u + chain.parts.D3!.u, -chain.v[1]!, 1e-9, 'the voltages');
-    close(chain.parts.D1!.u, -4.5, 0.01, 'half of it');
+    close(chain.parts.D1!.u, chain.parts.D3!.u, 1e-4, 'the two 1N4148 alike');
+    close(chain.parts.D1!.u, -4.49, 0.001, 'nearly half each');
+  });
+
+  it('a group that only GMIN or the tie holds settles, though the rounding moves its potential', () => {
+    // a diode straight across 4×AA off the ground row: 4 A flow round a pair of nodes that the tie of 1 GΩ alone
+    // holds, and the rounding of those amperes moves them by microvolts at every solve; the same board on the ground
+    // row gives the same readings
+    const tied = solveDC(net(3, part('B', 'battery-4aa', [2, 1]), part('D', 'diode-1n4148', [2, 1])));
+    const grounded = solveDC(net(3, part('B', 'battery-4aa', [2, 0]), part('D', 'diode-1n4148', [2, 0])));
+    for (const dc of [tied, grounded]) {
+      expect(dc.ok).toBe(true);
+      expect(dc.iterations).toBeLessThanOrEqual(50);
+      expect(dc.sourceSteps).toBe(0);
+    }
+    expect(tied.issues).toEqual([{ kind: 'ungrounded', nodes: [1, 2] }]);
+    close(tied.parts.D!.i, grounded.parts.D!.i, 1e-9 * grounded.parts.D!.i, 'the same current');
+    close(tied.parts.B!.u, grounded.parts.B!.u, 1e-9, 'the same voltage');
+    close(tied.parts.B!.u, 6 + 0.6 * tied.parts.B!.i, 1e-9, 'the battery: 6 V less its own drop');
+    // an AA cell, an LED and a lamp with a leg in the air: an open loop that only the LED's GMIN (1e-12 S) holds to
+    // the ground, beside the 10 A of the cell's Norton source — the cell reads its full voltage, nothing flows, and
+    // the loop sits at the ground to the rounding of those 10 A against 1e-12 S (millivolts)
+    for (const color of ['green', 'red']) {
+      const open = solveDC(
+        net(
+          4,
+          part('B', 'battery-aa', [2, 1]),
+          part('D', `led-${color}`, [1, 0]),
+          part('L', 'lamp-6v', [2, 3]),
+        ),
+      );
+      expect(open.ok, color).toBe(true);
+      expect(open.iterations, color).toBeLessThanOrEqual(50);
+      expect(open.sourceSteps, color).toBe(0);
+      close(open.parts.B!.u, 1.5, 1e-12, `${color}: the cell's full voltage`);
+      for (const id of ['B', 'D', 'L'])
+        expect(Math.abs(open.parts[id]!.i), `${color}: ${id}`).toBeLessThan(1e-12);
+      expect(Math.abs(open.v[1]!), color).toBeLessThan(3e-3);
+    }
+    // a jumper inside such a group (an LED straight across the 9 V battery, a reversed LED to the ground): its 1000 S
+    // let the rounding move the group by tenths of a volt, more than any tolerance on its potential; the iterations
+    // stop at that noise (a go of MAX_ITERATIONS that stayed quiet), and every current is right all the same
+    const lit = solveDC(
+      net(
+        4,
+        part('G', 'led-green', [2, 1]),
+        part('W', 'led-white', [0, 2]),
+        part('B', 'battery-9v', [2, 3]),
+        part('J', 'jumper', [1, 3]),
+      ),
+    );
+    const twin = solveDC(
+      net(
+        4,
+        part('G', 'led-green', [2, 1]),
+        part('B', 'battery-9v', [2, 3]),
+        part('J', 'jumper', [1, 3]),
+        part('T', 'jumper', [3, 0]),
+      ),
+    );
+    expect(lit.ok).toBe(true);
+    expect(lit.iterations).toBeLessThanOrEqual(MAX_ITERATIONS);
+    expect(lit.sourceSteps).toBe(0);
+    close(
+      lit.parts.G!.i,
+      twin.parts.G!.i,
+      1e-9 * twin.parts.G!.i,
+      'the LED across the battery, as on the ground row',
+    );
+    close(lit.parts.B!.u, twin.parts.B!.u, 1e-9, 'the battery, as on the ground row');
+    expect(Math.abs(lit.parts.W!.i)).toBeLessThan(1e-9);
+  });
+
+  it('random boards of the catalog settle, nearly all within 50 iterations', () => {
+    // up to six rows and seven parts thrown on at random (a deterministic generator): legs in the air, parts with both
+    // legs in one row, shorted cells, loops off the ground row, jumpers inside groups that only GMIN holds
+    const kinds = [
+      'battery-9v',
+      'battery-4aa',
+      'battery-aa',
+      'led-red',
+      'led-yellow',
+      'led-green',
+      'led-blue',
+      'led-white',
+      'diode-1n4148',
+      'diode-1n4007',
+      'lamp-6v',
+      'resistor-10',
+      'resistor-330',
+      'resistor-1k',
+      'resistor-1M',
+      'jumper',
+    ];
+    let seed = 777;
+    const next = (below: number): number => {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      return (seed >>> 0) % below;
+    };
+    let slow = 0;
+    for (let board = 0; board < 3000; board++) {
+      const nodes = 2 + next(5);
+      const parts = Array.from({ length: 2 + next(6) }, (_, k) =>
+        part(`P${k}`, kinds[next(kinds.length)]!, [next(nodes), next(nodes)]),
+      );
+      const dc = solveDC(net(nodes, ...parts));
+      const what = JSON.stringify(parts.map((p) => [p.spec, p.pins]));
+      expect(dc.ok, what).toBe(true);
+      expect([...dc.v].every(Number.isFinite), what).toBe(true);
+      if (dc.iterations > 50) slow++;
+    }
+    expect(slow).toBeLessThanOrEqual(3); // a jumper inside a group that only GMIN holds: one go to the noise
   });
 
   it('a circuit no iteration settles is ok: false, with zeros and the reason', () => {

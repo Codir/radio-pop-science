@@ -62,8 +62,8 @@ describe('how loaded a part is', () => {
     // an LED: by current, 30 mA
     close(loadOf(PARTS['led-red']!, reading(1.95, 0.02)), 2 / 3, 1e-15, '20 mA of 30 mA');
     // a diode: by current, and by the voltage the wrong way round
-    close(loadOf(PARTS['diode-1n4148']!, reading(0.9, 0.15)), 0.5, 1e-15, '1N4148: 150 mA of 300 mA');
-    close(loadOf(PARTS['diode-1n4148']!, reading(-50, -2.5e-9)), 0.5, 1e-15, '1N4148: 50 V of 100 V');
+    close(loadOf(PARTS['diode-1n4148']!, reading(0.9, 0.1)), 0.5, 1e-15, '1N4148: 100 mA of 200 mA');
+    close(loadOf(PARTS['diode-1n4148']!, reading(-50, -1.3e-8)), 0.5, 1e-15, '1N4148: 50 V of 100 V');
     close(loadOf(PARTS['diode-1n4007']!, reading(0.9, 2)), 2, 1e-15, '1N4007: 2 A of 1 A');
     // the lamp by power, the speaker by power, the pot by the power of its whole track
     close(loadOf(PARTS['lamp-6v']!, reading(6, 0.1)), 0.6 / 0.7, 1e-15, 'the lamp at 6 V');
@@ -83,7 +83,7 @@ describe('how loaded a part is', () => {
     expect(PARTS['battery-9v']!.limits).toEqual({ currentA: 1 });
     expect(PARTS['battery-4aa']!.limits).toEqual({ currentA: 3 });
     expect(PARTS['battery-aa']!.limits).toEqual({ currentA: 3 });
-    expect(PARTS['diode-1n4148']!.limits).toEqual({ currentA: 0.3, reverseV: 100 });
+    expect(PARTS['diode-1n4148']!.limits).toEqual({ currentA: 0.2, reverseV: 100 });
     expect(PARTS['diode-1n4007']!.limits).toEqual({ currentA: 1, reverseV: 1000 });
     for (const color of ['red', 'yellow', 'green', 'blue', 'white'])
       expect(PARTS[`led-${color}`]!.limits, color).toEqual({ currentA: 0.03 });

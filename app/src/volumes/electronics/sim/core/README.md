@@ -125,7 +125,7 @@ The transient (E1-5) adds the charge of the capacitors there.
 
 **Where Newton's iterations start.** A compiled circuit solved before starts from its own last solution, its
 junctions too: a stand that compiles once and solves on every turn of a knob settles in two or three iterations
-(the red LED with 330 Ω: 4 iterations from cold, 2 again). Otherwise every junction starts at its knee of
+(the red LED with 330 Ω: 5 iterations from cold, 2 again). Otherwise every junction starts at its knee of
 conduction, as SPICE does, and the other nodes at the state's `v` when it has as many nodes, else at zero.
 `maxIterations` (default `MAX_ITERATIONS`, 100 — the ITL1 of SPICE) bounds one go of the iterations and each source
 step.
@@ -157,7 +157,7 @@ burnt across a battery leaves the battery `open`.
 | `jumper` | `jumper` | a, b | 1 mΩ | — | the same |
 | `speaker-8` | `speaker` | plus, minus | 8 Ω | 2 W | a 50 mm speaker such as Visaton K 50 WP 8 Ω: 2 W rated, 3 W maximum |
 | `earphone-32` | `speaker` | plus, minus | 32 Ω | 0.1 W | a 32 Ω headphone such as beyerdynamic DT 770 PRO 32 Ω: 100 mW rated power handling (IEC 60268-7) |
-| `diode-1n4148` | `diode` | anode, cathode | IS 2.52 nA, N 1.752, RS 0.568 Ω, BV 100 V, IBV 100 μA | 0.3 A; 100 V reverse | the model of LTspice's `standard.dio` (onsemi) and the onsemi datasheet, below |
+| `diode-1n4148` | `diode` | anode, cathode | IS 4.352 nA, N 1.906, RS 0.6458 Ω, BV 110 V, IBV 100 μA; a leak of 5.827 GΩ across the part (`leakOhms`) | 0.2 A; 100 V reverse | Nexperia's SPICE model and datasheet, below |
 | `diode-1n4007` | `diode` | anode, cathode | IS 14.3733 nA, N 1.80829, RS 41.4712 mΩ, BV 1100 V, IBV 10 A | 1 A; 1000 V reverse | Vishay's SPICE model and datasheet, below |
 | `led-red`, `led-yellow`, `led-green`, `led-blue`, `led-white` | `led` | anode, cathode | fitted to the plan's forward voltage at 20 mA (below); BV 20 V, IBV 10 μA; rated 20 mA; `lumensPerAmp` | 30 mA | the plan's windows and limits; the light: Kingbright's datasheets, below |
 | `lamp-6v` | `lamp` | a, b | 6 V · 0.1 A (60 Ω hot), cold 5.5 Ω, thermal time constant 50 ms | 0.7 W | the plan's decision and the choices below |
@@ -195,7 +195,8 @@ the 8 Ω speaker straight on the 9 V battery takes 0.95 A, warm.
 The DC part of SPICE's diode, level 1, at 27 °C, written after ngspice-42 (`src/spicelib/devices/dio/dioload.c`,
 `diotemp.c`, `src/spicelib/devices/devsup.c`) so that the model and its oracle solve the very same equations. A
 diode is a series resistance RS from the anode to a node of its own, the junction, and the junction from there to
-the cathode. The junction takes
+the cathode; when the maker's model has one, a resistance across the whole part (`leakOhms`) carries the leakage
+the wrong way round. The junction takes
 
 | Region | Current |
 |---|---|
@@ -203,10 +204,11 @@ the cathode. The junction takes
 | reverse, down to the knee | −IS·(1 + (3·N·Vt / (e·v))³) — SPICE's cubic; it meets the first at −3·N·Vt |
 | breakdown, v < −knee | −IS·e^(−(knee + v)/(N·Vt)) |
 
-and, as in every SPICE, `GMIN` = 1e-12 S across it (so a diode the wrong way round on 9 V lets IS + 9 pA through).
+and, as in every SPICE, `GMIN` = 1e-12 S across it (so a diode the wrong way round on 9 V lets IS + 9 pA through,
+and what its leak takes).
 `THERMAL_VOLTAGE` Vt = kT/q at `ROOM_KELVIN` = 300.15 K (27 °C, SPICE's TNOM) with ngspice's constants k =
 1.38064852e-23 J/K and q = 1.6021766208e-19 C: 25.865 mV. The knee is BV moved down until the junction takes IBV at
-−BV, by the fixed-point iteration of `diotemp.c` (to 1e-3 of IBV): 1N4148 99.525 V, 1N4007 1099.05 V, the red LED
+−BV, by the fixed-point iteration of `diotemp.c` (to 1e-3 of IBV): 1N4148 109.515 V, 1N4007 1099.05 V, the red LED
 18.56 V, the blue 17.79 V. No temperature dependence: the model's room is SPICE's 27 °C.
 
 Newton's iterations limit the step of the junction voltage as ngspice's `DEVpnjlim` does (`pnjlim`): above
@@ -216,31 +218,54 @@ exponential overshoots by orders of magnitude from a poor guess. When the iterat
 `maxIterations`), the sources are stepped up from zero — first a quarter of their voltage, the step doubling while
 each settles from the last and quartering when one does not — down to steps of 1e-6.
 
-The iterations have settled when no unknown moved by more than 1e-9 of itself plus 1e-12 (V or A), or when two
-iterations in a row moved no more than SPICE allows by default (1e-3 of the value plus 1 μV for a voltage, plus
-1 pA for a current); in both cases no junction may have limited its step. The second rule is for nodes that
-nothing but GMIN holds — diodes the wrong way round in series: next to a series resistance of 0.04 Ω, a conductance
-of 1e-12 S lets the rounding of the solve move such a node by millivolts, and a tighter rule would never be met
-there. Elsewhere Newton's quadratic convergence has by the second such iteration taken the step to about 1e-6 of
-the value and the solution to about 1e-12. Every sample of the oracle settles in 6–8 iterations from cold, an LED
-or a diode straight on the 9 V battery in 6–7, the lamp in 4. A junction with no path for current (a leg in the
-air) starts at its knee and comes down one N·Vt per iteration, as in SPICE: about 30 iterations.
+The iterations have settled, when no junction limited its step and the iteration did not start from nothing,
+in one of three ways:
+
+- **exact:** no unknown moved by more than 1e-9 of itself plus 1e-12 (V or A);
+- **quiet:** the guess already satisfies the matrix linearized around it to the rounding — what is left of the rows
+  at the guess is at most 16 machine epsilons (16 · 2.2e-16) of the largest row's terms, the backward error of the
+  guess — and no voltage moved by more than SPICE's tolerance of the circuit's largest voltage (1e-3 of it plus
+  1 μV), no current by more than 1e-3 of itself plus 1 pA;
+- **noise:** a go of `maxIterations` ends with its last 20 iterations all quiet.
+
+The last two are for a group of nodes that nothing but GMIN (1e-12 S) or the tie (1 GΩ) holds to the rest: a pair of
+nodes off the ground row with 4 A flowing round them, an open loop of a cell, an LED and a lamp with a leg in the air
+(the cell's Norton source carries 10 A inside the loop), reversed diodes in series. The rounding of those amperes
+moves the potential of such a group at every solve — by microvolts against the tie, by millivolts against GMIN, by
+tenths of a volt when a 1 mΩ jumper sits inside it — so its own step never shrinks, and a rule on the step alone
+would never be met. Everything else settles to the rounding all the same, and the backward error says so: the
+readings of the parts (`u`, `i`, `p`) agree with the same board on the ground row to 1e-9 and better. Only the
+potential of such a group against the ground keeps that noise — on a board it hangs in the air. The test throws
+3000 random boards of up to six rows and seven parts of the catalog together (legs in the air, both legs in one row,
+shorted cells, loops off the ground row): every one settles, all but one within 50 iterations — that one, with a
+jumper inside such a group, in one go of 100 by the noise rule.
+
+Every sample of the oracle settles in 7–9 iterations from cold, an LED or a diode straight on the 9 V battery in
+7–8, the lamp in 4. A junction with no path for current (a leg in the air) starts at its knee and comes down one
+N·Vt per iteration, as in SPICE: about 30 iterations.
 
 `forwardVoltage(params, amps)` is the voltage across the part at a forward current; `junctionOf`,
 `junctionCurrent`, `pnjlim`, `limitJunction` are the pieces above.
 
-**1N4148.** LTspice's `standard.dio`: `.model 1N4148 D(Is=2.52n Rs=.568 N=1.752 Cjo=4p M=.4 tt=20n Iave=200m
-Vpk=75 mfg=OnSemi type=silicon)` (read from the copy in github.com/evenator/LTSpice-Libraries, `cmp/standard.dio`, on
-20.11.2026). The line has no breakdown; BV 100 V and IBV 100 μA are the onsemi datasheet's (1N91x, 1N4x48 — 1N914/D
-Rev. 6, September 2024: «Breakdown Voltage, IR = 100 μA: 100 V min»). The limits from the same datasheet: DC forward
-current 300 mA, VRRM 100 V. The model gives 0.694 V at 10 mA (the datasheet: 1.0 V at most) and 2.5 nA the wrong way
-round (25 nA at most at 20 V).
+**1N4148.** Nexperia's SPICE model (Nexperia is the former NXP standard-products business, Philips before it):
+assets.nexperia.com/documents/spice-model/1N4148.txt, titled «1N4148 Nexperia High-speed diodes IFmax = 200mA VRmax
+= 100V». It is a subcircuit — `.SUBCKT 1N4148 1 2`, `R1 1 2 5.827E+9`, `D1 1 2 1N4148`, `.MODEL 1N4148 D IS =
+4.352E-9 N = 1.906 BV = 110 IBV = 0.0001 RS = 0.6458 CJO = 7.048E-13 VJ = 0.869 M = 0.03 FC = 0.5 TT = 3.48E-9` —
+and its comment says of R1: «The resistor R1 does not reflect a physical device. Instead it improves modeling in
+the reverse mode of operation.» The catalog takes R1 as `leakOhms`. Nexperia's server refused this machine (HTTP 403
+from its CDN on 20.11.2026), so the text was read from the verbatim copy of NXP's `1N4148.prm` (its header: «NXP
+Semiconductors, High-speed diodes, VRRM = 100V, IFRM = 450 mA, trr = 4ns») in the PySpice repository
+(github.com/FabriceSalvaire/PySpice, `examples/libraries/diode/switching/1N4148.lib`); a web search of Nexperia's own
+file shows the same numbers. The limits come from the maker's datasheet «1N4148; 1N4448 High-speed diodes» (NXP
+product data sheet of 2004 Aug 10 under Nexperia's cover of February 2017, read from Digi-Key's copy): IF 200 mA
+continuous, VRRM 100 V. The model gives 0.729 V at 10 mA (the datasheet: 1 V at most) and, the wrong way round,
+5.9 nA at 9 V and 7.8 nA at 20 V (the datasheet: 25 nA at most at 20 V).
 
 **1N4007.** Vishay's SPICE model (vishay.com/docs/89789/1n4007.txt, Thomatronik GmbH, SPICE3): `.model d1n4007 d is =
 1.43733E-008 n = 1.80829 rs = 0.0414712 … bv = 1100 ibv = 10`. The limits: Vishay 1N4001 … 1N4007, document 88503,
 revision 29.04.2020 — IF(AV) 1.0 A, VRRM 1000 V; VF 1.1 V at 1 A at most, the model gives 0.886 V. (A model with
 `Is=7.02767n Rs=0.0341512 N=1.80803` circulates as well; its source could not be traced, so the maker's own was
-taken.) CJO, TT and the rest of both lines are for the transient (E1-5): DC does not read them.
+taken.) CJO, TT and the rest of both models are for the transient (E1-5): DC does not read them.
 
 **LEDs.** No maker publishes SPICE models of generic 5 mm indicator LEDs, so they are fitted (the decision of this
 task) to the plan's forward voltage at 20 mA: N and RS by the chip's family — N 2 and RS 6 Ω for the classic
@@ -343,7 +368,7 @@ decision of this task):
 |---|---|---|
 | `resistor`, `pot`, `speaker` | 10 s | a 0.25 W resistor at 0.2 W never burns; at 1 W (75 Ω on the 9 V battery, 1.04 W) it burns after 2.8 s |
 | `led` | 2 s | an LED straight on the 9 V battery takes 0.93 A (red) or 0.51 A (blue) and burns after 0.07 or 0.12 s: a flash |
-| `diode` | 5 s | 1N4148 straight on the 9 V battery takes 3.9 A and burns after 0.4 s; 1N4007 5.2 A, 1.1 s |
+| `diode` | 5 s | 1N4148 straight on the 9 V battery takes 3.7 A and burns after 0.28 s; 1N4007 5.2 A, 1.1 s |
 | `lamp` | 2 s | the 6 V lamp on the 9 V battery: 2.1 s |
 | `battery` | 2 s | a short warms the battery to its load (6 for the 9 V one) in a few seconds; it never burns |
 
@@ -386,9 +411,11 @@ are checked for sources), which pins conduct direct current at a setting (`links
 setting (`wire`), how its memory starts a solve (`start`), its stamp, and the currents into its pins from a solution
 (`currents`). The stamp writes through the `Stamper` — `conductance(a, b, g)`, `current(a, b, i)` (a current through
 the part from node `a` to node `b`), `voltage(plus, minus, branch, volts)` — by node numbers, the part's own nodes
-(`at.inner`) too, around the guess `op: Operating`: the node voltages `op.v`, the share `op.sources` a source gives
-(it multiplies its voltage by it), `op.initial` (the first iteration from nothing: a junction linearizes at its
-memory) and `op.limited` (a part that limited its step sets it: the iterations go on). A nonlinear part stamps its
+(`at.inner`) too; a conductance or a current from a node to itself (a part with both legs in one row) is not
+stamped at all, since adding and taking away a jumper's 1000 S would round away the GMIN beside it. A part stamps
+around the guess `op: Operating`: the node voltages `op.v`, the share `op.sources` a source gives (it multiplies its
+voltage by it), `op.initial` (the first iteration from nothing: a junction linearizes at its memory) and
+`op.limited` (a part that limited its step sets it: the iterations go on). A nonlinear part stamps its
 linearization: its slope as a conductance and the current that makes up the rest. The transient (E1-5) adds the
 time step and the parts' state in time to the same guess.
 
@@ -400,21 +427,23 @@ python3 tools/ref-models/electronics/spice.py --check                           
 ```
 
 `__tests__/`: `purity` (the text of every file), `parts` (the catalog, the published diodes, the fitted LEDs), `mna`
-(the LU and the stamps), `dc` (linear circuits by hand: a divider, the batteries under load, a grid of five
-resistors, the pot at 0 / 0.5 / 1, a switch, the speaker; the worked example above; a singular circuit; the state;
-malformed netlists), `topology` (open, short, floating — a pot's free wiper among them — ungrounded), `diode` (the
-junction against SPICE's formulas in every region, the knee, `pnjlim`; the LEDs' windows and light; an LED of each
-colour with 330 Ω from 9 V against ngspice — 21.24 mA red, 20.94 yellow, 20.65 green, 17.89 blue and white —
-within ± 3 %; an LED without a resistor: hot, burnt in under a second, then no current; diodes the wrong way round
-under 1 μA; 1N4148 at 10 mA against ngspice within ± 2 %; warm starts, source stepping, odd boards — a leg in the
-air, LEDs back to back, reversed diodes in series — and `no-convergence`), `lamp`
-(the catalog, 0.1 A at 6 V, the steady filament against a bisection by hand at nine voltages, the lamp's law, 0.1 A
-± 2 % from four AA cells, less than half the power from 3 V, the state's temperature, the lamp's limit), `limits`
-(conditions, loads, the limits of the catalog, heat in time, the 0.25 W resistor at 0.2 W for an hour and at 1 W,
-a burnt part as a gap, a shorted battery, two stands), `oracle` (every sample of `__fixtures__/` against the model:
-relative difference ≤ 1e-6 for the linear samples and ≤ 1e-3 for the nonlinear ones — the plan's tolerances — for
-every number, the smallest too, with no absolute allowance; where ngspice gives an exact zero — the ground, a part
-behind an open switch — the model must give an exact zero; at most 50 iterations and no source steps).
-The samples are written by `tools/ref-models/electronics/spice.py` from `cases.py` (its README); the model and ngspice
-agree on them to 4e-10 for the linear ones, the rounding of the samples, and to 1.6e-8 for the nonlinear ones, the
-tolerance to which both sides settle.
+(the LU and the stamps; both legs in one row stamp nothing), `dc` (linear circuits by hand: a divider, the batteries
+under load, a grid of five resistors, the pot at 0 / 0.5 / 1, a switch, the speaker; the worked example above; a
+singular circuit; the state; malformed netlists), `topology` (open, short, floating — a pot's free wiper among them —
+ungrounded), `diode` (the junction against SPICE's formulas in every region, the knee, `pnjlim`; the LEDs' windows
+and light; an LED of each colour with 330 Ω from 9 V against ngspice — 21.24 mA red, 20.94 yellow, 20.65 green, 17.89
+blue and white — within ± 3 %; an LED without a resistor: hot, burnt in under a second, then no current; diodes the
+wrong way round under 1 μA; 1N4148 at 10 mA against ngspice within ± 2 %; the leak of its maker's model; warm starts,
+source stepping, odd boards — a leg in the air, LEDs back to back, reversed diodes in series — groups that only GMIN
+or the tie holds, 3000 random boards, and `no-convergence`), `lamp` (the catalog, 0.1 A at 6 V, the steady filament
+against a bisection by hand at nine voltages, the lamp's law, 0.1 A ± 2 % from four AA cells, less than half the
+power from 3 V, the state's temperature, the lamp's limit), `limits` (conditions, loads, the limits of the catalog,
+heat in time, the 0.25 W resistor at 0.2 W for an hour and at 1 W, a burnt part as a gap, a shorted battery, two
+stands), `oracle` (every sample of `__fixtures__/` against the model: relative difference ≤ 1e-6 for the linear
+samples and ≤ 1e-3 for the nonlinear ones — the plan's tolerances — for every number, the smallest too, with no
+absolute allowance; where ngspice gives an exact zero — the ground, a part behind an open switch — the model must
+give an exact zero; at most 50 iterations and no source steps). The samples are written by
+`tools/ref-models/electronics/spice.py` from `cases.py` (its README); the model and ngspice agree on them to 4e-10
+for the linear ones, the rounding of the samples, and to 1.6e-8 for the nonlinear ones, the tolerance to which both
+sides settle — but for the power in the 1 kΩ before the reversed LED of `diode-reverse` (8.1e-20 W: 9 pA and 9 nV,
+the difference of two nodes at 9 V), where the rounding of those nodes on either side leaves 8e-7.

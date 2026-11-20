@@ -8,7 +8,15 @@
 import { ROOM_KELVIN } from './diode';
 import { filament } from './lamp';
 import { conditionOf, loadOf, type PartStatus } from './limits';
-import { assemble, compile, factor, readSettings, solveFactored, type Circuit } from './mna';
+import {
+  assemble,
+  compile,
+  factor,
+  readSettings,
+  solveFactored,
+  type Circuit,
+  type LinearSystem,
+} from './mna';
 import type { Netlist } from './netlist';
 import { memoryOf, type ModelState } from './state';
 import { analyse, type TopologyIssue } from './topology';
@@ -60,15 +68,23 @@ export interface DcOptions {
 /** The iterations of one go (SPICE's ITL1). */
 export const MAX_ITERATIONS = 100;
 /**
- * When Newton has settled. At once when no unknown moved by more than `EXACT` of itself plus `FLOOR` (V or A): the
- * solution is then exact to rounding. Or when two iterations in a row moved no more than SPICE allows (its defaults:
- * `SPICE_RELTOL` of the value plus `SPICE_VNTOL` for a voltage, `SPICE_ABSTOL` for a current): that is where a circuit
- * whose node is held by nothing but GMIN — reversed diodes in series — stops, since the rounding of the solve moves
- * such a node by millivolts; elsewhere the quadratic convergence of Newton has by then taken the step to ~1e-6 of
- * the value and the solution to ~1e-12.
+ * When Newton has settled (no junction limited its step, and the iteration did not start from nothing):
+ * - exact: no unknown moved by more than `EXACT` of itself plus `FLOOR` (V or A);
+ * - quiet: the guess already satisfies every row of the matrix linearized around it to the rounding of the solve — what
+ *   is left of the rows is no more than `QUIET` of the largest row's terms (the backward error of the guess) — and no
+ *   voltage moved by more than SPICE's tolerance (`SPICE_RELTOL` plus `SPICE_VNTOL`) of the largest voltage of the
+ *   circuit, no current by more than `SPICE_RELTOL` of itself plus `SPICE_ABSTOL`. That is where a group of nodes held
+ *   to the rest by nothing but GMIN (1e-12 S) or the tie (1 GΩ) stops: the rounding of amperes elsewhere moves its
+ *   potential by micro- to millivolts at every solve, so its own step never shrinks; everything else has settled to
+ *   the rounding, and the step taken from the quiet guess puts it there too.
+ * - a go that runs out of iterations while the last `NOISE_RUN` of them were all quiet has reached the rounding
+ *   noise: only the potential of such a group still moves, by more than SPICE's tolerance (a jumper of 1 mΩ inside a
+ *   group that only GMIN holds), and no further iteration or source step would fix it.
  */
 const EXACT = 1e-9;
 const FLOOR = 1e-12;
+const QUIET = 16 * Number.EPSILON;
+const NOISE_RUN = 20;
 const SPICE_RELTOL = 1e-3;
 const SPICE_VNTOL = 1e-6;
 const SPICE_ABSTOL = 1e-12;
@@ -84,6 +100,26 @@ interface Go {
   settled: boolean;
   singular: boolean;
   iterations: number;
+}
+
+/** Whether the guess `x` leaves every row of A·x = b, just assembled around it, at the rounding: the largest row's
+ * remainder against the largest row's sum of the magnitudes of its terms. */
+function quietAt(system: LinearSystem, x: Float64Array): boolean {
+  const { n, a, b } = system;
+  let left = 0;
+  let terms = 0;
+  for (let i = 0; i < n; i++) {
+    let r = -b[i]!;
+    let sum = Math.abs(b[i]!);
+    for (let j = 0; j < n; j++) {
+      const t = a[i * n + j]! * x[j]!;
+      r += t;
+      sum += Math.abs(t);
+    }
+    left = Math.max(left, Math.abs(r));
+    terms = Math.max(terms, sum);
+  }
+  return left <= QUIET * terms;
 }
 
 /**
@@ -104,22 +140,27 @@ function newton(
   // the unknowns below `voltages` are node voltages, the rest currents of sources
   let voltages = 0;
   for (const k of index) if (k >= 0) voltages++;
-  let spiceBefore = false;
+  let quietRun = 0;
   for (let iterations = 1; iterations <= max; iterations++) {
     op.limited = false;
     assemble(c, settings, ties, op, broken);
+    // from the second iteration of a go on, `x` is the guess the parts were just stamped around
+    const quiet = iterations > 1 && quietAt(system, x);
     if (!factor(system)) return { settled: false, singular: true, iterations };
     before.set(x);
     solveFactored(system);
     let exact = iterations > 1;
-    let spice = exact;
+    let small = quiet;
+    let scale = 0;
+    for (let k = 0; k < voltages; k++) scale = Math.max(scale, Math.abs(x[k]!), Math.abs(before[k]!));
     for (let k = 0; k < x.length; k++) {
       const now = x[k]!;
       if (!Number.isFinite(now)) return { settled: false, singular: false, iterations };
       const step = Math.abs(now - before[k]!);
       const size = Math.max(Math.abs(now), Math.abs(before[k]!));
       if (step > EXACT * size + FLOOR) exact = false;
-      if (step > SPICE_RELTOL * size + (k < voltages ? SPICE_VNTOL : SPICE_ABSTOL)) spice = false;
+      const allowed = k < voltages ? SPICE_RELTOL * scale + SPICE_VNTOL : SPICE_RELTOL * size + SPICE_ABSTOL;
+      if (step > allowed) small = false;
     }
     for (let node = 0; node < c.size; node++) {
       const k = index[node]!;
@@ -127,10 +168,10 @@ function newton(
     }
     const steady = !op.limited && !op.initial;
     op.initial = false;
-    if (steady && (exact || (spice && spiceBefore))) return { settled: true, singular: false, iterations };
-    spiceBefore = steady && spice;
+    if (steady && (exact || small)) return { settled: true, singular: false, iterations };
+    quietRun = steady && quiet ? quietRun + 1 : 0;
   }
-  return { settled: false, singular: false, iterations: max };
+  return { settled: quietRun >= NOISE_RUN, singular: false, iterations: max };
 }
 
 /** Sets every part's memory for a new solve. */

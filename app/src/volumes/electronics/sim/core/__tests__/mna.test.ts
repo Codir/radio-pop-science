@@ -170,4 +170,26 @@ describe('stamps of a compiled circuit', () => {
     expect([...circuit.system.a]).toEqual([g + 1e-9, -g, -g, g]);
     expect([...circuit.system.b]).toEqual([-9 / 1.5, 9 / 1.5]);
   });
+
+  it('a part with both legs in one row stamps nothing: the GMIN beside it is not rounded away', () => {
+    // a jumper (1000 S) and a battery (its 6 A) with both legs on node 1, which a reversed LED alone holds
+    const parts: Netlist['parts'] = [
+      { id: 'B', spec: 'battery-9v', pins: [2, 0] },
+      { id: 'R', spec: 'resistor-1k', pins: [2, 1] },
+      { id: 'D', spec: 'led-red', pins: [0, 1] },
+    ];
+    const plain = compile({ nodes: 3, parts });
+    const shorted = compile({
+      nodes: 3,
+      parts: [
+        ...parts,
+        { id: 'J', spec: 'jumper', pins: [1, 1] },
+        { id: 'B2', spec: 'battery-aa', pins: [1, 1] },
+      ],
+    });
+    assemble(plain, readSettings(plain), []);
+    assemble(shorted, readSettings(shorted), []);
+    expect([...shorted.system.a]).toEqual([...plain.system.a]);
+    expect([...shorted.system.b]).toEqual([...plain.system.b]);
+  });
 });
