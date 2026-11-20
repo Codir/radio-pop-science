@@ -231,6 +231,8 @@ python3 tools/ref-models/radio/link_budget.py --site app/src/volumes/radio/sim/c
 | під `pnpm dev`, розділ `live`, 22:22 UTC, `PASS sandbox-radio-link — 4 checks` | той самий |
 | програмний рендер: розділи `live`, `bench`, `ladder`, 22:23 UTC, `PASS sandbox-radio-link — 13 checks` | `ANGLE (Mesa, Vulkan 1.4.318 (llvmpipe (LLVM 20.1.2 256 bits) (0x00000000)), llvmpipe)` |
 | після рецензії (темний льох, підпис кроку `still`): Блок Q з усіма вісьмома розділами, 22:53 UTC, `PASS sandbox-radio-link — 54 checks`; `modelMs` 19,62 ms, `frameMs` 20,49 і 74,74 ms — у межах кількох відсотків від основного | `ANGLE (NVIDIA, Vulkan 1.4.312 (NVIDIA NVIDIA GeForce RTX 5070 (0x00002F04)), NVIDIA)` |
+| ворота черги (завдання B17, коміт `909d8c6`): Блок Q з усіма вісьмома розділами, 20.11.2026, 00:15 UTC, `PASS sandbox-radio-link — 54 checks`; `modelMs` 19,73 ms, `frameMs` під сповільненням 75,73 ms — менш як на 1 % від основного | `ANGLE (NVIDIA, Vulkan 1.4.312 (NVIDIA NVIDIA GeForce RTX 5070 (0x00002F04)), NVIDIA)` |
+| ворота черги (B17): розділи `yard` і `whereami` у кадрі телефона 390 × 844 з дотиком, 00:16 UTC, `PASS sandbox-radio-link — 26 checks` | той самий |
 
 План писано для машини без відеокарти, з програмним рендером. Після перезавантаження 19.11 відеокарта працює:
 Chrome малює через ANGLE і Vulkan і чекає вертикальної синхронізації, тож кадр сцени — 16,67 ms, темп екрана.
@@ -405,12 +407,3 @@ site_stop 5377; exit $rc
 Збудоване в черзі 2 лишається: модель з частотною модуляцією — той самий ланцюг, яким іде відео аналогового
 супутникового телебачення, — разом з оком, екраном, зв’язком, світом і подвір’ям послужить главі про камеру й гілці
 про супутник.
-
-**Ворота черги** (завдання B17, 20.11.2026, прогони 00:14–00:17 UTC на коміті `909d8c6`): `pnpm typecheck`,
-`pnpm lint`, `pnpm test` (173 файли, 1799 тестів), `pnpm build`, `doccheck`, `check.py`, `test_check.py`, обидва еталони
-(`fm_chain: 8 fixture(s) up to date`, `link_budget: 2 fixture(s) up to date`) і збірка сайту (`PASS site smoke`;
-ні пісочниці, ні інших томів у ній немає) — зелено. Блок Q з усіма вісьмома розділами дав
-`PASS sandbox-radio-link — 54 checks` (`modelMs` 19,73 ms, `frameMs` під сповільненням 75,73 ms: від чисел розділу 4
-вони відходять менш як на 1 %), а в кадрі телефона 390 × 844 з дотиком (розділи `yard` і `whereami`) —
-`PASS sandbox-radio-link — 26 checks`. Обидва прогони йшли на відеокарті, `gpu.renderer` —
-`ANGLE (NVIDIA, Vulkan 1.4.312 (NVIDIA NVIDIA GeForce RTX 5070 (0x00002F04)), NVIDIA)`.
