@@ -7,7 +7,8 @@
  * decision 10): a sample taken, a new one rises from the foam in 0.3 s; a part let go off the board flies back into
  * its slot in 0.4 s and is gone into the sample. A part taken gets the next id of the board's counter (`nextId`):
  * `R1`, `R2` … never twice. On the step in front of each slot its label — numbers and units made by the code («4,7 kΩ»,
- * «1N4007») — shown only where it reads (≥ 16 px-equivalent); an LED has none (its colour shows), nor has a jumper.
+ * «100 nF 50 V», «1N4007») — shown only where it reads (≥ 16 px-equivalent); an LED has none (its colour shows), nor
+ * has a jumper.
  * On a phone the tray is out of the frame: its slots are buttons of the dock (VISUAL §9), the chapter's.
  *
  * World frame (the table): the tray stands level on the table, its slots' samples level with it.
@@ -19,7 +20,15 @@ import { PARTS } from '@electronics/sim/core';
 import { footprintOf, nextId, type BoardState } from '@electronics/sim/board';
 import { tame } from '../bench/materials';
 import { PLACES } from '../bench/layout';
-import { DIODES, LEG, TRANSISTORS, buildPart, type PartEye, type PartModel } from '../parts';
+import {
+  DIODES,
+  LEG,
+  TRANSISTORS,
+  buildPart,
+  electrolyticPrint,
+  type PartEye,
+  type PartModel,
+} from '../parts';
 import { Prints } from '../parts/part';
 
 const T = PLACES.tray;
@@ -60,12 +69,15 @@ export function trayRow(m: PartModel): TrayRow {
   return s.height <= TRAY.low.height + 1e-9 && s.depth <= TRAY.low.depth + 1e-9 ? 'front' : 'back';
 }
 
-/** The label of a slot: the value with its unit, a diode's or transistor's model; '' for an LED, a jumper. */
+/** The label of a slot: the value with its unit, a diode's or transistor's model; '' for an LED, a jumper. A
+ * capacitor's is its capacitance and its rated voltage, as an electrolytic's can is printed («100 μF 6,3 V»): two
+ * capacitors of one value (the 6.3 V and the 16 V can, the ceramic and the film of 100 nF) never share a label, which
+ * on a phone is all the dock's button shows (VISUAL §9). */
 export function trayLabel(spec: string): string {
   const s = Object.hasOwn(PARTS, spec) ? PARTS[spec]! : undefined;
   if (s === undefined) return '';
   if (s.kind === 'resistor' || s.kind === 'pot') return fmtSI(s.ohms, 'Ω');
-  if (s.kind === 'capacitor') return fmtSI(s.farads, 'F');
+  if (s.kind === 'capacitor') return electrolyticPrint(s.farads, s.ratedV);
   if (Object.hasOwn(DIODES, spec)) return DIODES[spec]!;
   if (Object.hasOwn(TRANSISTORS, spec)) return TRANSISTORS[spec]!.print;
   return '';

@@ -21,6 +21,7 @@ import {
   createBoardState,
   createLayout,
   footprintOf,
+  legSockets,
   nextId,
   place,
   put,
@@ -30,6 +31,7 @@ import {
   setSetting,
   type BoardState,
   type FixedPart,
+  type Orientation,
   type RowId,
   type SocketId,
 } from '@electronics/sim/board';
@@ -629,4 +631,152 @@ describe('the amplifier of E1-6 on the board', () => {
     expect(model.rowVolts('11ae')).toBeCloseTo(3.771, 3);
     expect(model.reading('BAT')!.i).toBeCloseTo(-0.01331, 5);
   });
+
+  it('built as on a real board — every part in its footprint’s own shape, six jumpers — has that point within 1e-4', () => {
+    const net = amplifierNetlist({ source: 'player' });
+    const alone = solveDC(net);
+    const board = amplifierBuilt(net);
+    const model = createBenchModel({ layout, board });
+    model.sync();
+    expect(model.ok).toBe(true);
+    expect(model.net!.pending).toEqual([]);
+    expect(finite(model)).toBe(true);
+    // in the circuit: the amplifier's parts (the bench's fixed ones in place of its own) and the six jumpers
+    const built = net.parts.map((p) => AMP_IDS[p.id] ?? p.id).filter((id) => id !== 'BAT' && id !== 'SW');
+    const jumpers = AMP_JUMPERS.map((_, k) => `J${k + 1}`);
+    const ids = model.net!.net.parts.map((p) => p.id).filter((id) => id !== 'BAT' && id !== 'SW');
+    expect(ids.sort()).toEqual([...built, ...jumpers].sort());
+    // a jumper is a wire of WIRE_OHMS: under its strips' current it moves the point a little — the output pair's
+    // 1.9 mA of bias, exponential in its base voltages, by up to 5.1e-5, everything else by at most 2.4e-5 — so the
+    // 1e-9 of the build without jumpers (above) cannot hold here
+    const near = (a: number, b: number) => Math.abs(a - b) <= 1e-4 * Math.max(Math.abs(a), Math.abs(b));
+    for (const [n, rows] of Object.entries(AMP_BUILT_ROWS)) {
+      const want = alone.v[Number(n)]!;
+      for (const row of rows) {
+        const got = model.rowVolts(row)!;
+        // the ground's strips stand above the − rail by their jumper's drop: at most 10 mA through 1 mΩ
+        if (Number(n) === 0) expect(Math.abs(got), row).toBeLessThanOrEqual(0.01 * WIRE_OHMS);
+        else expect(near(got, want), `node ${n} (${row}): ${got} V, sim/core ${want} V`).toBe(true);
+      }
+    }
+    expect(near(model.nodeVolts(layout.rows.length)!, alone.v[AMPLIFIER_NODES.battery]!)).toBe(true);
+    for (const p of net.parts) {
+      const want = alone.parts[p.id]!;
+      const got = model.reading(AMP_IDS[p.id] ?? p.id)!;
+      for (const k of ['u', 'i', 'p'] as const)
+        expect(near(got[k], want[k]), `${p.id} ${k}: ${got[k]}, sim/core ${want[k]}`).toBe(true);
+    }
+    expect(model.rowVolts('10fj')).toBeCloseTo(3.771, 3);
+    expect(model.reading('BAT')!.i).toBeCloseTo(-0.01331, 5);
+  });
 });
+
+/** Where the amplifier's parts stand when it is built in the footprints' own shapes: leg 0 in the anchor, the others
+ * where the footprint's offsets turned by `o` put them (`place`), by the amplifier's id. */
+const AMP_PLACES: Readonly<Record<string, readonly [SocketId, Orientation]>> = {
+  D1: ['+9', 1], // the protection diode from the + rail down into 9ae
+  R5: ['c9', 1], // across the channel: the supply (9ae) to the top of the diodes (9fj)
+  Q2: ['f8', 0], // collector · base · emitter: the supply (8fj), the top (9fj), the output (10fj)
+  C3: ['j8', 1], // the reservoir from the supply (8fj) onto the − rail
+  R1: ['g8', 0], // the supply to the LED's row 12fj
+  LED1: ['j12', 1],
+  D2: ['h9', 0], // the top (9fj) to the middle (13fj)
+  D3: ['g13', 3], // up across the channel: the middle (13fj) to the driver (13ae)
+  Q3: ['b12', 0], // collector · base · emitter: the ground (12ae), the driver (13ae), the output (14ae)
+  Q1: ['h7', 2], // turned end for end: the driver (7fj), the base (6fj), the ground (5fj)
+  R4: ['g6', 1], // the base onto the − rail
+  R3: ['i10', 2], // the feedback: the output (10fj) to the base (6fj)
+  R2: ['b6', 1], // across the channel: the input (6ae) to the base (6fj)
+  C1: ['c6', 2], // plus on the input (6ae), minus on the wiper (5ae)
+  VR1: ['a3', 0], // ccw · wiper · cw: the ground (3ae), the volume (5ae), the player (7ae)
+  C2: ['j10', 0], // plus on the output (10fj), minus on the speaker's row 11fj
+};
+/** The plugs of the player and the speaker in that build. */
+const AMP_PLUGS: Readonly<Record<string, SocketId>> = {
+  'pl+': 'e7',
+  'pl-': '-2',
+  'spk+': 'h11',
+  'spk-': '-11',
+};
+/** The jumpers of that build, J1 … J6, from leg 0 to leg 1: a node one strip cannot hold, or a ground off the rail. */
+const AMP_JUMPERS: readonly (readonly [SocketId, SocketId])[] = [
+  ['e9', 'h8'], // the supply: 9ae (the diode, R5) to 8fj (Q2, the reservoir, R1)
+  ['i5', '-5'], // Q1's emitter onto the − rail
+  ['g7', 'd13'], // the driver: Q1's collector (7fj) to Q3's base and the diodes (13ae)
+  ['a12', '-13'], // Q3's collector onto the − rail
+  ['e3', '-3'], // the volume control's ccw onto the − rail, a strip of its own: no other current lifts it
+  ['e14', 'g10'], // the output: Q3's emitter (14ae) to Q2's and the rest (10fj)
+];
+/** The rows of every node of the amplifier in that build. */
+const AMP_BUILT_ROWS: Readonly<Record<number, readonly RowId[]>> = {
+  [AMPLIFIER_NODES.switched]: ['+'],
+  [AMPLIFIER_NODES.supply]: ['9ae', '8fj'],
+  [AMPLIFIER_NODES.led]: ['12fj'],
+  [AMPLIFIER_NODES.player]: ['7ae'],
+  [AMPLIFIER_NODES.volume]: ['5ae'],
+  [AMPLIFIER_NODES.coupled]: ['6ae'],
+  [AMPLIFIER_NODES.base]: ['6fj'],
+  [AMPLIFIER_NODES.top]: ['9fj'],
+  [AMPLIFIER_NODES.middle]: ['13fj'],
+  [AMPLIFIER_NODES.driver]: ['13ae', '7fj'],
+  [AMPLIFIER_NODES.output]: ['10fj', '14ae'],
+  [AMPLIFIER_NODES.speaker]: ['11fj'],
+  0: ['-', '5fj', '12ae', '3ae'],
+};
+
+/** How far apart two sockets lie on the board, in pitches. */
+function pitchesApart(a: SocketId, b: SocketId): number {
+  const p = layout.socket(a)!;
+  const q = layout.socket(b)!;
+  return Math.hypot(p.x - q.x, p.z - q.z) / layout.spec.pitch;
+}
+
+/** The amplifier in that build: every part by `place`, every leg k in a row of the node of its pin `pins[k]` and
+ * within the part's reach of the others; every jumper's leg 1 set by `seatLeg`, which keeps it within the jumper's
+ * reach, both its ends in rows of one node. */
+function amplifierBuilt(net: Netlist): BoardState {
+  const s = createBoardState();
+  const nodeOf = (socket: SocketId): number => {
+    const row = layout.socket(socket)!.row;
+    const n = Object.entries(AMP_BUILT_ROWS).find(([, rows]) => rows.includes(row));
+    expect(n, `${socket}: row ${row} of no node`).toBeDefined();
+    return Number(n![0]);
+  };
+  for (const p of net.parts) {
+    const leads = AMP_LEADS[p.id];
+    if (leads) {
+      leads.forEach((lead, k) => {
+        expect(seatLead(layout, s, lead, AMP_PLUGS[lead]!), lead).toBe(true);
+        expect(nodeOf(AMP_PLUGS[lead]!), lead).toBe(p.pins[k]);
+      });
+      continue;
+    }
+    if (p.id === 'B1' || p.id === 'S1') continue; // the bench's battery and its switch, fixed to the rails
+    const id = AMP_IDS[p.id] ?? p.id;
+    const [anchor, o] = AMP_PLACES[p.id]!;
+    expect(place(layout, s, { id, spec: p.spec, anchor, o }), id).toBe(true);
+    const fp = footprintOf(p.spec)!;
+    const legs = s.parts.get(id)!.legs;
+    expect(legs, id).toEqual(legSockets(layout, fp, layout.socket(anchor)!, o).map((socket) => socket!.id));
+    // and within its reach as the sockets lie (a grid step across the channel or to a rail is a little longer)
+    if (fp.span)
+      for (const [k, a] of legs.entries())
+        for (const b of legs.slice(k + 1)) {
+          const apart = pitchesApart(a!, b!);
+          expect(apart, `${id}: ${a} … ${b}`).toBeGreaterThanOrEqual(fp.span[0]);
+          expect(apart, `${id}: ${a} … ${b}`).toBeLessThanOrEqual(fp.span[1]);
+        }
+    legs.forEach((socket, k) =>
+      expect(nodeOf(socket!), `${id} leg ${k} (${socket})`).toBe(p.pins[fp.pins[k]!]),
+    );
+    if (p.setting !== undefined) setSetting(s, id, p.setting);
+  }
+  AMP_JUMPERS.forEach(([from, to], k) => {
+    const id = `J${k + 1}`;
+    expect(put(layout, s, { id, spec: 'jumper', legs: [from, null] }), id).toBe(true);
+    expect(seatLeg(layout, s, id, 1, to), `${id} to ${to}`).toBe(true);
+    expect(nodeOf(to), id).toBe(nodeOf(from));
+  });
+  setSetting(s, 'SW', 1);
+  return s;
+}

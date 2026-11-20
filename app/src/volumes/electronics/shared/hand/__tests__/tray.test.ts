@@ -2,11 +2,15 @@
  * The tray of parts on the table (docs/volumes/electronics/VISUAL.md §6, «Лоток»): two rows of six slots — the low
  * parts in front, the tall and wide ones a step higher behind, the row chosen from the part's size; one slot holds one
  * kind with a supply that never ends; a part taken from it gets the next id of the board's counter; a label of numbers
- * and units on the step in front of each slot, none for the LEDs (their colour shows) and the jumper.
+ * and units on the step in front of each slot, none for the LEDs (their colour shows) and the jumper; a capacitor's
+ * with its rated voltage, and every label no wider than its slot.
  */
+import { readFileSync } from 'node:fs';
 import { Box3, Vector3 } from 'three';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { NBSP } from '@/content';
+import { setFontData, type FontJson, type Text3D } from '@/text';
+import { PARTS } from '@electronics/sim/core';
 import { createBoardState, createLayout, place } from '@electronics/sim/board';
 import { buildPart, type PartModel } from '../../parts';
 import { PLACES } from '../../bench/layout';
@@ -52,7 +56,7 @@ describe('which row of the tray a part takes, from its size', () => {
 });
 
 describe('the labels: numbers and units made by the code', () => {
-  it('a resistor’s value, a diode’s or transistor’s model, a pot’s or capacitor’s value; nothing on an LED or a jumper', () => {
+  it('a resistor’s or pot’s value, a diode’s or transistor’s model, a capacitor’s value and voltage; none on an LED, a jumper', () => {
     expect(trayLabel('resistor-4k7')).toBe(`4,7${NBSP}kΩ`);
     expect(trayLabel('resistor-1k')).toBe(`1${NBSP}kΩ`);
     expect(trayLabel('resistor-330')).toBe(`330${NBSP}Ω`);
@@ -61,12 +65,29 @@ describe('the labels: numbers and units made by the code', () => {
     expect(trayLabel('pot-10k')).toBe(`10${NBSP}kΩ`);
     expect(trayLabel('transistor-bc337-25')).toBe('BC337-25');
     expect(trayLabel('transistor-2n3904')).toBe('2N3904');
-    expect(trayLabel('ceramic-100n')).toBe(`100${NBSP}nF`);
-    expect(trayLabel('ceramic-100p')).toBe(`100${NBSP}pF`);
-    expect(trayLabel('film-1u')).toBe(`1${NBSP}μF`);
-    expect(trayLabel('electrolytic-470u-16v')).toBe(`470${NBSP}μF`);
+    // a capacitor: its capacitance and its rated voltage, from the catalog
+    expect(trayLabel('ceramic-100n')).toBe(`100${NBSP}nF 50${NBSP}V`);
+    expect(trayLabel('ceramic-100p')).toBe(`100${NBSP}pF 50${NBSP}V`);
+    expect(trayLabel('film-100n')).toBe(`100${NBSP}nF 63${NBSP}V`);
+    expect(trayLabel('film-1u')).toBe(`1${NBSP}μF 63${NBSP}V`);
+    expect(trayLabel('electrolytic-470u-16v')).toBe(`470${NBSP}μF 16${NBSP}V`);
+    expect(trayLabel('electrolytic-100u-16v')).toBe(`100${NBSP}μF 16${NBSP}V`);
+    expect(trayLabel('electrolytic-100u-6v3')).toBe(`100${NBSP}μF 6,3${NBSP}V`);
     expect(trayLabel('led-red')).toBe('');
     expect(trayLabel('jumper')).toBe('');
+  });
+
+  it('no two capacitors share a label (a phone’s dock shows only the label); an electrolytic’s is its can’s print', () => {
+    const capacitors = Object.entries(PARTS).filter(([, s]) => s.kind === 'capacitor');
+    expect(capacitors.length).toBeGreaterThan(0);
+    const labels = capacitors.map(([key]) => trayLabel(key));
+    expect(new Set(labels).size, labels.join(' · ')).toBe(capacitors.length);
+    for (const [key, s] of capacitors) {
+      if (s.kind !== 'capacitor' || s.dielectric !== 'electrolytic') continue;
+      const can = model(key);
+      expect(can.printed, key).toEqual([trayLabel(key)]);
+      can.dispose();
+    }
   });
 });
 
@@ -147,6 +168,46 @@ describe('the tray on the table', () => {
     tray.update(1 / 60);
     tray.update(1 / 60);
     expect(slot.sample!.group.position.y).toBeCloseTo(rest, 9);
+    tray.dispose();
+  });
+});
+
+// last in the file: the fonts' metrics stay installed once set
+describe('the labels in the font (VISUAL §6)', () => {
+  beforeAll(() => {
+    const json = JSON.parse(
+      readFileSync(new URL('../../../../../../public/fonts/fonts.json', import.meta.url), 'utf8'),
+    ) as FontJson;
+    setFontData(json);
+  });
+
+  it('every label of the catalog is no wider than its slot’s foam, so two neighbours never run together', () => {
+    // the foam of a slot (tray.ts, `block`): the slot's pitch less its walls
+    const foam = TRAY.pitch - 0.12;
+    const tray = createTray();
+    let widest = { key: '', width: 0 };
+    const measured = new Set<string>();
+    for (const key of Object.keys(PARTS)) {
+      const label = trayLabel(key);
+      const sample = label === '' ? null : buildPart(key);
+      if (sample === null) continue;
+      sample.dispose();
+      tray.set([key]);
+      const text = tray.group.getObjectByName(`print:${label}`) as Text3D | undefined;
+      expect(text, key).toBeDefined();
+      expect(text!.fontSize, key).toBe(TRAY.label[tray.slot(key)!.row]);
+      const width = text!.metrics.width;
+      expect(width, `${key}: «${label}» ${width.toFixed(3)} wide`).toBeLessThanOrEqual(foam);
+      if (width > widest.width) widest = { key, width };
+      measured.add(key);
+    }
+    // every key of a kind the tray labels, the capacitors with their voltages among them
+    const labelled = new Set(['resistor', 'pot', 'diode', 'capacitor', 'transistor']);
+    for (const [key, s] of Object.entries(PARTS))
+      if (labelled.has(s.kind)) expect(measured.has(key), key).toBe(true);
+    // the widest is a capacitor's value with its voltage in the front row, as VISUAL §6 says
+    expect(widest.key).toMatch(/^ceramic-100[pn]$/);
+    expect(widest.width).toBeCloseTo(1.12, 2);
     tray.dispose();
   });
 });

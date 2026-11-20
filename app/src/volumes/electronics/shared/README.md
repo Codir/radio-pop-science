@@ -264,8 +264,12 @@ model.part('R1'); // { condition, load, heat, kelvin? } as the bench shows it; n
 - **Capacitors and transistors** (E1-5, E1-6) are parts of the board like any other: a board with them compiles and has
   its operating point (a capacitor open but for its leak), and the amplifier of `sim/core` (`amplifierNetlist`), every
   leg of every part in its node's row and the player's and the speaker's plugs too, has the very operating point of
-  `sim/core` without the board, node by node and part by part within 1e-9 (`model/__tests__/driver.test.ts`). The
-  model's time here is the operating point's alone; the time of the transient on the bench is E2-9's.
+  `sim/core` without the board, node by node and part by part within 1e-9 (`model/__tests__/driver.test.ts`). That
+  build has no jumper, so its legs stand anywhere in their rows; built as on a real board — every part in its
+  footprint's own shape (`place`), within its reach, and six jumpers (`seatLeg`) where one strip cannot hold a node —
+  it has that point within 1e-4: a jumper's 1 mΩ (`WIRE_OHMS`) under its strip's current moves it by up to 5.1e-5,
+  most in the output pair's bias current. The model's time here is the operating point's alone; the time of the
+  transient on the bench is E2-9's.
 
 For checks: `__app.read('electronics-model')` → `{ key, version, compiles, ok, failure, dcMs, iterations, issues,
 pending, parts: { id: { u, i, p } }, rows: { row: volts } }` (the rows a part uses; nothing of a failed solve).
