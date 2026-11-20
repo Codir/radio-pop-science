@@ -6,7 +6,8 @@ import { defineChapter } from '@/engine/api';
  * step; E2-3: the dark room, the base with the breadboard, the magnifier in its holder and the stand-ins of the
  * permanent things, from the bench's shots (steps `room`, `board`, `meter`, `scope`); E2-4: the parts with their real
  * marks on the board (step `parts`); E2-5: the hand, the tray, the plug leads and the switch (step `hand`); E2-6: the
- * circuit model on the bench and the multimeter with its probes (steps `meter`, `divider`).
+ * circuit model on the bench and the multimeter with its probes (steps `meter`, `divider`); E2-7: the light, the heat
+ * and the burn from the model's state (steps `led`, `overload`, `lamp`) and the bulged electrolytic's look (`bulged`).
  * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
@@ -43,6 +44,26 @@ export const SANDBOX = {
       title: 'Подільник і мультиметр',
       blurb:
         'Від шини «+» перемичка, 1 kΩ, 2 kΩ і друга перемичка до шини «−», вимикач замкнено. Червоний щуп у середній ряд, чорний на «−» — і мультиметр показує напругу; так само струм, коли прилад стоїть замість перемички, і опір.',
+    },
+    led: {
+      title: 'Світлодіоди',
+      blurb:
+        'Три гілки між шинами, у кожній 330 Ω і світлодіод — червоний, зелений, синій; вимикач замкнено. Світлодіоди світять струмом моделі, і кожен кладе на плату слабку пляму свого кольору. Деталі можна брати: світлодіод навиворіт гасне.',
+    },
+    overload: {
+      title: 'Перевантаження',
+      blurb:
+        '100 Ω просто між шинами: модель дає йому ≈ 0,8 W при межі 0,25 W. Резистор теплішає, за кілька секунд згоряє — одна маленька цівка диму — і далі лишається розривом. У лотку новий 100 Ω: вийміть згорілий і поставте новий.',
+    },
+    lamp: {
+      title: 'Лампа',
+      blurb:
+        'Лампа 6 V від батареї 9 V через два резистори по 15 Ω: на ній ≈ 5,9 V. Нитка розжарюється до температури, яку дає модель, і лампа освітлює стенд; вимикач її гасить.',
+    },
+    bulged: {
+      title: 'Здутий електроліт',
+      blurb:
+        'Лише вигляд стану «здутий», поза схемою: праворуч верх випнутий, насічка розійшлася, з неї виходить один клубок пари; ліворуч — цілий конденсатор. Модель цього стану ще не дає.',
     },
   },
   /** The names under the pointer (tooltips) and on the dock's buttons of the tray (a phone). */

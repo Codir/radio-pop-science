@@ -16,7 +16,17 @@
  *   divider — the model on the bench (E2-6), shot `meter`: + rail → jumper → 3ae → 1 kΩ → 7ae → 2 kΩ → 11ae → jumper
  *           → − rail (`DIVIDER`), the battery's switch closed, the multimeter on the table in V, its probes free by it;
  *           everything may be taken, so the checks put the probes, take a jumper's end out for the A mode and turn the
- *           dial (`meter-mode`).
+ *           dial (`meter-mode`);
+ *   led   — the light of the model (E2-7), shot `board`: three branches from rail to rail, 330 Ω and an LED each —
+ *           red, green, blue (`LEDS`) — the switch closed; each LED glows by its current, the brightest three (all) light
+ *           the board; everything may be taken;
+ *   overload — 100 Ω straight between the rails (`OVERLOAD`), shot `stand` (the tray in it), the switch closed:
+ *           ≈ 0.8 W on 0.25 W — it warms, burns after ≈ 3.8 s of the model's time with one wisp and stays a gap; a new
+ *           100 Ω in the tray (on a phone the dock's button `tray-resistor-100`), set down in b9, closes the circuit again;
+ *   lamp  — the lamp from the battery through 15 Ω + 15 Ω (`LAMP`), shot `stand`, the switch closed: ≈ 5.9 V on it,
+ *           its filament's temperature from the model lights the room;
+ *   bulged — the look of an electrolytic's state `bulged` (E1-5 gives it, E2-9 binds it), shot `board`: a whole can and
+ *           a bulged one outside the circuit, one puff of steam out of its vent on entering.
  * Every other step has an empty board and an empty tray, and the probes at rest. Readers: the bench's own
  * `electronics-bench` (sockets, rows, draw calls, the print shown), `electronics-board` (the parts and their legs, the
  * plugs, the settings, the netlist's key), `electronics-parts` (every model: where, draw calls, its print),
@@ -27,6 +37,7 @@
  * `tip:<id>:<k>`, `lead:<name>`, `end:<name>`, `probe:<red|black>` (the grip on a probe's handle; its tip `end:red`,
  * `end:black`), `tray:<key>`, `switch`.
  */
+import { Vector3 } from 'three';
 import { defineScene } from '@/engine/api';
 import { stepUi } from '@/hud';
 import {
@@ -40,6 +51,7 @@ import {
 import { SANDBOX } from './index';
 import { METER_MODES, type MeterMode } from '@electronics/shared/instruments';
 import {
+  RADIAL_Y,
   createCeramic,
   createElectrolytic,
   createFilm,
@@ -91,8 +103,60 @@ const DIVIDER: readonly PresetPart[] = [
   { id: 'J2', spec: 'jumper', at: 'e11', to: '-11' },
 ];
 
-/** The steps with the multimeter on the table. */
-const METER_STEPS: ReadonlySet<string> = new Set(['meter', 'divider']);
+/**
+ * Step `led`: three branches from the + rail to the − rail, each a jumper → 330 Ω across the channel → an LED along
+ * the line g → a jumper: red in columns 3–4, green in 8–9, blue in 13–14 (VISUAL §2: three colours lit at once).
+ */
+const LEDS: readonly PresetPart[] = (
+  [
+    [3, 'led-red'],
+    [8, 'led-green'],
+    [13, 'led-blue'],
+  ] as const
+).flatMap(([c, spec], k) => [
+  { id: `J${2 * k + 1}`, spec: 'jumper', at: `+${c}`, to: `a${c}` },
+  { id: `R${k + 1}`, spec: 'resistor-330', at: `b${c}`, o: 1 as const },
+  { id: `LED${k + 1}`, spec, at: `g${c}` },
+  { id: `J${2 * k + 2}`, spec: 'jumper', at: `j${c + 1}`, to: `-${c + 1}` },
+]);
+
+/**
+ * Step `overload`: + rail → jumper → 9ae → 100 Ω along the line b → 13ae → jumper over the channel → − rail: ≈ 0.8 W on
+ * 0.25 W. A new 100 Ω from the tray lands along a line too (`o` 0): set down in b9 it closes the circuit again.
+ */
+const OVERLOAD: readonly PresetPart[] = [
+  { id: 'J1', spec: 'jumper', at: '+9', to: 'a9' },
+  { id: 'R1', spec: 'resistor-100', at: 'b9' },
+  { id: 'J2', spec: 'jumper', at: 'e13', to: '-13' },
+];
+
+/**
+ * Step `lamp` (VISUAL §4.6): + rail → the lamp → 3ae → 15 Ω across the channel → 3fj → 15 Ω → 7fj → jumper → − rail;
+ * the lamp's plugs in +2 and a3 (within its leads' reach, on the left half).
+ */
+const LAMP: readonly PresetPart[] = [
+  { id: 'R1', spec: 'resistor-15', at: 'b3', o: 1 },
+  { id: 'R2', spec: 'resistor-15', at: 'g3' },
+  { id: 'J1', spec: 'jumper', at: 'j7', to: '-7' },
+];
+const LAMP_LEADS = { lamp1: '+2', lamp2: 'a3' } as const;
+
+/** Step `bulged`: two electrolytics outside the circuit, a whole one and one under the look of the state `bulged`. */
+const CANS = { whole: ['a5', 'a6'], bulged: ['a10', 'a11'] } as const;
+
+/** The steps whose circuit is on: the battery's switch closed. */
+const LIVE: ReadonlySet<string> = new Set(['divider', 'led', 'overload', 'lamp']);
+/** The steps where the reader may take everything. */
+const FREE: ReadonlySet<string> = new Set(['hand', 'meter', 'divider', 'led', 'overload', 'lamp']);
+/** Each step's circuit (every other step: an empty board) and its tray. */
+const PRESETS: Readonly<Record<string, readonly PresetPart[]>> = {
+  parts: PARTS,
+  divider: DIVIDER,
+  led: LEDS,
+  overload: OVERLOAD,
+  lamp: LAMP,
+};
+const TRAYS: Readonly<Record<string, readonly string[]>> = { hand: TRAY, overload: ['resistor-100'] };
 
 /** The name of a part's kind with its value, from the sandbox's words and the code's numbers and units. */
 function partName(spec: string): string {
@@ -134,27 +198,31 @@ export default defineScene((ctx) => {
   ui.define({ meter: { controls: meterControls }, divider: { controls: meterControls } });
   // on a phone the tray is the dock's: a button per slot puts a new part in the hand over the board; the switch, out
   // of the shot `phone`, is a toggle there bound to `bench.closed` (VISUAL §9)
+  const dock = (tray: readonly string[]) => ({
+    controls: [
+      ...tray.map((spec) => ({
+        type: 'button' as const,
+        id: `tray-${spec}`,
+        label: trayLabel(spec) || buttonName(spec),
+        visible: phone,
+        onClick: () => void bench.hands.offer(spec),
+      })),
+      {
+        type: 'toggle' as const,
+        id: 'battery-switch',
+        label: SANDBOX.names.switch,
+        value: false,
+        visible: phone,
+        disabled: () => bench.flying || !(bench.hands.policy?.take('switch') ?? true),
+        onChange: (on: boolean) => (bench.closed = on ? 1 : 0),
+      },
+    ],
+  });
   ui.define({
-    hand: {
-      controls: [
-        ...TRAY.map((spec) => ({
-          type: 'button' as const,
-          id: `tray-${spec}`,
-          label: trayLabel(spec) || buttonName(spec),
-          visible: phone,
-          onClick: () => void bench.hands.offer(spec),
-        })),
-        {
-          type: 'toggle' as const,
-          id: 'battery-switch',
-          label: SANDBOX.names.switch,
-          value: false,
-          visible: phone,
-          disabled: () => bench.flying || !(bench.hands.policy?.take('switch') ?? true),
-          onChange: (on: boolean) => (bench.closed = on ? 1 : 0),
-        },
-      ],
-    },
+    hand: dock(TRAY),
+    led: dock([]),
+    overload: dock(TRAYS.overload ?? []),
+    lamp: dock([]),
   });
   const specOf = (id: string): string => bench.state.parts.get(id)?.spec ?? '';
   /** The sandbox lets the reader take everything; the names under the pointer are its words. */
@@ -180,23 +248,42 @@ export default defineScene((ctx) => {
     parts: { camera: 'board' },
     hand: { camera: 'stand' },
     divider: { camera: 'meter', params: { meter: 1 } },
+    led: { camera: 'board' },
+    // the tray in the frame: the reader replaces the burnt part
+    overload: { camera: 'stand' },
+    lamp: { camera: 'stand' },
+    bulged: { camera: 'board' },
   });
+  const vent = new Vector3();
   return {
     enterStep(id, info) {
-      if (id === 'parts' || id === 'divider') bench.preset(id === 'parts' ? PARTS : DIVIDER);
+      const preset = PRESETS[id];
+      if (preset) bench.preset(preset, id === 'lamp' ? LAMP_LEADS : undefined);
       else bench.clear();
       for (const s of SHOWN) {
         if (id === 'parts') bench.parts.show(s.id, s.make(), s.sockets);
         else bench.parts.hide(s.id);
       }
-      bench.tray.set(id === 'hand' ? TRAY : []);
-      bench.closed = id === 'divider' ? 1 : 0;
+      for (const [name, sockets] of Object.entries(CANS)) {
+        if (id !== 'bulged') {
+          bench.parts.hide(`C-${name}`);
+          continue;
+        }
+        const can = createElectrolytic(470e-6, 16);
+        bench.parts.show(`C-${name}`, can, sockets);
+        if (name !== 'bulged') continue;
+        // the look of the state, and the one puff of steam out of its vent (VISUAL §4.8)
+        can.setLook({ status: 'bulged' }, 0);
+        can.bodyGroup.updateWorldMatrix(true, false);
+        bench.smoke.puff(can.bodyGroup.localToWorld(vent.set(0, RADIAL_Y + can.size.h + 0.05, 0)), 'steam');
+      }
+      bench.tray.set(TRAYS[id] ?? []);
+      bench.closed = LIVE.has(id) ? 1 : 0;
       // every step starts with the probes at rest by the meter and the dial on V
       bench.multimeter.put({ red: null, black: null });
       bench.multimeter.mode = 'V';
       ui.set('meter-mode', 'V');
-      const free = id === 'hand' || METER_STEPS.has(id);
-      bench.hands.policy = free ? { take: () => true, tooltip } : { take: () => false };
+      bench.hands.policy = FREE.has(id) ? { take: () => true, tooltip } : { take: () => false };
       if (info.instant) bench.snap();
     },
     update(dt, t) {

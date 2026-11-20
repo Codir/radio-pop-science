@@ -7,7 +7,8 @@
  * the post's socket; «6 V» is printed on the brass collar. `depthShell` also gives the LED domes their place in the
  * depth buffer (VISUAL §4.4).
  *
- * Origin = the bottom contact; axis = local +y. Only the filament glows; the glass takes a soft glint from it.
+ * Origin = the bottom contact; axis = local +y. Only the filament glows; the glass takes a soft glint from it. Burnt
+ * (VISUAL §4.8: the model's lamp burnt out), the coil is broken and the top of the glass greyed.
  */
 import {
   AdditiveBlending,
@@ -23,7 +24,9 @@ import {
   ShaderMaterial,
   TubeGeometry,
   Vector3,
+  type BufferGeometry,
 } from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Builder, G } from '@/kit';
 import { K, col, type KGlassMaterial, type KGlowMaterial } from '@/style';
 import type { Text3D } from '@/text';
@@ -71,6 +74,9 @@ export interface BulbModel {
   filament: Object3D;
   /** Set the filament's look: colour of the incandescence scale and emissive multiplier (0 = cold). */
   setGlow(color: Color, emission: number, glow: number, room?: number): void;
+  /** Burnt (VISUAL §4.8, the model's state of the lamp): the coil broken, the top of the glass greyed. */
+  setBurnt(burnt: boolean): void;
+  readonly burnt: boolean;
   coil: Mesh;
   glass: Mesh;
   /** «6 V» on the collar (empty where the fonts are not loaded). */
@@ -94,17 +100,31 @@ export function supportPath(B: BulbDims, side: -1 | 1): Vector3[] {
   );
 }
 
-function coilGeometry(B: BulbDims, turns: number, radius: number, wire: number): TubeGeometry {
+/**
+ * The coil between its supports, or the stretch `from` … `to` of it (0 … 1 along the span); `droop` lowers the free end
+ * of a stretch that ends short of a support (a filament broken there hangs down from the support that holds it).
+ */
+function coilGeometry(
+  B: BulbDims,
+  turns: number,
+  radius: number,
+  wire: number,
+  from = 0,
+  to = 1,
+  droop = 0,
+): TubeGeometry {
   const pts: Vector3[] = [];
-  const n = turns * 14;
+  const n = Math.max(Math.round(turns * 14 * (to - from)), 4);
   for (let i = 0; i <= n; i++) {
-    const s = i / n;
+    const s = from + ((to - from) * i) / n;
     const a = s * turns * Math.PI * 2;
+    // how far from the support that holds this stretch: 0 there, 1 at the free end
+    const free = from > 0 ? (to - s) / (to - from) : to < 1 ? (s - from) / (to - from) : 0;
     // a gentle arch: the coil sags upward between the supports, like a real one
     pts.push(
       new Vector3(
         (s * 2 - 1) * B.span,
-        Math.cos(a) * radius + 0.035 * (1 - (2 * s - 1) ** 2),
+        Math.cos(a) * radius + 0.035 * (1 - (2 * s - 1) ** 2) - droop * free * free,
         Math.sin(a) * radius,
       ),
     );
@@ -256,7 +276,15 @@ export function createBulb(B: BulbDims = BULB): BulbModel {
     edge: 0.8,
     vertexColors: true,
   });
-  const coil = new Mesh(coilGeometry(B, 14, 0.034, 0.0085), filamentMaterial);
+  const whole: BufferGeometry = coilGeometry(B, 14, 0.034, 0.0085);
+  // burnt (VISUAL §4.8): the coil broken a little off its middle, both ends hanging from their supports
+  const halves = [
+    coilGeometry(B, 14, 0.034, 0.0085, 0, 0.42, 0.09),
+    coilGeometry(B, 14, 0.034, 0.0085, 0.56, 1, 0.06),
+  ];
+  const broken = mergeGeometries(halves, false)!;
+  for (const h of halves) h.dispose();
+  const coil = new Mesh<BufferGeometry>(whole, filamentMaterial);
   coil.name = 'bulb:filament';
   const filament = new Object3D();
   filament.name = 'filament';
@@ -311,6 +339,23 @@ export function createBulb(B: BulbDims = BULB): BulbModel {
   glare.visible = false;
   model.group.add(coil, filament, halo, glare);
   const haloMaterial = halo.material as KGlowMaterial;
+  // burnt: the top of the glass greys (`steel`, 30 %) where the broken coil's tungsten settled on it — lit and
+  // translucent like the stem, just inside the globe
+  const soot: G.Pt[] = [];
+  for (let a = 34; a <= 90; a += 8) {
+    const rad = (a * Math.PI) / 180;
+    soot.push([Math.cos(rad) * R * 0.985, B.globeY + Math.sin(rad) * R * 0.985]);
+  }
+  soot[soot.length - 1] = [0, B.globeY + R * 0.985];
+  const sooted = new Mesh(
+    G.lathe(soot, { seg: 40 }),
+    sheath({ color: 'steel', opacity: 0.3, edgeOpacity: 0.42, gloss: 0.3, highlight: 0.2, rim: 0.2 }),
+  );
+  sooted.name = 'bulb:burnt';
+  sooted.renderOrder = 1;
+  sooted.visible = false;
+  model.group.add(sooted);
+  let burntNow = false;
 
   // «6 V» stamped on the front of the brass collar, above the socket (VISUAL §4.1)
   const prints = new Prints();
@@ -331,6 +376,15 @@ export function createBulb(B: BulbDims = BULB): BulbModel {
     glass,
     prints: prints.texts,
     view: (eye) => prints.view(eye),
+    get burnt() {
+      return burntNow;
+    },
+    setBurnt(on) {
+      if (on === burntNow) return;
+      burntNow = on;
+      coil.geometry = on ? broken : whole;
+      sooted.visible = on;
+    },
     setGlow(color, emission, glow, room = 1) {
       filamentMaterial.setColor(color);
       filamentMaterial.intensity = Math.max(emission, 0.55);
@@ -350,6 +404,8 @@ export function createBulb(B: BulbDims = BULB): BulbModel {
     dispose() {
       group.removeFromParent();
       disposeTree(group);
+      // the coil not on the mesh now
+      (burntNow ? whole : broken).dispose();
     },
   };
 }

@@ -45,6 +45,18 @@
 //           the red probe into a11: the meter closes the branch, 9 / 3001,5 A — «2,998 mA» — text, panel and model
 //           agree; the model's last solve dcMs < 1 ms; draw calls ≤ 350; the console; snapshots
 //           `meter-<what>-<size>.jpg`.
+//   heat  — the model's state on the bench (E2-7) on held pages, the model's time stepped by `__app.step`:
+//           step `overload` (100 Ω between the rails) — R1 «гаряча» at once by its load and cold to the eye,
+//           then «згоріла» in E1-4's window (τ·ln((L − H) / (L − 1)) from the open page, within a frame), no
+//           current after, told once with one wisp that is gone within 1.2 s, its marks shown; draw calls ≤ 350
+//           all along, no shader program compiled by the burn, the same five lights; the burnt one by its body
+//           into the tray (a real pointer; a phone: off the board, the new one from the dock) and a new 100 Ω
+//           from it into b9 — a new id, whole, then «гаряча» again; step `led` — every LED's current the model's
+//           (± 1e-9) and its light > 0, the red one's its 330 Ω's by Ohm's law, three lights on the board, the
+//           330 Ω of red and green warm (after a minute h ≈ 0.6, barely tinted), of blue ok, the hue families
+//           ≤ 4; step `lamp` — the filament at the model's ≈ 1 875 °C lights the room (`light.output` > 0); step
+//           `bulged` — its puff of steam; the console everywhere; snapshots `heat-<state>[-close]-<size>.jpg` of
+//           «ok», «тепла», «гаряча», the wisp, «згоріла», the new part, the LEDs, the lamp and «здутий».
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-electronics-bench — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -98,9 +110,10 @@ const stats = (page) => page.evaluate(() => window.__app.stats());
 const position = (page) => page.evaluate(() => window.__app.position());
 const round = (v, digits = 2) => (Number.isFinite(v) ? Number(v.toFixed(digits)) : v);
 
-/** Open an app page on a held clock; resolves with `__app.position()` or rejects (load error, no answer in time). */
-async function open(page, step) {
-  const url = appUrl(base, { route: route(step), q, freeze: 1 });
+/** Open an app page on a held clock (`freeze` seconds simulated first); resolves with `__app.position()` or rejects
+ * (load error, no answer in time). */
+async function open(page, step, freeze = 1) {
+  const url = appUrl(base, { route: route(step), q, freeze });
   const gpu = await Promise.race([
     openApp(page, url, { timeout: OPEN_TIMEOUT_MS }),
     sleep(OPEN_TIMEOUT_MS).then(() => {
@@ -883,9 +896,333 @@ async function meter(context) {
   await page.close();
 }
 
+/* -------------------------------------------------------------------------------------- section heat */
+
+/** E1-4's resistor: τ 10 s, 0.25 W (sim/core/README.md, «Limits»). */
+const RESISTOR_TAU = 10;
+/** The red LED with 330 Ω from the 9 V battery against ngspice (sim/core/README.md: 21.24 mA). */
+const RED_LED_A = 0.02124;
+/** Close-ups for the reader of the look: the part's sphere filling a narrow frame from the front and above. */
+const NEAR = { dir: [0, 0.62, 0.78], fill: 4.2, least: 0.42, fov: 27 };
+
+async function heat(context) {
+  const n = (report.sections.heat = {});
+  const heatNow = (page) => read(page, 'electronics-heat');
+  /** Put the camera close in front of a world point and draw two held frames (as the parts section does). */
+  const close = async (page, at, d) => {
+    const k = d / Math.hypot(...NEAR.dir);
+    await page.evaluate(({ shot }) => window.__app.engine.runtime.director.go(shot, { instant: true }), {
+      shot: {
+        position: [at[0] + NEAR.dir[0] * k, at[1] + NEAR.dir[1] * k, at[2] + NEAR.dir[2] * k],
+        target: at,
+        fov: NEAR.fov,
+      },
+    });
+    await held(page);
+    await held(page);
+  };
+  /** The step's own shot back (the director's, by name). */
+  const back = async (page, shot) => {
+    await page.evaluate((s) => window.__app.engine.runtime.director.go(s, { instant: true }), shot);
+    await held(page);
+  };
+  const snap = (what) => join(out, `heat-${what}-${tag}.jpg`);
+
+  /* ---- step `overload`: hot at once, warmer, burnt in E1-4's window, a gap; a new one from the tray */
+  {
+    const page = await context.newPage();
+    const pos = await open(page, 'overload').catch((err) => ({ error: String(err) }));
+    if (!check('overload: opened', at(pos, 'overload'), where(pos))) {
+      await page.close();
+      return;
+    }
+    const phone = (await read(page, 'electronics-bench'))?.phone === true;
+    const shotName = phone ? 'phone' : 'stand';
+    const h0 = await heatNow(page);
+    const r0 = h0?.parts?.R1;
+    n.open = r0;
+    check(
+      'overload: R1 hot at once (its load), cold yet to the eye',
+      r0?.condition === 'hot' && r0.load > 3 && r0.load < 3.3 && r0.surface?.tint === 0,
+      `condition ${r0?.condition}, load ${round(r0?.load, 3)}, heat ${round(r0?.heat, 3)}, tint ${r0?.surface?.tint}`,
+    );
+    // when it must burn from here (E1-4: dH/dt = (L − H) / τ, burnt at H = 1)
+    const left = RESISTOR_TAU * Math.log((r0.load - r0.heat) / (r0.load - 1));
+    n.burnIn = round(left, 4);
+    const parts = await read(page, 'electronics-parts');
+    const centre = parts?.R1?.center;
+    const radius = Math.max(parts?.R1?.radius ?? 0.4, NEAR.least);
+    const shot = async (what) => {
+      await screenshot(page, snap(what));
+      if (!phone && centre) {
+        await close(page, centre, radius * NEAR.fill);
+        await screenshot(page, snap(`${what}-close`));
+        await back(page, shotName);
+      }
+    };
+    await shot('ok');
+    const calls0 = await drawCalls(page);
+    const programs0 = calls0.programs;
+    // frames of 1/60 s, a look at the heat on the way (the snapshots of «тепла» and «гаряча»)
+    let frames = 0;
+    let state = r0;
+    const pics = [
+      { heat: 0.75, name: 'warm' },
+      { heat: 0.97, name: 'hot' },
+    ];
+    while (state?.condition !== 'burnt' && frames < 60 * 12) {
+      await page.evaluate(() => window.__app.step(1 / 60, 1));
+      frames++;
+      state = (await heatNow(page))?.parts?.R1;
+      if (pics.length && state?.heat >= pics[0].heat && state.condition !== 'burnt') {
+        n[pics[0].name] = state;
+        await shot(pics.shift().name);
+      }
+    }
+    const t = frames / 60;
+    n.burntAfter = round(t, 4);
+    check(
+      'overload: «згоріла» in E1-4’s window, τ·ln((L − H) / (L − 1)) from the open page, within a frame',
+      state?.condition === 'burnt' && t >= left - 1e-9 && t < left + 1 / 60 + 1e-9,
+      `burnt after ${round(t, 3)} s; E1-4 says ${round(left, 3)} s`,
+    );
+    const h1 = await heatNow(page);
+    const m1 = await read(page, 'electronics-model');
+    n.burnt = h1?.parts?.R1;
+    check(
+      'overload: no current through it after, none in the loop; told once, one wisp, its marks shown',
+      h1?.parts?.R1?.i === 0 &&
+        Math.abs(m1?.parts?.J1?.i ?? 1) < 1e-9 &&
+        h1?.burns?.length === 1 &&
+        h1.burns[0].id === 'R1' &&
+        h1.smoke?.fired === 1 &&
+        h1.smoke?.active === 1 &&
+        h1.parts.R1.marks === true,
+      `i ${h1?.parts?.R1?.i}, J1 ${m1?.parts?.J1?.i}; burns ${JSON.stringify(h1?.burns)}; smoke ${JSON.stringify(h1?.smoke)}`,
+    );
+    // the wisp in the air (0.45 s: a third of its way), then gone
+    await page.evaluate(() => window.__app.step(1 / 60, 27));
+    const calls1 = await drawCalls(page);
+    await shot('burning');
+    await page.evaluate(() => window.__app.step(1 / 60, 81));
+    const calls2 = await drawCalls(page);
+    const h2 = await heatNow(page);
+    n.programs = { before: programs0, wisp: calls1.programs, after: calls2.programs };
+    n.drawCalls = { before: calls0.engine, wisp: calls1.engine, after: calls2.engine };
+    check(
+      'overload: the wisp gone within 1.2 s, the tint too; it stays burnt',
+      h2?.smoke?.active === 0 && h2?.smoke?.fired === 1 && h2?.parts?.R1?.condition === 'burnt' && h2.parts.R1.surface.tint === 0,
+      `smoke ${JSON.stringify(h2?.smoke)}, ${h2?.parts?.R1?.condition}, tint ${h2?.parts?.R1?.surface?.tint}, char ${h2?.parts?.R1?.surface?.char}`,
+    );
+    check(
+      'overload: draw calls ≤ 350 all along',
+      [calls0, calls1, calls2].every((c) => c.engine > 0 && c.engine <= DRAW_CALLS.gate),
+      `${calls0.engine} hot, ${calls1.engine} with the wisp, ${calls2.engine} burnt`,
+    );
+    check(
+      'overload: no shader program compiled by the burn',
+      calls1.programs === programs0 && calls2.programs === programs0,
+      `${programs0} before, ${calls1.programs} with the wisp and the marks, ${calls2.programs} after`,
+    );
+    check(
+      'overload: the lights stay the same lights',
+      h2?.lights === h0?.lights && h0?.lights === 5,
+      `${h0?.lights} lights before, ${h2?.lights} after`,
+    );
+    await shot('burnt');
+
+    // the burnt one by its body into the tray (a phone: off the board), and a new 100 Ω from it into b9
+    const p = await pointer(page, touch);
+    const scr = async (name) => {
+      const v = await locate(page, name);
+      if (!v) throw new Error(`probe '${name}' is unknown`);
+      return v;
+    };
+    const drag = async (from, to, steps = 12) => {
+      await p.down(from.x, from.y);
+      for (let k = 1; k <= steps; k++) {
+        const f = k / steps;
+        await p.move(from.x + (to.x - from.x) * f, from.y + (to.y - from.y) * f - Math.sin(Math.PI * f) * height * 0.04);
+      }
+      await p.up();
+    };
+    let off;
+    if (phone) {
+      const a = await scr('socket:j9');
+      const b = await scr('socket:-9');
+      off = { x: b.x + (b.x - a.x) * 1.6, y: b.y + (b.y - a.y) * 1.6 };
+    } else off = await scr('tray:resistor-100');
+    await drag(await scr('part:R1'), off);
+    await advance(page, 0.6);
+    const b1 = await read(page, 'electronics-board');
+    check('overload: the burnt R1 taken off the board', !b1?.parts?.R1, JSON.stringify(Object.keys(b1?.parts ?? {})));
+    if (phone) {
+      await page.evaluate(() => window.__ui.setSheet({ tab: 'controls' }));
+      await advance(page, 0.3);
+      const button = await page.evaluate(() => window.__ui.locate('ctl-tray-resistor-100'));
+      if (button) await p.tap(button.x, button.y);
+      await advance(page, 0.3);
+    }
+    const id = Object.keys((await read(page, 'electronics-board'))?.parts ?? {}).find((k) => k.startsWith('R'));
+    const grab = phone ? await scr(`part:${id}`) : await scr('tray:resistor-100');
+    const thing = phone ? await scr(`tip:${id}:0`) : grab;
+    const target = await scr('socket:b9');
+    // a part from the tray comes with leg 0 under the hand (a finger: LIFT below it); from the air the hand keeps its grip
+    const dy = touch && !phone ? LIFT : 0;
+    await drag(grab, { x: grab.x + target.x - thing.x, y: grab.y + target.y - thing.y + dy }, 14);
+    await advance(page, 0.4);
+    const b2 = await read(page, 'electronics-board');
+    const fresh = Object.entries(b2?.parts ?? {}).find(([, v]) => v.spec === 'resistor-100');
+    const h3 = await heatNow(page);
+    const r3 = fresh ? h3?.parts?.[fresh[0]] : null;
+    n.fresh = { id: fresh?.[0], legs: fresh?.[1]?.legs, look: r3 };
+    // whole: its heat is what a cold part gathers in the ≈ 0.4 s it has been in the circuit, far under the burnt one's 1
+    check(
+      'overload: a new 100 Ω from the tray in b9 … b13: a new id, whole — «ok» to the eye — and hot by its load',
+      fresh &&
+        fresh[0] !== 'R1' &&
+        JSON.stringify(fresh[1].legs) === '["b9","b13"]' &&
+        r3?.condition === 'hot' &&
+        r3.heat < 0.25 &&
+        r3.surface?.tint === 0 &&
+        r3.surface?.char === 0 &&
+        r3.marks === false,
+      `${fresh?.[0]} ${JSON.stringify(fresh?.[1]?.legs)}: ${r3?.condition}, heat ${round(r3?.heat, 3)}, tint ${r3?.surface?.tint}, char ${r3?.surface?.char}`,
+    );
+    await screenshot(page, snap('fresh'));
+    // and «гаряча» to the eye again as its heat passes half the limit
+    await page.evaluate(() => window.__app.step(1 / 60, 150));
+    const r4 = fresh ? (await heatNow(page))?.parts?.[fresh[0]] : null;
+    check(
+      'overload: 2.5 s later the new one is «гаряча» to the eye too: tinted and scorching, not burnt',
+      r4?.condition === 'hot' && r4.heat > 0.5 && r4.surface?.tint > 0 && r4.surface?.scorch > 0 && r4.marks === false,
+      `heat ${round(r4?.heat, 3)}, tint ${round(r4?.surface?.tint, 3)}, scorch ${round(r4?.surface?.scorch, 3)}`,
+    );
+    const errors = await appErrors(page);
+    check('overload: console', errors.length === 0, consoleText(errors));
+    await page.close();
+  }
+
+  /* ---- step `led`: every LED by the model's current, the three lights, at most four hue families */
+  {
+    const page = await context.newPage();
+    const pos = await open(page, 'led').catch((err) => ({ error: String(err) }));
+    if (!check('led: opened', at(pos, 'led'), where(pos))) {
+      await page.close();
+      return;
+    }
+    const h = await heatNow(page);
+    const m = await read(page, 'electronics-model');
+    const ids = ['LED1', 'LED2', 'LED3'];
+    n.led = { leds: Object.fromEntries(ids.map((id) => [id, h?.parts?.[id]])), lights: h?.leds };
+    check(
+      'led: each LED’s current is the model’s (± 1e-9), and it gives light',
+      ids.every((id) => Math.abs(h?.parts?.[id]?.i - m?.parts?.[id]?.i) <= 1e-9 && h.parts[id].light > 0),
+      ids.map((id) => `${id} ${round(h?.parts?.[id]?.i * 1000, 3)} mA, b ${round(h?.parts?.[id]?.light, 3)}`).join('; '),
+    );
+    // the red LED's current is its resistor's, by Ohm's law across the 330 Ω (3ae → 3fj): a little under the 21.24 mA it
+    // takes alone (sim/core/README.md), the three branches sharing the battery's 1.5 Ω
+    const ohm = (m?.rows?.['3ae'] - m?.rows?.['3fj']) / 330;
+    check(
+      'led: the red one takes its 330 Ω’s current (Ohm’s law ± 1e-6), a little under 21.24 mA alone',
+      Math.abs(m?.parts?.LED1?.i / ohm - 1) <= 1e-6 && m.parts.LED1.i < RED_LED_A && m.parts.LED1.i > 0.98 * RED_LED_A,
+      `${round(m?.parts?.LED1?.i * 1000, 4)} mA; by Ohm’s law ${round(ohm * 1000, 4)} mA`,
+    );
+    check(
+      'led: the three LEDs light the board, each light > 0',
+      h?.leds?.lit?.length === 3 && h.leds.intensity.every((x) => x > 0),
+      JSON.stringify(h?.leds),
+    );
+    check(
+      'led: the 330 Ω of red and green warm (≈ 0.15 W of 0.25 W), of blue ok (17.7 mA, ≈ 0.10 W)',
+      h?.parts?.R1?.condition === 'warm' && h?.parts?.R2?.condition === 'warm' && h?.parts?.R3?.condition === 'ok',
+      ['R1', 'R2', 'R3'].map((id) => `${h?.parts?.[id]?.condition} (load ${round(h?.parts?.[id]?.load, 3)})`).join(', '),
+    );
+    const calls = (n.ledCalls = await drawCalls(page));
+    check('led: draw calls ≤ 350', calls.engine > 0 && calls.engine <= DRAW_CALLS.gate, `${calls.engine}`);
+    const png = decodePng(await page.screenshot({ type: 'png' }));
+    const hue = (n.ledHue = hueFamilies(png));
+    check('led: hue families ≤ 4 with three colours lit', hue.families.length <= 4, `${hue.families.join(', ')} ${JSON.stringify(hue.shares)}`);
+    await screenshot(page, snap('led'));
+    const parts = await read(page, 'electronics-parts');
+    if (!touch && parts?.LED1) {
+      await close(page, parts.LED1.center, Math.max(parts.LED1.radius, NEAR.least) * NEAR.fill * 1.6);
+      await screenshot(page, snap('led-close'));
+      await back(page, 'board');
+    }
+    // a minute of the model's time: the resistors as warm as they get (h → 0.6), the snapshot of «тепла» at its load
+    await page.evaluate(() => window.__app.step(1 / 15, 900));
+    const hw = await heatNow(page);
+    n.ledWarm = hw?.parts?.R1;
+    check(
+      'led: after a minute the 330 Ω stays warm and barely tinted (h ≈ 0.6, t ≈ 0.2)',
+      hw?.parts?.R1?.condition === 'warm' && Math.abs(hw.parts.R1.heat - 0.6) < 0.02 && hw.parts.R1.surface.tint < 0.08,
+      `heat ${round(hw?.parts?.R1?.heat, 3)}, tint ${round(hw?.parts?.R1?.surface?.tint, 3)}`,
+    );
+    if (!touch && parts?.R1) {
+      await close(page, parts.R1.center, Math.max(parts.R1.radius, NEAR.least) * NEAR.fill);
+      await screenshot(page, snap('warm-load-close'));
+    }
+    const errors = await appErrors(page);
+    check('led: console', errors.length === 0, consoleText(errors));
+    await page.close();
+  }
+
+  /* ---- step `lamp`: the filament at the model's temperature lights the room */
+  {
+    const page = await context.newPage();
+    const pos = await open(page, 'lamp').catch((err) => ({ error: String(err) }));
+    if (!check('lamp: opened', at(pos, 'lamp'), where(pos))) {
+      await page.close();
+      return;
+    }
+    const h = await heatNow(page);
+    n.lamp = { lamp: h?.lamp, thing: h?.things?.lamp, R1: h?.parts?.R1, R2: h?.parts?.R2 };
+    const celsius = h?.things?.lamp?.kelvin - 273.15;
+    check(
+      'lamp: the filament at the model’s ≈ 1 875 °C (≈ 5.9 V), warm; the lamp lights the room',
+      celsius > 1850 && celsius < 1900 && h.things.lamp.condition === 'warm' && h.lamp.output > 0 && h.lamp.intensity > 0,
+      `${round(celsius, 0)} °C, level ${round(h?.lamp?.level, 3)}, glow ${round(h?.lamp?.glow, 3)}, output ${round(h?.lamp?.output, 3)}`,
+    );
+    check(
+      'lamp: the two 15 Ω warm (0.15 W each), no more',
+      h?.parts?.R1?.condition === 'warm' && h?.parts?.R2?.condition === 'warm',
+      `${h?.parts?.R1?.condition}, ${h?.parts?.R2?.condition}`,
+    );
+    const calls = await drawCalls(page);
+    check('lamp: draw calls ≤ 350', calls.engine > 0 && calls.engine <= DRAW_CALLS.gate, `${calls.engine}`);
+    await screenshot(page, snap('lamp'));
+    const errors = await appErrors(page);
+    check('lamp: console', errors.length === 0, consoleText(errors));
+    await page.close();
+  }
+
+  /* ---- step `bulged`: the look under the state's name, for the reader */
+  {
+    const page = await context.newPage();
+    const pos = await open(page, 'bulged', 0.4).catch((err) => ({ error: String(err) }));
+    if (!check('bulged: opened', at(pos, 'bulged'), where(pos))) {
+      await page.close();
+      return;
+    }
+    const h = await heatNow(page);
+    check('bulged: its puff of steam in the air', h?.smoke?.fired === 1 && h.smoke.active === 1, JSON.stringify(h?.smoke));
+    await screenshot(page, snap('bulged'));
+    const parts = await read(page, 'electronics-parts');
+    const can = parts?.['C-bulged'];
+    if (!touch && can) {
+      await close(page, can.center, Math.max(can.radius, NEAR.least) * NEAR.fill * 1.4);
+      await screenshot(page, snap('bulged-close'));
+    }
+    const errors = await appErrors(page);
+    check('bulged: console', errors.length === 0, consoleText(errors));
+    await page.close();
+  }
+}
+
 /* ---------------------------------------------------------------------------------------------- run */
 
-const SECTIONS = { room, shots, parts, hand, meter };
+const SECTIONS = { room, shots, parts, hand, meter, heat };
 const only =
   typeof args.only === 'string'
     ? args.only

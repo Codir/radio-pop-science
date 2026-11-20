@@ -7,6 +7,7 @@
  * a jumper's end the hand laid down lies there; while the hand drives it, the legs are the hand's (they travel, and the
  * board changes when they arrive). `update` moves the legs and stands every model on them; a part the hand carries
  * from the tray is levelled with the table on its way (`level`), and a body glows `cyan` under the pointer (`glow`).
+ * `look` gives every model the circuit model's state of its part (heat, burnt, an LED's light) and a pot its setting.
  *
  * `show(id, model, sockets)` stands a model on the board that the state does not hold: a kind whose key the circuit
  * model's catalog does not have yet (capacitors and transistors, until E1-5 and E1-6 are in), shown but never in the
@@ -17,7 +18,7 @@
 import { Group, Quaternion, Vector3 } from 'three';
 import type { BoardState, SocketId } from '@electronics/sim/board';
 import { Leg, type LegWorld } from '../hand/leg';
-import { buildPart, type PartEye, type PartModel } from '../parts';
+import { buildPart, type PartEye, type PartLook, type PartModel } from '../parts';
 import type { BoardView } from './board-view';
 import { tame } from './materials';
 
@@ -44,9 +45,14 @@ export interface PartsOnBoard {
   level(id: string, k: number): void;
   /** The part's level now: 1 (the board's frame) unless `level` set another. */
   levelOf(id: string): number;
-  /** Every frame: the legs travel, the models stand on them; a pot's knob follows its setting; the print shows where
-   * it can be read. */
+  /** Every frame: the legs travel, the models stand on them; the print shows where it can be read. */
   update(dt: number, eye: PartEye): void;
+  /**
+   * Every frame, after the circuit model's sync: each part shows its state (`shared/parts` `setLook`) — what `of` says
+   * of it (its heat, condition, an LED's light; nothing, while the model's last solve failed: the last look holds) and
+   * a pot's knob its setting.
+   */
+  look(dt: number, of: (id: string, key: string) => Partial<PartLook> | null): void;
   dispose(): void;
 }
 
@@ -206,10 +212,14 @@ export function createPartsOnBoard(
       for (const [id, m] of models) {
         for (const leg of legs.get(id)!) leg.update(dt);
         stand(id, m);
-        m.setLook({ setting: state.settings.get(id) ?? 0.5 }, dt);
         m.view(eye);
       }
       for (const m of shown.values()) m.view(eye);
+    },
+    look(dt, of) {
+      for (const [id, m] of models) {
+        m.setLook({ ...of(id, m.key), setting: state.settings.get(id) ?? 0.5 }, dt);
+      }
     },
     dispose() {
       for (const id of [...models.keys()]) remove(id);

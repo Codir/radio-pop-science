@@ -3,13 +3,15 @@
  * netlist at every sync, compiles only when the circuit's shape (`key`) changed, writes a changed setting into the
  * compiled parts and solves again, keeps one `ModelState` for the life of the bench, forgets the memory of a part that
  * left the board for good (sim/core/README.md, «The state») or whose id a new part takes (`forget`, a step's preset),
- * and on a failed solve keeps the last good one.
+ * and on a failed solve keeps the last good one; it lets the model's time pass frame by frame (`advance`: the heat of
+ * every part, a part that burns solved out at once) and tells the state of each part (`part`).
  */
 import { describe, expect, it } from 'vitest';
-import { WIRE_OHMS, memoryOf } from '@electronics/sim/core';
+import { HEAT_SECONDS, WIRE_OHMS, burnSeconds, memoryOf } from '@electronics/sim/core';
 import {
   createBoardState,
   createLayout,
+  nextId,
   place,
   put,
   remove,
@@ -250,6 +252,164 @@ describe('the bench’s model driver', () => {
     model.sync();
     expect(model.ok).toBe(true);
     expect(Number.isNaN(model.rowVolts('7ae')!)).toBe(false);
+  });
+});
+
+/** + rail → jumper → 9ae → 100 Ω across the channel → 9fj → jumper → − rail (the sandbox's step `overload`). */
+function overload(): BoardState {
+  const s = createBoardState();
+  expect(put(layout, s, { id: 'J1', spec: 'jumper', legs: ['+9', 'a9'] })).toBe(true);
+  expect(place(layout, s, { id: 'R1', spec: 'resistor-100', anchor: 'b9', o: 1 })).toBe(true);
+  expect(put(layout, s, { id: 'J2', spec: 'jumper', legs: ['j9', '-9'] })).toBe(true);
+  setSetting(s, 'SW', 1);
+  return s;
+}
+
+/** 9 V behind the battery's 1.5 Ω, the switch and two jumpers, on 100 Ω: the power in the resistor over its 0.25 W. */
+const OVERLOAD = ((9 / (101.5 + 3 * WIRE_OHMS)) ** 2 * 100) / 0.25;
+const BURN_SECONDS = burnSeconds(OVERLOAD, HEAT_SECONDS.resistor!);
+
+/** Frames of `dt` until `id` burns (at most `limit` seconds): the time at the end of that frame, and the ids each
+ * frame that burnt something gave. */
+function runUntilBurnt(model: ReturnType<typeof createBenchModel>, id: string, dt: number, limit = 10) {
+  const events: string[][] = [];
+  let t = 0;
+  while (t < limit) {
+    model.sync();
+    const burnt = model.advance(dt);
+    t += dt;
+    if (burnt.length) events.push([...burnt]);
+    if (model.part(id)?.condition === 'burnt') return { t, events };
+  }
+  return { t: Number.POSITIVE_INFINITY, events };
+}
+
+describe('heat in the model’s time (advance)', () => {
+  it('a 100 Ω across the 9 V battery is hot at once, burns after τ·ln(load / (load − 1)), then takes no current', () => {
+    const board = overload();
+    const model = createBenchModel({ layout, board });
+    model.sync();
+    expect(OVERLOAD).toBeCloseTo(0.786 / 0.25, 2);
+    const first = model.part('R1')!;
+    expect(first.condition).toBe('hot');
+    expect(first.load).toBeCloseTo(OVERLOAD, 9);
+    expect(first.heat).toBe(0);
+    // the heat gathers toward the load: one second of the model's time
+    expect(model.advance(1)).toEqual([]);
+    expect(model.part('R1')!.heat).toBeCloseTo(OVERLOAD * (1 - Math.exp(-0.1)), 9);
+    expect(model.part('R1')!.condition).toBe('hot');
+    const rest = runUntilBurnt(model, 'R1', 1 / 60);
+    // it burns in the frame where the model's time passes τ·ln(L / (L − 1)) (≈ 3.83 s), told once
+    expect(BURN_SECONDS).toBeCloseTo(3.83, 2);
+    expect(1 + rest.t).toBeGreaterThanOrEqual(BURN_SECONDS);
+    expect(1 + rest.t).toBeLessThan(BURN_SECONDS + 1 / 60 + 1e-9);
+    expect(rest.events).toEqual([['R1']]);
+    // solved again in that frame: a gap now, no current, in the rest of the loop either
+    const version = model.version;
+    expect(model.reading('R1')!.i).toBe(0);
+    expect(Math.abs(model.reading('J1')!.i)).toBeLessThan(1e-9);
+    expect(model.solution!.status.R1!.condition).toBe('burnt');
+    // more time: it stays burnt, nothing more burns, nothing is solved again for nothing
+    for (let i = 0; i < 60; i++) {
+      model.sync();
+      expect(model.advance(1 / 60)).toEqual([]);
+    }
+    expect(model.version).toBe(version);
+    expect(model.part('R1')!.condition).toBe('burnt');
+  });
+
+  it('a frame with dt 0 lets no time pass; frames of 1/15 s burn it at the same time, within a frame', () => {
+    const board = overload();
+    const model = createBenchModel({ layout, board });
+    model.sync();
+    model.advance(0.5);
+    const heat = model.part('R1')!.heat;
+    for (let i = 0; i < 10; i++) expect(model.advance(0)).toEqual([]);
+    expect(model.part('R1')!.heat).toBe(heat);
+    // no time that is not a time: a negative or broken dt lets none pass either
+    expect(model.advance(-1)).toEqual([]);
+    expect(model.advance(Number.NaN)).toEqual([]);
+    expect(model.part('R1')!.heat).toBe(heat);
+    const coarse = runUntilBurnt(createBenchModel({ layout, board: overload() }), 'R1', 1 / 15);
+    expect(coarse.t).toBeGreaterThanOrEqual(BURN_SECONDS);
+    expect(coarse.t).toBeLessThan(BURN_SECONDS + 1 / 15 + 1e-9);
+    expect(coarse.events).toEqual([['R1']]);
+  });
+
+  it('a burnt part stays burnt when it is moved (the same id); a new one from the tray is whole, then hot again', () => {
+    const board = overload();
+    const model = createBenchModel({ layout, board });
+    runUntilBurnt(model, 'R1', 1 / 60);
+    // in the hand (every leg out): out of the circuit, still burnt
+    expect(put(layout, board, { id: 'R1', spec: 'resistor-100', legs: [null, null] })).toBe(true);
+    model.sync();
+    expect(model.part('R1')!.condition).toBe('burnt');
+    expect(model.reading('R1')).toBeNull();
+    // set down two columns on, across the channel again with the jumpers moved there: burnt, a gap
+    expect(put(layout, board, { id: 'J1', spec: 'jumper', legs: ['+11', 'a11'] })).toBe(true);
+    expect(put(layout, board, { id: 'J2', spec: 'jumper', legs: ['j11', '-11'] })).toBe(true);
+    expect(place(layout, board, { id: 'R1', spec: 'resistor-100', anchor: 'b11', o: 1 })).toBe(true);
+    model.sync();
+    expect(model.part('R1')!.condition).toBe('burnt');
+    expect(model.reading('R1')!.i).toBe(0);
+    // into the tray for good, and a new 100 Ω from it: a new id, whole and cold — and hot at once
+    remove(board, 'R1');
+    const id = nextId(board, 'R');
+    expect(id).not.toBe('R1');
+    expect(place(layout, board, { id, spec: 'resistor-100', anchor: 'b11', o: 1 })).toBe(true);
+    model.sync();
+    expect(model.part(id)).toMatchObject({ condition: 'hot', heat: 0 });
+    expect(model.reading(id)!.i).toBeCloseTo(9 / (101.5 + 3 * WIRE_OHMS), 9);
+    const again = runUntilBurnt(model, id, 1 / 60);
+    expect(again.t).toBeLessThan(BURN_SECONDS + 1 / 60 + 1e-9);
+    expect(again.events).toEqual([[id]]);
+  });
+
+  it('a failed solve lets no time pass: the heat holds and nothing burns', () => {
+    const board = overload();
+    // the bench's battery and switch, and two ideal sources a test may put side by side (the bench never offers them)
+    const fixed: FixedPart[] = [
+      { id: 'BAT', spec: 'battery-9v', pins: [{ private: 'bat+' }, { row: '-' }] },
+      { id: 'SW', spec: 'switch', pins: [{ private: 'bat+' }, { row: '+' }] },
+      { id: 'S1', spec: 'ideal-9v', pins: [{ lead: 'x+' }, { row: '-' }] },
+      { id: 'S2', spec: 'ideal-5v', pins: [{ lead: 'y+' }, { row: '-' }] },
+    ];
+    const model = createBenchModel({ layout, board, fixed });
+    model.sync();
+    model.advance(1);
+    const heat = model.part('R1')!.heat;
+    expect(heat).toBeGreaterThan(0);
+    expect(seatLead(layout, board, 'x+', '+17')).toBe(true);
+    expect(seatLead(layout, board, 'y+', '+16')).toBe(true);
+    model.sync();
+    expect(model.ok).toBe(false);
+    expect(model.part('R1')).toBeNull();
+    expect(model.advance(10)).toEqual([]);
+    expect(model.state.parts.get('R1')!.heat).toBe(heat);
+  });
+
+  it('tells the state of a part: in the circuit its condition and load; out of it its memory; the lamp its filament', () => {
+    const board = divider(true);
+    const model = createBenchModel({ layout, board });
+    expect(model.part('R1')).toBeNull(); // nothing solved yet
+    model.sync();
+    // 9 / 3001.5 A in 1 kΩ: 27 mW of 0.25 W
+    expect(model.part('R1')).toMatchObject({ condition: 'ok', heat: 0 });
+    expect(model.part('R1')!.load).toBeCloseTo(((9 / 3001.503) ** 2 * 1000) / 0.25, 6);
+    expect(model.part('nothing')).toEqual({ condition: 'ok', load: 0, heat: 0 });
+    model.advance(5);
+    const warm = model.part('R1')!.heat;
+    expect(warm).toBeGreaterThan(0);
+    expect(seatLeg(layout, board, 'R1', 1, null)).toBe(true);
+    model.sync();
+    expect(model.part('R1')).toMatchObject({ condition: 'ok', load: 0, heat: warm });
+    // the lamp straight across the rails: its filament's temperature from the solve, and over its limit
+    expect(seatLead(layout, board, 'lamp1', '+1')).toBe(true);
+    expect(seatLead(layout, board, 'lamp2', '-1')).toBe(true);
+    model.sync();
+    const lamp = model.part('LAMP')!;
+    expect(lamp.kelvin).toBeGreaterThan(2300);
+    expect(lamp.condition).toBe('hot');
   });
 });
 

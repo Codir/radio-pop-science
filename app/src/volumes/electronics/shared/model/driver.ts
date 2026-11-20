@@ -1,7 +1,7 @@
 /**
  * The bench's link to the circuit model (docs/volumes/electronics/VISUAL.md §1, principle 3; synthesis §1.6, G7): the
- * only file of the bench that calls `sim/core`. Everything the bench shows of the circuit — a meter's number now, the
- * light, the heat and the sound later — is read from here.
+ * only file of the bench that calls `sim/core`. Everything the bench shows of the circuit — a meter's number, the
+ * light, the heat and the burn, the sound later — is read from here.
  *
  * At every `sync` the driver reads the netlist of what is on the board (`sim/board` `netlistOf`, with the parts the
  * bench adds off the board: the meter in the A mode). A new shape of the circuit (its `key`) compiles a new circuit —
@@ -17,14 +17,20 @@
  *
  * A solve that fails (`ok: false`) is never shown: the driver keeps the last good solution, says it failed, and gives
  * no reading of the circuit now on the board until one succeeds — never a NaN, never the zeros of the failure.
+ *
+ * The model's time passes frame by frame (`advance`, the frame's dt, after the sync): every part's heat moves toward its
+ * load (E1-4's `advanceHeat`), and a part that burns is a gap from the same frame on — the driver solves again at once
+ * and tells its id once. `part(id)` is what the bench shows of a part: its condition, load, heat and a lamp's filament.
  */
 import {
   PARTS,
+  advanceHeat,
   compile,
   createModelState,
   memoryOf,
   solveDC,
   type Circuit,
+  type Condition,
   type DcFailure,
   type DcSolution,
   type ModelState,
@@ -52,6 +58,17 @@ export interface BenchModelSource {
   readonly extra?: () => readonly PartInstance[];
   /** The clock of `dcMs`, in milliseconds (default `performance.now`): a test gives its own. */
   readonly now?: () => number;
+}
+
+/** What the bench shows of a part (`part`). */
+export interface PartState {
+  readonly condition: Condition;
+  /** The share of its limit it is under now (0 out of the circuit). */
+  readonly load: number;
+  /** How warm it is, a share of its limit (`PartMemory.heat`). */
+  readonly heat: number;
+  /** A lamp: its filament's temperature (K), written by every good solve. */
+  readonly kelvin?: number;
 }
 
 export interface BenchModel {
@@ -82,6 +99,21 @@ export interface BenchModel {
    * solves again, though the circuit's shape is the same. A part the model remembers nothing of changes nothing.
    */
   forget(id: string): void;
+  /**
+   * Let `seconds` of the model's time pass at the operating point of the circuit now on the board (the frame's time):
+   * the heat of every part moves toward its load (`sim/core` `advanceHeat`), and a part whose heat reaches its limit
+   * burns — the circuit is solved again at once, with it a gap. Returns the ids of the parts that burnt now (an event,
+   * told once). After a failed solve no time passes: the heat holds (G7, nothing new is shown). A frame with no time
+   * (dt 0, a held frame) or a time that is not one changes nothing.
+   */
+  advance(seconds: number): readonly string[];
+  /**
+   * The state of a part as the bench shows it (VISUAL §4.8): in the circuit, its condition and load from the last
+   * solve; out of it (in the hand, a leg in the air), `ok` and no load — or `burnt`, which it stays until it leaves the
+   * bench; its heat and a lamp's filament temperature from the model's memory. A part the model never saw is ok and
+   * cold. Null before the first solve and while the last one failed.
+   */
+  part(id: string): PartState | null;
   /** What a meter would read on a part of the circuit now on the board; null when it is not in it, or the last solve
    * failed. */
   reading(id: string): PartReading | null;
@@ -114,6 +146,8 @@ const NO_CURRENT = 1e-15;
 const SOURCES: ReadonlySet<string> = new Set(['battery', 'source', 'player']);
 
 const clock = (): number => globalThis.performance?.now() ?? 0;
+/** Nothing burnt this frame. */
+const NONE: readonly string[] = Object.freeze([]);
 
 export function createBenchModel(src: BenchModelSource): BenchModel {
   const { layout, board } = src;
@@ -158,6 +192,17 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
     }
   };
 
+  /** Solve the compiled circuit with the bench's state; a failure keeps the last good solution. */
+  const solve = (c: Circuit): void => {
+    const t0 = now();
+    const dc = solveDC(c, { state });
+    dcMs = now() - t0;
+    version++;
+    ok = dc.ok;
+    failure = dc.ok ? null : (dc.reason ?? 'singular');
+    if (dc.ok) solution = dc;
+  };
+
   const model: BenchModel = {
     state,
     get net() {
@@ -199,16 +244,29 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
       net = next;
       if (!dirty) return;
       forgotten = false;
-      const t0 = now();
-      const dc = solveDC(circuit, { state });
-      dcMs = now() - t0;
-      version++;
-      ok = dc.ok;
-      failure = dc.ok ? null : (dc.reason ?? 'singular');
-      if (dc.ok) solution = dc;
+      solve(circuit);
     },
     forget(id) {
       if (state.parts.delete(id)) forgotten = true;
+    },
+    advance(seconds) {
+      if (!ok || !solution || !circuit || !(seconds > 0) || !Number.isFinite(seconds)) return NONE;
+      // the solution is the circuit's now on the board: a failed or a new one would have been solved at the sync
+      const burnt = advanceHeat(state, circuit, solution, seconds);
+      if (burnt.length > 0) solve(circuit);
+      return burnt;
+    },
+    part(id) {
+      if (!ok || !solution) return null;
+      const memory = state.parts.get(id);
+      const status = solution.status[id];
+      const burnt = memory?.burnt === true;
+      const base = {
+        condition: burnt ? ('burnt' as const) : (status?.condition ?? 'ok'),
+        load: burnt ? 0 : (status?.load ?? 0),
+        heat: memory?.heat ?? 0,
+      };
+      return memory?.kelvin === undefined ? base : { ...base, kelvin: memory.kelvin };
     },
     reading(id) {
       return ok && solution ? (solution.parts[id] ?? null) : null;

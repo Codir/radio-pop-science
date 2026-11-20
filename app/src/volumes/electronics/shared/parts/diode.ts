@@ -4,7 +4,8 @@
  *   through the glass the two metal slugs that hold the crystal; no print;
  * - 1N4007: black epoxy 0.60 × 0.31 with a `steel` cathode band and «1N4007» printed in `mist`.
  *
- * Draw calls: 1N4148 — the glass, its depth shell, the band, the slugs, the legs; 1N4007 — the body, the legs, the print.
+ * Draw calls: 1N4148 — the glass, its depth shell, the band, the slugs, the legs; 1N4007 — the body, the legs, the print;
+ * burnt, the crack round the darkened body (VISUAL §4.8).
  */
 import { Box3, Group, Mesh, Vector3 } from 'three';
 import { Builder, G } from '@/kit';
@@ -12,7 +13,17 @@ import type { KToonMaterial } from '@/style';
 import { BOARD_SPEC } from '@electronics/sim/board';
 import { sheath } from '../bench/materials';
 import { depthShell } from './bulb';
-import { AXIAL_Y, Prints, assemble, axialLegs, mix, slots, type PartModel } from './part';
+import {
+  AXIAL_Y,
+  CRACK_COLOR,
+  Prints,
+  assemble,
+  axialLegs,
+  crackPath,
+  mix,
+  slots,
+  type PartModel,
+} from './part';
 
 export type DiodeModelName = '1N4148' | '1N4007';
 
@@ -120,6 +131,12 @@ export function createDiode(name: DiodeModelName, key = `diode-${name.toLowerCas
   const model = b.build();
   body.add(model.group);
   if (name === '1N4007') bodyMaterials = slots(model, 'gloss');
+  // burnt (VISUAL §4.8): dark, with a crack round the middle of the body
+  const burnt = new Builder(`${key}:burnt`);
+  burnt.tube(crackPath(-L * 0.08, R + 0.006, 0.022), 0.015, { seg: 6, c: CRACK_COLOR });
+  const marks = burnt.build().group;
+  marks.name = `${key}:burnt`;
+  body.add(marks);
   return assemble({
     key,
     name: key,
@@ -128,6 +145,7 @@ export function createDiode(name: DiodeModelName, key = `diode-${name.toLowerCas
     legX: [0, 4 * BOARD_SPEC.pitch],
     legPaths: axialLegs(AXIAL_Y, L / 2 - 0.03),
     bodyMaterials,
+    marks,
     prints,
   });
 }

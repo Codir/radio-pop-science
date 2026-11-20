@@ -33,7 +33,7 @@ What a chapter writes (plain numbers, read every frame by `bench.update`):
 |---|---|---|
 | `ambient` | `BENCH_AMBIENT` 0.8 | lift of the unlit room: a cool fill and a stronger moon that step back when the lamp burns |
 | `moon` | 1 | strength of the cold moon |
-| `lamp` | 0 | the lamp's filament 0 cold … 1 white; shown with the filament's inertia (the model drives it from E2-7) |
+| `lamp` | 0 | read-only: the lamp's filament 0 cold … 1 white, from the circuit model alone («light, heat, burn» below); shown with the filament's inertia |
 | `closed` | 0 | the battery's switch: 0 open (the thumb pushed left, the gap shows) … 1 closed — the setting of the model's part `SW` in `state.settings`; a tap on the slider flips it |
 | `flying` | false | the camera flies (the magnifier, a chapter's border): the hand and the switch do nothing |
 | `lens`, `lensTarget` | 0, `null` | the magnifier: 0 in its holder … 1 at `lensTarget` (a `LensPose` in the base frame, e.g. `overPose`) |
@@ -50,8 +50,8 @@ every frame), `layout` (the board as data, `sim/board`), `board` (the 3D breadbo
 the speaker and the lamp with their real marks from `shared/parts` — `props.things`, `props.bulb` — the lamp post and
 the `filament` where the light hangs; `props.meter` is the multimeter's place on the table, the oscilloscope still a
 stand-in of its size and colour), `fixed`, `switch`, `tray` and `hands` (the reader's hand, «hand» below), `tools` (the
-magnifier and its `holder` pose), `model` (the circuit model of the board, «model» below) and `multimeter` («instruments»
-below).
+magnifier and its `holder` pose), `model` (the circuit model of the board, «model» below), `multimeter` («instruments»
+below), `leds` and `smoke` (the LEDs' light on the board and the wisp of a burn, «light, heat, burn» below).
 
 The board's print (the letters of the lines, the column numbers) is drawn only where all of it has ≥ 16 px-equivalent
 per em (`chapter-check`'s rule): on `board`, not on `stand`, never on a phone. The rails' «+» and «−» are not print
@@ -86,9 +86,11 @@ A part is built in its body frame — the origin on the board's face under the m
 leg 0 to the last, +z toward the reader at the orientation 0 — and `fit(tips)` stands it on any tips: every quarter
 turn, across the channel (e → f is 0.6), a leg re-seated or in the air. Every part has `hit`, the invisible box of its
 body (gesture 1's target: never drawn, still hit by a ray), at most six draw calls, no shadow; `materials` (all its lit
-K materials) and `body` (those that take the look of heat, never a resistor's bands) are for E2-7. `setLook` here
-lights an LED (`light` b → glow 1.8 · b, none below 0.02) and turns a pot's knob (`setting`, 300° within 0.15 s);
-heat, burnt and bulged are E2-7's. The prints are Text3D, made only where the fonts are loaded (never in unit tests).
+K materials) and `body` (those that take the look of heat, never a resistor's bands). `setLook` shows the model's
+state: the heat on the body's surface, the burnt marks, the bulged electrolytic (`look.ts`, «light, heat, burn» below),
+an LED's light (`light` b → glow 1.8 · b and a halo 0.5 · b, none below 0.02) and a pot's knob (`setting`, 300° within
+0.15 s); `surface` is what the body shows now. The prints are Text3D, made only where the fonts are loaded (never in
+unit tests).
 
 The kinds the model's catalog gains in other tasks are bound already by the fields of their specs: a `capacitor` by
 its `dielectric`, `farads` and `ratedV` (E1-5), a `transistor` by its key in `TRANSISTORS` and the board's
@@ -187,6 +189,8 @@ model.ok; // the last solve succeeded; `failure` says why not ('singular', 'no-c
 model.rowVolts('7ae'); // 5.997 V on the divider; `nodeVolts(n)`, `reading(id)` → { u, i, p }; null after a failure
 model.ohms(a, b); // what an ohmmeter reads between two nodes: Ω, Infinity (no path), null (no solve)
 model.forget('R1'); // a new part goes under this id: its memory goes at once, the next sync solves again
+model.advance(dt); // the model's time passes (heat; a part that burns is solved out at once): the ids burnt now
+model.part('R1'); // { condition, load, heat, kelvin? } as the bench shows it; null while the last solve failed
 ```
 
 - **Compile on a new shape, solve on a new setting.** The netlist's `key` (`sim/board`) is the circuit's shape: a part
@@ -251,6 +255,54 @@ For checks: `__app.read('electronics-meter')` → `{ mode, red, black, live, val
 prints }` (`live` — the reading now; `value`, `text` — what the display shows); probes `probe:red`, `probe:black` (the
 grips) and `end:red`, `end:black` (the tips on the board's face). The sandbox's steps `meter` and `divider` and
 `qa/measure.mjs --only meter` drive them.
+
+## Light, heat, burn — the model's state on the bench (E2-7)
+
+Everything on the bench that shines, warms or burns is the circuit model's output for the board now (VISUAL §1,
+principle 3): the bench reads it from `bench.model` every frame and nothing else lights or tints a thing. A chapter
+writes nothing for it: it puts a circuit on the board (`preset`, the hand) and closes the switch.
+
+```ts
+bench.preset([{ id: 'J1', spec: 'jumper', at: '+9', to: 'a9' }, { id: 'R1', spec: 'resistor-100', at: 'b9' },
+  { id: 'J2', spec: 'jumper', at: 'e13', to: '-13' }]); // ≈ 0.8 W on a 0.25 W part
+bench.closed = 1;
+bench.model.part('R1'); // { condition: 'hot', load: 3.14, heat: 0 } — and after ≈ 3.8 s of frames: 'burnt'
+bench.lamp; // the lamp's filament from the model, read-only
+```
+
+- **The model's time.** After its sync in every frame the bench lets the frame's time pass in the model
+  (`model.advance(dt)`, `sim/core` `advanceHeat`): every part's heat moves toward its load, and a part whose heat reaches
+  its limit burns — the driver solves the circuit again at once, the part a gap — and the burn is told once, by id. A
+  frame with `dt` 0 lets no time pass; a frame of 1/15 s burns a part within that frame; while the model's last solve
+  failed no time passes and every look holds. `model.part(id)` → `{ condition, load, heat, kelvin? }`: in the circuit its
+  condition and load of the last solve; out of it (in the hand, a leg in the air) `ok` and no load, or `burnt` — which a
+  part stays, the same id wherever it is moved, until it leaves the bench (a new one from the tray has a new id and is
+  whole; a step's preset forgets what it takes off). Its heat stays as it was while it is out of the circuit (E1-4's
+  model lets time pass only in the circuit).
+- **Heat is a colour of the surface, never light** (VISUAL §4.8; `parts/look.ts`): the body mixed with `heatRamp(t)` by
+  0.3 · t, t = (h − 0.5) / 0.5 held to 0…1; a hot body also darkens toward `mix('wireBrown', 'ink', 0.5)` by 0.3 · t; a
+  burnt one is charred — mix(body, ink, 0.75), an LED's dome 0.6 — and its tint goes within 1 s; no emissive, glow or
+  halo from heat. The platform's `applyHeat` lights a surface by its emissive, which VISUAL forbids here, so the mix is
+  a term of the body's own shader (`heatable`, written in before the part is first drawn): a burn compiles no program. A
+  resistor's bands take no heat but char with the body. The kinds are a partial table (`KIND_LOOK`): a battery and a
+  speaker only tint (the battery never burns), a burnt speaker shows a dark ring on its cone, a burnt lamp its broken
+  filament and a greyed top of the glass (`bulb.setBurnt`), a burnt resistor a black belt with a crack, a diode a crack,
+  an LED a black spot on its crystal. An electrolytic under the state `bulged` (E1-5 gives it; E2-9 binds it to the
+  model) domes its top up 0.05 with the vent opened and its sleeve a little wider.
+- **The burn** (`bench.smoke`, `smoke.ts`): at the moment the model tells it, one wisp — eight soft puffs of `mist`, at
+  most 0.35 opaque, rising 0.6 in 1.2 s over the part's body — once, never a loop, no flame, spark, flash or sound;
+  `smoke.puff(at, 'steam')` is a bulged can's one puff (1.5 s). The puffs are lit translucent plastic, the lamp's stem's
+  very shader, made with the bench and hidden while nothing burns.
+- **Light**: an LED's brightness b = min(1, (Φ / Φ₀)^(1/3)) from the model's current (`ledBrightness`), its glow and
+  halo; the three brightest LEDs (ties by id) take the bench's three shadowless point lights (`bench.leds`,
+  `lights.ts`: range 2.5, intensity `LED_POWER` 0.35 · b; an unused one at 0; made once, never added or taken away).
+  The lamp: `bench.lamp` = the model's filament temperature on the incandescence scale (`lampGlow`) while both plugs are
+  in, 0 out of the circuit or burnt; the light rig makes it the room's key light.
+
+For checks: `__app.read('electronics-heat')` → `{ ok, parts: { id: { key, condition, heat, load, i, light, surface,
+marks } }, things: { battery, speaker, lamp }, lamp: { level, glow, output, intensity }, leds: { lit, intensity },
+lights, smoke: { active, fired }, burns: [{ id, t }] }` (`lights` — every light under the chapter's root: five, always).
+The sandbox's steps `led`, `overload`, `lamp`, `bulged` and `qa/measure.mjs --only heat` drive them.
 
 ## Копії
 

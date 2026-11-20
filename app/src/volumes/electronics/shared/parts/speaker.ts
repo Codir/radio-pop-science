@@ -5,13 +5,15 @@
  * «8 Ω» printed flat on the frame's rim on the reader's side, where the bench's shots see it; two solder lugs on the
  * frame's edge toward the board, where its two leads start (the leads and their plugs are the hand's, E2-5), and a
  * `coral` dot on the rim beside the plus lug. The cone does not move for show: the sound is heard, its shape is seen on
- * the oscilloscope.
+ * the oscilloscope. It warms by its load (the tint of `look.ts`) and, burnt, shows a dark ring round the middle of the
+ * cone (VISUAL §4.8).
  *
  * Origin: the middle of its footprint on the base's face.
  */
 import { Group, Vector3 } from 'three';
 import { Builder } from '@/kit';
 import { PLACES } from '../bench/layout';
+import { KIND_LOOK } from './look';
 import { Prints, fixedView, mix, slots, type PartView } from './part';
 
 const STEEL = ['steel', 'mist'] as const;
@@ -81,6 +83,21 @@ export function createSpeaker(): SpeakerView {
   const group = new Group();
   group.name = 'speaker';
   group.add(model.group);
+  // burnt (VISUAL §4.8): a dark ring round the middle of the cone, where the voice coil burnt; on the cone's faces, a
+  // hair above them, running inward and down as the cone does so that it faces the cameras
+  const burnt = new Builder('speaker:burnt');
+  burnt.lathe(
+    [
+      [R * 0.6, 0.331],
+      [R * 0.55, 0.324],
+      [R * 0.3, 0.264],
+      [R * 0.22, 0.264],
+    ],
+    { seg: 48, c: mix('ink', 'wireBrown', 0.15) },
+  );
+  const marks = burnt.build().group;
+  marks.name = 'speaker:burnt';
+  group.add(marks);
   const prints = new Prints();
   const printAt = new Vector3(0, rim + 0.004, band);
   prints.add(group, '8 Ω', {
@@ -90,5 +107,6 @@ export function createSpeaker(): SpeakerView {
     // flat on the rim, read from the reader's side
     rot: [-Math.PI / 2, 0, 0],
   });
-  return Object.assign(fixedView('speaker', group, slots(model, 'toon'), prints), { printAt, plusAt });
+  const view = fixedView('speaker', group, slots(model, 'toon'), prints, { kind: KIND_LOOK.speaker, marks });
+  return Object.assign(view, { printAt, plusAt });
 }

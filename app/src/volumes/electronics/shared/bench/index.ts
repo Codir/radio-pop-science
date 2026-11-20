@@ -4,16 +4,19 @@
  * battery, the player, the speaker and the lamp with their real marks; the oscilloscope still a stand-in) with their
  * wires and plug leads (`fixed.ts`), the battery's switch under the hand (`switch.ts`), the tray of parts and the
  * reader's hand (`shared/hand`), the parts on the board, which stand on their legs (`on-board.ts`), the circuit model
- * that solves what is on the board (`shared/model`) and the multimeter that reads it (`shared/instruments`). A chapter
+ * that solves what is on the board (`shared/model`) and the multimeter that reads it (`shared/instruments`), and what
+ * the model's state shows: the LEDs' light (`lights.ts`), the lamp lit by its filament, the heat and the burn of every
+ * part (`shared/parts/look.ts`), the wisp of a burn (`smoke.ts`). A chapter
  * mounts it once in its scene factory and drives it through plain parameters (shared/README.md, «bench», «hand»,
  * «model», «instruments»). Copied in its shape from `circuit/shared/stage/index.ts` (`mountStage` → `mountBench`;
  * shared/README.md, «Копії»): no flashlight, unfolding, snail, battery cutaway or lamp close-up.
  */
 import { Box3, Group, Raycaster, Vector3, type Material, type Mesh, type Object3D } from 'three';
 import { damp, type ChapterContext } from '@/engine/api';
-import { KToonMaterial } from '@/style';
+import { K, KToonMaterial } from '@/style';
 import type { Text3D } from '@/text';
 import {
+  BENCH_FIXED,
   createBoardState,
   createLayout,
   footprintOf,
@@ -32,19 +35,30 @@ import {
 import { createHands, createTerrain, createTray, type Hands, type Raised, type Tray } from '../hand';
 import { createMultimeter, type Multimeter } from '../instruments';
 import { createBenchModel, type BenchModel } from '../model';
-import type { PartEye, PartView } from '../parts';
+import {
+  LED_LOOK,
+  heatable,
+  lampGlow,
+  ledBrightness,
+  type LedModel,
+  type PartEye,
+  type PartLook,
+  type PartView,
+} from '../parts';
 import { createAir } from './air';
 import { createBase, type Base } from './base';
 import { createBoardView, type BoardView } from './board-view';
 import { PLUG, createFixed, type Fixed } from './fixed';
 import { BOARD, PLACES } from './layout';
 import { BENCH_AMBIENT, createLight, type LightRig } from './light';
+import { createLedLights, type LedLights, type LedSource } from './lights';
 import { tame } from './materials';
 import { createMounds } from './mounds';
 import { createPartsOnBoard, type PartsOnBoard } from './on-board';
 import { createProps, type Props } from './props';
 import { createRoom, type Room } from './room';
 import { STAGE_POST, benchShots } from './shots';
+import { createSmoke, keeper, type Smoke } from './smoke';
 import { switchPart, type SwitchPart } from './switch';
 import { createTools, type BenchTools, type LensPose } from './tools';
 
@@ -52,6 +66,8 @@ export { BOARD, LAMP, LENS, PLACES, SWITCH } from './layout';
 export { BOARD_Y } from './base';
 export { BOARD_LOOK, type BoardView } from './board-view';
 export { BENCH_AMBIENT, filamentColor, type LightRig } from './light';
+export { LED_LIGHTS, LED_POWER, LED_RANGE, type LedLights } from './lights';
+export { SMOKE, type Smoke, type Wisp } from './smoke';
 export { LEAD, LEADS, PLUG, type Fixed, type LeadView } from './fixed';
 export { type PartsOnBoard } from './on-board';
 export { type SwitchPart } from './switch';
@@ -132,6 +148,10 @@ export interface Bench {
   readonly tools: BenchTools;
   /** The circuit model of what is on the board (`shared/model`): the only way the bench reads the circuit. */
   readonly model: BenchModel;
+  /** The LEDs' light on the board: three shadowless point lights the brightest LEDs take (VISUAL §4.4). */
+  readonly leds: LedLights;
+  /** The wisp of smoke at the moment a part burns, and a bulged can's steam (VISUAL §4.8). */
+  readonly smoke: Smoke;
   /** The multimeter on the table: its dial (`mode`), its probes (`put`), its number for the step's panel
    * (`readout`); it comes and goes with `meter`. */
   readonly multimeter: Multimeter;
@@ -143,10 +163,12 @@ export interface Bench {
   /** Strength of the cold moon 0…1 (default 1). */
   moon: number;
   /**
-   * The lamp's filament 0 cold … 1 working white, as the circuit model gives it (until the model drives the bench,
-   * 0). Shown with the filament's inertia: it heats in hundredths of a second and cools a little slower.
+   * The lamp's filament 0 cold … 1 working white, from the circuit model only (VISUAL §1, principle 3; §4.6): the place
+   * of the model's filament temperature on the incandescence scale while the lamp is in the circuit (both plugs in),
+   * 0 out of it or burnt; while the model's last solve failed, what it was. Shown with the filament's inertia: it heats
+   * in hundredths of a second and cools a little slower (the transient of E1-5 takes that over).
    */
-  lamp: number;
+  readonly lamp: number;
   /**
    * The battery's switch: 0 open (the thumb pushed to the left, the gap shows) … 1 closed (default 0) — the setting of
    * the model's part `SW` in the board's state; a tap on the slider flips it, a step may set it. The slider follows
@@ -327,6 +349,20 @@ export function mountBench(ctx: ChapterContext): Bench {
   tameAll(group);
   const light = createLight(ctx, props.filament);
   ctx.env.setShadow({ extent: 7.2, center: [0, 0.8, 0.3], softness: 4 });
+  // the LEDs' three lights and the wisps of a burn: made once, with the bench (never a light added or taken away)
+  const leds = createLedLights(group);
+  ctx.onDispose(() => leds.dispose());
+  const smoke = createSmoke();
+  group.add(smoke.group);
+  ctx.onDispose(() => smoke.dispose());
+  // the burnt marks' shader (a Builder's toon with the heat's term, as every part's marks have it) kept compiled for the
+  // frame's lights and quality, as the wisp's is: a burn in a shot that draws no such body compiles nothing either
+  const marks = keeper(tame(heatable(K.toon({ color: 'white', vertexColors: true, name: 'kit.toon' }))), true, 'marks:keeper');
+  group.add(marks);
+  ctx.onDispose(() => {
+    marks.geometry.dispose();
+    (marks.material as KToonMaterial).dispose();
+  });
 
   // on a phone the scene shows the field of sockets only: every shot of the bench is `phone` there (VISUAL §9)
   let phone = ctx.device.formFactor === 'phone';
@@ -368,6 +404,72 @@ export function mountBench(ctx: ChapterContext): Bench {
   let slider = 0;
   let time = 0;
   const unit = (v: number): number => Math.min(Math.max(v, 0), 1);
+
+  /* ---------------------------------------------------- what the circuit model shows (VISUAL §1, principle 3) */
+
+  /** The lamp's filament from the model: in the circuit, its temperature on the scale; out of it or burnt, cold; while
+   * the last solve failed, what it was. */
+  let lampLevel = 0;
+  const lampNow = (): number => {
+    if (!model.ok) return lampLevel;
+    const s = model.reading('LAMP') !== null ? model.part('LAMP') : null;
+    lampLevel = s && s.condition !== 'burnt' ? lampGlow(s.kelvin) : 0;
+    return lampLevel;
+  };
+  /** A part's look from the model: its condition, heat and load, an LED's brightness; null while the last solve
+   * failed (the last look holds). */
+  const lookOf = (id: string, key: string): Partial<PartLook> | null => {
+    const s = model.part(id);
+    if (s === null) return null;
+    const r = s.condition === 'burnt' ? null : model.reading(id);
+    return { status: s.condition, heat: s.heat, load: s.load, light: r ? ledBrightness(key, r.i) : 0 };
+  };
+  const ledAt = new Vector3();
+  const hotBox = new Box3();
+  /** Where a part's wisp rises from (world): over the top of its body; the lamp's over its glass, the speaker's cone. */
+  const hottest = (id: string, out: Vector3): Vector3 | null => {
+    const m = parts.models.get(id);
+    if (m) {
+      hotBox.setFromObject(m.hit);
+      return hotBox.getCenter(out).setY(hotBox.max.y);
+    }
+    if (id === 'LAMP') return props.filament.getWorldPosition(out).setY(out.y + 0.3);
+    if (id === 'SPK') return props.things.speaker.group.getWorldPosition(out).setY(out.y + 0.4);
+    return null;
+  };
+  const puffAt = new Vector3();
+  /** The parts that burnt, as the model told it (QA): the id and the bench's time. */
+  const burns: { id: string; t: number }[] = [];
+  /** After the model's sync, every frame: the model's time passes (a part may burn), and everything shows its state. */
+  const show = (dt: number): void => {
+    for (const id of model.advance(dt)) {
+      burns.push({ id, t: time });
+      if (burns.length > 32) burns.shift();
+      const at = hottest(id, puffAt);
+      if (at) smoke.puff(at);
+    }
+    smoke.update(dt);
+    parts.look(dt, lookOf);
+    if (!model.ok) return;
+    for (const [id, thing] of [
+      ['BAT', props.things.battery],
+      ['SPK', props.things.speaker],
+    ] as const) {
+      const look = lookOf(id, '');
+      if (look) thing.setLook(look, dt);
+    }
+    props.bulb.setBurnt(model.part('LAMP')?.condition === 'burnt');
+    // the LEDs that give light, for the three point lights of the board
+    const sources: LedSource[] = [];
+    for (const [id, m] of parts.models) {
+      const led = m as LedModel;
+      if (!led.halo || !m.group.visible) continue;
+      const r = model.part(id)?.condition === 'burnt' ? null : model.reading(id);
+      const b = r ? ledBrightness(m.key, r.i) : 0;
+      if (b > 0) sources.push({ id, b, color: LED_LOOK[led.color].light, at: led.halo.getWorldPosition(ledAt).clone() });
+    }
+    leds.set(sources);
+  };
   const lampWorld = new Vector3();
   const bounceOffset = new Vector3(...BOUNCE_OFFSET);
   const eye: PartEye = { camera: ctx.camera.camera, aspect: 1, phone, room: 1 };
@@ -403,8 +505,10 @@ export function mountBench(ctx: ChapterContext): Bench {
     fixed.update(dt);
     multimeter.update(dt, bench.meter, (name) => hands.busyProbe(name));
     hands.update(dt, t);
-    // the circuit on the board now (what arrived this frame included), and what the meter reads of it
+    // the circuit on the board now (what arrived this frame included), the model's time passing in it (heat, a burn),
+    // everything showing its state, and what the meter reads of it
     model.sync();
+    show(dt);
     multimeter.measure(dt, model, snap);
     board.highlight(hands.rows, dt);
     tray.update(dt, eye);
@@ -424,7 +528,9 @@ export function mountBench(ctx: ChapterContext): Bench {
 
   /**
    * Every part off the board, the one in the hand too, and the model forgets them at once: a preset puts its list
-   * under fixed ids in the same call, with no sync between, so a new `R1` must not inherit an old one's memory.
+   * under fixed ids in the same call, with no sync between, so a new `R1` must not inherit an old one's memory. The
+   * permanent things start the step whole and cold as well (a lamp burnt in an earlier step lights again): a step's
+   * preset is the step's own bench.
    */
   const takeOff = (): void => {
     const gone = [...state.parts.keys()];
@@ -433,6 +539,7 @@ export function mountBench(ctx: ChapterContext): Bench {
       remove(state, id);
       model.forget(id);
     }
+    for (const f of BENCH_FIXED) model.forget(f.id);
   };
 
   const bench: Bench = {
@@ -452,10 +559,14 @@ export function mountBench(ctx: ChapterContext): Bench {
     tools,
     model,
     multimeter,
+    leds,
+    smoke,
     flying: false,
     ambient: BENCH_AMBIENT,
     moon: 1,
-    lamp: 0,
+    get lamp() {
+      return lampNow();
+    },
     get closed() {
       return state.settings.get('SW') ?? 0;
     },
@@ -496,7 +607,9 @@ export function mountBench(ctx: ChapterContext): Bench {
       fixed.sync(state, () => false);
     },
     snap() {
-      glow = unit(bench.lamp);
+      // the circuit as it stands now (a step's preset), so that the filament jumps to the model's
+      model.sync();
+      glow = unit(lampNow());
       slider = unit(bench.closed);
       hands.snap();
       multimeter.snap();
@@ -504,8 +617,8 @@ export function mountBench(ctx: ChapterContext): Bench {
     },
     update(dt, t) {
       time = t;
-      // a small filament heats in a few hundredths of a second and cools a little slower
-      const to = unit(bench.lamp);
+      // a small filament heats in a few hundredths of a second and cools a little slower (the model's last solve)
+      const to = unit(lampNow());
       glow = damp(glow, to, to > glow ? 16 : 9, dt);
       if (Math.abs(glow - to) < 1e-3) glow = to;
       slider = damp(slider, unit(bench.closed), 22, dt);
@@ -566,6 +679,46 @@ export function mountBench(ctx: ChapterContext): Bench {
       ),
     };
   });
+  // `__app.read('electronics-heat')` — what the model's state shows: every part's condition, heat, load, its LED light
+  // and what its surface shows (the heat tint, the scorch, the char); the battery, the speaker and the lamp; the lamp's
+  // filament (the model's level, the glow shown, the light's output); the LEDs lighting the board and their lights'
+  // intensities; the wisps; the burns the model told, with the bench's time
+  ctx.qa.expose('electronics-heat', () => ({
+    ok: model.ok,
+    parts: Object.fromEntries(
+      [...parts.models].map(([id, m]) => {
+        const s = model.part(id);
+        const r = model.reading(id);
+        return [
+          id,
+          {
+            key: m.key,
+            condition: s?.condition ?? null,
+            heat: s?.heat ?? null,
+            load: s?.load ?? null,
+            i: r?.i ?? null,
+            light: s && s.condition !== 'burnt' && r ? ledBrightness(m.key, r.i) : 0,
+            surface: m.surface,
+            marks: m.group.getObjectByName(`${m.key}:burnt`)?.visible ?? false,
+          },
+        ];
+      }),
+    ),
+    things: {
+      battery: { ...model.part('BAT'), surface: props.things.battery.surface },
+      speaker: { ...model.part('SPK'), surface: props.things.speaker.surface },
+      lamp: { ...model.part('LAMP'), burnt: props.bulb.burnt },
+    },
+    lamp: { level: lampLevel, glow, output: light.output, intensity: light.lamp.intensity },
+    leds: { lit: [...leds.lit], intensity: leds.lights.map((l) => l.intensity) },
+    lights: (() => {
+      let n = 0;
+      ctx.root.traverse((o) => void ((o as { isLight?: boolean }).isLight && n++));
+      return n;
+    })(),
+    smoke: { active: smoke.active, fired: smoke.fired },
+    burns: burns.map((b) => ({ ...b })),
+  }));
   // `__app.read('electronics-meter')` — the multimeter: its dial, where its probes are, the reading now (`live`), what
   // its display shows (`value`, `text`) and how often it refreshed, how far it is on its place, its marks shown
   ctx.qa.expose('electronics-meter', () => ({

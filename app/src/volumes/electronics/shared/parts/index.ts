@@ -29,6 +29,7 @@ export {
   LOOK_AT_REST,
   MM,
   RADIAL_Y,
+  type FixedLook,
   type PartEye,
   type PartLook,
   type PartModel,
@@ -47,6 +48,7 @@ export * from './battery9v';
 export * from './player';
 export * from './bulb';
 export * from './heat-scale';
+export * from './look';
 
 /** The kinds the table knows: the catalog's, and those it gains in other tasks. */
 type Kind = PartKind | 'capacitor' | 'transistor';

@@ -1,11 +1,16 @@
 /**
  * `mountBench` with a stub context (no WebGL): the lamp's light rig is placed as its comment promises — the lamp light
- * at the filament, the shadowless bounce above the lamp's pool, every frame (light.ts `LightRig.bounce`).
+ * at the filament, the shadowless bounce above the lamp's pool, every frame (light.ts `LightRig.bounce`); and what the
+ * circuit model's state shows on the bench (E2-7) — the lamp lit by its filament's temperature, an LED by its current
+ * with one of the board's three lights, an overloaded resistor warming, burning once and staying burnt, a short
+ * warming the battery's box.
  */
 import { Group, PerspectiveCamera, Vector3, type Object3D } from 'three';
 import { describe, expect, it } from 'vitest';
 import type { ChapterContext } from '@/engine/api';
-import { BOARD, LAMP, PLACES, mountBench, worldToBoard } from '..';
+import { seatLead } from '@electronics/sim/board';
+import { lampGlow, ledBrightness, type LedModel } from '../../parts';
+import { BOARD, LAMP, PLACES, mountBench, worldToBoard, type PresetPart } from '..';
 
 /** A chapter context with only what the bench uses at mount and per frame. */
 function stubContext() {
@@ -41,8 +46,11 @@ function stubContext() {
 describe('the lamp’s bounce light', () => {
   it('hangs above the lamp’s pool: over the face, between the lamp and the middle of the board', () => {
     const bench = mountBench(stubContext());
-    bench.lamp = 1;
+    // the lamp lit by the model: its plugs on the rails, the switch closed
+    bench.preset([], { lamp1: '+1', lamp2: '-1' });
+    bench.closed = 1;
     bench.snap();
+    expect(bench.lamp).toBeGreaterThan(0.9);
     expect(bench.light.bounce.intensity).toBeGreaterThan(0);
     const lamp = new Vector3(LAMP.x, LAMP.glassY, LAMP.z);
     const at = worldToBoard(bench.light.bounce.position);
@@ -72,5 +80,177 @@ describe('the lamp’s bounce light', () => {
     bench.update(1 / 60, 1 / 60);
     expect(bench.light.bounce.position.x - before.x).toBeCloseTo(0.5, 9);
     expect(bench.light.bounce.position.y - before.y).toBeCloseTo(0, 9);
+  });
+});
+
+/** Every light under the chapter's root (the lamp, its bounce, the LEDs' three). */
+function lightsOf(root: Object3D): number {
+  let n = 0;
+  root.traverse((o) => void ((o as { isLight?: boolean }).isLight && n++));
+  return n;
+}
+
+/** + rail → jumper → 9ae → 100 Ω across the channel → 9fj → jumper → − rail: 0.786 W on a 0.25 W part. */
+const OVERLOAD: readonly PresetPart[] = [
+  { id: 'J1', spec: 'jumper', at: '+9', to: 'a9' },
+  { id: 'R1', spec: 'resistor-100', at: 'b9', o: 1 },
+  { id: 'J2', spec: 'jumper', at: 'j9', to: '-9' },
+];
+
+describe('the model’s state on the bench (VISUAL §1 principle 3, §4.4, §4.6, §4.8)', () => {
+  it('the lamp burns as the model says: dark out of the circuit, its filament’s place on the scale in it', () => {
+    const ctx = stubContext();
+    const bench = mountBench(ctx);
+    expect(bench.lamp).toBe(0);
+    expect(bench.light.lamp.intensity).toBe(0);
+    // + rail → 15 Ω → 15 Ω → the lamp → − rail (VISUAL §4.6): ≈ 5.9 V on it, ≈ 1 875 °C
+    bench.preset(
+      [
+        { id: 'R1', spec: 'resistor-15', at: 'b3', o: 1 },
+        { id: 'R2', spec: 'resistor-15', at: 'g3' },
+        { id: 'J1', spec: 'jumper', at: 'j7', to: '-7' },
+      ],
+      { lamp1: '+2', lamp2: 'a3' },
+    );
+    bench.closed = 1;
+    bench.snap();
+    const lamp = bench.model.part('LAMP')!;
+    expect(lamp.condition).toBe('warm');
+    expect(bench.lamp).toBeCloseTo(lampGlow(lamp.kelvin), 12);
+    expect(lamp.kelvin! - 273.15).toBeGreaterThan(1850);
+    expect(lamp.kelvin! - 273.15).toBeLessThan(1900);
+    expect(bench.light.lamp.intensity).toBeGreaterThan(0);
+    // the switch opens: the model's filament is cold, the lamp goes dark with its inertia
+    bench.closed = 0;
+    for (let i = 0; i < 60; i++) bench.update(1 / 60, i / 60);
+    expect(bench.lamp).toBe(0);
+    expect(bench.light.output).toBeLessThan(1e-3);
+  });
+
+  it('an LED lights by the model’s current: its glow and halo, and one of the three lights of the board', () => {
+    const ctx = stubContext();
+    const bench = mountBench(ctx);
+    const lights = lightsOf(ctx.root);
+    expect(bench.leds.lights.every((l) => l.intensity === 0)).toBe(true);
+    // + rail → jumper → 3ae → 330 Ω across the channel → 3fj → the red LED → 4fj → jumper → − rail
+    bench.preset([
+      { id: 'J1', spec: 'jumper', at: '+3', to: 'a3' },
+      { id: 'R1', spec: 'resistor-330', at: 'b3', o: 1 },
+      { id: 'LED1', spec: 'led-red', at: 'g3' },
+      { id: 'J2', spec: 'jumper', at: 'j4', to: '-4' },
+    ]);
+    bench.closed = 1;
+    bench.update(1 / 60, 1 / 60);
+    const i = bench.model.reading('LED1')!.i;
+    expect(i).toBeCloseTo(0.02124, 4);
+    const led = bench.parts.models.get('LED1') as LedModel;
+    expect(led.glow.visible).toBe(true);
+    expect(led.halo.visible).toBe(true);
+    expect(led.glowMaterial.intensity).toBeCloseTo(1.8 * ledBrightness('led-red', i), 12);
+    expect(bench.leds.lit).toEqual(['LED1']);
+    expect(bench.leds.lights[0]!.intensity).toBeGreaterThan(0);
+    // its resistor is warm (0.149 W of 0.25 W), never more
+    expect(bench.model.part('R1')!.condition).toBe('warm');
+    // the switch opens: no current, no light, the lights stay where they are
+    bench.closed = 0;
+    bench.update(1 / 60, 2 / 60);
+    expect(led.glow.visible).toBe(false);
+    expect(bench.leds.lit).toEqual([]);
+    expect(lightsOf(ctx.root)).toBe(lights);
+  });
+
+  it('an overloaded resistor warms, burns once with one wisp, stays burnt; a new one from the tray starts whole', () => {
+    const ctx = stubContext();
+    const bench = mountBench(ctx);
+    const lights = lightsOf(ctx.root);
+    bench.preset(OVERLOAD);
+    bench.closed = 1;
+    bench.snap();
+    const r1 = bench.parts.models.get('R1')!;
+    expect(bench.model.part('R1')!.condition).toBe('hot');
+    expect(r1.surface.tint).toBe(0); // cold yet: hot by its load, not by its heat
+    // frames of 1/60 s; a held frame (dt 0) now and then changes nothing
+    let t = 0;
+    let warm = 0;
+    while (bench.model.part('R1')!.condition !== 'burnt' && t < 10) {
+      bench.update(1 / 60, (t += 1 / 60));
+      if (Math.round(t * 60) % 30 === 0) {
+        const heat = bench.model.part('R1')!.heat;
+        bench.update(0, t);
+        expect(bench.model.part('R1')!.heat).toBe(heat);
+      }
+      if (warm === 0 && r1.surface.tint > 0) warm = t;
+    }
+    // the tint came as the heat passed half the limit (τ·ln(L / (L − 0.5)) ≈ 1.7 s), the burn at ≈ 3.83 s
+    expect(warm).toBeGreaterThan(1.6);
+    expect(warm).toBeLessThan(1.8);
+    expect(t).toBeGreaterThan(3.82);
+    expect(t).toBeLessThan(3.86);
+    expect(bench.smoke.fired).toBe(1);
+    expect(bench.smoke.active).toBe(1);
+    expect(r1.group.getObjectByName('resistor-100:burnt')!.visible).toBe(true);
+    expect(r1.surface.char).toBe(0.75);
+    expect(bench.model.reading('R1')!.i).toBe(0);
+    // the wisp goes within 1.2 s; nothing more is let out; no light was added or taken away
+    for (let i = 0; i < 90; i++) bench.update(1 / 60, (t += 1 / 60));
+    expect(bench.smoke.active).toBe(0);
+    expect(bench.smoke.fired).toBe(1);
+    expect(r1.surface.tint).toBe(0);
+    expect(lightsOf(ctx.root)).toBe(lights);
+    // into the tray and a new 100 Ω in its place (a new id, as the hand gives it): whole, and hot again
+    bench.preset([
+      ...OVERLOAD.filter((p) => p.id !== 'R1'),
+      { id: 'R2', spec: 'resistor-100', at: 'b9', o: 1 },
+    ]);
+    bench.update(1 / 60, t + 1 / 60);
+    expect(bench.model.part('R2')).toMatchObject({ condition: 'hot' });
+    expect(bench.model.part('R2')!.heat).toBeLessThan(0.01);
+    const r2 = bench.parts.models.get('R2')!;
+    expect(r2.group.getObjectByName('resistor-100:burnt')!.visible).toBe(false);
+    expect(r2.surface.char).toBe(0);
+  });
+
+  it('the lamp burns out on the bare battery and stays so; a step’s preset or clear starts the fixed things whole', () => {
+    const ctx = stubContext();
+    const bench = mountBench(ctx);
+    bench.preset([], { lamp1: '+1', lamp2: '-1' });
+    bench.closed = 1;
+    let t = 0;
+    // 1.08 W of its 0.7 W: E1-4 burns it after ≈ 2.1 s
+    while (bench.model.part('LAMP')!.condition !== 'burnt' && t < 5) bench.update(1 / 60, (t += 1 / 60));
+    expect(t).toBeGreaterThan(2);
+    expect(t).toBeLessThan(2.3);
+    expect(bench.props.bulb.burnt).toBe(true);
+    expect(bench.smoke.fired).toBe(1);
+    for (let i = 0; i < 30; i++) bench.update(1 / 60, (t += 1 / 60));
+    expect(bench.lamp).toBe(0);
+    // a plug out and in again by the hand: still burnt (the same lamp), dark
+    expect(seatLead(bench.layout, bench.state, 'lamp2', null)).toBe(true);
+    bench.update(1 / 60, (t += 1 / 60));
+    expect(bench.model.part('LAMP')!.condition).toBe('burnt');
+    expect(seatLead(bench.layout, bench.state, 'lamp2', '-1')).toBe(true);
+    bench.update(1 / 60, (t += 1 / 60));
+    expect(bench.model.part('LAMP')!.condition).toBe('burnt');
+    expect(bench.props.bulb.burnt).toBe(true);
+    expect(bench.lamp).toBe(0);
+    // a step's preset is the step's own bench: the lamp it puts in is whole and lights again
+    bench.preset([], { lamp1: '+1', lamp2: '-1' });
+    bench.update(1 / 60, t + 1 / 60);
+    expect(bench.model.part('LAMP')!.condition).toBe('hot');
+    expect(bench.props.bulb.burnt).toBe(false);
+    expect(bench.lamp).toBeGreaterThan(0.9);
+  });
+
+  it('a short warms the battery’s box by the tint, no more; the battery never burns', () => {
+    const ctx = stubContext();
+    const bench = mountBench(ctx);
+    bench.preset([{ id: 'J1', spec: 'jumper', at: '+5', to: '-5' }]);
+    bench.closed = 1;
+    for (let i = 0; i < 600; i++) bench.update(1 / 15, i / 15);
+    const bat = bench.model.part('BAT')!;
+    expect(bat.condition).toBe('hot');
+    expect(bat.heat).toBeGreaterThan(1);
+    expect(bench.props.things.battery.surface).toMatchObject({ t: 1, scorch: 0, char: 0 });
+    expect(bench.props.things.battery.surface.tint).toBeCloseTo(0.3, 12);
   });
 });

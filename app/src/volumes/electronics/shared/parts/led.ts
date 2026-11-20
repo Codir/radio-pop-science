@@ -6,12 +6,25 @@
  * two lead frames, the reflector cup and the crystal. Red, yellow and green are diffused; blue and white are clear.
  *
  * The light (VISUAL §4.4): the crystal and the dome glow `K.glow({ whiten: 0, keepHue: true })` at 1.8 · b, where b is
- * the brightness the model's current gives (E2-7 computes it from the luminous flux); below b = 0.02 there is no light
- * at all. The halo and the pool of light on the board are E2-7's.
+ * the brightness the model's current gives (`look.ts` `ledBrightness`, from the luminous flux), and a soft halo of radius
+ * 0.6 round the dome adds the LED's light at 0.5 · b; below b = 0.02 there is no light at all. The pool of light on the
+ * board is the bench's (`bench/lights.ts`). Burnt: the dome darkened (`look.ts`), a black spot on the crystal, no light.
  *
- * Draw calls: the epoxy, its depth shell, the frames and the crystal, the legs; lit, the glow.
+ * Draw calls: the epoxy, its depth shell, the frames and the crystal, the legs; lit, the glow and the halo; burnt, the
+ * spot.
  */
-import { Box3, Group, Mesh, Shape, Vector3, type BufferGeometry, type Color } from 'three';
+import {
+  AdditiveBlending,
+  Box3,
+  Group,
+  Mesh,
+  PlaneGeometry,
+  ShaderMaterial,
+  Shape,
+  Vector3,
+  type BufferGeometry,
+  type Color,
+} from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Builder, G } from '@/kit';
 import { K, col, type KGlowMaterial } from '@/style';
@@ -19,6 +32,7 @@ import type { LedColor } from '@electronics/sim/core';
 import { BOARD_SPEC } from '@electronics/sim/board';
 import { sheath } from '../bench/materials';
 import { depthShell } from './bulb';
+import { LED_DARK } from './look';
 import { Prints, RADIAL_Y, assemble, mix, radialLegs, type PartModel } from './part';
 
 export const LED = {
@@ -29,6 +43,8 @@ export const LED = {
   /** The collar: radius, height; cut flat on the cathode's side at the dome's radius. */
   collar: 0.33,
   collarHeight: 0.12,
+  /** The halo's radius round the dome's middle (VISUAL §4.4). */
+  halo: 0.6,
 } as const;
 
 /** VISUAL §4.4, the table: the dome when dark, the light, whether the plastic is clear; the crystal as it shows. */
@@ -88,7 +104,34 @@ export interface LedModel extends PartModel {
   /** What glows when the LED is lit (hidden while b < 0.02). */
   readonly glow: Mesh;
   readonly glowMaterial: KGlowMaterial;
+  /** The halo round the dome (hidden while b < 0.02): its diameter, and its opacity now (0.5 · b). */
+  readonly halo: Mesh;
+  readonly haloSize: number;
+  readonly haloPower: number;
 }
+
+/** A camera-facing quad at the dome's middle, `uSize` across. */
+const HALO_VERTEX = /* glsl */ `
+uniform float uSize;
+varying vec2 vP;
+void main() {
+  vP = position.xy * 2.0;
+  vec4 mv = modelViewMatrix * vec4( 0.0, 0.0, 0.0, 1.0 );
+  mv.xy += position.xy * uSize;
+  gl_Position = projectionMatrix * mv;
+}`;
+/**
+ * A soft disc of the LED's light, added: nearly even over the dome (which hides the middle) and fading out to the rim
+ * of the halo; squares only — no power of a value that can be 0 (a NaN on some GPUs).
+ */
+const HALO_FRAGMENT = /* glsl */ `
+uniform vec3 uColor;
+uniform float uPower;
+varying vec2 vP;
+void main() {
+  float fall = 1.0 - smoothstep( 0.2, 1.0, length( vP ) );
+  gl_FragColor = vec4( uColor * ( fall * fall * uPower ), 1.0 );
+}`;
 
 export function createLed(color: LedColor, key = `led-${color}`): LedModel {
   const look = LED_LOOK[color];
@@ -148,6 +191,37 @@ export function createLed(color: LedColor, key = `led-${color}`): LedModel {
   glow.visible = false;
   body.add(glow);
 
+  // the halo (VISUAL §4.4): a soft circle of the LED's light round the dome, radius up to 0.6, opacity 0.5 · b
+  const haloMaterial = new ShaderMaterial({
+    uniforms: {
+      uColor: { value: look.light.clone() },
+      uPower: { value: 0 },
+      uSize: { value: 2 * LED.halo },
+    },
+    vertexShader: HALO_VERTEX,
+    fragmentShader: HALO_FRAGMENT,
+    blending: AdditiveBlending,
+    transparent: true,
+    depthWrite: false,
+  });
+  haloMaterial.name = 'led.halo';
+  const halo = new Mesh(new PlaneGeometry(1, 1), haloMaterial);
+  halo.name = `${key}:halo`;
+  halo.position.y = (RADIAL_Y + LED.top) / 2;
+  halo.frustumCulled = false;
+  halo.renderOrder = 6;
+  halo.raycast = () => {};
+  halo.visible = false;
+  body.add(halo);
+
+  // burnt (VISUAL §4.8): a black spot on the crystal under the darkened dome
+  const burnt = new Builder(`${key}:burnt`);
+  burnt.sphere(0.045, { at: [0.04, y0 + 0.37, 0], seg: 10, c: 'ink' });
+  const marks = burnt.build().group;
+  marks.name = `${key}:burnt`;
+  body.add(marks);
+
+  const power = haloMaterial.uniforms.uPower!;
   const R = LED.collar;
   const m = assemble({
     key,
@@ -157,12 +231,18 @@ export function createLed(color: LedColor, key = `led-${color}`): LedModel {
     legX: [0, BOARD_SPEC.pitch],
     legPaths: radialLegs([-BOARD_SPEC.pitch / 2, BOARD_SPEC.pitch / 2], RADIAL_Y),
     bodyMaterials: [epoxy.material],
+    marks,
     prints: new Prints(),
     look: (state) => {
-      const b = Math.min(Math.max(state.light, 0), 1);
-      glow.visible = b >= 0.02;
+      // a burnt LED gives no light (the model gives it no current either)
+      const b = state.status === 'burnt' ? 0 : Math.min(Math.max(state.light, 0), 1);
+      const lit = b >= LED_DARK;
+      glow.visible = lit;
       glowMaterial.intensity = 1.8 * b;
+      halo.visible = lit;
+      power.value = 0.5 * b;
     },
   });
-  return Object.assign(m, { color, epoxy, glow, glowMaterial });
+  const led = Object.assign(m, { color, epoxy, glow, glowMaterial, halo, haloSize: 2 * LED.halo });
+  return Object.defineProperty(led, 'haloPower', { get: () => power.value as number }) as unknown as LedModel;
 }

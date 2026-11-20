@@ -30,6 +30,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { G, type KitModel, type Slot } from '@/kit';
 import { K, KToonMaterial, col, type ColorLike } from '@/style';
 import { Text3D, fontsReady, type FaceId } from '@/text';
+import { createSurfaceLook, kindLook, type KindLook, type Surface } from './look';
 
 /** One millimetre of a real part on the bench: parts are three times real, and one unit is ≈ 26 mm (VISUAL §2). */
 export const MM = 3 / 26;
@@ -91,15 +92,17 @@ export interface PartView {
   readonly group: Group;
   /** Every lit K material of the model (`tame`, fades, cutaways). */
   readonly materials: readonly KToonMaterial[];
-  /** The materials of the body that take the look of heat (E2-7); never a resistor's bands. */
+  /** The materials of the body that take the look of heat (`look.ts`); never a resistor's bands. */
   readonly body: readonly KToonMaterial[];
   /** The print (empty where the fonts are not loaded: unit tests). */
   readonly prints: readonly Text3D[];
   /**
-   * The hook of the model's state, every frame (`dt` may be 0). Here: an LED's light, a pot's knob; the heat, the
-   * burnt look and the bulged electrolytic are E2-7's (`look.ts`) on these same materials.
+   * The hook of the model's state, every frame (`dt` may be 0): the heat on the body's surface, the burnt marks and
+   * the bulged electrolytic (`look.ts`), an LED's light and halo, a pot's knob.
    */
   setLook(look: Partial<PartLook>, dt: number): void;
+  /** What the body's surface shows now (`look.ts`): the heat tint, the scorch, the char. */
+  readonly surface: Surface;
   /** Every frame: the print shows only where all of it has ≥ 16 px-equivalent per em, never on a phone. */
   view(eye: PartEye): void;
   dispose(): void;
@@ -222,6 +225,40 @@ export class Prints {
 export const bent = (points: readonly Vector3[], radius: number = LEG.bend): Vector3[] =>
   G.roundPath(points, radius, 4);
 
+/** How far each bend of a crack goes to its side, and how far it is shifted round the body (a fixed, uneven pattern). */
+const CRACK_BENDS: readonly (readonly [side: number, shift: number])[] = [
+  [0.2, 0],
+  [-1, 0.3],
+  [0.45, -0.2],
+  [-0.3, 0.4],
+  [1, -0.1],
+  [-0.6, 0.25],
+  [0.1, -0.35],
+  [-0.85, 0.1],
+  [0.55, 0.3],
+  [-0.15, -0.25],
+  [0.9, 0.15],
+  [-0.4, -0.1],
+  [0.3, 0.35],
+];
+
+/**
+ * A crack round an axial body (VISUAL §4.8: 0.03 wide): an uneven ring at `x` of the body frame, `radius` from the axis
+ * at `AXIAL_Y`, bending at most `jag` to either side; closed; for a tube of radius 0.015.
+ */
+export function crackPath(x: number, radius: number, jag = 0.03): Vector3[] {
+  const n = CRACK_BENDS.length;
+  const pts: Vector3[] = [];
+  for (let i = 0; i <= n; i++) {
+    const [side, shift] = CRACK_BENDS[i % n]!;
+    const a = ((i + (i % n === 0 ? 0 : shift)) / n) * Math.PI * 2;
+    pts.push(new Vector3(x + side * jag, AXIAL_Y + Math.cos(a) * radius, Math.sin(a) * radius));
+  }
+  return pts;
+}
+/** The colour of what a crack bares: the pale core under a charred coat, darkened. */
+export const CRACK_COLOR = mix('steel', 'ink', 0.35);
+
 /**
  * The legs of an axial part (resistor, diode): from the socket straight up to the axis, then along it into the end of
  * the body (`ends` from the middle). Tips in the body frame.
@@ -326,6 +363,11 @@ export interface Assembly {
   /** Anything else that follows the tips (a jumper's insulation and its box). */
   readonly follow?: (local: readonly Vector3[], hit: Mesh) => void;
   readonly bodyMaterials: readonly KToonMaterial[];
+  /** Materials that take no heat but char with the body when it burns: a resistor's bands, barely seen then. */
+  readonly charMaterials?: readonly KToonMaterial[];
+  /** What a burnt part shows besides its charred body (a belt and a crack, a dark spot), in `body`, named
+   * `<key>:burnt`: hidden until it burns (VISUAL §4.8). */
+  readonly marks?: Object3D;
   readonly prints: Prints;
   /** The part's own look (an LED's light, a pot's knob), after `assemble` has stored the state. */
   readonly look?: (look: PartLook, dt: number) => void;
@@ -369,6 +411,7 @@ export function assemble(a: Assembly): PartModel {
   let angle = 0;
   const local = nominal.map(() => new Vector3());
   const state: PartLook = { ...LOOK_AT_REST };
+  const heat = createSurfaceLook(a.bodyMaterials, a.marks ?? null, kindLook(a.key), a.charMaterials);
 
   const model: PartModel = {
     key: a.key,
@@ -407,7 +450,11 @@ export function assemble(a: Assembly): PartModel {
     },
     setLook(look, dt) {
       Object.assign(state, look);
+      heat.set(state, Math.max(dt, 0));
       a.look?.(state, Math.max(dt, 0));
+    },
+    get surface() {
+      return heat.surface;
     },
     view(eye) {
       a.prints.view(eye);
@@ -421,15 +468,25 @@ export function assemble(a: Assembly): PartModel {
   return model;
 }
 
+/** What a permanent thing adds to its view: how it takes heat, what it shows burnt, its own look. */
+export interface FixedLook {
+  /** Default: the kind of the catalog key `name` (`look.ts`). */
+  readonly kind?: KindLook;
+  /** Hidden until it burns (a speaker's dark ring). */
+  readonly marks?: Object3D;
+  readonly look?: (look: PartLook, dt: number) => void;
+}
+
 /** A permanent thing of the bench as a `PartView` (its own Builder model, its print, its look). */
 export function fixedView(
   name: string,
   group: Group,
   bodyMaterials: readonly KToonMaterial[],
   prints: Prints,
-  look?: (look: PartLook, dt: number) => void,
+  own: FixedLook = {},
 ): PartView {
   const state: PartLook = { ...LOOK_AT_REST };
+  const heat = createSurfaceLook(bodyMaterials, own.marks ?? null, own.kind ?? kindLook(name));
   return {
     name,
     group,
@@ -438,7 +495,11 @@ export function fixedView(
     prints: prints.texts,
     setLook(next, dt) {
       Object.assign(state, next);
-      look?.(state, Math.max(dt, 0));
+      heat.set(state, Math.max(dt, 0));
+      own.look?.(state, Math.max(dt, 0));
+    },
+    get surface() {
+      return heat.surface;
     },
     view: (eye) => prints.view(eye),
     dispose() {

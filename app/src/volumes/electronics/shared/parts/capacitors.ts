@@ -7,9 +7,11 @@
  * - electrolytic: a can in `ink` sleeve with a `mist` stripe over the minus leg (1) and a row of «−» on it; the sleeve
  *   is wrapped over the top's edge as a rim 0.05 wide and the stripe runs over the rim too, so it shows from above at
  *   any turn; inside the rim the aluminium top with its cross-shaped vent; value and voltage up its side
- *   («470 μF 16 V»). The size is the real can's three times over; legs 1 P, the same length.
+ *   («470 μF 16 V»). The size is the real can's three times over; legs 1 P, the same length. Under the state `bulged`
+ *   (VISUAL §4.8; E1-5 gives it, E2-9 binds it) the top domes up 0.05 and its vent opens, the sleeve a little wider.
  *
- * Draw calls: ceramic and film — the body, the legs, the print; electrolytic — the sleeve, the top, the legs, the print.
+ * Draw calls: ceramic and film — the body, the legs, the print; electrolytic — the sleeve, the top, the legs, the print
+ * (bulged: the domed top and the dark inside instead of the flat top).
  */
 import { Box3, Group, Vector3, type Mesh } from 'three';
 import { NBSP, fmtNumber, fmtSI } from '@/content';
@@ -130,6 +132,9 @@ export interface ElectrolyticModel extends PartModel {
 
 /** How far the sleeve is wrapped over the top's edge. */
 const RIM = 0.05;
+/** A bulged can (VISUAL §4.8): its top 0.05 over the rim, the sleeve a little wider. */
+const BULGE = 0.05;
+const SWELL = 1.03;
 
 export function createElectrolytic(farads: number, volts: number, key = 'electrolytic'): ElectrolyticModel {
   const can = electrolyticCan(farads, volts);
@@ -199,6 +204,32 @@ export function createElectrolytic(farads: number, volts: number, key = 'electro
   const body = new Group();
   body.add(model.group);
   const sleeveMesh = model.group.getObjectByName(`${key}:gloss`) as Mesh;
+  const flatTop = model.group.getObjectByName(`${key}:metal`) as Mesh;
+  // bulged (VISUAL §4.8, the state E1-5 gives): the top domed up 0.05 over the rim, its cross-shaped vent opened into
+  // four petals with the dark inside between them; the sleeve a little wider. No burst, no shards
+  const swollen = new Builder(`${key}:bulged`);
+  const inside = r - RIM;
+  const dome: G.Pt[] = [];
+  for (let i = 0; i <= 8; i++) {
+    const a = (i / 8) * (Math.PI / 2);
+    dome.push([inside * Math.cos(a), y1 - 0.012 + (BULGE + 0.012) * Math.sin(a)]);
+  }
+  dome[dome.length - 1] = [0, y1 + BULGE];
+  const gap = 0.14; // the opened vent: radians between the petals (a slit ≈ 0.05 wide at the rim of a 470 μF can)
+  for (let q = 0; q < 4; q++) {
+    swollen.lathe(dome, {
+      phiStart: q * (Math.PI / 2) + gap / 2,
+      phiLength: Math.PI / 2 - gap,
+      seg: 8,
+      slot: 'metal',
+      c: 'steel',
+    });
+  }
+  swollen.cyl(inside, 0.004, { at: [0, y1 - 0.01, 0], seg: 24, c: 'ink', bevel: 0 });
+  const bulged = swollen.build().group;
+  bulged.name = `${key}:bulged`;
+  bulged.visible = false;
+  body.add(bulged);
   const prints = new Prints();
   // up the side facing the reader, reading from the bottom
   prints.add(body, electrolyticPrint(farads, volts), {
@@ -216,6 +247,15 @@ export function createElectrolytic(farads: number, volts: number, key = 'electro
     legPaths: radialLegs([-P / 2, P / 2], y0),
     bodyMaterials: slots(model, 'gloss'),
     prints,
+    look: (state) => {
+      // it stays bulged as long as the state says so: until it is taken out (E2-9 binds the state to the model)
+      const on = state.status === 'bulged';
+      bulged.visible = on;
+      flatTop.visible = !on;
+      sleeveMesh.scale.set(on ? SWELL : 1, 1, on ? SWELL : 1);
+      // the print goes out with the sleeve it is printed on
+      for (const t of prints.texts) t.position.z = (on ? r * SWELL : r) + 0.004;
+    },
   });
   return Object.assign(m, { sleeve: sleeveMesh, size: { d, h } });
 }
