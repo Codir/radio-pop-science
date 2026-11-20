@@ -7,7 +7,8 @@ import { defineChapter } from '@/engine/api';
  * permanent things, from the bench's shots (steps `room`, `board`, `meter`, `scope`); E2-4: the parts with their real
  * marks on the board (step `parts`); E2-5: the hand, the tray, the plug leads and the switch (step `hand`); E2-6: the
  * circuit model on the bench and the multimeter with its probes (steps `meter`, `divider`); E2-7: the light, the heat
- * and the burn from the model's state (steps `led`, `overload`, `lamp`) and the bulged electrolytic's look (`bulged`).
+ * and the burn from the model's state (steps `led`, `overload`, `lamp`) and the bulged electrolytic's look alone
+ * (`bulged-look`; E2-9 binds the state to the model in its own step `bulged` and takes this one away).
  * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
@@ -60,10 +61,10 @@ export const SANDBOX = {
       blurb:
         'Лампа 6 V від батареї 9 V через два резистори по 15 Ω: на ній ≈ 5,9 V. Нитка розжарюється до температури, яку дає модель, і лампа освітлює стенд; вимикач її гасить.',
     },
-    bulged: {
-      title: 'Здутий електроліт',
+    'bulged-look': {
+      title: 'Здутий електроліт: лише вигляд',
       blurb:
-        'Лише вигляд стану «здутий», поза схемою: праворуч верх випнутий, насічка розійшлася, з неї виходить один клубок пари; ліворуч — цілий конденсатор. Модель цього стану ще не дає.',
+        'Лише вигляд стану «здутий», поза схемою: праворуч верх випнутий, насічка розійшлася, плівка трохи роздалася; ліворуч — цілий конденсатор. Модель цього стану ще не дає.',
     },
   },
   /** The names under the pointer (tooltips) and on the dock's buttons of the tray (a phone). */

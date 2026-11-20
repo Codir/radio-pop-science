@@ -25,8 +25,10 @@
  *           100 Ω in the tray (on a phone the dock's button `tray-resistor-100`), set down in b9, closes the circuit again;
  *   lamp  — the lamp from the battery through 15 Ω + 15 Ω (`LAMP`), shot `stand`, the switch closed: ≈ 5.9 V on it,
  *           its filament's temperature from the model lights the room;
- *   bulged — the look of an electrolytic's state `bulged` (E1-5 gives it, E2-9 binds it), shot `board`: a whole can and
- *           a bulged one outside the circuit, one puff of steam out of its vent on entering.
+ *   bulged-look — only the look of an electrolytic's state `bulged` for the reader's snapshot, shot `board`: a whole can
+ *           and one under that look, outside the circuit, no model behind it and so nothing let out of its vent. E1-5
+ *           gives the state; E2-9 binds it to the model with its own step `bulged` (a can in the circuit the wrong way
+ *           round, the steam on the model's event) and takes this one away.
  * Every other step has an empty board and an empty tray, and the probes at rest. Readers: the bench's own
  * `electronics-bench` (sockets, rows, draw calls, the print shown), `electronics-board` (the parts and their legs, the
  * plugs, the settings, the netlist's key), `electronics-parts` (every model: where, draw calls, its print),
@@ -37,7 +39,6 @@
  * `tip:<id>:<k>`, `lead:<name>`, `end:<name>`, `probe:<red|black>` (the grip on a probe's handle; its tip `end:red`,
  * `end:black`), `tray:<key>`, `switch`.
  */
-import { Vector3 } from 'three';
 import { defineScene } from '@/engine/api';
 import { stepUi } from '@/hud';
 import {
@@ -51,7 +52,6 @@ import {
 import { SANDBOX } from './index';
 import { METER_MODES, type MeterMode } from '@electronics/shared/instruments';
 import {
-  RADIAL_Y,
   createCeramic,
   createElectrolytic,
   createFilm,
@@ -141,7 +141,7 @@ const LAMP: readonly PresetPart[] = [
 ];
 const LAMP_LEADS = { lamp1: '+2', lamp2: 'a3' } as const;
 
-/** Step `bulged`: two electrolytics outside the circuit, a whole one and one under the look of the state `bulged`. */
+/** Step `bulged-look`: two electrolytics outside the circuit, a whole one and one under the look of the state `bulged`. */
 const CANS = { whole: ['a5', 'a6'], bulged: ['a10', 'a11'] } as const;
 
 /** The steps whose circuit is on: the battery's switch closed. */
@@ -252,9 +252,8 @@ export default defineScene((ctx) => {
     // the tray in the frame: the reader replaces the burnt part
     overload: { camera: 'stand' },
     lamp: { camera: 'stand' },
-    bulged: { camera: 'board' },
+    'bulged-look': { camera: 'board' },
   });
-  const vent = new Vector3();
   return {
     enterStep(id, info) {
       const preset = PRESETS[id];
@@ -265,17 +264,14 @@ export default defineScene((ctx) => {
         else bench.parts.hide(s.id);
       }
       for (const [name, sockets] of Object.entries(CANS)) {
-        if (id !== 'bulged') {
+        if (id !== 'bulged-look') {
           bench.parts.hide(`C-${name}`);
           continue;
         }
         const can = createElectrolytic(470e-6, 16);
         bench.parts.show(`C-${name}`, can, sockets);
-        if (name !== 'bulged') continue;
-        // the look of the state, and the one puff of steam out of its vent (VISUAL §4.8)
-        can.setLook({ status: 'bulged' }, 0);
-        can.bodyGroup.updateWorldMatrix(true, false);
-        bench.smoke.puff(can.bodyGroup.localToWorld(vent.set(0, RADIAL_Y + can.size.h + 0.05, 0)), 'steam');
+        // the look of the state and nothing more (VISUAL §4.8): its steam is the model's event, E2-9's
+        if (name === 'bulged') can.setLook({ status: 'bulged' }, 0);
       }
       bench.tray.set(TRAYS[id] ?? []);
       bench.closed = LIVE.has(id) ? 1 : 0;

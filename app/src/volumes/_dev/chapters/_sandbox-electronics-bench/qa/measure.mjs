@@ -51,12 +51,14 @@
 //           current after, told once with one wisp that is gone within 1.2 s, its marks shown; draw calls ≤ 350
 //           all along, no shader program compiled by the burn, the same five lights; the burnt one by its body
 //           into the tray (a real pointer; a phone: off the board, the new one from the dock) and a new 100 Ω
-//           from it into b9 — a new id, whole, then «гаряча» again; step `led` — every LED's current the model's
-//           (± 1e-9) and its light > 0, the red one's its 330 Ω's by Ohm's law, three lights on the board, the
-//           330 Ω of red and green warm (after a minute h ≈ 0.6, barely tinted), of blue ok, the hue families
-//           ≤ 4; step `lamp` — the filament at the model's ≈ 1 875 °C lights the room (`light.output` > 0); step
-//           `bulged` — its puff of steam; the console everywhere; snapshots `heat-<state>[-close]-<size>.jpg` of
-//           «ok», «тепла», «гаряча», the wisp, «згоріла», the new part, the LEDs, the lamp and «здутий».
+//           from it into b9 — in the hand, before it closes the circuit, a new id «ok», cold, no current, whole to
+//           the eye; seated, the same id «гаряча» by its load at once, then to the eye too; step `led` — every
+//           LED's current the model's (± 1e-9) and its light > 0, the red one's its 330 Ω's by Ohm's law, three
+//           lights on the board, the 330 Ω of red and green warm (after a minute h ≈ 0.6, barely tinted), of blue
+//           ok, the hue families ≤ 4; step `lamp` — the filament at the model's ≈ 1 875 °C lights the room
+//           (`light.output` > 0); step `bulged-look` — the look alone, nothing let out (no model event behind it);
+//           the console everywhere; snapshots `heat-<state>[-close]-<size>.jpg` of «ok», «тепла», «гаряча», the
+//           wisp, «згоріла», the new part, the LEDs, the lamp and «здутий».
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-electronics-bench — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -1038,11 +1040,13 @@ async function heat(context) {
       if (!v) throw new Error(`probe '${name}' is unknown`);
       return v;
     };
-    const drag = async (from, to, steps = 12) => {
+    /** A drag of `steps` moves; `whileHeld` (if given) runs one move before the end, the hand still holding the thing. */
+    const drag = async (from, to, steps = 12, whileHeld = null) => {
       await p.down(from.x, from.y);
       for (let k = 1; k <= steps; k++) {
         const f = k / steps;
         await p.move(from.x + (to.x - from.x) * f, from.y + (to.y - from.y) * f - Math.sin(Math.PI * f) * height * 0.04);
+        if (whileHeld && k === steps - 1) await whileHeld();
       }
       await p.up();
     };
@@ -1069,18 +1073,41 @@ async function heat(context) {
     const target = await scr('socket:b9');
     // a part from the tray comes with leg 0 under the hand (a finger: LIFT below it); from the air the hand keeps its grip
     const dy = touch && !phone ? LIFT : 0;
-    await drag(grab, { x: grab.x + target.x - thing.x, y: grab.y + target.y - thing.y + dy }, 14);
+    // in the hand over the board, one move before it is let go: out of the circuit, so «ok» by the model
+    let inHand = null;
+    await drag(grab, { x: grab.x + target.x - thing.x, y: grab.y + target.y - thing.y + dy }, 14, async () => {
+      const b = await read(page, 'electronics-board');
+      const h = await heatNow(page);
+      const e = Object.entries(b?.parts ?? {}).find(([, v]) => v.spec === 'resistor-100');
+      inHand = e ? { id: e[0], legs: e[1].legs, look: h?.parts?.[e[0]] ?? null } : null;
+    });
+    n.inHand = inHand;
+    const lh = inHand?.look;
+    check(
+      'overload: the new 100 Ω in the hand, before it closes the circuit: a new id, «ok», cold, no current, whole',
+      inHand &&
+        inHand.id !== 'R1' &&
+        inHand.legs.every((s) => s === null) &&
+        lh?.condition === 'ok' &&
+        lh.load === 0 &&
+        lh.heat === 0 &&
+        lh.i === null &&
+        lh.surface?.tint === 0 &&
+        lh.surface?.char === 0 &&
+        lh.marks === false,
+      `${inHand?.id} ${JSON.stringify(inHand?.legs)}: ${lh?.condition}, load ${lh?.load}, heat ${lh?.heat}, i ${lh?.i}, tint ${lh?.surface?.tint}, char ${lh?.surface?.char}`,
+    );
     await advance(page, 0.4);
     const b2 = await read(page, 'electronics-board');
     const fresh = Object.entries(b2?.parts ?? {}).find(([, v]) => v.spec === 'resistor-100');
     const h3 = await heatNow(page);
     const r3 = fresh ? h3?.parts?.[fresh[0]] : null;
     n.fresh = { id: fresh?.[0], legs: fresh?.[1]?.legs, look: r3 };
-    // whole: its heat is what a cold part gathers in the ≈ 0.4 s it has been in the circuit, far under the burnt one's 1
+    // its heat is what a cold part gathers in the ≈ 0.4 s it has been in the circuit, far under the burnt one's 1
     check(
-      'overload: a new 100 Ω from the tray in b9 … b13: a new id, whole — «ok» to the eye — and hot by its load',
+      'overload: seated in b9 … b13 it closes the circuit: the same id, «гаряча» by its load at once, whole to the eye',
       fresh &&
-        fresh[0] !== 'R1' &&
+        fresh[0] === inHand?.id &&
         JSON.stringify(fresh[1].legs) === '["b9","b13"]' &&
         r3?.condition === 'hot' &&
         r3.heat < 0.25 &&
@@ -1197,16 +1224,25 @@ async function heat(context) {
     await page.close();
   }
 
-  /* ---- step `bulged`: the look under the state's name, for the reader */
+  /* ---- step `bulged-look`: the look under the state's name alone, for the reader (E2-9 binds it to the model) */
   {
     const page = await context.newPage();
-    const pos = await open(page, 'bulged', 0.4).catch((err) => ({ error: String(err) }));
-    if (!check('bulged: opened', at(pos, 'bulged'), where(pos))) {
+    const pos = await open(page, 'bulged-look').catch((err) => ({ error: String(err) }));
+    if (!check('bulged-look: opened', at(pos, 'bulged-look'), where(pos))) {
       await page.close();
       return;
     }
+    const b = await read(page, 'electronics-board');
     const h = await heatNow(page);
-    check('bulged: its puff of steam in the air', h?.smoke?.fired === 1 && h.smoke.active === 1, JSON.stringify(h?.smoke));
+    check(
+      'bulged-look: the two cans shown outside the circuit, and nothing let out — no model event behind the look',
+      ['C-whole', 'C-bulged'].every((id) => b?.shown?.includes(id)) &&
+        Object.keys(b?.parts ?? {}).length === 0 &&
+        h?.smoke?.fired === 0 &&
+        h.smoke.active === 0 &&
+        h.burns?.length === 0,
+      `shown ${JSON.stringify(b?.shown)}, parts ${JSON.stringify(Object.keys(b?.parts ?? {}))}; smoke ${JSON.stringify(h?.smoke)}; burns ${JSON.stringify(h?.burns)}`,
+    );
     await screenshot(page, snap('bulged'));
     const parts = await read(page, 'electronics-parts');
     const can = parts?.['C-bulged'];
@@ -1215,7 +1251,7 @@ async function heat(context) {
       await screenshot(page, snap('bulged-close'));
     }
     const errors = await appErrors(page);
-    check('bulged: console', errors.length === 0, consoleText(errors));
+    check('bulged-look: console', errors.length === 0, consoleText(errors));
     await page.close();
   }
 }

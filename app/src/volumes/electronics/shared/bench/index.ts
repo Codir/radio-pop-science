@@ -58,7 +58,7 @@ import { createPartsOnBoard, type PartsOnBoard } from './on-board';
 import { createProps, type Props } from './props';
 import { createRoom, type Room } from './room';
 import { STAGE_POST, benchShots } from './shots';
-import { createSmoke, keeper, type Smoke } from './smoke';
+import { createSmoke, keeper, type SmokeView } from './smoke';
 import { switchPart, type SwitchPart } from './switch';
 import { createTools, type BenchTools, type LensPose } from './tools';
 
@@ -67,7 +67,7 @@ export { BOARD_Y } from './base';
 export { BOARD_LOOK, type BoardView } from './board-view';
 export { BENCH_AMBIENT, filamentColor, type LightRig } from './light';
 export { LED_LIGHTS, LED_POWER, LED_RANGE, type LedLights } from './lights';
-export { SMOKE, type Smoke, type Wisp } from './smoke';
+export { SMOKE, type SmokeView } from './smoke';
 export { LEAD, LEADS, PLUG, type Fixed, type LeadView } from './fixed';
 export { type PartsOnBoard } from './on-board';
 export { type SwitchPart } from './switch';
@@ -150,8 +150,11 @@ export interface Bench {
   readonly model: BenchModel;
   /** The LEDs' light on the board: three shadowless point lights the brightest LEDs take (VISUAL §4.4). */
   readonly leds: LedLights;
-  /** The wisp of smoke at the moment a part burns, and a bulged can's steam (VISUAL §4.8). */
-  readonly smoke: Smoke;
+  /**
+   * The wisps in the air (VISUAL §4.8), read-only: the bench alone lets one out, at the moment the model tells a part
+   * burnt (none from the lamp: its filament breaks inside the sealed glass); a chapter cannot.
+   */
+  readonly smoke: SmokeView;
   /** The multimeter on the table: its dial (`mode`), its probes (`put`), its number for the step's panel
    * (`readout`); it comes and goes with `meter`. */
   readonly multimeter: Multimeter;
@@ -426,14 +429,18 @@ export function mountBench(ctx: ChapterContext): Bench {
   };
   const ledAt = new Vector3();
   const hotBox = new Box3();
-  /** Where a part's wisp rises from (world): over the top of its body; the lamp's over its glass, the speaker's cone. */
+  /**
+   * Where a part's wisp rises from (world): over the top of its body, the speaker's over its cone. Null: no wisp — the
+   * lamp's filament breaks inside its sealed glass (vacuum or inert gas), so nothing leaves the bulb: the broken coil,
+   * the greyed top and the dark are the whole event (VISUAL §4.8).
+   */
   const hottest = (id: string, out: Vector3): Vector3 | null => {
     const m = parts.models.get(id);
     if (m) {
       hotBox.setFromObject(m.hit);
       return hotBox.getCenter(out).setY(hotBox.max.y);
     }
-    if (id === 'LAMP') return props.filament.getWorldPosition(out).setY(out.y + 0.3);
+    if (id === 'LAMP') return null;
     if (id === 'SPK') return props.things.speaker.group.getWorldPosition(out).setY(out.y + 0.4);
     return null;
   };
@@ -560,7 +567,15 @@ export function mountBench(ctx: ChapterContext): Bench {
     model,
     multimeter,
     leds,
-    smoke,
+    // what is in the air, never `puff`: only `show` lets a wisp out, on the model's event
+    smoke: {
+      get active() {
+        return smoke.active;
+      },
+      get fired() {
+        return smoke.fired;
+      },
+    },
     flying: false,
     ambient: BENCH_AMBIENT,
     moon: 1,

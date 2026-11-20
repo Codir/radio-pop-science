@@ -2,8 +2,10 @@
  * The moment a part burns (docs/volumes/electronics/VISUAL.md §4.8; plan decision 11): one small wisp — eight soft
  * puffs of `mist`, at most 0.35 opaque, rising 0.6 over the hottest place in 1.2 s and gone. Once, on the model's event
  * (the driver's `advance` gave the part's id), never a loop; no flame, no sparks, no flash, no sound. A bulged
- * electrolytic lets one soft puff of steam out of its vent the same way (1.5 s; the state is E1-5's, E2-9 binds it).
- * Nothing else: no recipe of smoke.
+ * electrolytic lets one soft puff of steam out of its vent the same way, on the model's event too (1.5 s; the state is
+ * E1-5's, E2-9 fires it from that event). Nothing else: no recipe of smoke. Only the bench calls `puff` (`mountBench`,
+ * from the model's events); a chapter sees `SmokeView` alone — what is in the air, for the checks — and cannot let a
+ * wisp out.
  *
  * The puffs are lit translucent plastic (`sheath`) with soft edges. Their meshes are made with the bench and hidden while
  * nothing burns; a pool of two wisps (two parts burning in one frame: the older one gives way after that). A hidden mesh
@@ -35,16 +37,21 @@ const TURN = Math.PI * (3 - Math.sqrt(5));
 
 export type Wisp = 'smoke' | 'steam';
 
-export interface Smoke {
-  readonly group: Group;
-  /** One wisp over `at` (world): the place a part burnt, or a can's vent. */
-  puff(at: Vector3, kind?: Wisp): void;
-  /** Every frame (dt may be 0: the wisp holds). */
-  update(dt: number): void;
+/** What a chapter and the checks see of the wisps (`Bench.smoke`): read-only. */
+export interface SmokeView {
   /** Wisps in the air now. */
   readonly active: number;
   /** Wisps let out since the bench was made. */
   readonly fired: number;
+}
+
+/** The bench's own: only `mountBench` lets a wisp out, on the model's event. */
+export interface Smoke extends SmokeView {
+  readonly group: Group;
+  /** One wisp over `at` (world): the place a part burnt (the model's burn), or a can's vent (its `bulged`, E2-9). */
+  puff(at: Vector3, kind?: Wisp): void;
+  /** Every frame (dt may be 0: the wisp holds). */
+  update(dt: number): void;
   dispose(): void;
 }
 

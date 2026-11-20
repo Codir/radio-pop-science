@@ -336,7 +336,7 @@ describe('heat in the model’s time (advance)', () => {
     expect(coarse.events).toEqual([['R1']]);
   });
 
-  it('a burnt part stays burnt when it is moved (the same id); a new one from the tray is whole, then hot again', () => {
+  it('a burnt part stays burnt when it is moved (the same id); a new one from the tray is «ok», then hot again', () => {
     const board = overload();
     const model = createBenchModel({ layout, board });
     runUntilBurnt(model, 'R1', 1 / 60);
@@ -352,10 +352,21 @@ describe('heat in the model’s time (advance)', () => {
     model.sync();
     expect(model.part('R1')!.condition).toBe('burnt');
     expect(model.reading('R1')!.i).toBe(0);
-    // into the tray for good, and a new 100 Ω from it: a new id, whole and cold — and hot at once
+    // into the tray for good, and a new 100 Ω from it: a new id — in the hand «ok», cold, out of the circuit
     remove(board, 'R1');
     const id = nextId(board, 'R');
     expect(id).not.toBe('R1');
+    expect(put(layout, board, { id, spec: 'resistor-100', legs: [null, null] })).toBe(true);
+    model.sync();
+    expect(model.part(id)).toEqual({ condition: 'ok', load: 0, heat: 0 });
+    expect(model.reading(id)).toBeNull();
+    // leg 0 in b11, leg 1 in the air (pending): still «ok», no time passes for it
+    expect(seatLeg(layout, board, id, 0, 'b11')).toBe(true);
+    model.sync();
+    expect(model.net!.pending).toContain(id);
+    model.advance(1);
+    expect(model.part(id)).toEqual({ condition: 'ok', load: 0, heat: 0 });
+    // both legs in: the circuit closes — hot at once by its load, cold yet
     expect(place(layout, board, { id, spec: 'resistor-100', anchor: 'b11', o: 1 })).toBe(true);
     model.sync();
     expect(model.part(id)).toMatchObject({ condition: 'hot', heat: 0 });

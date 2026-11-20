@@ -2,13 +2,14 @@
  * `mountBench` with a stub context (no WebGL): the lamp's light rig is placed as its comment promises — the lamp light
  * at the filament, the shadowless bounce above the lamp's pool, every frame (light.ts `LightRig.bounce`); and what the
  * circuit model's state shows on the bench (E2-7) — the lamp lit by its filament's temperature, an LED by its current
- * with one of the board's three lights, an overloaded resistor warming, burning once and staying burnt, a short
- * warming the battery's box.
+ * with one of the board's three lights, an overloaded resistor warming, burning once and staying burnt (a new one «ok»
+ * until it closes the circuit), the lamp burning out with no wisp, a short warming the battery's box; and the wisps a
+ * chapter can only read.
  */
 import { Group, PerspectiveCamera, Vector3, type Object3D } from 'three';
 import { describe, expect, it } from 'vitest';
 import type { ChapterContext } from '@/engine/api';
-import { seatLead } from '@electronics/sim/board';
+import { nextId, put, remove, seatLead, seatLeg } from '@electronics/sim/board';
 import { lampGlow, ledBrightness, type LedModel } from '../../parts';
 import { BOARD, LAMP, PLACES, mountBench, worldToBoard, type PresetPart } from '..';
 
@@ -159,7 +160,7 @@ describe('the model’s state on the bench (VISUAL §1 principle 3, §4.4, §4.6
     expect(lightsOf(ctx.root)).toBe(lights);
   });
 
-  it('an overloaded resistor warms, burns once with one wisp, stays burnt; a new one from the tray starts whole', () => {
+  it('an overloaded resistor warms, burns once with one wisp, stays burnt; a new one from the tray is «ok», then hot', () => {
     const ctx = stubContext();
     const bench = mountBench(ctx);
     const lights = lightsOf(ctx.root);
@@ -197,20 +198,38 @@ describe('the model’s state on the bench (VISUAL §1 principle 3, §4.4, §4.6
     expect(bench.smoke.fired).toBe(1);
     expect(r1.surface.tint).toBe(0);
     expect(lightsOf(ctx.root)).toBe(lights);
-    // into the tray and a new 100 Ω in its place (a new id, as the hand gives it): whole, and hot again
-    bench.preset([
-      ...OVERLOAD.filter((p) => p.id !== 'R1'),
-      { id: 'R2', spec: 'resistor-100', at: 'b9', o: 1 },
-    ]);
-    bench.update(1 / 60, t + 1 / 60);
-    expect(bench.model.part('R2')).toMatchObject({ condition: 'hot' });
-    expect(bench.model.part('R2')!.heat).toBeLessThan(0.01);
-    const r2 = bench.parts.models.get('R2')!;
+    // into the tray for good, and a new 100 Ω from it as the hand gives it: a new id, set down leg by leg
+    const legs = [...bench.state.parts.get('R1')!.legs];
+    remove(bench.state, 'R1');
+    const id = nextId(bench.state, 'R');
+    expect(id).not.toBe('R1');
+    // leg 0 in b9, leg 1 still in the air: out of the circuit — «ok», cold, no current, whole to the eye
+    expect(put(bench.layout, bench.state, { id, spec: 'resistor-100', legs: [legs[0]!, null] })).toBe(true);
+    bench.update(1 / 60, (t += 1 / 60));
+    expect(bench.model.part(id)).toEqual({ condition: 'ok', load: 0, heat: 0 });
+    expect(bench.model.reading(id)).toBeNull();
+    const r2 = bench.parts.models.get(id)!;
     expect(r2.group.getObjectByName('resistor-100:burnt')!.visible).toBe(false);
-    expect(r2.surface.char).toBe(0);
+    expect(r2.surface).toMatchObject({ tint: 0, scorch: 0, char: 0 });
+    // leg 1 in: the circuit closes, and the new one is hot by its load at once, still cold and whole to the eye
+    expect(seatLeg(bench.layout, bench.state, id, 1, legs[1]!)).toBe(true);
+    bench.update(1 / 60, t + 1 / 60);
+    expect(bench.model.part(id)).toMatchObject({ condition: 'hot' });
+    expect(bench.model.part(id)!.heat).toBeLessThan(0.01);
+    expect(r2.group.getObjectByName('resistor-100:burnt')!.visible).toBe(false);
+    expect(r2.surface).toMatchObject({ tint: 0, char: 0 });
+    // the wisp of R1 was the only one: the new part's being set down lets none out
+    expect(bench.smoke.fired).toBe(1);
   });
 
-  it('the lamp burns out on the bare battery and stays so; a step’s preset or clear starts the fixed things whole', () => {
+  it('gives a chapter no way to let a wisp out: `smoke` is what is in the air, read-only', () => {
+    const bench = mountBench(stubContext());
+    expect(Object.keys(bench.smoke).sort()).toEqual(['active', 'fired']);
+    expect('puff' in bench.smoke).toBe(false);
+    expect(bench.smoke).toMatchObject({ active: 0, fired: 0 });
+  });
+
+  it('the lamp burns out on the bare battery with no wisp and stays so; a step’s preset starts the fixed things whole', () => {
     const ctx = stubContext();
     const bench = mountBench(ctx);
     bench.preset([], { lamp1: '+1', lamp2: '-1' });
@@ -221,8 +240,11 @@ describe('the model’s state on the bench (VISUAL §1 principle 3, §4.4, §4.6
     expect(t).toBeGreaterThan(2);
     expect(t).toBeLessThan(2.3);
     expect(bench.props.bulb.burnt).toBe(true);
-    expect(bench.smoke.fired).toBe(1);
+    // no wisp: the filament breaks inside the sealed glass, nothing leaves the bulb (VISUAL §4.8)
+    expect(bench.smoke.fired).toBe(0);
+    expect(bench.smoke.active).toBe(0);
     for (let i = 0; i < 30; i++) bench.update(1 / 60, (t += 1 / 60));
+    expect(bench.smoke.fired).toBe(0);
     expect(bench.lamp).toBe(0);
     // a plug out and in again by the hand: still burnt (the same lamp), dark
     expect(seatLead(bench.layout, bench.state, 'lamp2', null)).toBe(true);
