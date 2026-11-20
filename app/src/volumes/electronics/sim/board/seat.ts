@@ -96,6 +96,36 @@ export function place(layout: BoardLayout, s: BoardState, at: PartAt): boolean {
   return true;
 }
 
+/** A part with the socket of every leg given (null — the leg is in the air). */
+export interface PartLegs {
+  readonly id: string;
+  readonly spec: string;
+  readonly legs: readonly (SocketId | null)[];
+}
+
+/**
+ * Puts the part with exactly these sockets, one per leg as in its footprint, or not at all — the hand's way: a part in
+ * the hand is on the bench with every leg in the air (out of the circuit, not pending), and comes down, or turns end
+ * for end, with the legs where the hand puts them, in any shape (a re-seated leg's too). False, and nothing changes,
+ * when the part does not stand in sockets, its id is not its prefix and a number, the count of legs is not its own, a
+ * socket is off the board or taken, two legs share one, or the id is on the board as another part. The part's own
+ * sockets count as free.
+ */
+export function put(layout: BoardLayout, s: BoardState, at: PartLegs): boolean {
+  const fp = footprintOf(at.spec);
+  if (fp === null || fp.shape === 'lead' || at.legs.length !== fp.offsets.length) return false;
+  const n = numberOf(at.id, fp.prefix);
+  if (n === undefined) return false;
+  const was = s.parts.get(at.id);
+  if (was !== undefined && was.spec !== at.spec) return false;
+  const taken = at.legs.filter((socket): socket is SocketId => socket !== null);
+  if (new Set(taken).size !== taken.length) return false;
+  if (taken.some((socket) => !canSeat(layout, s, socket, at.id))) return false;
+  s.parts.set(at.id, { id: at.id, spec: at.spec, legs: [...at.legs] });
+  s.serial.set(fp.prefix, Math.max(s.serial.get(fp.prefix) ?? 0, n));
+  return true;
+}
+
 /**
  * Moves one leg: into a free socket within the reach of the part (its footprint's `span` from every other leg in a
  * socket, measured on the board), or out into the air (`null`; the part then stays out of the circuit). False, and

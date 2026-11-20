@@ -1,8 +1,9 @@
 /**
- * The permanent things of the bench (docs/volumes/electronics/VISUAL.md §2, §4.1, §5, §6), each one on its place: the
+ * The permanent things of the bench (docs/volumes/electronics/VISUAL.md §2, §4.1, §5), each one on its place: the
  * battery's open box with the switch on its lid, the player, the speaker and the lamp on its post — the models with
- * real marks of `shared/parts` (E2-4) — and the magnifier's holder; on the table the tray of parts and the two
- * instruments, still stand-ins of their size and colours (tray E2-5, meter E2-6, oscilloscope E2-9).
+ * real marks of `shared/parts` (E2-4) — and the magnifier's holder; on the table the two instruments, still stand-ins
+ * of their size and colours (meter E2-6, oscilloscope E2-9). The tray of parts is the hand's (`shared/hand/tray.ts`),
+ * the wires of these things are `fixed.ts`'s.
  */
 import { Group, Object3D, Vector3 } from 'three';
 import { Builder } from '@/kit';
@@ -33,7 +34,7 @@ export const AWAY = {
 export interface Props {
   /** What stands on the base: add to the base frame. */
   onBase: Group;
-  /** What stands on the table (world): the tray and the two instruments. */
+  /** What stands on the table (world): the two instruments. */
   onTable: Group;
   /** Where the lamp's filament is (base frame): the lamp's light hangs here. */
   filament: Object3D;
@@ -52,29 +53,6 @@ export interface Props {
   place(meter: number, scope: number): void;
   /** Every frame: the prints of the permanent things («9 V», «8 Ω», «6 V») where they can be read. */
   view(eye: PartEye): void;
-}
-
-/** The tray on the table: a stepped `slate` block, two rows of six slots with dark foam (VISUAL §6). */
-function tray(b: Builder): void {
-  const { width: W, front, back, slots } = PLACES.tray;
-  const z0 = PLACES.tray.z - PLACES.tray.depth / 2; // the back edge, right against the base
-  const t = b.part('tray', { at: [PLACES.tray.x, 0, 0] });
-  t.box(W, back.top, back.depth, { at: [0, 0, z0 + back.depth / 2], r: 0.05, c: 'slate' });
-  t.box(W, front.top, front.depth, { at: [0, 0, z0 + back.depth + front.depth / 2], r: 0.05, c: 'slate' });
-  const pitch = W / slots;
-  for (let i = 0; i < slots; i++) {
-    const x = (i - (slots - 1) / 2) * pitch;
-    t.box(pitch - 0.12, 0.02, back.depth - 0.14, {
-      at: [x, back.top, z0 + back.depth / 2],
-      r: 0.008,
-      c: 'ink',
-    });
-    t.box(pitch - 0.12, 0.02, front.depth - 0.12, {
-      at: [x, front.top, z0 + back.depth + front.depth / 2],
-      r: 0.008,
-      c: 'ink',
-    });
-  }
 }
 
 /** The multimeter, display up, its top away from the reader: display window, the dial, two jacks (VISUAL §5.1). */
@@ -154,11 +132,8 @@ export function createProps(): Props {
   onBase.add(slider.group);
   const sliderX = PLACES.switch.x;
 
-  const tb = new Builder('table');
-  tray(tb);
   const onTable = new Group();
   onTable.name = 'table-props';
-  onTable.add(tb.build().group);
   const m = meter();
   const s = scope();
   onTable.add(m, s);

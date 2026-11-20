@@ -1,9 +1,10 @@
 /**
- * The bench of the volume «Радіоелектроніка» (docs/volumes/electronics/VISUAL.md §2, §3, §4, §7, §8): the dark room,
- * the base with the breadboard, the light, the magnifier in its holder, the permanent things (`props.ts`: the battery,
- * the player, the speaker and the lamp with their real marks; the tray and the instruments still stand-ins) and the
- * parts on the board, which follow the board's state (`on-board.ts`). A chapter mounts it once in its scene factory and
- * drives it through plain parameters (shared/README.md, «bench»). Copied in its shape from
+ * The bench of the volume «Радіоелектроніка» (docs/volumes/electronics/VISUAL.md §2, §3, §4, §6, §7, §8): the dark
+ * room, the base with the breadboard, the light, the magnifier in its holder, the permanent things (`props.ts`: the
+ * battery, the player, the speaker and the lamp with their real marks; the instruments still stand-ins) with their
+ * wires and plug leads (`fixed.ts`), the battery's switch under the hand (`switch.ts`), the tray of parts and the
+ * reader's hand (`shared/hand`), and the parts on the board, which stand on their legs (`on-board.ts`). A chapter mounts
+ * it once in its scene factory and drives it through plain parameters (shared/README.md, «bench», «hand»). Copied in its shape from
  * `circuit/shared/stage/index.ts` (`mountStage` → `mountBench`; shared/README.md, «Копії»): no flashlight, unfolding,
  * snail, battery cutaway or lamp close-up.
  */
@@ -14,18 +15,22 @@ import type { Text3D } from '@/text';
 import {
   createBoardState,
   createLayout,
+  netlistOf,
   place,
   remove,
+  seatLead,
   setSetting,
   type BoardLayout,
   type BoardState,
   type Orientation,
   type SocketId,
 } from '@electronics/sim/board';
+import { createHands, createTerrain, createTray, type Hands, type Raised, type Tray } from '../hand';
 import type { PartEye, PartView } from '../parts';
 import { createAir } from './air';
 import { createBase, type Base } from './base';
 import { createBoardView, type BoardView } from './board-view';
+import { PLUG, createFixed, type Fixed } from './fixed';
 import { PLACES } from './layout';
 import { BENCH_AMBIENT, createLight, type LightRig } from './light';
 import { tame } from './materials';
@@ -33,13 +38,16 @@ import { createPartsOnBoard, type PartsOnBoard } from './on-board';
 import { createProps, type Props } from './props';
 import { createRoom, type Room } from './room';
 import { STAGE_POST, benchShots } from './shots';
+import { switchPart, type SwitchPart } from './switch';
 import { createTools, type BenchTools, type LensPose } from './tools';
 
 export { BOARD, LAMP, LENS, PLACES, SWITCH } from './layout';
 export { BOARD_Y } from './base';
 export { BOARD_LOOK, type BoardView } from './board-view';
 export { BENCH_AMBIENT, filamentColor, type LightRig } from './light';
+export { LEAD, LEADS, PLUG, type Fixed, type LeadView } from './fixed';
 export { type PartsOnBoard } from './on-board';
+export { type SwitchPart } from './switch';
 export { AWAY, type Props } from './props';
 export { STAGE_FOV, STAGE_POST, STAGE_SHOTS, benchShots, boardToWorld, type BenchShot } from './shots';
 export { holderPose, overPose, worldDirToBoard, worldToBoard, type BenchTools, type LensPose } from './tools';
@@ -47,12 +55,27 @@ export { holderPose, overPose, worldDirToBoard, worldToBoard, type BenchTools, t
 export {
   BOARD_SPEC,
   createLayout,
+  netlistOf,
   type BoardLayout,
   type BoardState,
   type Orientation,
   type RowId,
   type SocketId,
 } from '@electronics/sim/board';
+export { PARTS } from '@electronics/sim/core';
+// and of the hand: its numbers, keys and policy
+export {
+  HOVER,
+  LIFT,
+  NEAR,
+  SEAT_SECONDS,
+  SNAP,
+  trayLabel,
+  type HandKey,
+  type HandPolicy,
+  type Hands,
+  type Tray,
+} from '../hand';
 
 /** A part a step puts on the board: leg 0 in `at`, turned by `o` (default 0: the legs along the line, to the right). */
 export interface PresetPart {
@@ -76,13 +99,23 @@ export interface Bench {
   /** The breadboard as data (`sim/board`) and in 3D. */
   readonly layout: BoardLayout;
   readonly board: BoardView;
-  /** What stands in which socket (`sim/board`): `preset` and `clear` here, the hand from E2-5. */
+  /** What stands in which socket (`sim/board`): `preset` and `clear` here, and the reader's hand (`hands`). */
   readonly state: BoardState;
-  /** The parts on the board in 3D (`shared/parts`), following `state` every frame. */
+  /** The parts on the board in 3D (`shared/parts`), standing on their legs, which follow `state` every frame. */
   readonly parts: PartsOnBoard;
   /** The permanent things: the battery box with the switch, the player, the speaker, the lamp (real marks, E2-4);
-   * the tray and the instruments (stand-ins). */
+   * the instruments (stand-ins). */
   readonly props: Props;
+  /** The battery's wires and the plug leads of the speaker, the player and the lamp (board frame). */
+  readonly fixed: Fixed;
+  /** The battery's switch under the reader's hand: a tap flips `closed`. */
+  readonly switch: SwitchPart;
+  /** The tray of parts on the table: `tray.set([...keys])` stands a step's kinds in it (empty by default). */
+  readonly tray: Tray;
+  /** The reader's hand: the two gestures, the grips, the cues; `hands.policy` is the step's say. */
+  readonly hands: Hands;
+  /** The camera flies (the magnifier, a chapter's border): the hand and the switch do nothing (default false). */
+  flying: boolean;
   /** The magnifier and its holder. */
   readonly tools: BenchTools;
   /**
@@ -97,7 +130,11 @@ export interface Bench {
    * 0). Shown with the filament's inertia: it heats in hundredths of a second and cools a little slower.
    */
   lamp: number;
-  /** The battery's switch: 0 open (the thumb pushed to the left, the gap shows) … 1 closed (default 0). */
+  /**
+   * The battery's switch: 0 open (the thumb pushed to the left, the gap shows) … 1 closed (default 0) — the setting of
+   * the model's part `SW` in the board's state; a tap on the slider flips it, a step may set it. The slider follows
+   * with its inertia.
+   */
   closed: number;
   /** The magnifier: 0 in its holder … 1 at `lensTarget` (base frame); with no target it stays in its holder. */
   lens: number;
@@ -110,10 +147,11 @@ export interface Bench {
   meter: number;
   scope: number;
   /**
-   * A step's own small circuit: the board holds exactly these parts, at once (the hand's travel is E2-5's). A part
-   * that does not stand where it is put is a RangeError: a preset is the step's data.
+   * A step's own small circuit: the board holds exactly these parts, at once, and the plugs named in `leads` are in
+   * these sockets (null: lying at rest); a plug not named stays where it is. A part or a plug that does not stand
+   * where it is put is a RangeError: a preset is the step's data.
    */
-  preset(parts: readonly PresetPart[]): void;
+  preset(parts: readonly PresetPart[], leads?: Readonly<Record<string, SocketId | null>>): void;
   /** Takes every part and plug off the board. */
   clear(): void;
   /** Jump to the state without the filament's and the slider's ramps (deep links). */
@@ -181,6 +219,40 @@ const ENV_SCALE = 4.6;
  */
 const BOUNCE_OFFSET = [1.1, 0.5, 0.9] as const;
 
+/** The board's body in plan (board frame): it runs `left` beyond column 1, `right` beyond column 17 and `beyond`
+ * beyond each rail (VISUAL §2). */
+function boardArea(layout: BoardLayout): { x0: number; x1: number; z0: number; z1: number } {
+  const B = PLACES.breadboard;
+  const first = layout.socket('+1')!;
+  const last = layout.socket('-17')!;
+  return { x0: first.x - B.left, x1: last.x + B.right, z0: first.z - B.beyond, z1: last.z + B.beyond };
+}
+
+/**
+ * What stands up for a lead lying loose (board frame, the height of a plug's axis lying over it): the board's body, the
+ * battery's box, the player, the speaker, the lamp's foot. The parts on the board are not counted: a lead lies on the
+ * board's face among them.
+ */
+function raised(area: ReturnType<typeof boardArea>): Raised[] {
+  const B = PLACES.breadboard;
+  const r = PLUG.radius;
+  const at = (x: number, z: number, w: number, d: number, top: number): Raised => ({
+    x0: x - B.x - w / 2,
+    x1: x - B.x + w / 2,
+    z0: z - B.z - d / 2,
+    z1: z - B.z + d / 2,
+    top: top - B.height + r,
+  });
+  const { battery: bat, player: pl, speaker: sp, lamp } = PLACES;
+  return [
+    { ...area, top: r },
+    at(bat.x, bat.z, bat.width, bat.depth, bat.height),
+    at(pl.x, pl.z, pl.width, pl.depth, pl.height),
+    at(sp.x, sp.z, sp.radius * 2, sp.radius * 2, 0.36),
+    at(lamp.x, lamp.z, 0.52, 0.52, 0.1),
+  ];
+}
+
 export function mountBench(ctx: ChapterContext): Bench {
   const group = new Group();
   group.name = 'electronics-bench';
@@ -195,12 +267,22 @@ export function mountBench(ctx: ChapterContext): Bench {
   const board = createBoardView(ctx, layout);
   board.group.position.set(PLACES.breadboard.x, PLACES.breadboard.height, PLACES.breadboard.z);
   const state = createBoardState();
-  const parts = createPartsOnBoard(board, state);
+  const area = boardArea(layout);
+  // what a lead lying loose drapes over (board frame): the board's body, the battery's box, the things on the base
+  const ground = raised(area);
+  const terrain = createTerrain(-PLACES.breadboard.height + PLUG.radius, () => ground);
+  const parts = createPartsOnBoard(board, state, terrain.ground);
   board.group.add(parts.group);
   ctx.onDispose(() => parts.dispose());
   const props = createProps();
   base.frame.add(board.group, props.onBase);
   group.add(props.onTable);
+  const fixed = createFixed({ socket: (id, out) => board.socketLocal(id, out), ground: terrain.ground }, terrain);
+  board.group.add(fixed.group);
+  ctx.onDispose(() => fixed.dispose());
+  const tray = createTray();
+  group.add(tray.group);
+  ctx.onDispose(() => tray.dispose());
   const tools = createTools(ctx, base.frame);
   const air = createAir(ctx);
   group.add(air.motes);
@@ -218,6 +300,31 @@ export function mountBench(ctx: ChapterContext): Bench {
     ctx.camera.shots(benchShots(phone));
   });
 
+  const hands = createHands(ctx, {
+    frame: board.group,
+    cues: group,
+    layout,
+    state,
+    parts,
+    tray,
+    leads: fixed.leads,
+    terrain,
+    area,
+    flying: () => bench.flying,
+    phone: () => phone,
+  });
+  ctx.onDispose(() => hands.dispose());
+  parts.driven = (id) => hands.busy(id);
+  const toggle = switchPart(
+    ctx,
+    props.slider.group,
+    () => bench.closed,
+    (v) => (bench.closed = v),
+    () => !bench.flying && (hands.policy?.take('switch') ?? true) && hands.held === null,
+    () => hands.policy?.tooltip?.('switch') ?? '',
+  );
+  ctx.onDispose(() => toggle.dispose());
+
   let glow = 0;
   let slider = 0;
   let time = 0;
@@ -225,7 +332,7 @@ export function mountBench(ctx: ChapterContext): Bench {
   const lampWorld = new Vector3();
   const bounceOffset = new Vector3(...BOUNCE_OFFSET);
   const eye: PartEye = { camera: ctx.camera.camera, aspect: 1, phone, room: 1 };
-  const apply = (dt: number): void => {
+  const apply = (dt: number, t: number): void => {
     light.set({ glow, moon: bench.moon, ambient: bench.ambient });
     const room = Math.min(1, 0.25 + 0.75 * Math.max(bench.moon, glow ** 2));
     props.bulb.setGlow(light.filament, light.emission, glow, bench.moon);
@@ -239,13 +346,19 @@ export function mountBench(ctx: ChapterContext): Bench {
     air.set(lampWorld, light.lamp.color, light.output ** 1.5);
     tools.set({ use: bench.lens, target: bench.lensTarget, dive: bench.dive, call: bench.lensCall }, time);
     board.update(ctx.camera.camera, room);
-    // the parts follow the board's state; the prints show where they can be read from this camera
-    parts.sync();
     eye.camera = ctx.camera.camera;
     eye.aspect = ctx.viewport.aspect;
     eye.phone = phone;
     eye.room = room;
+    // the parts and the plugs follow the board's state (what the hand drives, it moves), stand on their legs, and the
+    // hand turns what has arrived into the board's state; the prints show where they can be read from this camera
+    parts.sync();
+    fixed.sync(state, (name) => hands.busyLead(name));
     parts.update(dt, eye);
+    fixed.update(dt);
+    hands.update(dt, t);
+    board.highlight(hands.rows, dt);
+    tray.update(dt, eye);
     props.view(eye);
   };
 
@@ -259,18 +372,29 @@ export function mountBench(ctx: ChapterContext): Bench {
     state,
     parts,
     props,
+    fixed,
+    switch: toggle,
+    tray,
+    hands,
     tools,
+    flying: false,
     ambient: BENCH_AMBIENT,
     moon: 1,
     lamp: 0,
-    closed: 0,
+    get closed() {
+      return state.settings.get('SW') ?? 0;
+    },
+    set closed(v: number) {
+      setSetting(state, 'SW', unit(Number.isFinite(v) ? v : 0));
+    },
     lens: 0,
     lensTarget: null,
     lensCall: 0,
     dive: 0,
     meter: 0,
     scope: 0,
-    preset(list) {
+    preset(list, leads) {
+      hands.reset();
       for (const id of [...state.parts.keys()]) remove(state, id);
       for (const p of list) {
         if (!place(layout, state, { id: p.id, spec: p.spec, anchor: p.at, o: p.o ?? 0 })) {
@@ -278,17 +402,26 @@ export function mountBench(ctx: ChapterContext): Bench {
         }
         if (p.setting !== undefined) setSetting(state, p.id, p.setting);
       }
+      for (const [name, socket] of Object.entries(leads ?? {})) {
+        if (!fixed.leads.has(name) || !seatLead(layout, state, name, socket)) {
+          throw new RangeError(`bench.preset: the plug ${name} does not go into ${socket}`);
+        }
+      }
       parts.sync();
+      fixed.sync(state, () => false);
     },
     clear() {
+      hands.reset();
       for (const id of [...state.parts.keys()]) remove(state, id);
       state.leads.clear();
       parts.sync();
+      fixed.sync(state, () => false);
     },
     snap() {
       glow = unit(bench.lamp);
       slider = unit(bench.closed);
-      apply(0);
+      hands.snap();
+      apply(0, time);
     },
     update(dt, t) {
       time = t;
@@ -297,16 +430,18 @@ export function mountBench(ctx: ChapterContext): Bench {
       glow = damp(glow, to, to > glow ? 16 : 9, dt);
       if (Math.abs(glow - to) < 1e-3) glow = to;
       slider = damp(slider, unit(bench.closed), 22, dt);
-      apply(dt);
+      apply(dt, t);
     },
   };
 
-  // QA: the things of the bench by name (the sockets are the board's own, `socket:<id>`) and
-  // `__app.read('electronics-bench')` — what the board draws and what the last frame cost
+  // QA: the things of the bench by name (the sockets are the board's own, `socket:<id>`; the parts, their legs, the
+  // plugs and the tray's slots are the hand's: `part:R1`, `leg:R1:0`, `tip:R1:0`, `lead:spk+`, `end:spk+`,
+  // `tray:resistor-1k`) and `__app.read('electronics-bench')` — what the board draws and what the last frame cost
   ctx.qa.probe('bench:lamp', props.filament);
   ctx.qa.probe('bench:lens', tools.lens.ring);
   ctx.qa.probe('bench:meter', props.meter);
   ctx.qa.probe('bench:scope', props.scope);
+  ctx.qa.probe('switch', () => props.slider.group.getWorldPosition(new Vector3()));
   ctx.qa.expose('electronics-bench', () => ({
     sockets: board.mouths.count,
     rows: layout.rows.length,
@@ -315,15 +450,42 @@ export function mountBench(ctx: ChapterContext): Bench {
     phone,
   }));
   // `__app.read('electronics-board')` — the board as data: every part with the socket of each leg, the plugs, the
-  // settings; which parts have a model, and the models shown outside the circuit
-  ctx.qa.expose('electronics-board', () => ({
-    parts: Object.fromEntries(
-      [...state.parts.values()].map((p) => [p.id, { spec: p.spec, legs: [...p.legs] }]),
-    ),
-    leads: Object.fromEntries(state.leads),
-    settings: Object.fromEntries(state.settings),
-    models: [...parts.models.keys()],
-    shown: [...parts.shown.keys()],
+  // settings; which parts have a model, and the models shown outside the circuit; the netlist's key (it changes when
+  // the circuit's shape does) and the parts left out with a leg in the air
+  ctx.qa.expose('electronics-board', () => {
+    const net = netlistOf(layout, state);
+    return {
+      parts: Object.fromEntries(
+        [...state.parts.values()].map((p) => [p.id, { spec: p.spec, legs: [...p.legs] }]),
+      ),
+      leads: Object.fromEntries(state.leads),
+      settings: Object.fromEntries(state.settings),
+      models: [...parts.models.keys()],
+      shown: [...parts.shown.keys()],
+      key: net.key,
+      pending: [...net.pending],
+    };
+  });
+  // `__app.read('electronics-hand')` — the hand: what it holds, where a carried end would go, the preview of a carried
+  // part, the lit rows, the parts it drives, how often the reader flipped the switch
+  ctx.qa.expose('electronics-hand', () => ({
+    held: hands.held,
+    near: hands.near,
+    preview: [...hands.preview],
+    rows: Object.fromEntries(board.lit),
+    busy: [...parts.models.keys()].filter((id) => hands.busy(id)),
+    switchFlips: toggle.flips,
+  }));
+  // `__app.read('electronics-motion')` — what moves, every frame (world): the camera, the thing the hand moves now or
+  // moved last (its leg 0, or its plug), every plug; a check samples it frame by frame for jumps
+  const v = new Vector3();
+  ctx.qa.expose('electronics-motion', () => ({
+    camera: ctx.camera.camera.getWorldPosition(v).toArray(),
+    focus: hands.focus(v).toArray(),
+    plugs: [...fixed.leads.values()].flatMap((l) => {
+      board.group.updateWorldMatrix(true, false);
+      return board.group.localToWorld(v.copy(l.leg.pos)).toArray();
+    }),
   }));
   // `__app.read('electronics-parts')` — every part and permanent thing in 3D: where its body is (world), its draw calls,
   // its print, how much of it is shown, how much of it the camera sees with nothing in front of it, and where it is (the

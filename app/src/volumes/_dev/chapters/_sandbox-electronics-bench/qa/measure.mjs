@@ -26,6 +26,15 @@
 //           and above, from `electronics-parts`; a print too small or covered there, once more at the print): its print
 //           shown whole, seen with nothing drawn in front of it, and ≥ 16 px-equivalent, snapshots
 //           `close-<id>[-print]-<size>.jpg` for the reader of the parts' look; the console.
+//   hand  — step `hand` on a held page (E2-5), every gesture by a real pointer (a mouse, or a finger with --touch, the
+//           thing then riding `LIFT` px above it): a 1 kΩ from the tray (on a phone from the dock's button: it waits
+//           over the board) carried to a3 — while it is carried its preview is a3 and a7 with their rows lit, and after
+//           the legs' travel (`advance(0.35)`) `electronics-board` has R1 in a3 and a7; its leg 1 by the ring to a8 —
+//           the netlist's key changes; R1 by its body off the board — gone (into the tray on a desktop); a jumper from
+//           the tray to a5 and its end by the capsule to +5; the speaker's plug `spk+` into c17; a tap on the battery's
+//           switch flips `SW` and a second one back; after every release the camera, the thing moved and the plugs are
+//           sampled frame by frame for jumps (`electronics-motion`); draw calls ≤ 350 with all of it; the console;
+//           snapshots `hand-<what>-<size>.jpg`.
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-electronics-bench — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -45,7 +54,7 @@ import {
   parseSize,
   screenshot,
 } from '../../../../../../../tools/qa/lib.mjs';
-import { read } from './helpers.mjs';
+import { advance, pointer, read } from './helpers.mjs';
 
 const CHAPTER = '_sandbox-electronics-bench';
 const route = (step) => `_dev/${CHAPTER}/${step}`;
@@ -444,9 +453,227 @@ async function parts(context) {
   await page.close();
 }
 
+
+/* -------------------------------------------------------------------------------------- section hand */
+
+/** The largest step a moving thing may take in one frame (world units at 60 fps): the fastest travel of the hand is a
+ * part let go on the board with no place flying back into the tray in 0.4 s — across the whole bench, ≈ 7 eased, its
+ * peak ≈ 1.5 · 7 / 24 ≈ 0.45 per frame; a jump would be a whole travel in one frame. The camera as in the circuit's
+ * practicum (`circuit/chapters/build/qa/interactions.mjs`, `BOUND.camera`): it drifts gently, it must not jump. */
+const STRIDE = { camera: 0.35, focus: 0.5, plugs: 0.5 };
+/** A finger carries the thing this many CSS px above it (`LIFT` of the hand, VISUAL §6). */
+const LIFT = 48;
+const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
+const add = (a, b) => ({ x: a.x + b.x, y: a.y + b.y });
+const locate = (page, name) => page.evaluate((n) => window.__app.locate(n), name);
+
+async function hand(context) {
+  const n = (report.sections.hand = {});
+  const page = await context.newPage();
+  const pos = await open(page, 'hand').catch((err) => ({ error: String(err) }));
+  if (!check('opened', at(pos, 'hand'), where(pos))) {
+    await page.close();
+    return;
+  }
+  const p = await pointer(page, touch);
+  const board = () => read(page, 'electronics-board');
+  const hands = () => read(page, 'electronics-hand');
+  /** Probes on screen (CSS px); a missing one fails the check that needs it. */
+  const scr = async (name) => {
+    const v = await locate(page, name);
+    if (!v) throw new Error(`probe '${name}' is unknown`);
+    return { x: v.x, y: v.y, visible: v.visible };
+  };
+  /** Per-frame steps of the moving things for `seconds` after a release (frozen clock: the frames are stepped). */
+  const smooth = async (what, seconds = 0.6) => {
+    const s = await page.evaluate(
+      async ([frames]) => {
+        const big = {};
+        let prev = window.__app.read('electronics-motion');
+        for (let i = 0; i < frames; i++) {
+          await window.__app.step(1 / 60, 1);
+          const cur = window.__app.read('electronics-motion');
+          for (const k of Object.keys(cur)) {
+            const a = cur[k];
+            const b = prev[k];
+            let d = 0;
+            for (let j = 0; j < a.length; j += 3) d = Math.max(d, Math.hypot(a[j] - b[j], a[j + 1] - b[j + 1], a[j + 2] - b[j + 2]));
+            big[k] = Math.max(big[k] ?? 0, d);
+          }
+          prev = cur;
+        }
+        return big;
+      },
+      [Math.round(seconds * 60)],
+    );
+    const bad = Object.entries(s).filter(([k, v]) => !(v <= STRIDE[k]));
+    (n.strides ??= {})[what] = Object.fromEntries(Object.entries(s).map(([k, v]) => [k, round(v, 4)]));
+    check(
+      `${what}: no jumps`,
+      bad.length === 0,
+      Object.entries(s)
+        .map(([k, v]) => `${k} ${v.toPrecision(2)}`)
+        .join(', '),
+    );
+  };
+  /**
+   * Drag from a probe so that the thing it holds moves from where `thing` is to `target` (both probes on the board's
+   * face): the hand keeps its grip on the thing, so the pointer moves by the same screen vector (a finger rides `LIFT`
+   * above, which the press and the moves share). `hold` runs before the release (checks of the carried state).
+   */
+  const carry = async (grab, thing, target, { steps = 10, mid = null, hold = null, under = false } = {}) => {
+    const g = await scr(grab);
+    const d = sub(await scr(target), await scr(thing));
+    // a part from the tray comes with leg 0 under the hand: a finger ends LIFT below the socket
+    if (under && touch) d.y += LIFT;
+    const to = add(g, d);
+    const via = mid ? add(g, mid(d)) : null;
+    await p.down(g.x, g.y);
+    const path = via ? [g, via, to] : [g, to];
+    for (let i = 1; i < path.length; i++)
+      for (let k = 1; k <= steps; k++) {
+        const a = path[i - 1];
+        const b = path[i];
+        await p.move(a.x + ((b.x - a.x) * k) / steps, a.y + ((b.y - a.y) * k) / steps);
+      }
+    if (hold) await hold();
+    await p.up();
+  };
+  const tag2 = (what) => join(out, `hand-${what}-${tag}.jpg`);
+
+  check('the board is empty, the tray full', Object.keys((await board())?.parts ?? {}).length === 0);
+  // a phone's page has the tray in the dock and the field of sockets only; a touch tablet has the stand like a desktop
+  const phone = (n.phone = (await read(page, 'electronics-bench'))?.phone === true);
+
+  // 1. a 1 kΩ from the tray (a phone: the dock's button, on the panel's tab «Керування») into a3
+  if (phone) {
+    // the panel's tab «Керування», as a reader picks it (the visible one of the tab rows)
+    const tab = await page.evaluate(() => {
+      for (const el of document.querySelectorAll('[data-ui="sheet-tabs:controls"]')) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0 && !el.closest('[hidden]')) return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      }
+      return null;
+    });
+    if (tab) await p.tap(tab.x, tab.y);
+    await advance(page, 0.5);
+    const b = await page.evaluate(() => window.__ui.locate('ctl-tray-resistor-1k'));
+    check('the dock has the tray’s buttons', !!b, JSON.stringify(b && { w: round(b.w), h: round(b.h) }));
+    if (b) await p.tap(b.x, b.y);
+    await advance(page, 0.3);
+    check('a part waits in the air over the board', (await board())?.parts?.R1?.legs?.every((s) => s === null));
+    await screenshot(page, tag2('offer'));
+  }
+  const grab1 = phone ? 'part:R1' : 'tray:resistor-1k';
+  const thing1 = phone ? 'tip:R1:0' : 'tray:resistor-1k';
+  // from the tray leg 0 comes under the hand: the pointer goes to a3; from the air the hand keeps its grip
+  await carry(grab1, thing1, 'socket:a3', {
+    under: !phone,
+    mid: (d) => ({ x: d.x * 0.5, y: d.y * 0.5 - height * 0.05 }),
+    hold: async () => {
+      const h = await hands();
+      n.preview = h;
+      check(
+        'carried over a3: preview a3, a7, both rows lit',
+        h?.held === 'part:R1' && JSON.stringify(h.preview) === '["a3","a7"]',
+        `held ${h?.held}, preview ${JSON.stringify(h?.preview)}, rows ${JSON.stringify(h?.rows)}`,
+      );
+      await advance(page, 0.2);
+      const lit = (await hands())?.rows ?? {};
+      check('the rows of the preview are lit', lit['3ae'] > 0.5 && lit['7ae'] > 0.5, JSON.stringify(lit));
+      await screenshot(page, tag2('preview'));
+    },
+  });
+  const legsNow = (await board())?.parts?.R1?.legs;
+  check('let go: the board changes when the legs have arrived, not before', JSON.stringify(legsNow) === '[null,null]', JSON.stringify(legsNow));
+  await smooth('down into a3');
+  const b1 = await board();
+  check('R1 in a3 and a7', JSON.stringify(b1?.parts?.R1?.legs) === '["a3","a7"]', JSON.stringify(b1?.parts));
+  const key1 = b1?.key;
+
+  // 2. its leg 1 by the ring from a7 to a8: it clicks in while the hand moves; the key changes
+  await carry('leg:R1:1', 'tip:R1:1', 'socket:a8');
+  await smooth('leg 1 into a8', 0.4);
+  const b2 = await board();
+  check(
+    'leg 1 in a8, the netlist’s key changed',
+    JSON.stringify(b2?.parts?.R1?.legs) === '["a3","a8"]' && b2?.key !== key1,
+    `${JSON.stringify(b2?.parts?.R1?.legs)}; key ${b2?.key === key1 ? 'same' : 'changed'}`,
+  );
+  await screenshot(page, tag2('leg'));
+
+  // 3. a jumper (a phone: the dock) into a10, then its end by the capsule to +10
+  if (phone) {
+    const b = await page.evaluate(() => window.__ui.locate('ctl-tray-jumper'));
+    if (b) await p.tap(b.x, b.y);
+    await advance(page, 0.3);
+    await carry('part:J1', 'tip:J1:0', 'socket:a10');
+  } else
+    await carry('tray:jumper', 'tray:jumper', 'socket:a10', {
+      under: true,
+      mid: (d) => ({ x: d.x * 0.5, y: d.y * 0.5 - height * 0.05 }),
+    });
+  await advance(page, 0.4);
+  const b3 = await board();
+  check('the jumper in a10 … a14', JSON.stringify(b3?.parts?.J1?.legs) === '["a10","a14"]', JSON.stringify(b3?.parts?.J1));
+  await carry('leg:J1:0', 'tip:J1:0', 'socket:+10', { mid: (d) => ({ x: d.x * 0.5 + 6, y: d.y * 0.5 }) });
+  await smooth('the jumper’s end into +10', 0.4);
+  const b4 = await board();
+  check('the jumper’s end in +10', b4?.parts?.J1?.legs?.[0] === '+10', JSON.stringify(b4?.parts?.J1));
+
+  // 4. the speaker's plug into c17
+  await carry('lead:spk+', 'end:spk+', 'socket:c17');
+  await smooth('the plug into c17', 0.4);
+  const b5 = await board();
+  check('the speaker’s plug in c17', b5?.leads?.['spk+'] === 'c17', JSON.stringify(b5?.leads));
+  await screenshot(page, tag2('wired'));
+
+  const calls = (n.drawCalls = await drawCalls(page));
+  check(
+    'draw calls with the parts, the plugs and the grips',
+    calls.engine > 0 && calls.engine <= DRAW_CALLS.gate,
+    `${calls.engine} (gate ≤ ${DRAW_CALLS.gate}); ${calls.triangles} triangles`,
+  );
+
+  // 5. the switch: a tap closes it, a second opens it
+  const sw = await scr('switch');
+  n.switch = sw;
+  if (sw.visible) {
+    await p.tap(sw.x, sw.y);
+    await advance(page, 0.3);
+    const on = (await board())?.settings?.SW;
+    await p.tap(sw.x, sw.y);
+    await advance(page, 0.3);
+    const off = (await board())?.settings?.SW;
+    check('a tap on the switch flips SW, a second one back', on === 1 && off === 0, `SW ${on} then ${off}`);
+  } else check('the switch is not in the phone’s frame (reported)', true, JSON.stringify(sw));
+
+  // 6. R1 by its body off the board: into the tray (a desktop), gone at once (a phone)
+  const below = async () => {
+    // beyond the near rail by a step and a half of lines: off the board's body
+    const a = await scr('socket:j9');
+    const b = await scr('socket:-9');
+    return add(b, { x: (b.x - a.x) * 1.6, y: (b.y - a.y) * 1.6 });
+  };
+  const off = phone ? await below() : await scr('tray:resistor-1k');
+  const r1 = await scr('part:R1');
+  await p.down(r1.x, r1.y);
+  for (let k = 1; k <= 12; k++) await p.move(r1.x + ((off.x - r1.x) * k) / 12, r1.y + ((off.y - r1.y) * k) / 12);
+  await p.up();
+  await smooth('R1 back to the tray', 0.6);
+  const b6 = await board();
+  check('R1 off the board: gone', !b6?.parts?.R1 && !b6?.models?.includes('R1'), JSON.stringify(Object.keys(b6?.parts ?? {})));
+  await screenshot(page, tag2('end'));
+
+  const errors = await appErrors(page);
+  n.errors = errors;
+  check('console', errors.length === 0, consoleText(errors));
+  await page.close();
+}
+
 /* ---------------------------------------------------------------------------------------------- run */
 
-const SECTIONS = { room, shots, parts };
+const SECTIONS = { room, shots, parts, hand };
 const only =
   typeof args.only === 'string'
     ? args.only

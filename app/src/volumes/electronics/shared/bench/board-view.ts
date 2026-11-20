@@ -12,12 +12,20 @@
  * collars), the mouths one instanced model (1 call for all 204); the print — 12 small texts — is drawn only where it
  * can be read (≥ 16 px-equivalent, the rule of `chapter-check`): not on the main shot, not on phones.
  */
-import { Group, ShapeGeometry, Vector3, type Camera, type InstancedMesh } from 'three';
-import type { ChapterContext } from '@/engine/api';
+import {
+  Group,
+  Mesh,
+  MeshBasicMaterial,
+  ShapeGeometry,
+  Vector3,
+  type Camera,
+  type InstancedMesh,
+} from 'three';
+import { damp, type ChapterContext } from '@/engine/api';
 import { Builder, G, instanced } from '@/kit';
 import { col } from '@/style';
 import { Text3D, fontsReady } from '@/text';
-import type { BoardLayout, SocketId } from '@electronics/sim/board';
+import type { BoardLayout, RowId, SocketId } from '@electronics/sim/board';
 import { PLACES } from './layout';
 
 const mix = (a: string, b: string, k: number) => col(a).lerp(col(b), k);
@@ -42,6 +50,11 @@ export const BOARD_LOOK = {
    * left end in line with the letters, at the right end between column 17 and the power post.
    */
   signs: { x: [-2.62, 2.55], size: 0.1 },
+  /**
+   * The lit row under a held leg, plug or probe (VISUAL §3, «Підсвітка ряду»): a rounded `cyan` strip under the five
+   * sockets of a row (across the lines) or along a rail, 0.35 opaque, coming and going in 0.12 s.
+   */
+  row: { width: 0.22, strip: 1.42, rail: 5.02, opacity: 0.35, rate: 25 },
 } as const;
 
 /**
@@ -62,6 +75,10 @@ export interface BoardView {
   socketLocal(id: SocketId, out?: Vector3): Vector3;
   /** The same in world space (the group's current world matrix). */
   socketWorld(id: SocketId, out?: Vector3): Vector3;
+  /** Every frame: the rows where something held would go now light up (at most three), the others go out. */
+  highlight(rows: readonly RowId[], dt: number): void;
+  /** How lit each row is now, 0…1 (QA). */
+  readonly lit: ReadonlyMap<RowId, number>;
   /**
    * Every frame: the print shows only where it can be read from this camera (≥ 16 px-equivalent per em), never on a
    * phone. `room` 0…1 is the room's light: the print is unlit and follows it.
@@ -231,6 +248,42 @@ export function createBoardView(ctx: ChapterContext, layout: BoardLayout): Board
   // QA: every mouth by its real name, `__app.locate('socket:a1')`, `'socket:-9'` (resolved only on demand)
   for (const s of layout.sockets) ctx.qa.probe(`socket:${s.id}`, () => socketWorld(s.id));
 
+  /* ---------------------------------------------------------------------------------- lit rows */
+  const { width: rw, strip: rs, rail: rr, opacity, rate } = BOARD_LOOK.row;
+  const flat = (w: number, d: number) => {
+    const g = new ShapeGeometry(G.rrectShape(w, d, rw / 2), 6);
+    g.rotateX(-Math.PI / 2);
+    return g;
+  };
+  const stripGeo = flat(rw, rs);
+  const railGeo = flat(rr, rw);
+  const lights: { mesh: Mesh; material: MeshBasicMaterial; row: RowId | null; k: number }[] = [0, 1, 2].map(
+    (i) => {
+      const material = new MeshBasicMaterial({
+        color: col('cyan'),
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+      const m = new Mesh(stripGeo, material);
+      m.name = `row-light:${i}`;
+      m.renderOrder = 1;
+      m.visible = false;
+      m.castShadow = false;
+      group.add(m);
+      return { mesh: m, material, row: null, k: 0 };
+    },
+  );
+  const lit = new Map<RowId, number>();
+  /** Where a row's strip lies: under its five sockets, or along its rail (board frame). */
+  const placeRow = (m: Mesh, row: RowId): void => {
+    const sockets = layout.sockets.filter((s) => s.row === row);
+    const x = sockets.reduce((a, s) => a + s.x, 0) / sockets.length;
+    const z = sockets.reduce((a, s) => a + s.z, 0) / sockets.length;
+    m.geometry = row === '+' || row === '-' ? railGeo : stripGeo;
+    m.position.set(x, 0.0015, z);
+  };
+
   let legible = -1;
   let lastRoom = -1;
   return {
@@ -240,6 +293,30 @@ export function createBoardView(ctx: ChapterContext, layout: BoardLayout): Board
     print,
     socketLocal,
     socketWorld,
+    lit,
+    highlight(rows, dt) {
+      const want = rows.slice(0, lights.length);
+      // a row still wanted keeps its light; a new one takes a light that is out (or the dimmest)
+      for (const row of want) {
+        if (lights.some((l) => l.row === row)) continue;
+        const l = [...lights].filter((x) => !want.includes(x.row ?? '')).sort((a, b) => a.k - b.k)[0];
+        if (!l) continue;
+        l.row = row;
+        l.k = 0;
+        placeRow(l.mesh, row);
+      }
+      lit.clear();
+      for (const l of lights) {
+        const on = l.row !== null && want.includes(l.row);
+        l.k = damp(l.k, on ? 1 : 0, rate, dt);
+        if (!on && l.k < 0.01) l.k = 0;
+        if (on && l.k > 0.99) l.k = 1;
+        l.material.opacity = opacity * l.k;
+        l.mesh.visible = l.k > 0;
+        if (l.row !== null && l.k > 0) lit.set(l.row, l.k);
+        if (l.k === 0) l.row = null;
+      }
+    },
     update(camera, room) {
       if (print.length === 0) return;
       const phone = ctx.device.formFactor === 'phone';

@@ -10,6 +10,7 @@ import {
   nextId,
   occupant,
   place,
+  put,
   remove,
   seatLead,
   seatLeg,
@@ -123,6 +124,43 @@ describe('putting a part on the board', () => {
     expect(canSeat(layout, s, 'a3', 'R1')).toBe(true);
     expect(canSeat(layout, s, 'a3', 'R2')).toBe(false);
     expect(canSeat(layout, s, 'z9')).toBe(false);
+  });
+});
+
+describe('a part with the sockets of its legs given (the hand: a part in the hand, carried, turned)', () => {
+  it('puts the legs in exactly these sockets, a leg in the air as null, all or nothing', () => {
+    const s = createBoardState();
+    // in the hand: the part is on the bench, out of every socket (the netlist leaves it out without pending)
+    expect(put(layout, s, { id: 'R1', spec: 'resistor-1k', legs: [null, null] })).toBe(true);
+    expect(legsOf(s, 'R1')).toEqual([null, null]);
+    expect(s.serial.get('R')).toBe(1);
+    // down on the board in a shape the footprint does not give: 5 P apart, the legs as the hand left them
+    expect(put(layout, s, { id: 'R1', spec: 'resistor-1k', legs: ['a3', 'a8'] })).toBe(true);
+    expect(legsOf(s, 'R1')).toEqual(['a3', 'a8']);
+    // turned end for end over the same sockets: its own sockets count as free
+    expect(put(layout, s, { id: 'R1', spec: 'resistor-1k', legs: ['a8', 'a3'] })).toBe(true);
+    expect(occupant(s, 'a8')).toEqual({ part: 'R1', leg: 0 });
+    // a pot's three legs go all together, so the hand puts them so too
+    expect(put(layout, s, { id: 'P1', spec: 'pot-10k', legs: ['c5', 'c7', 'c9'] })).toBe(true);
+  });
+
+  it('refuses, changing nothing: a taken or missing socket, two legs in one, a wrong count, a foreign id or key', () => {
+    const s = createBoardState();
+    put(layout, s, { id: 'R1', spec: 'resistor-1k', legs: ['a3', 'a7'] });
+    seatLead(layout, s, 'spk+', 'b9');
+    const before = snapshot(s);
+    const no = (id: string, spec: string, legs: (string | null)[]) =>
+      expect(put(layout, s, { id, spec, legs }), `${id} ${spec} ${legs.join(',')}`).toBe(false);
+    no('R2', 'resistor-1k', ['a7', 'a11']); // R1's leg
+    no('R2', 'resistor-1k', ['b9', 'b13']); // a plug
+    no('R2', 'resistor-1k', ['a20', 'a24']); // off the board
+    no('R2', 'resistor-1k', ['c4', 'c4']); // two legs in one socket
+    no('R2', 'resistor-1k', ['c4']); // one leg of two
+    no('X2', 'resistor-1k', ['c4', 'c8']); // not the resistor's letters
+    no('R1', 'resistor-4k7', ['c4', 'c8']); // R1 is another part
+    no('SPK1', 'speaker-8', ['c4', 'c8']); // a thing off the board has plugs, not legs
+    no('R2', 'no-such-part', ['c4', 'c8']);
+    expect(snapshot(s)).toBe(before);
   });
 });
 

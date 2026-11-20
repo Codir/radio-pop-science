@@ -18,7 +18,9 @@ function stubContext() {
     onDispose: () => {},
     onResize: () => () => {},
     qa: { expose: () => () => {}, probe: (_n: string, _t: Object3D | (() => unknown)) => () => {} },
-    device: { formFactor: 'desktop' },
+    // the hand registers the parts, their grips, the tray's slots and the switch; nothing presses them here
+    input: { register: () => () => {}, on: () => () => {} },
+    device: { formFactor: 'desktop', hover: true },
     viewport: { width: 1920, height: 1080, aspect: 1920 / 1080, dpr: 1 },
     quality: { count: (n: number) => n },
     random: { next, range: (a: number, b: number) => a + (b - a) * next() },

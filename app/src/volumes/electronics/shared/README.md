@@ -34,7 +34,8 @@ What a chapter writes (plain numbers, read every frame by `bench.update`):
 | `ambient` | `BENCH_AMBIENT` 0.8 | lift of the unlit room: a cool fill and a stronger moon that step back when the lamp burns |
 | `moon` | 1 | strength of the cold moon |
 | `lamp` | 0 | the lamp's filament 0 cold … 1 white; shown with the filament's inertia (the model drives it from E2-7) |
-| `closed` | 0 | the battery's switch: 0 open (the thumb pushed left, the gap shows) … 1 closed (E2-5 makes it the model's `SW`) |
+| `closed` | 0 | the battery's switch: 0 open (the thumb pushed left, the gap shows) … 1 closed — the setting of the model's part `SW` in `state.settings`; a tap on the slider flips it |
+| `flying` | false | the camera flies (the magnifier, a chapter's border): the hand and the switch do nothing |
 | `lens`, `lensTarget` | 0, `null` | the magnifier: 0 in its holder … 1 at `lensTarget` (a `LensPose` in the base frame, e.g. `overPose`) |
 | `lensCall` | 0 | the step asks the reader to take the magnifier: the resting ring turns full cyan and pulses |
 | `dive` | 0 | progress of the flight through the ring: the rim's arcs from 0.5 on |
@@ -44,11 +45,12 @@ What the bench has (read-only): `room`, `base` (`base.frame` is the tilted base 
 goes there, then `tameAll(bench.group)`), `light` (the rig owns `ctx.env.tune`; never tune the environment from a
 chapter; the lamp light hangs at the `filament`, and `mountBench` puts the shadowless `bounce` above the lamp's pool
 every frame), `layout` (the board as data, `sim/board`), `board` (the 3D breadboard: `socketWorld(id)`,
-`socketLocal(id)`, the instanced `mouths`, the `print`), `state` and `parts` (the parts on the board, below), `props`
-(the permanent things: the battery box with the switch, the player, the speaker and the lamp with their real marks
-from `shared/parts` — `props.things`, `props.bulb` — the lamp post and the `filament` where the light hangs; the tray,
-the multimeter and the oscilloscope still stand-ins of their size and colour) and `tools` (the magnifier and its
-`holder` pose).
+`socketLocal(id)`, the instanced `mouths`, the `print`, the lit rows `highlight(rows, dt)` / `lit`), `state` and
+`parts` (the parts on the board, below), `props` (the permanent things: the battery box with the switch, the player,
+the speaker and the lamp with their real marks from `shared/parts` — `props.things`, `props.bulb` — the lamp post and
+the `filament` where the light hangs; the multimeter and the oscilloscope still stand-ins of their size and colour),
+`fixed`, `switch`, `tray` and `hands` (the reader's hand, «hand» below) and `tools` (the magnifier and its `holder`
+pose).
 
 The board's print (the letters of the lines, the column numbers) is drawn only where all of it has ≥ 16 px-equivalent
 per em (`chapter-check`'s rule): on `board`, not on `stand`, never on a phone. The rails' «+» and «−» are not print
@@ -94,18 +96,69 @@ made directly (`createCeramic`, `createFilm`, `createElectrolytic`, `createTrans
 
 On the bench: `bench.state` (the board as data) and `bench.parts` (`bench/on-board.ts`): every frame the 3D parts
 follow the state — a part that came gets its model, a part whose legs moved stands on its new sockets, a leg taken out
-of its socket hangs in the air over where it was while the body keeps its turn, a part that left is disposed; `bench.parts.show(id, model, sockets)` stands a model the state does not hold (a kind the catalog lacks
-yet) outside the circuit. `bench.preset([{ id: 'R1', spec: 'resistor-4k7', at: 'a3', o?, setting? }, …])` makes the
-board hold exactly a step's parts at once (a part that does not stand there is a RangeError); `bench.clear()` takes
-everything off. `props.things` and `props.bulb` are the permanent things; the bench gives the bulb's filament the light
+of its socket hangs in the air over where it was while the body keeps its turn, a part that left is disposed (the hand
+moves the legs of the parts it drives: «hand» below); `bench.parts.show(id, model, sockets)` stands a model the state
+does not hold (a kind the catalog lacks yet) outside the circuit. `bench.preset([{ id: 'R1', spec: 'resistor-4k7',
+at: 'a3', o?, setting? }, …], leads?)` makes the board hold exactly a step's parts at once, and the named plugs in their
+sockets (a part or a plug that does not stand there is a RangeError); `bench.clear()` takes everything off. `props.things` and `props.bulb` are the permanent things; the bench gives the bulb's filament the light
 rig's glow every frame.
 
-For checks: `__app.read('electronics-board')` → `{ parts: { R1: { spec, legs } … }, leads, settings, models, shown }`;
+For checks: `__app.read('electronics-board')` → `{ parts: { R1: { spec, legs } … }, leads, settings, models, shown, key,
+pending }`;
 `__app.read('electronics-parts')` → for every part, shown model and permanent thing (`battery`, `player`, `speaker`,
 `lamp`): `{ key, center, radius, drawCalls, prints, printsShown, printsClear, printsCovered, printAt, printEm }`
 (world). `printsClear` counts the prints the camera sees with nothing drawn in front of them (rays from the camera to the
 middle and both ends of each print's line), `printsCovered` those shown although something covers them. The sandbox's
 step `parts` and `qa/measure.mjs --only parts` read them.
+
+## `hand` — the reader's hand (E2-5)
+
+The bench mounts the hand with itself: `bench.hands` (the two gestures, VISUAL §6), `bench.tray` (the tray of parts on
+the table), `bench.fixed` (the battery's wires and the plug leads of the speaker, the player and the lamp) and
+`bench.switch` (the battery's slide switch under a tap). A chapter says what may be taken and names it:
+
+```ts
+bench.tray.set(['resistor-1k', 'jumper', 'led-red']); // a step's kinds; the row is their size's choice, ≤ 6 a row
+bench.preset([{ id: 'R1', spec: 'resistor-4k7', at: 'a3' }], { 'spk+': 'c17', 'spk-': '-17' }); // parts and plugs
+bench.hands.policy = {
+  take: (k) => k !== 'switch', // 'part:R1', 'leg:R1:0', 'lead:spk+', 'tray:resistor-1k', 'switch'
+  flip: () => false, // no turning end for end in this step
+  done: (k, where) => {}, // a thing arrived: 'board', 'tray' or 'away'
+  tooltip: (k) => names[k], // the words are the chapter's
+};
+```
+
+- **Gesture 1 — a whole part** (`part:<id>`, or a new one from a slot, `tray:<key>`): the part leaves its sockets at
+  the press (out of the circuit, not pending) and follows the hand; over the board leg 0 looks for a socket within
+  `SNAP` and, when every leg finds a free one, the part hangs `HOVER` over them (`hands.preview`, the rows lit, a cue
+  ring on each); let go, the legs go down in `SEAT_SECONDS` and the board changes when they have arrived. Over the
+  board with no place it goes back where it was; off the board, to its slot (0.4 s) and is gone. A click turns a
+  placed part end for end (0.3 s). A part from the tray is level with the table in it and takes the board's tilt on
+  its way. On a phone the tray is the dock's: `bench.hands.offer(key)` puts a new part over the board to be taken.
+- **Gesture 2 — one end** by its grip (`leg:<id>:<k>`: a ring on an axial part's leg, a tab before a radial part's
+  body, a capsule on a jumper's end; `lead:<name>`: the capsule on a plug): out of its socket at the press (the part
+  pending), led within its reach (the part's span from its other legs, 4.0 of a lead from its thing); `hands.near` is
+  the free socket within `NEAR` it would take (a cue ring, the row lit) — never the one it left until the hand has
+  gone `AWAY`. A part's leg clicks in within `SNAP` while the hand moves; a jumper's end and a plug click in when let
+  go within `SNAP` (they cross many sockets on their way), and lie where they were let go otherwise; a part's leg let
+  go with no socket goes back.
+- On a touch screen the thing rides `LIFT` (48 px) above the finger and the grips are always shown; with a mouse they
+  come while the pointer is on the part and 1.5 s after. The grips' spheres never overlap (VISUAL §6 and §8: the tests
+  cast rays from the cameras of `stand`, `board` and `phone`). On a phone the radial parts' tabs are hidden: those
+  parts are carried whole.
+- Every part on the board stands on its `Leg`s (`bench.parts.legs`); while the hand does not drive a part, its legs
+  follow the board's state at once (a step's `preset`, a test's `seatLeg`). `bench.preset` and `bench.clear` first let
+  go of whatever the hand holds (`hands.reset`). The body's glow under the pointer is cyan emissive on the part's
+  `body` materials (E2-7's heat look shares them).
+- `hand/swap.ts` (`createSwap`) is a scripted repair kept for the chapters: a still copy of a thing leaves along a way
+  while the new one comes back the same way.
+
+For checks: `__app.read('electronics-board')` also has `key` (the netlist's shape: it changes when a leg moves to
+another row) and `pending`; `__app.read('electronics-hand')` → `{ held, near, preview, rows, busy, switchFlips }`;
+`__app.read('electronics-motion')` → `{ camera, focus, plugs }` (world, every frame: the camera, the thing the hand
+moves now or moved last, every plug). Probes: `part:<id>`, `leg:<id>:<k>` (its grip), `tip:<id>:<k>` (the leg's foot on
+the board's face), `lead:<name>`, `end:<name>`, `tray:<key>`, `switch`. The sandbox's step `hand` and
+`qa/measure.mjs --only hand` (a mouse, `--touch`) drive them.
 
 ## Копії
 
@@ -137,15 +190,15 @@ from «заплановано» to «зроблено» in the same commit and c
 | `circuit/shared/stage/bulb.ts` | `electronics/shared/parts/bulb.ts` | без великого плану (`close`, `lamp-view.ts`) і без `print` `circuit`; `supportPath` вбудовано з `bulb-close.ts`; уся лампа зменшена в `BULB_SCALE` 0,8 (скло — `LAMP.glass` 0,38, різьба 0,14 входить у патрон стійки), відблиск — під менше скло; на цоколі друк «6 V»; `depthShell` експортовано — ним користуються купол світлодіода й скло 1N4148 | E2-4 | зроблено |
 | `circuit/shared/stage/bulb-heat.ts` | `electronics/shared/parts/heat-scale.ts` | лише шкала «тепло ↔ температура» (`HEAT_STOPS`, `temperatureOfHeat`, `heatOfTemperature`, `FIRST_GLOW`) і `formatTemperature`; енергетичний баланс лампи прибрано: температуру нитки дає модель | E2-4 | зроблено |
 | `circuit/shared/stage/__tests__/bulb.test.ts`, `bulb-heat.test.ts` | `electronics/shared/parts/__tests__/bulb.test.ts`, `heat-scale.test.ts` | тести скла взято як є; з тестів тепла — лише шкала й показ; нові: скло й різьба лампи стенда за `VISUAL.md` §2, лампа на 6 V і 3 V на шкалі за §4.6 | E2-4 | зроблено |
-| `circuit/chapters/build/parts/glide.ts` | `electronics/shared/hand/glide.ts` | нічого | E2-5 | заплановано |
-| `circuit/chapters/build/parts/ends.ts` | `electronics/shared/hand/leg.ts` | `End` → `Leg`: місця «гніздо», «лежить», «у руці», «лоток»; одне гніздо — одна ніжка; `seated` — лише по прибуттю | E2-5 | заплановано |
-| `circuit/chapters/build/parts/curves.ts` | `electronics/shared/hand/curves.ts` | `resample` — з `../bench/dyn-tube`; рельєф — параметр (`Terrain`) | E2-5 | заплановано |
-| `circuit/chapters/build/parts/clamps.ts` (`ground`) | `electronics/shared/hand/terrain.ts` | лише `ground()` із піднятими ділянками як даними; затискачі й місця спокою — ні | E2-5 | заплановано |
-| `circuit/chapters/build/parts/grips.ts` | `electronics/shared/hand/grips.ts` | батьківська група — параметр; загальний ключ; захват на кожну ніжку, штекер і щуп | E2-5 | заплановано |
-| `circuit/chapters/build/parts/hands.ts` | `electronics/shared/hand/hands.ts` | загальні руки: ключі `part:` / `leg:` / `lead:` / `probe:` / `tray:`, площина з рамки плати, кандидати — гнізда, живі `near` і `preview` | E2-5 | заплановано |
-| `circuit/chapters/build/parts/swap.ts` | `electronics/shared/hand/swap.ts` | `createSwap(parent, source, path)`: згоріла деталь іде, нова приходить | E2-5 | заплановано |
-| `circuit/chapters/build/parts/switch.ts` | `electronics/shared/bench/switch.ts` | вимикач батареї; `world.flying` → `bench.flying`; `closed` → налаштування деталі `SW` | E2-5 | заплановано |
-| `circuit/chapters/battery/parts/cue.ts` | `electronics/shared/hand/cue.ts` | нічого | E2-5 | заплановано |
+| `circuit/chapters/build/parts/glide.ts` | `electronics/shared/hand/glide.ts` | нічого, лише коментар-заголовок | E2-5 | зроблено |
+| `circuit/chapters/build/parts/ends.ts` | `electronics/shared/hand/leg.ts` | `End` → `Leg`: місця «гніздо», «лежить», «у руці», «лоток» (гнізда й рельєф — від стенда, `LegWorld`); одне гніздо — один кінець (затискачів на два кінці, їхнього зсуву й віяла немає); напрям повертає за якорем — річчю дроту чи тілом деталі; `seated` — лише по прибуттю | E2-5 | зроблено |
+| `circuit/chapters/build/parts/curves.ts` | `electronics/shared/hand/curves.ts` | рельєф — параметр (`Terrain`); `peeled` і `blend` (з ними й `resample`) не взято: обидва кінці кожного дроту стенда вільні | E2-5 | зроблено |
+| `circuit/chapters/build/parts/clamps.ts` (`ground`) | `electronics/shared/hand/terrain.ts` | лише `ground()` із піднятими ділянками як даними (тіло плати, бокс батареї, речі на основі — їх дає стенд); затискачі й місця спокою — ні | E2-5 | зроблено |
+| `circuit/chapters/build/parts/grips.ts` | `electronics/shared/hand/grips.ts` | батьківська група — параметр; загальний ключ; три форми (`VISUAL.md` §6): кільце на ніжці аксіальної деталі, язичок перед радіальною, капсула 0,07 × 0,24 на кінці перемички, штекері й щупі; радіус сфери дає стенд (сфери не перекриваються); тримач завжди видимий, з’являється й зникає лише вигляд — прихований захват теж бере вказівник | E2-5 | зроблено |
+| `circuit/chapters/build/parts/hands.ts` | `electronics/shared/hand/hands.ts` | загальні руки з двома жестами: ключі `part:` / `leg:` / `lead:` / `probe:` / `tray:` / `switch`, площина — лице плати з її рамки, кандидати — гнізда (`layout.nearest`), живі `near` і `preview`, межа вильоту з відбитка, `LIFT` для пальця, захват — від точки натиску; ніжка деталі клацає під час руху, кінець перемички чи штекер — коли відпустили; зміна плати — по прибуттю | E2-5 | зроблено |
+| `circuit/chapters/build/parts/swap.ts` | `electronics/shared/hand/swap.ts` | `createSwap(parent, thing, way, lift)`: батьківська група, річ і її шлях — параметри (у `circuit` — один дріт стенда через дальній край); копія знімається з усіх видимих сіток речі | E2-5 | зроблено |
+| `circuit/chapters/build/parts/switch.ts` | `electronics/shared/bench/switch.ts` | вимикач батареї; `world.flying` → `bench.flying`; `closed` → налаштування деталі `SW` (`bench.closed`); повзунок з інерцією ставить сам стенд | E2-5 | зроблено |
+| `circuit/chapters/battery/parts/cue.ts` | `electronics/shared/hand/cue.ts` | внутрішній радіус кільця, швидкість появи й ім’я — параметри (кільце-підказка на гнізді: 0,12 і 0,025, 0,12 s) | E2-5 | зроблено |
 | `circuit/chapters/build/qa/helpers.mjs` | `_dev/chapters/_sandbox-electronics-bench/qa/helpers.mjs` | нічого, лише коментар-заголовок (бриф E2-3 називає файл серед файлів пісочниці, і `measure.mjs` бере з нього `read`) | E2-3 | зроблено |
 | `circuit/shared/stage/tools/gauge.ts` (щуп і дріт) | `electronics/shared/instruments/probe.ts` | вістря — `Leg` (гніздо, спокій, рука); дріт — від гнізда приладу; стрілку, шкалу, `GAUGE_HOME` і число в 3D не взято | E2-6 | заплановано |
 | `circuit/shared/world/dive.ts` | `electronics/shared/dive/rail-math.ts` | нічого | E2-8 | заплановано |

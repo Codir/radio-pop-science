@@ -5,7 +5,7 @@ import { defineChapter } from '@/engine/api';
  * of `@electronics/shared/**` in a real browser, with the measurements of `qa/measure.mjs`. Batch E2 grows it step by
  * step; E2-3: the dark room, the base with the breadboard, the magnifier in its holder and the stand-ins of the
  * permanent things, from the bench's shots (steps `room`, `board`, `meter`, `scope`); E2-4: the parts with their real
- * marks on the board (step `parts`).
+ * marks on the board (step `parts`); E2-5: the hand, the tray, the plug leads and the switch (step `hand`).
  * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
@@ -32,6 +32,33 @@ export const SANDBOX = {
       blurb:
         'По одній деталі кожного виду й ряд резисторів від 1 Ω до 1 MΩ: смужки за номіналом, полярність, друк. Конденсатори й транзистор стоять на платі, але поза схемою, доки їх немає в каталозі моделі.',
     },
+    hand: {
+      title: 'Рука й лоток',
+      blurb:
+        'Порожня плата, у лотку резистори, перемичка й світлодіоди, дроти динаміка, плеєра й лампи лежать вільно. Деталь несуть цілою — з лотка на плату, з місця на місце, назад у лоток; клацання по деталі перевертає її. Ніжку переставляють за кільце чи язичок, кінець перемички чи штекер — за капсулу. Дотик до вимикача перемикає батарею.',
+    },
+  },
+  /** The names under the pointer (tooltips) and on the dock's buttons of the tray (a phone). */
+  names: {
+    kinds: {
+      resistor: 'Резистор',
+      jumper: 'Перемичка',
+      led: 'Світлодіод',
+      diode: 'Діод',
+      pot: 'Змінний резистор',
+    },
+    leg: 'Ніжка',
+    end: 'Кінець перемички',
+    leds: { red: 'Червоний', yellow: 'Жовтий', green: 'Зелений', blue: 'Синій', white: 'Білий' },
+    leads: {
+      'spk+': 'Дріт «+» динаміка',
+      'spk-': 'Дріт «−» динаміка',
+      'pl+': 'Сигнальний дріт плеєра',
+      'pl-': 'Спільний дріт плеєра',
+      lamp1: 'Дріт лампи',
+      lamp2: 'Дріт лампи',
+    },
+    switch: 'Вимикач батареї',
   },
 } as const;
 
