@@ -1,8 +1,10 @@
 # `tools/site` — профіль сайту
 
 Профіль сайту — це продакшн-збірка `app/`, у якій лишено один том, і той показаний як окремий курс: без
-бібліотеки й без кнопок до інших томів. Так збирається сайт https://codir.github.io/radio-pop-science/ (том
-`radio`). Дерево репозиторію збірка не змінює: усе відбувається в тимчасовій копії `app/`.
+бібліотеки й без кнопок до інших томів. Так збирається сайт https://codir.github.io/radio-pop-science/: у корені —
+том `radio`, у підкаталозі `electronics/` — том `electronics` («Радіоелектроніка»), кожен окремою збіркою профілю.
+Третій сусід, `nuclear/` («Ядерна алхімія»), профіль не збирає (див. «Публікація»). Дерево репозиторію збірка не
+змінює: усе відбувається в тимчасовій копії `app/`.
 
 ## Що робить профіль і чого не чіпає
 
@@ -29,7 +31,8 @@ node tools/site/build.mjs --volume radio
 #   [--out tools/site/dist] [--sub radio-pop-science] [--port 5391] [--no-smoke] [--keep-work]
 ```
 
-Перший рядок — `site: volume radio (draft → published); removed from the copy: _demo _dev _path circuit electricity`,
+Перший рядок —
+`site: volume radio (draft → published); removed from the copy: _demo _dev _path circuit electricity electronics`,
 останній — `PASS site smoke`, вихід 0 (10–20 с). `--no-smoke` лише збирає; `--keep-work` лишає робочу копію й
 друкує її шлях (див. «Робоча копія»). Тому немає — `site: app/src/volumes/<том>/volume.json is missing`, вихід 1.
 Ще до копії `build.mjs` відмовляє (рядок `site: …`, вихід 1), якщо `volume.json` тому в дереві має інший `id` чи
@@ -38,6 +41,8 @@ node tools/site/build.mjs --volume radio
 по 10 хвилин: завислий інструмент збірка зупиняє, і це провал, а не вічне очікування.
 Для перевірок глав будь-який інший том можна зібрати в окремий каталог:
 `node tools/site/build.mjs --volume circuit --out "$HOME/.cache/radio-pop-science/site-circuit"`.
+Підшлях може бути вкладеним: `--sub radio-pop-science/electronics` роздає й перевіряє збірку під
+`/radio-pop-science/electronics/` — так її кладе на сайт крок `Electronics` потоку `pages`.
 
 ### `smoke.mjs` — перевірити сайт у браузері
 
@@ -48,7 +53,8 @@ node tools/site/smoke.mjs --url https://codir.github.io/radio-pop-science/ --vol
 ```
 
 - `--dist … --volume …` роздає збірку під `/<sub>/` так, як GitHub Pages роздає сайт проєкту (поза підшляхом —
-  404, запасної сторінки немає), і відкриває її в Chrome без вікна.
+  404, запасної сторінки немає; каталог, названий без скісної риски в кінці, — 301 на адресу з рискою), і
+  відкриває її в Chrome без вікна.
 - `--dist … --serve` лише роздає — для `tools/qa/*.mjs --base http://127.0.0.1:5391/radio-pop-science/`.
   Зупиняє Ctrl+C або `site_stop` (див. `qa-env.sh`).
 - `--url <адреса зі скісною рискою в кінці>` нічого не роздає, а перевіряє вже розданий сайт — локальний
@@ -63,12 +69,35 @@ node tools/site/smoke.mjs --url https://codir.github.io/radio-pop-science/ --vol
   з правильною назвою; дороги до бібліотеки чи іншого тому немає;
 - том без глав показує вестибюль із рядком `emptyNote` (`home-empty`); том із главами — кнопку `home-start`
   або `home-resume`, а глибоке посилання на перший крок відкриває саме цей крок;
-- посилання в том, якого тут немає, веде в обраний.
+- посилання в том, якого тут немає, веде в обраний;
+- адреса без скісної риски в кінці (`/radio-pop-science`, `/radio-pop-science/electronics`) відповідає
+  переадресацією на адресу з рискою, як на Pages: шляхи сторінки до її файлів відносні й працюють лише звідти.
+  Сайт без підшляху (корінь домену) такої адреси не має, і там цієї перевірки немає.
 
 Без `<dist>/index.html` — одразу `site: <dist>/index.html is missing`, вихід 1, браузер не запускається. Зайнятий
 порт чи Chrome, що не запускається, — рядок `FAILED site smoke: cannot serve …` або `FAILED site smoke: cannot start
 Chrome …`, вихід 1. Кожне очікування сторінки має межу: завантаження й поява `__app` — 60 с, `__app.ready`,
 `__app.settled()` і шрифти — по 90 с; завислий запуск закінчується рядком `FAILED site smoke`, а не чеканням без кінця.
+
+### Увесь сайт локально: `radio` і `electronics` разом
+
+Так само, як потік `pages`: спершу `radio` у каталог сайту (його `vite build` спорожнює каталог, тож він іде першим),
+потім `electronics` у підкаталог `electronics/`; далі каталог роздають під `/radio-pop-science/` і перевіряють
+обидва томи за їхніми адресами. Разом це близько пів хвилини, але тут збірки з перевіркою в браузері й сервер, тож в
+оболонці агента команду запускають у фоні:
+
+```bash
+bash -c 'source tools/site/qa-env.sh; X="$HOME/.cache/radio-pop-science/site-pages"
+  node tools/site/build.mjs --volume radio --out "$X" --sub radio-pop-science | tail -1
+  node tools/site/build.mjs --volume electronics --out "$X/electronics" --sub radio-pop-science/electronics | tail -1
+  site_serve 5395 "$X" >/dev/null; B=http://127.0.0.1:5395/radio-pop-science/
+  node tools/site/smoke.mjs --url $B --volume radio | tail -1
+  node tools/site/smoke.mjs --url ${B}electronics/ --volume electronics | tail -1; site_stop 5395'
+```
+
+Очікувано — чотири рядки `PASS site smoke`: дві збірки, кожна зі своєю перевіркою під власним підшляхом, і дві
+перевірки вже розданого цілого сайту. `nuclear/` у місцевій копії немає (`/radio-pop-science/nuclear/` — 404): гру
+потік бере з гілки `gh-pages`.
 
 ### Змінні середовища
 
@@ -156,10 +185,16 @@ cd <робоча копія> && <корінь репозиторію>/app/node_m
 
 ## Публікація
 
-Сайт тому: https://codir.github.io/radio-pop-science/. Його збирає й публікує потік GitHub Actions `pages`
-(`.github/workflows/pages.yml`). Поруч, під https://codir.github.io/radio-pop-science/nuclear/, лежить гра «Ядерна
-алхімія»: готова збірка з гілки `gh-pages` (її зібрано з гілки `nuclear-alchemy` з `base: './'`, тож вона працює під
-будь-яким підшляхом). Потік копіює її як є; щоб оновити гру, оновлюють гілку `gh-pages` і перезапускають потік.
+Сайт: https://codir.github.io/radio-pop-science/ — том `radio` («Радіо»), а під
+https://codir.github.io/radio-pop-science/electronics/ — том `electronics` («Радіоелектроніка»). Обидва збирає й
+публікує потік GitHub Actions `pages` (`.github/workflows/pages.yml`), кожен окремою збіркою профілю, тож том не
+бачить сусіда й не має до нього дороги. Але джерело в них одне (`codir.github.io`), а з ним і запис у сховищі
+браузера (`localStorage`, ключ `electricity:v2`): поступ кожного тому лежить окремо, налаштування читача спільні, а
+«Скинути прогрес» чи «Почати з нуля» в одному томі стирає поступ і в другому.
+
+Поруч, під https://codir.github.io/radio-pop-science/nuclear/, лежить гра «Ядерна алхімія»: готова збірка з гілки
+`gh-pages` (її зібрано з гілки `nuclear-alchemy` з `base: './'`, тож вона працює під будь-яким підшляхом). Потік
+копіює її як є; щоб оновити гру, оновлюють гілку `gh-pages` і перезапускають потік.
 
 **Одноразова дія власника:** Settings → Pages → Build and deployment → Source: **GitHub Actions**. Доки цього не
 зроблено, падає крок `Pages settings`: `actions/configure-pages` сам Pages не вмикає, бо для цього потрібен інший
@@ -182,8 +217,9 @@ cd <робоча копія> && <корінь репозиторію>/app/node_m
 | `Install` | `pnpm install --frozen-lockfile` в `app/` |
 | `Types`, `Lint`, `Unit tests` | `pnpm typecheck`, `pnpm lint`, `pnpm test --testTimeout=30000` в `app/` |
 | `Documents` | `python3 tools/content/doccheck.py --all`, `python3 docs/volumes/radio/test_check.py`, `python3 docs/volumes/radio/check.py` |
-| `Pages settings` | `actions/configure-pages`: перевіряє, що Pages увімкнено, і дає підшлях сайту (`/radio-pop-science`) для `--sub` наступного кроку |
+| `Pages settings` | `actions/configure-pages`: перевіряє, що Pages увімкнено, і дає підшлях сайту (`/radio-pop-science`) для `--sub` кроків `Site profile` і `Electronics` |
 | `Site profile` | `node tools/site/build.mjs --volume radio --out "$RUNNER_TEMP/site" --sub radio-pop-science` (підшлях — з `Pages settings`): збірка з перевіркою в браузері |
+| `Electronics` | `node tools/site/build.mjs --volume electronics --out "$RUNNER_TEMP/site/electronics" --sub radio-pop-science/electronics`: том `electronics` у підкаталог `electronics/` сайту, з перевіркою в браузері під власним підшляхом. Іде після `Site profile`, бо `vite build` того кроку спорожнює `$RUNNER_TEMP/site` |
 | `Nuclear alchemy` | бере дерево гілки `gh-pages` (`git fetch --depth=1`, `git archive`) у `$RUNNER_TEMP/site/nuclear` і перевіряє, що там є `index.html` з відносними шляхами `./assets/` |
 | `actions/upload-pages-artifact` | пакує `$RUNNER_TEMP/site` для `deploy`; дерево репозиторію лишається чистим |
 
@@ -193,7 +229,8 @@ cd <робоча копія> && <корінь репозиторію>/app/node_m
 30 с. Місцевий `pnpm test` лишається зі звичайною межею.
 
 Ні `.nojekyll`, ні `404.html`, ні `--base` сайтові не потрібні: маршрути застосунку живуть лише після `#`, тож
-сервер дістає тільки запити `/radio-pop-science/` і статичних файлів під ним, а Vite збирає з `base: './'`.
+сервер дістає тільки запити `/radio-pop-science/`, `/radio-pop-science/electronics/` і статичних файлів під ними, а
+Vite збирає з `base: './'`.
 
 ### Якщо потік упав
 
@@ -202,16 +239,17 @@ cd <робоча копія> && <корінь репозиторію>/app/node_m
 | Що впало | Що це означає | Що робимо |
 |---|---|---|
 | `Pages settings` | Власник іще не ввімкнув Pages (у журналі `Get Pages site failed`). Це не дефект. Якщо Pages уже ввімкнено, а помилка та сама, — у роботи `build` немає права `pages: read` | Просимо власника ввімкнути Pages (див. вище) і натиснути «Re-run all jobs» на сторінці запуску. Порожніх комітів, щоб перезапустити потік, не робимо. Чергу закривають ворота без перевірки живого сайту, з відкритим рядком у звіті (`docs/superpowers/plans/2026-11-18-radio-pilot/batch-1.md`, A9, крок 6) |
-| `Site profile`, а кроки до нього зелені | Спершу читаємо журнал кроку. `site: … failed (work copy kept …)` або рядки `FAIL` при запущеному браузері — дефект сайту, а не машини. Лише помилка запуску Chrome (`browserType.launch`) або відсутній WebGL2 означають, що на машині GitHub не працює Chrome чи WebGL2 | Дефект сайту відтворюємо тут (`node tools/site/build.mjs --volume radio`) й виправляємо; `--no-smoke` не ставимо. Якщо не працює Chrome чи WebGL2 — у команді кроку додаємо `--no-smoke`, а в цей розділ — рядок, що перевірка в браузері лишилася локальними воротами (див. правило нижче) |
+| `Site profile` чи `Electronics`, а кроки до нього зелені | Спершу читаємо журнал кроку. `site: … failed (work copy kept …)` або рядки `FAIL` при запущеному браузері — дефект сайту, а не машини. Лише помилка запуску Chrome (`browserType.launch`) або відсутній WebGL2 означають, що на машині GitHub не працює Chrome чи WebGL2 | Дефект сайту відтворюємо тут (`node tools/site/build.mjs --volume radio` чи `node tools/site/build.mjs --volume electronics --sub radio-pop-science/electronics`) й виправляємо; `--no-smoke` не ставимо. Якщо не працює Chrome чи WebGL2 — у команді кроку додаємо `--no-smoke`, а в цей розділ — рядок, що перевірка в браузері лишилася локальними воротами (див. правило нижче) |
 | `actions/upload-pages-artifact@v5` або робота `deploy` | Найновіші версії дій Pages не працюють разом | Повертаємо попередні: `actions/configure-pages@v5`, `actions/upload-pages-artifact@v4`, `actions/deploy-pages@v4` |
 | `Install`, `Types`, `Lint`, `Unit tests` або `Documents` | Дерево на чистій машині поводиться інакше, ніж тут | Відтворюємо в чистому клоні (`git clone . "$(mktemp -d)"`), знаходимо причину й виправляємо її |
 
-**Правило для `--no-smoke`.** Якщо в кроці `Site profile` стоїть `--no-smoke`, потік лише збирає сайт, а перевірка в
-браузері лишається локальними воротами: перед надсиланням — `node tools/site/build.mjs --volume radio` (останній
-рядок `PASS site smoke`), а після публікації — перевірка опублікованого сайту:
+**Правило для `--no-smoke`.** Якщо в кроці `Site profile` чи `Electronics` стоїть `--no-smoke`, потік лише збирає
+сайт, а перевірка в браузері лишається локальними воротами: перед надсиланням — увесь сайт локально (див. «Увесь сайт
+локально», чотири рядки `PASS site smoke`), а після публікації — перевірка опублікованого сайту:
 
 ```bash
 node tools/site/smoke.mjs --url https://codir.github.io/radio-pop-science/ --volume radio
+node tools/site/smoke.mjs --url https://codir.github.io/radio-pop-science/electronics/ --volume electronics
 ```
 
 **Чого в потоці немає.** Дві перевірки зразків еталона, що з’являться з чергою 2

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Browser check of a site-profile build: serves <dist> under /<sub>/ exactly as a GitHub Pages project site does
-// (nothing exists outside the sub-path, no fallback page) and opens it in headless Chrome.
+// (nothing exists outside the sub-path, no fallback page, a directory named without its final slash redirects to
+// the slash form) and opens it in headless Chrome.
 //
 //   node tools/site/smoke.mjs --dist tools/site/dist --volume radio [--sub radio-pop-science] [--port 5391]
 //   node tools/site/smoke.mjs --dist tools/site/dist --serve [--port 5391]   only serve (for tools/qa: --base http://127.0.0.1:5391/<sub>/)
@@ -44,7 +45,11 @@ export function serve(dist, sub, port) {
     const file = join(root, rel);
     if (!file.startsWith(root)) return end(403);
     try {
-      const path = (await stat(file)).isDirectory() ? join(file, 'index.html') : file;
+      const directory = (await stat(file)).isDirectory();
+      // a directory asked for without its final slash (another site under this one, e.g. electronics/): Pages
+      // redirects to the slash form, and the page's relative URLs only resolve from there
+      if (directory && !url.pathname.endsWith('/')) return end(301, { location: `${url.pathname}/${url.search}` });
+      const path = directory ? join(file, 'index.html') : file;
       end(200, { 'content-type': TYPES[extname(path)] ?? 'application/octet-stream', 'cache-control': 'no-store' }, await readFile(path));
     } catch {
       end(404, { 'content-type': 'text/plain' }, 'not found');
@@ -165,6 +170,15 @@ export async function smoke({ dist, url, sub, port, volume, title, note = '', ap
     }
     const other = await open('#/no-such-volume/chapter/step', 'foreign link');
     check((other.lobby ?? other.position.volumeId) === volume, `foreign link: a link into a volume that is not here opens ${volume}`, other.hash);
+    // A reader may type the address without its final slash. Pages answers with a redirect to the slash form, and
+    // the page needs it: its asset URLs are relative (base './') and resolve against the directory of the address.
+    if (new URL(site.url).pathname !== '/') {
+      const bare = site.url.slice(0, -1);
+      const r = await fetch(bare, { redirect: 'manual' });
+      const to = r.headers.get('location');
+      const lands = r.status >= 300 && r.status < 400 && to !== null && new URL(to, bare).href === site.url;
+      check(lands, `bare address: ${new URL(bare).pathname} redirects to ${new URL(site.url).pathname}`, `${r.status} ${to ?? '(no location)'}`);
+    }
   } catch (error) {
     failures.push(`exception: ${error.message}`);
     console.error(error);
