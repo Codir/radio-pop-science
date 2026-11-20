@@ -72,7 +72,8 @@ jobs:
         run: |
           # not on PATH: QA_CHROME stays unset and smoke.mjs uses /usr/bin/google-chrome
           QA_CHROME="$(command -v google-chrome)" && export QA_CHROME
-          node tools/site/build.mjs --volume radio --out "$RUNNER_TEMP/site" --sub "${BASE_PATH#/}"
+          set -o pipefail
+          node tools/site/build.mjs --volume radio --out "$RUNNER_TEMP/site" --sub "${BASE_PATH#/}" 2>&1 | tee "$RUNNER_TEMP/site-radio.log"
 
       # The volume electronics lives next to the volume radio under /electronics/: the same site profile, built into
       # that sub-directory and checked in the browser under its own sub-path. It comes after Site profile, whose
@@ -83,7 +84,20 @@ jobs:
         run: |
           # not on PATH: QA_CHROME stays unset and smoke.mjs uses /usr/bin/google-chrome
           QA_CHROME="$(command -v google-chrome)" && export QA_CHROME
-          node tools/site/build.mjs --volume electronics --out "$RUNNER_TEMP/site/electronics" --sub "${BASE_PATH#/}/electronics"
+          set -o pipefail
+          node tools/site/build.mjs --volume electronics --out "$RUNNER_TEMP/site/electronics" --sub "${BASE_PATH#/}/electronics" 2>&1 | tee "$RUNNER_TEMP/site-electronics.log"
+
+      # Reading a job log takes admin rights (web sign-in or an admin token); reading a run's annotations does not
+      # (GET /repos/{owner}/{repo}/check-runs/{job id}/annotations). So when a site build fails, the lines of its log
+      # that say why become annotations of the run.
+      - name: Why the site build failed
+        if: failure()
+        run: |
+          for log in "$RUNNER_TEMP"/site-*.log; do
+            [ -f "$log" ] || continue
+            grep -E 'FAIL|exception|[Ee]rror|missing|cannot|failed' "$log" | head -n 9 | sed 's/%/%25/g' |
+              while IFS= read -r line; do echo "::error title=$(basename "$log")::$line"; done
+          done
 
       # «Ядерна алхімія» lives next to the volume under /nuclear/: the ready build kept in the branch gh-pages
       # (built from the branch nuclear-alchemy with base './', so it works under any sub-path). Copied as is.

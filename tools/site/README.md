@@ -220,6 +220,7 @@ https://codir.github.io/radio-pop-science/electronics/ — том `electronics` 
 | `Pages settings` | `actions/configure-pages`: перевіряє, що Pages увімкнено, і дає підшлях сайту (`/radio-pop-science`) для `--sub` кроків `Site profile` і `Electronics` |
 | `Site profile` | `node tools/site/build.mjs --volume radio --out "$RUNNER_TEMP/site" --sub radio-pop-science` (підшлях — з `Pages settings`): збірка з перевіркою в браузері |
 | `Electronics` | `node tools/site/build.mjs --volume electronics --out "$RUNNER_TEMP/site/electronics" --sub radio-pop-science/electronics`: том `electronics` у підкаталог `electronics/` сайту, з перевіркою в браузері під власним підшляхом. Іде після `Site profile`, бо `vite build` того кроку спорожнює `$RUNNER_TEMP/site` |
+| `Why the site build failed` | лише коли якийсь крок упав: рядки журналів `Site profile` і `Electronics` (`$RUNNER_TEMP/site-*.log`), що кажуть про провал (`FAIL`, `error`, `missing`, `cannot`…), стають примітками запуску. Журнал кроку можна прочитати лише з правами адміністратора, а примітки — без них: `curl -s https://api.github.com/repos/Codir/radio-pop-science/check-runs/<id роботи>/annotations` |
 | `Nuclear alchemy` | бере дерево гілки `gh-pages` (`git fetch --depth=1`, `git archive`) у `$RUNNER_TEMP/site/nuclear` і перевіряє, що там є `index.html` з відносними шляхами `./assets/` |
 | `actions/upload-pages-artifact` | пакує `$RUNNER_TEMP/site` для `deploy`; дерево репозиторію лишається чистим |
 
