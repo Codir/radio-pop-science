@@ -95,8 +95,11 @@ export async function smoke({ dist, url, sub, port, volume, title, note = '', ap
     console.log(`FAILED site smoke: cannot start Chrome ${chrome} (${error.message})`);
     return false;
   }
-  /** One page load in a fresh profile; `label` prefixes the checks every load must pass. */
-  const open = async (hash, label) => {
+  /**
+   * One page load in a fresh profile; `label` prefixes the checks every load must pass. `shows`: QA names of which
+   * one must be on screen before the state is read (the load is still read, and its checks fail, if none ever is).
+   */
+  const open = async (hash, label, shows = []) => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await context.newPage();
     const bad = [];
@@ -127,6 +130,20 @@ export async function smoke({ dist, url, sub, port, volume, title, note = '', ap
     await within(page.evaluate(() => window.__app.settled()), '__app.settled()');
     await within(page.evaluate(() => document.fonts.ready.then(() => undefined)), 'document.fonts.ready');
     await page.waitForTimeout(1000);
+    // A screen rises in on the engine clock, and a real frame moves that clock by 1/15 s at most (MAX_FRAME_DT in
+    // app/src/engine/clock.ts): the lobby's note is on screen (opacity above ½, as __ui.names() counts it) some
+    // 0.2 s of that clock after the home screen opened, so three frames or more, and __app.settled() does not wait
+    // for it. Under software GL on a slow runner one frame can take more than a second, and the wait above may hold
+    // no frame at all (the CI failure of 663e7be: names «home toasts root popups modal», no home-empty).
+    if (shows.length > 0)
+      await page
+        .waitForFunction((names) => (window.__ui?.names() ?? []).some((n) => names.includes(n)), shows, {
+          timeout: 30000,
+          polling: 100,
+        })
+        .catch((error) => {
+          if (error.name !== 'TimeoutError') throw error;
+        });
     const state = await page.evaluate(() => ({
       hash: window.location.hash,
       title: document.title,
@@ -149,7 +166,8 @@ export async function smoke({ dist, url, sub, port, volume, title, note = '', ap
     return state;
   };
   try {
-    const home = await open('', 'home');
+    // the lobby's note, or the way in of a volume with chapters: the lines the home checks below read
+    const home = await open('', 'home', ['home-empty', 'home-start', 'home-resume']);
     const where = home.lobby ? `lobby:${home.lobby}` : `${home.position.volumeId}/${home.position.chapterId}/${home.position.stepId}`;
     console.log(`  site: ${site.url} → ${where}, overlay ${home.overlay}, title «${home.title}», chapters: ${home.chapters.join(' ') || '(none built)'}`);
     check(home.volumes.map((v) => v.id).join(' ') === volume, `home: the only volume is ${volume}`, home.volumes.map((v) => v.id).join(' '));
