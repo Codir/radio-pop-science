@@ -6,7 +6,9 @@
  *   from the player (`coral` signal, `ink` common), two from the lamp (`mist`, it has no polarity). Each is a wire 4.0
  *   long from its thing — it reaches its half of the board — with a plug at its end: a sleeve in the wire's colour 0.22
  *   long and a steel pin 0.12 that goes into a mouth. A plug stands upright in its socket and lies on its side where
- *   it was let go; the hand moves it (gesture 2, `lead:<name>`), a step puts it in a socket (`bench.preset`).
+ *   it was let go; the hand moves it (gesture 2, `lead:<name>`), a step puts it in a socket (`bench.preset`). A lead
+ *   lies on the leads' ground (`terrain`): over the board's body, the things on the base and the bodies of the parts
+ *   on the board (`mounds.ts`); its wire is rebuilt when its ends move or that ground changes.
  *
  * The plugs' names are the board's state's (`spk+`, `spk-`, `pl+`, `pl-`, `lamp1`, `lamp2`); the netlist reads the
  * speaker's and the lamp's from `BENCH_FIXED`, the player's when the catalog has it (E1-7).
@@ -217,8 +219,8 @@ export function createFixed(world: LegWorld, terrain: Terrain): Fixed {
     const ax = l.gripAxis(axis);
     l.plug.position.copy(l.leg.pos);
     l.plug.quaternion.setFromUnitVectors(UP, ax);
-    // rebuild the wire only when its ends moved
-    const key = `${l.leg.pos.toArray().map((v) => v.toFixed(4))}|${ax.toArray().map((v) => v.toFixed(4))}`;
+    // rebuild the wire only when its ends moved, or the ground under it changed (a part came or left)
+    const key = `${l.leg.pos.toArray().map((v) => v.toFixed(4))}|${ax.toArray().map((v) => v.toFixed(4))}|${terrain.version()}`;
     if (last.get(l.name) === key) return;
     last.set(l.name, key);
     a.pos.copy(l.spec.from);

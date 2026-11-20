@@ -151,6 +151,8 @@ export interface HandParts {
   glow(id: string, amount: number): void;
   /** 0 level with the table (in the tray) … 1 in the board's frame. */
   level(id: string, k: number): void;
+  /** Where the part's level is now (1 when nothing set it). */
+  levelOf(id: string): number;
 }
 
 export interface HandsWorld {
@@ -190,10 +192,13 @@ export interface Hands {
   offer(spec: string): string | null;
   /** The hand drives this part now (carried, travelling, turning, a leg held): its legs are the hand's. */
   busy(id: string): boolean;
+  /** The part is off the board whole: in the hand, waiting in the air (`offer`), or on its way to the tray. */
+  carried(id: string): boolean;
   /** The plug lead the hand drives now, or which travels. */
   busyLead(name: string): boolean;
-  /** Where the thing the hand moves now, or moved last, is (world): the checks' motion reader. */
-  focus(out: Vector3): Vector3;
+  /** Where the thing the hand moves now, or moved last, is (world): the checks' motion reader. `up`, when given, gets
+   * the world direction of that part's own up — its turn against the table (a plug's focus leaves it as it was). */
+  focus(out: Vector3, up?: Vector3): Vector3;
   /** Every travel at its end at once (deep links). */
   snap(): void;
   /** Let go of everything at once, nothing arriving (a step puts its own board: `bench.preset`, `bench.clear`). */
@@ -413,9 +418,10 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
     return frame.worldToLocal(out).setY(0);
   };
 
+  /** The part's level eases from where it is shown now (mid-way through an earlier change too) to `to`. */
   const setLevel = (id: string, to: number, seconds: number): void => {
     const now = levels.get(id);
-    const from = now ? now.from + (now.to - now.from) * ease(Math.min(now.t, 1)) : to;
+    const from = now ? now.from + (now.to - now.from) * ease(Math.min(now.t, 1)) : parts.levelOf(id);
     if (seconds <= 0 || Math.abs(from - to) < 1e-9) {
       levels.delete(id);
       parts.level(id, to);
@@ -509,11 +515,8 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
     if (origin === 'offer') offered = null;
     lastFocus = { part: id, lead: null };
     follow(carry, hp, true);
-    if (origin === 'tray') {
-      // level with the table in the tray, the board's tilt on the way
-      setLevel(id, 0, 0);
-      setLevel(id, 1, 0.25);
-    }
+    // level with the table in the tray (the slot's press set it), the board's tilt on the way
+    if (origin === 'tray') setLevel(id, 1, 0.25);
   };
 
   /** A part goes back to its slot (0.4 s) and is gone; with no slot in sight (a phone, a kind the tray lacks) at once. */
@@ -1020,6 +1023,8 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
 
   const cueAt = new Vector3();
   const focusAt = new Vector3();
+  const focusUp = new Vector3(0, 1, 0);
+  const upTurn = new Quaternion();
   const hands: Hands = {
     policy: null,
     get held() {
@@ -1083,16 +1088,24 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
         intents.some((i) => i.kind !== 'lead' && i.id === id)
       );
     },
+    carried(id) {
+      return carry?.id === id || offered === id || intents.some((i) => i.kind === 'tray' && i.id === id);
+    },
     busyLead(name) {
       return end?.lead === name || intents.some((i) => i.kind === 'lead' && i.name === name);
     },
-    focus(out) {
+    focus(out, up) {
       frame.updateWorldMatrix(true, false);
       const l = lastFocus.lead !== null ? world.leads.get(lastFocus.lead) : undefined;
       const legs = lastFocus.part !== null ? legsOf(lastFocus.part) : [];
       // a part gone (into the tray) stays where it was last seen
       if (l) frame.localToWorld(focusAt.copy(l.leg.pos));
       else if (legs.length) frame.localToWorld(focusAt.copy(legs[0]!.pos));
+      if (up) {
+        const m = !l && lastFocus.part !== null ? parts.models.get(lastFocus.part) : undefined;
+        if (m) focusUp.copy(UP).applyQuaternion(m.group.getWorldQuaternion(upTurn));
+        up.copy(focusUp);
+      }
       return out.copy(focusAt);
     },
     snap() {

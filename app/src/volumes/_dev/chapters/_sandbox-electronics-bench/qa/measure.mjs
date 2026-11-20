@@ -28,13 +28,14 @@
 //           `close-<id>[-print]-<size>.jpg` for the reader of the parts' look; the console.
 //   hand  — step `hand` on a held page (E2-5), every gesture by a real pointer (a mouse, or a finger with --touch, the
 //           thing then riding `LIFT` px above it): a 1 kΩ from the tray (on a phone from the dock's button: it waits
-//           over the board) carried to a3 — while it is carried its preview is a3 and a7 with their rows lit, and after
-//           the legs' travel (`advance(0.35)`) `electronics-board` has R1 in a3 and a7; its leg 1 by the ring to a8 —
-//           the netlist's key changes; R1 by its body off the board — gone (into the tray on a desktop); a jumper from
-//           the tray to a5 and its end by the capsule to +5; the speaker's plug `spk+` into c17; a tap on the battery's
-//           switch flips `SW` and a second one back; after every release the camera, the thing moved and the plugs are
-//           sampled frame by frame for jumps (`electronics-motion`); draw calls ≤ 350 with all of it; the console;
-//           snapshots `hand-<what>-<size>.jpg`.
+//           over the board) carried to a3 — while it is carried its preview is a3 and a7 with their rows lit; let go,
+//           the board does not hold it yet, and 0.35 s of frames later `electronics-board` has R1 in a3 and a7; its leg 1
+//           by the ring to a8 — the netlist's key changes; a jumper from the tray to a10 … a14 and its end by the
+//           capsule to +5; the speaker's plug `spk+` into c17; a tap on the battery's switch (on a phone, where the shot
+//           leaves the switch out, the dock's toggle) flips `SW` and a second one back; R1 by its body off the board —
+//           gone (into the tray on a desktop); from the frame of every release on, the camera, the thing moved, the turn
+//           of its body and the plugs are sampled frame by frame for jumps (`electronics-motion`); draw calls ≤ 350;
+//           the console; snapshots `hand-<what>-<size>.jpg`.
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-electronics-bench — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -459,8 +460,10 @@ async function parts(context) {
 /** The largest step a moving thing may take in one frame (world units at 60 fps): the fastest travel of the hand is a
  * part let go on the board with no place flying back into the tray in 0.4 s — across the whole bench, ≈ 7 eased, its
  * peak ≈ 1.5 · 7 / 24 ≈ 0.45 per frame; a jump would be a whole travel in one frame. The camera as in the circuit's
- * practicum (`circuit/chapters/build/qa/interactions.mjs`, `BOUND.camera`): it drifts gently, it must not jump. */
-const STRIDE = { camera: 0.35, focus: 0.5, plugs: 0.5 };
+ * practicum (`circuit/chapters/build/qa/interactions.mjs`, `BOUND.camera`): it drifts gently, it must not jump. `tilt`
+ * is the body's own up (a unit vector: the step ≈ the turn in radians): a part takes the board's 15° in 0.25 s and
+ * lays it down in 0.4 s, its peak ≈ 1.5 · 15° / 15 ≈ 1.5° (0.026) a frame; a jump would be all 15° (0.26) at once. */
+const STRIDE = { camera: 0.35, focus: 0.5, tilt: 0.05, plugs: 0.5 };
 /** A finger carries the thing this many CSS px above it (`LIFT` of the hand, VISUAL §6). */
 const LIFT = 48;
 const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
@@ -484,15 +487,20 @@ async function hand(context) {
     if (!v) throw new Error(`probe '${name}' is unknown`);
     return { x: v.x, y: v.y, visible: v.visible };
   };
-  /** Per-frame steps of the moving things for `seconds` after a release (frozen clock: the frames are stepped). */
+  /** The moving things just before the last release (`let go`): the release's own frame — the pointer's `up` steps
+   * it — is the first one `smooth` measures. */
+  let released = null;
+  const letGo = async () => {
+    released = await read(page, 'electronics-motion');
+    await p.up();
+  };
+  /** Per-frame steps of the moving things over the release's frame and `seconds` after it (frozen clock: the frames are
+   * stepped). */
   const smooth = async (what, seconds = 0.6) => {
     const s = await page.evaluate(
-      async ([frames]) => {
+      async ([frames, before]) => {
         const big = {};
-        let prev = window.__app.read('electronics-motion');
-        for (let i = 0; i < frames; i++) {
-          await window.__app.step(1 / 60, 1);
-          const cur = window.__app.read('electronics-motion');
+        const stride = (cur, prev) => {
           for (const k of Object.keys(cur)) {
             const a = cur[k];
             const b = prev[k];
@@ -500,12 +508,20 @@ async function hand(context) {
             for (let j = 0; j < a.length; j += 3) d = Math.max(d, Math.hypot(a[j] - b[j], a[j + 1] - b[j + 1], a[j + 2] - b[j + 2]));
             big[k] = Math.max(big[k] ?? 0, d);
           }
+        };
+        let prev = window.__app.read('electronics-motion');
+        if (before) stride(prev, before);
+        for (let i = 0; i < frames; i++) {
+          await window.__app.step(1 / 60, 1);
+          const cur = window.__app.read('electronics-motion');
+          stride(cur, prev);
           prev = cur;
         }
         return big;
       },
-      [Math.round(seconds * 60)],
+      [Math.round(seconds * 60), released],
     );
+    released = null;
     const bad = Object.entries(s).filter(([k, v]) => !(v <= STRIDE[k]));
     (n.strides ??= {})[what] = Object.fromEntries(Object.entries(s).map(([k, v]) => [k, round(v, 4)]));
     check(
@@ -537,7 +553,7 @@ async function hand(context) {
         await p.move(a.x + ((b.x - a.x) * k) / steps, a.y + ((b.y - a.y) * k) / steps);
       }
     if (hold) await hold();
-    await p.up();
+    await letGo();
   };
   const tag2 = (what) => join(out, `hand-${what}-${tag}.jpg`);
 
@@ -586,10 +602,12 @@ async function hand(context) {
   });
   const legsNow = (await board())?.parts?.R1?.legs;
   check('let go: the board changes when the legs have arrived, not before', JSON.stringify(legsNow) === '[null,null]', JSON.stringify(legsNow));
-  await smooth('down into a3');
+  // exactly 0.35 s of frames after the release (sampled for jumps on the way), then the board is read
+  await smooth('down into a3', 0.35);
   const b1 = await board();
-  check('R1 in a3 and a7', JSON.stringify(b1?.parts?.R1?.legs) === '["a3","a7"]', JSON.stringify(b1?.parts));
+  check('0.35 s after the release: R1 in a3 and a7', JSON.stringify(b1?.parts?.R1?.legs) === '["a3","a7"]', JSON.stringify(b1?.parts));
   const key1 = b1?.key;
+  await smooth('down into a3, settling', 0.25);
 
   // 2. its leg 1 by the ring from a7 to a8: it clicks in while the hand moves; the key changes
   await carry('leg:R1:1', 'tip:R1:1', 'socket:a8');
@@ -602,7 +620,8 @@ async function hand(context) {
   );
   await screenshot(page, tag2('leg'));
 
-  // 3. a jumper (a phone: the dock) into a10, then its end by the capsule to +10
+  // 3. a jumper (a phone: the dock) into a10 … a14, then its end by the capsule to +5 (9 P from a14: within its reach of
+  // 16 P; a5 … a8 are under R1's body, so the jumper lies right of it)
   if (phone) {
     const b = await page.evaluate(() => window.__ui.locate('ctl-tray-jumper'));
     if (b) await p.tap(b.x, b.y);
@@ -616,10 +635,11 @@ async function hand(context) {
   await advance(page, 0.4);
   const b3 = await board();
   check('the jumper in a10 … a14', JSON.stringify(b3?.parts?.J1?.legs) === '["a10","a14"]', JSON.stringify(b3?.parts?.J1));
-  await carry('leg:J1:0', 'tip:J1:0', 'socket:+10', { mid: (d) => ({ x: d.x * 0.5 + 6, y: d.y * 0.5 }) });
-  await smooth('the jumper’s end into +10', 0.4);
+  await carry('leg:J1:0', 'tip:J1:0', 'socket:+5', { mid: (d) => ({ x: d.x * 0.5, y: d.y * 0.5 - 6 }) });
+  await smooth('the jumper’s end into +5', 0.4);
   const b4 = await board();
-  check('the jumper’s end in +10', b4?.parts?.J1?.legs?.[0] === '+10', JSON.stringify(b4?.parts?.J1));
+  check('the jumper’s end in +5', JSON.stringify(b4?.parts?.J1?.legs) === '["+5","a14"]', JSON.stringify(b4?.parts?.J1));
+  await screenshot(page, tag2('jumper'));
 
   // 4. the speaker's plug into c17
   await carry('lead:spk+', 'end:spk+', 'socket:c17');
@@ -635,18 +655,24 @@ async function hand(context) {
     `${calls.engine} (gate ≤ ${DRAW_CALLS.gate}); ${calls.triangles} triangles`,
   );
 
-  // 5. the switch: a tap closes it, a second opens it
-  const sw = await scr('switch');
+  // 5. the switch: a tap closes it, a second opens it — on the slider; on a phone, whose shot leaves the switch out,
+  // on the dock's toggle (VISUAL §9)
+  const sw = phone
+    ? await page.evaluate(() => window.__ui.locate('ctl-battery-switch'))
+    : await scr('switch');
   n.switch = sw;
-  if (sw.visible) {
+  const control = phone ? 'the dock’s toggle' : 'the slider';
+  if (sw && (phone || sw.visible)) {
+    const flips = (await hands())?.switchFlips;
     await p.tap(sw.x, sw.y);
     await advance(page, 0.3);
     const on = (await board())?.settings?.SW;
     await p.tap(sw.x, sw.y);
     await advance(page, 0.3);
     const off = (await board())?.settings?.SW;
-    check('a tap on the switch flips SW, a second one back', on === 1 && off === 0, `SW ${on} then ${off}`);
-  } else check('the switch is not in the phone’s frame (reported)', true, JSON.stringify(sw));
+    const by = (await hands())?.switchFlips - flips;
+    check(`a tap on ${control} flips SW, a second one back`, on === 1 && off === 0, `SW ${on} then ${off}; slider taps ${by}`);
+  } else check(`${control} is on screen`, false, JSON.stringify(sw));
 
   // 6. R1 by its body off the board: into the tray (a desktop), gone at once (a phone)
   const below = async () => {
@@ -659,7 +685,7 @@ async function hand(context) {
   const r1 = await scr('part:R1');
   await p.down(r1.x, r1.y);
   for (let k = 1; k <= 12; k++) await p.move(r1.x + ((off.x - r1.x) * k) / 12, r1.y + ((off.y - r1.y) * k) / 12);
-  await p.up();
+  await letGo();
   await smooth('R1 back to the tray', 0.6);
   const b6 = await board();
   check('R1 off the board: gone', !b6?.parts?.R1 && !b6?.models?.includes('R1'), JSON.stringify(Object.keys(b6?.parts ?? {})));

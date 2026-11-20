@@ -11,6 +11,7 @@ import {
   Box3,
   Group,
   PerspectiveCamera,
+  Quaternion,
   Ray,
   Vector2,
   Vector3,
@@ -411,6 +412,58 @@ describe('gesture 1: a whole part', () => {
     expect(bench.parts.models.has('R1')).toBe(false);
   });
 
+  it('a part from the tray takes the board’s tilt on its way and lays it down again on its way back: never a turn in one frame', () => {
+    const { bench, drag, frames, legs, slot, part } = setup();
+    const slotAt = bench.board.group.worldToLocal(bench.tray.slot('resistor-1k')!.at.clone());
+    /** The body's turn against the table (the world is level with it), and against the board (tilted 15°). */
+    const table = new Quaternion();
+    const board = bench.board.group.getWorldQuaternion(new Quaternion());
+    const turn = () => bench.parts.models.get('R1')!.group.getWorldQuaternion(new Quaternion());
+    const tilt = (board.angleTo(table) * 180) / Math.PI;
+    expect(tilt).toBeCloseTo(15, 6);
+    const deg = (a: Quaternion, b: Quaternion) => (a.angleTo(b) * 180) / Math.PI;
+    /** Frame by frame while `step` runs: the largest turn of the body from one frame to the next, and the last pose. */
+    const watch = (n: number, step: (k: number) => void) => {
+      let prev = turn();
+      let most = 0;
+      for (let k = 0; k < n && bench.parts.models.has('R1'); k++) {
+        step(k);
+        if (!bench.parts.models.has('R1')) break;
+        const q = turn();
+        most = Math.max(most, deg(q, prev));
+        prev = q;
+      }
+      return { most, last: prev };
+    };
+
+    // pressed in the tray: the new part stands as the sample stood, level with the table
+    const g = drag(slot('resistor-1k'), [slotAt.x, slotAt.z], []);
+    expect(bench.hands.held).toBe('part:R1');
+    expect(deg(turn(), table)).toBeLessThan(1);
+    // on its way to a3 it takes the board's tilt in 0.25 s, a little every frame
+    const a3 = bench.layout.socket('a3')!;
+    const up = watch(30, (k) => g.move([slotAt.x + ((a3.x - slotAt.x) * (k + 1)) / 30, slotAt.z + ((a3.z - slotAt.z) * (k + 1)) / 30]));
+    expect(up.most).toBeGreaterThan(0.2);
+    expect(up.most).toBeLessThan(2.5);
+    expect(deg(up.last, board)).toBeLessThan(1e-3);
+    g.up('a3');
+    frames(SEAT_SECONDS + 2 / 60);
+    expect(legs('R1')).toEqual(['a3', 'a7']);
+
+    // taken from the board and let go off it: on its way back to its slot it lays the tilt down, a little every frame
+    const h2 = drag(part('R1'), 'a5', [[0, 1.6]]);
+    h2.move([slotAt.x, slotAt.z]);
+    expect(deg(turn(), board)).toBeLessThan(1e-3);
+    h2.up([slotAt.x, slotAt.z]);
+    const down = watch(60, () => frames(1 / 60));
+    expect(down.most).toBeGreaterThan(0.2);
+    expect(down.most).toBeLessThan(2.5);
+    // its last frame before it is gone: level with the table again
+    expect(deg(down.last, table)).toBeLessThan(1);
+    frames(0.2);
+    expect(bench.state.parts.has('R1')).toBe(false);
+  });
+
   it('a click turns a placed part end for end (o + 2): lifted, turned, put back over the same sockets', () => {
     const { bench, click, frames, legs, part } = setup();
     bench.preset([{ id: 'LED1', spec: 'led-red', at: 'e7' }]);
@@ -464,6 +517,71 @@ describe('gesture 1: a whole part', () => {
     frames(0.5);
     expect(legs('R1')).toEqual(['d3', 'd7']);
     expect(bench.hands.held).toBeNull();
+  });
+});
+
+describe('the leads drape over the parts on the board (synthesis §2.3)', () => {
+  it('a plug let go on a part’s body lies on it and its wire goes over it; the part taken away, it sinks back, never a jump', () => {
+    const { bench, drag, frames, grip, part, legs } = setup();
+    bench.preset([{ id: 'R1', spec: 'resistor-1k', at: 'c11' }]);
+    frames(0.3);
+    /** The part's body box in the board's frame. */
+    const body = () => {
+      const hit = bench.parts.models.get('R1')!.hit;
+      hit.updateWorldMatrix(true, false);
+      const rel = bench.board.group.matrixWorld.clone().invert().multiply(hit.matrixWorld);
+      return new Box3(new Vector3(-0.5, -0.5, -0.5), new Vector3(0.5, 0.5, 0.5)).applyMatrix4(rel);
+    };
+    const box = body();
+    expect(box.max.y).toBeGreaterThan(0.1);
+    // let go over the body, half a pitch from c12 and c13 (farther than SNAP from both: it lies)
+    const lead = bench.fixed.leads.get('spk+')!;
+    const c12 = bench.layout.socket('c12')!;
+    const over: [number, number] = [c12.x + bench.layout.spec.pitch / 2, c12.z];
+    expect(over[0]).toBeGreaterThan(box.min.x);
+    expect(over[0]).toBeLessThan(box.max.x);
+    const put = drag(grip('lead:spk+'), [lead.leg.pos.x, lead.leg.pos.z], [[over[0] + 0.6, over[1]], over]);
+    // the plug comes to the hand in 0.08 s after the press, then follows it: a few frames over the body, let go there
+    for (let k = 0; k < 8; k++) put.move(over);
+    put.up(over);
+    frames(0.4);
+    expect(Math.hypot(lead.leg.pos.x - over[0], lead.leg.pos.z - over[1])).toBeLessThan(1e-6);
+    expect(lead.leg.place.kind).toBe('lie');
+    expect(bench.state.leads.has('spk+')).toBe(false);
+    // the plug's axis lies over the body's top, not inside it
+    expect(lead.leg.pos.y).toBeGreaterThan(box.max.y);
+    // its wire goes over the body: no point of the tube is inside the body (a cylinder along x, the box's radius)
+    const pos = lead.wire.geometry.getAttribute('position');
+    const cy = (box.min.y + box.max.y) / 2;
+    const cz = (box.min.z + box.max.z) / 2;
+    const r = (box.max.y - box.min.y) / 2;
+    let across = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      if (x < box.min.x || x > box.max.x) continue;
+      const off = Math.hypot(pos.getY(i) - cy, pos.getZ(i) - cz);
+      if (Math.abs(pos.getZ(i) - cz) < r) across++;
+      expect(off).toBeGreaterThan(r);
+    }
+    expect(across).toBeGreaterThan(5);
+    // R1 taken by its body off the board into the tray: the plug sinks onto the board's face a little every frame
+    const slotAt = bench.board.group.worldToLocal(bench.tray.slot('resistor-1k')!.at.clone());
+    const g = drag(part('R1'), 'c14', [[0, 1.6]]);
+    expect(legs('R1')).toEqual([null, null]);
+    let prev = lead.leg.pos.y;
+    let most = 0;
+    for (let k = 0; k < 30; k++) {
+      g.move([slotAt.x, slotAt.z]);
+      most = Math.max(most, Math.abs(lead.leg.pos.y - prev));
+      prev = lead.leg.pos.y;
+    }
+    g.up([slotAt.x, slotAt.z]);
+    frames(0.6);
+    expect(bench.state.parts.has('R1')).toBe(false);
+    expect(most).toBeGreaterThan(0.005);
+    expect(most).toBeLessThan(0.05);
+    // on the board's face again: the axis a plug's radius over it
+    expect(lead.leg.pos.y).toBeCloseTo(0.05, 6);
   });
 });
 

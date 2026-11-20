@@ -34,6 +34,7 @@ import { PLUG, createFixed, type Fixed } from './fixed';
 import { PLACES } from './layout';
 import { BENCH_AMBIENT, createLight, type LightRig } from './light';
 import { tame } from './materials';
+import { createMounds } from './mounds';
 import { createPartsOnBoard, type PartsOnBoard } from './on-board';
 import { createProps, type Props } from './props';
 import { createRoom, type Room } from './room';
@@ -229,9 +230,9 @@ function boardArea(layout: BoardLayout): { x0: number; x1: number; z0: number; z
 }
 
 /**
- * What stands up for a lead lying loose (board frame, the height of a plug's axis lying over it): the board's body, the
- * battery's box, the player, the speaker, the lamp's foot. The parts on the board are not counted: a lead lies on the
- * board's face among them.
+ * What always stands up for a lead lying loose (board frame, the height of a plug's axis lying over it): the board's
+ * body, the battery's box, the player, the speaker, the lamp's foot. The bodies of the parts on the board are added to
+ * it frame by frame for the leads (`mounds.ts`).
  */
 function raised(area: ReturnType<typeof boardArea>): Raised[] {
   const B = PLACES.breadboard;
@@ -268,16 +269,20 @@ export function mountBench(ctx: ChapterContext): Bench {
   board.group.position.set(PLACES.breadboard.x, PLACES.breadboard.height, PLACES.breadboard.z);
   const state = createBoardState();
   const area = boardArea(layout);
-  // what a lead lying loose drapes over (board frame): the board's body, the battery's box, the things on the base
+  // what a loose end drapes over (board frame): the board's body, the battery's box, the things on the base — a part's
+  // leg lies on that; a lead also goes over the bodies of the parts standing on the board (synthesis §2.3)
   const ground = raised(area);
-  const terrain = createTerrain(-PLACES.breadboard.height + PLUG.radius, () => ground);
+  const lying = -PLACES.breadboard.height + PLUG.radius;
+  const terrain = createTerrain(lying, () => ground);
+  const mounds = createMounds(board.group, ground, PLUG.radius);
+  const leadTerrain = createTerrain(lying, () => mounds.list, () => mounds.version);
   const parts = createPartsOnBoard(board, state, terrain.ground);
   board.group.add(parts.group);
   ctx.onDispose(() => parts.dispose());
   const props = createProps();
   base.frame.add(board.group, props.onBase);
   group.add(props.onTable);
-  const fixed = createFixed({ socket: (id, out) => board.socketLocal(id, out), ground: terrain.ground }, terrain);
+  const fixed = createFixed({ socket: (id, out) => board.socketLocal(id, out), ground: leadTerrain.ground }, leadTerrain);
   board.group.add(fixed.group);
   ctx.onDispose(() => fixed.dispose());
   const tray = createTray();
@@ -308,7 +313,7 @@ export function mountBench(ctx: ChapterContext): Bench {
     parts,
     tray,
     leads: fixed.leads,
-    terrain,
+    terrain: leadTerrain,
     area,
     flying: () => bench.flying,
     phone: () => phone,
@@ -332,7 +337,9 @@ export function mountBench(ctx: ChapterContext): Bench {
   const lampWorld = new Vector3();
   const bounceOffset = new Vector3(...BOUNCE_OFFSET);
   const eye: PartEye = { camera: ctx.camera.camera, aspect: 1, phone, room: 1 };
-  const apply = (dt: number, t: number): void => {
+  /** The parts standing on the board this frame (not carried whole), by their bodies: the leads' mounds. */
+  const standing = new Map<string, Object3D>();
+  const apply = (dt: number, t: number, snap = false): void => {
     light.set({ glow, moon: bench.moon, ambient: bench.ambient });
     const room = Math.min(1, 0.25 + 0.75 * Math.max(bench.moon, glow ** 2));
     props.bulb.setGlow(light.filament, light.emission, glow, bench.moon);
@@ -355,6 +362,10 @@ export function mountBench(ctx: ChapterContext): Bench {
     parts.sync();
     fixed.sync(state, (name) => hands.busyLead(name));
     parts.update(dt, eye);
+    standing.clear();
+    for (const [id, m] of parts.models) if (m.group.visible && !hands.carried(id)) standing.set(id, m.hit);
+    for (const [id, m] of parts.shown) standing.set(`shown:${id}`, m.hit);
+    mounds.update(dt, standing, snap);
     fixed.update(dt);
     hands.update(dt, t);
     board.highlight(hands.rows, dt);
@@ -421,7 +432,7 @@ export function mountBench(ctx: ChapterContext): Bench {
       glow = unit(bench.lamp);
       slider = unit(bench.closed);
       hands.snap();
-      apply(0, time);
+      apply(0, time, true);
     },
     update(dt, t) {
       time = t;
@@ -477,11 +488,14 @@ export function mountBench(ctx: ChapterContext): Bench {
     switchFlips: toggle.flips,
   }));
   // `__app.read('electronics-motion')` — what moves, every frame (world): the camera, the thing the hand moves now or
-  // moved last (its leg 0, or its plug), every plug; a check samples it frame by frame for jumps
+  // moved last (its leg 0, or its plug), that part's own up (its body's turn against the table), every plug; a check
+  // samples it frame by frame for jumps
   const v = new Vector3();
+  const up = new Vector3();
   ctx.qa.expose('electronics-motion', () => ({
     camera: ctx.camera.camera.getWorldPosition(v).toArray(),
-    focus: hands.focus(v).toArray(),
+    focus: hands.focus(v, up).toArray(),
+    tilt: up.toArray(),
     plugs: [...fixed.leads.values()].flatMap((l) => {
       board.group.updateWorldMatrix(true, false);
       return board.group.localToWorld(v.copy(l.leg.pos)).toArray();

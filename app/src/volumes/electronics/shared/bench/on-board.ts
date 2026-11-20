@@ -42,6 +42,8 @@ export interface PartsOnBoard {
   glow(id: string, amount: number): void;
   /** 0 level with the table … 1 in the board's frame: a part on its way from the tray. */
   level(id: string, k: number): void;
+  /** The part's level now: 1 (the board's frame) unless `level` set another. */
+  levelOf(id: string): number;
   /** Every frame: the legs travel, the models stand on them; a pot's knob follows its setting; the print shows where
    * it can be read. */
   update(dt: number, eye: PartEye): void;
@@ -199,6 +201,7 @@ export function createPartsOnBoard(
     level(id, k) {
       if (models.has(id)) levels.set(id, Math.min(Math.max(k, 0), 1));
     },
+    levelOf: (id) => levels.get(id) ?? 1,
     update(dt, eye) {
       for (const [id, m] of models) {
         for (const leg of legs.get(id)!) leg.update(dt);

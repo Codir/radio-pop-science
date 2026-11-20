@@ -134,7 +134,8 @@ bench.hands.policy = {
   ring on each); let go, the legs go down in `SEAT_SECONDS` and the board changes when they have arrived. Over the
   board with no place it goes back where it was; off the board, to its slot (0.4 s) and is gone. A click turns a
   placed part end for end (0.3 s). A part from the tray is level with the table in it and takes the board's tilt on
-  its way. On a phone the tray is the dock's: `bench.hands.offer(key)` puts a new part over the board to be taken.
+  its way (0.25 s, from the level it has), and lays it down again on its way back (0.4 s). On a phone the tray is the
+  dock's: `bench.hands.offer(key)` puts a new part over the board to be taken.
 - **Gesture 2 — one end** by its grip (`leg:<id>:<k>`: a ring on an axial part's leg, a tab before a radial part's
   body, a capsule on a jumper's end; `lead:<name>`: the capsule on a plug): out of its socket at the press (the part
   pending), led within its reach (the part's span from its other legs, 4.0 of a lead from its thing); `hands.near` is
@@ -146,6 +147,14 @@ bench.hands.policy = {
   come while the pointer is on the part and 1.5 s after. The grips' spheres never overlap (VISUAL §6 and §8: the tests
   cast rays from the cameras of `stand`, `board` and `phone`). On a phone the radial parts' tabs are hidden: those
   parts are carried whole.
+- The leads lie on the bench's ground and drape over what stands up: the board's body, the things on the base and the
+  bodies of the parts standing on the board (`bench/mounds.ts`: a part's body box rises in 0.2 s when it comes to stand
+  and sinks where it was in 0.2 s when the hand takes it whole, `hands.carried(id)`, so a plug lying on it or a wire
+  over it never jumps); a plug let go on a part lies on its body, and a plug in the hand rides over the parts. The
+  parts' own legs (a jumper's end let go) lie on the board's face.
+- The battery's switch is a tap on its slider (`bench.switch`, `switch` in the policy). The shot `phone` leaves the
+  switch out (VISUAL §9): a step that lets the reader flip it gives the dock a toggle bound to `bench.closed` — the
+  sandbox's `battery-switch`, which also follows a step that sets it.
 - Every part on the board stands on its `Leg`s (`bench.parts.legs`); while the hand does not drive a part, its legs
   follow the board's state at once (a step's `preset`, a test's `seatLeg`). `bench.preset` and `bench.clear` first let
   go of whatever the hand holds (`hands.reset`). The body's glow under the pointer is cyan emissive on the part's
@@ -155,8 +164,8 @@ bench.hands.policy = {
 
 For checks: `__app.read('electronics-board')` also has `key` (the netlist's shape: it changes when a leg moves to
 another row) and `pending`; `__app.read('electronics-hand')` → `{ held, near, preview, rows, busy, switchFlips }`;
-`__app.read('electronics-motion')` → `{ camera, focus, plugs }` (world, every frame: the camera, the thing the hand
-moves now or moved last, every plug). Probes: `part:<id>`, `leg:<id>:<k>` (its grip), `tip:<id>:<k>` (the leg's foot on
+`__app.read('electronics-motion')` → `{ camera, focus, tilt, plugs }` (world, every frame: the camera, the thing the
+hand moves now or moved last, that part's own up — its body's turn against the table — and every plug). Probes: `part:<id>`, `leg:<id>:<k>` (its grip), `tip:<id>:<k>` (the leg's foot on
 the board's face), `lead:<name>`, `end:<name>`, `tray:<key>`, `switch`. The sandbox's step `hand` and
 `qa/measure.mjs --only hand` (a mouse, `--touch`) drive them.
 
@@ -193,7 +202,7 @@ from «заплановано» to «зроблено» in the same commit and c
 | `circuit/chapters/build/parts/glide.ts` | `electronics/shared/hand/glide.ts` | нічого, лише коментар-заголовок | E2-5 | зроблено |
 | `circuit/chapters/build/parts/ends.ts` | `electronics/shared/hand/leg.ts` | `End` → `Leg`: місця «гніздо», «лежить», «у руці», «лоток» (гнізда й рельєф — від стенда, `LegWorld`); одне гніздо — один кінець (затискачів на два кінці, їхнього зсуву й віяла немає); напрям повертає за якорем — річчю дроту чи тілом деталі; `seated` — лише по прибуттю | E2-5 | зроблено |
 | `circuit/chapters/build/parts/curves.ts` | `electronics/shared/hand/curves.ts` | рельєф — параметр (`Terrain`); `peeled` і `blend` (з ними й `resample`) не взято: обидва кінці кожного дроту стенда вільні | E2-5 | зроблено |
-| `circuit/chapters/build/parts/clamps.ts` (`ground`) | `electronics/shared/hand/terrain.ts` | лише `ground()` із піднятими ділянками як даними (тіло плати, бокс батареї, речі на основі — їх дає стенд); затискачі й місця спокою — ні | E2-5 | зроблено |
+| `circuit/chapters/build/parts/clamps.ts` (`ground`) | `electronics/shared/hand/terrain.ts` | лише `ground()` із піднятими ділянками як даними (тіло плати, бокс батареї, речі на основі, а для дротів і тіла деталей на платі — їх дає стенд, `bench/mounds.ts`) і лічильник змін `version`, за яким дріт перебудовує форму; затискачі й місця спокою — ні | E2-5 | зроблено |
 | `circuit/chapters/build/parts/grips.ts` | `electronics/shared/hand/grips.ts` | батьківська група — параметр; загальний ключ; три форми (`VISUAL.md` §6): кільце на ніжці аксіальної деталі, язичок перед радіальною, капсула 0,07 × 0,24 на кінці перемички, штекері й щупі; радіус сфери дає стенд (сфери не перекриваються); тримач завжди видимий, з’являється й зникає лише вигляд — прихований захват теж бере вказівник | E2-5 | зроблено |
 | `circuit/chapters/build/parts/hands.ts` | `electronics/shared/hand/hands.ts` | загальні руки з двома жестами: ключі `part:` / `leg:` / `lead:` / `probe:` / `tray:` / `switch`, площина — лице плати з її рамки, кандидати — гнізда (`layout.nearest`), живі `near` і `preview`, межа вильоту з відбитка, `LIFT` для пальця, захват — від точки натиску; ніжка деталі клацає під час руху, кінець перемички чи штекер — коли відпустили; зміна плати — по прибуттю | E2-5 | зроблено |
 | `circuit/chapters/build/parts/swap.ts` | `electronics/shared/hand/swap.ts` | `createSwap(parent, thing, way, lift)`: батьківська група, річ і її шлях — параметри (у `circuit` — один дріт стенда через дальній край); копія знімається з усіх видимих сіток речі | E2-5 | зроблено |

@@ -9,7 +9,8 @@
  *           transistor (`SHOWN`) stand on the board outside the circuit until the model's catalog has them (E1-5, E1-6);
  *   hand  — the reader's hand (E2-5), shot `stand`: an empty board, the tray (`TRAY`: three resistors and a jumper in
  *           front, two LEDs behind), the plugs of the speaker, the player and the lamp lying loose, the switch open;
- *           everything may be taken. On a phone the tray's slots are buttons of the dock (`tray-<key>`, VISUAL §9).
+ *           everything may be taken. On a phone the tray's slots are buttons of the dock (`tray-<key>`, VISUAL §9), and
+ *           the battery's switch, which the shot `phone` leaves out, is the dock's toggle `battery-switch`.
  * Every other step has an empty board and an empty tray. Readers: the bench's own `electronics-bench` (sockets, rows,
  * draw calls, the print shown), `electronics-board` (the parts and their legs, the plugs, the settings, the netlist's
  * key), `electronics-parts` (every model: where, draw calls, its print), `electronics-hand` (what the hand holds, the
@@ -91,16 +92,28 @@ export default defineScene((ctx) => {
   const bench = mountBench(ctx);
   const ui = stepUi(ctx);
   const phone = (): boolean => ctx.device.formFactor === 'phone';
-  // on a phone the tray is the dock's: a button per slot puts a new part in the hand over the board (VISUAL §9)
+  // on a phone the tray is the dock's: a button per slot puts a new part in the hand over the board; the switch, out
+  // of the shot `phone`, is a toggle there bound to `bench.closed` (VISUAL §9)
   ui.define({
     hand: {
-      controls: TRAY.map((spec) => ({
-        type: 'button' as const,
-        id: `tray-${spec}`,
-        label: trayLabel(spec) || buttonName(spec),
-        visible: phone,
-        onClick: () => void bench.hands.offer(spec),
-      })),
+      controls: [
+        ...TRAY.map((spec) => ({
+          type: 'button' as const,
+          id: `tray-${spec}`,
+          label: trayLabel(spec) || buttonName(spec),
+          visible: phone,
+          onClick: () => void bench.hands.offer(spec),
+        })),
+        {
+          type: 'toggle' as const,
+          id: 'battery-switch',
+          label: SANDBOX.names.switch,
+          value: false,
+          visible: phone,
+          disabled: () => bench.flying || !(bench.hands.policy?.take('switch') ?? true),
+          onChange: (on: boolean) => (bench.closed = on ? 1 : 0),
+        },
+      ],
     },
   });
   const specOf = (id: string): string => bench.state.parts.get(id)?.spec ?? '';
@@ -142,6 +155,9 @@ export default defineScene((ctx) => {
     },
     update(dt, t) {
       bench.update(dt, t);
+      // the dock's toggle shows the switch as it is (a step sets it, a tap on the slider flips it)
+      const on = bench.closed >= 0.5;
+      if (ui.value<boolean>('battery-switch') !== on) ui.set('battery-switch', on);
     },
   };
 });
