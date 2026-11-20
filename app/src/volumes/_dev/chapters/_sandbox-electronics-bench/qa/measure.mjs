@@ -59,6 +59,18 @@
 //           (`light.output` > 0); step `bulged-look` — the look alone, nothing let out (no model event behind it);
 //           the console everywhere; snapshots `heat-<state>[-close]-<size>.jpg` of «ok», «тепла», «гаряча», the
 //           wisp, «згоріла», the new part, the LEDs, the lamp and «здутий».
+//   loupe — the magnifier as the door (E2-8) on a held page, step `loupe` (a 4.7 kΩ in a5 … a9, shot `board`): on the
+//           board's shot the door is ready, no ladder, the lens in its holder, and a real press takes R1 (laid back);
+//           the slider set to the dive's stops (`__ui.set`, the flight waited out) — rail 0: the lens at work, its ring
+//           22–26 % of the safe frame's height; 0.5: the ladder «деталь», the bands ≥ 12 px at 1280 × 720; 0.7: the
+//           body ≥ 35 % of the width, whole; 1: «усередині», the cut open; draw calls there; a press on R1 down there
+//           takes nothing; back at 0 the camera is the board's again. Then the slider dragged by a real pointer 1 px a
+//           frame down to the end and back: the frame's step per frame ≤ 0.06 of the viewing distance and no spike,
+//           the floor and the DOM ladder what the rail's position says (`part` from 0.5, `inside` from 1) every frame,
+//           the hand off whenever the camera is off the board's shot; back at 0 the board's shot, the lens in its
+//           holder, no ladder. A tap on the track's end: the whole flight 1.6–2.2 s, with reduced motion ≈ 0.6 s
+//           (`page.emulateMedia`); a tap on the resting lens lays it over R1; the console; snapshots
+//           `loupe-<board|door|part|close|inside|back>-<size>.jpg`.
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-electronics-bench — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -1256,9 +1268,304 @@ async function heat(context) {
   }
 }
 
+/* ------------------------------------------------------------------------------------- section loupe */
+
+/** The dive (E2-8, `shared/dive`): the depth slider is the door's rail + LENS_LEG, 0 … 1 + LENS_LEG. */
+const LENS_LEG = 0.5;
+const DEPTH = 1 + LENS_LEG;
+/** Where the floors begin on the rail (VISUAL §7: `part` from 0.5, `inside` from 1; `shared/dive/levels.ts`). */
+const floorOf = (position, min = -LENS_LEG) =>
+  position <= min + 1e-3 ? null : position >= 1 ? 'inside' : position >= 0.5 ? 'part' : 'stand';
+/** A frame's change per engine frame while the slider is dragged px by px, relative to the viewing distance. */
+const DIVE_STRIDE = 0.06;
+/** The whole flight (VISUAL §7): 1.6–2.2 s; with reduced motion 0.6 s. */
+const FLIGHT = { from: 1.6, to: 2.2, reduced: 0.6 };
+/** The board's shot (`shared/bench/shots.ts`): the step's camera, where the dive starts and ends — on a phone the
+ * bench's every shot is `phone`. */
+const BOARD_SHOTS = {
+  desk: { position: [-0.3, 7.6, 7.7], target: [-0.3, 1.45, 0.35] },
+  phone: { position: [-0.3, 10.0, 5.8], target: [-0.3, 1.79, 0.08] },
+};
+/** The director's idle drift on a held shot (`engine/camera/director.ts`): ±0.016 rad about the target, ±0.009 rad
+ * up and down, ±0.8 % in distance — the camera stays within this share of the viewing distance of the shot. */
+const DRIFT = 0.016 + 0.009 + 0.008;
+/** Whether the camera is the board's shot (`phone` on a phone): its aim the shot's target, its place within the
+ * idle drift. */
+const onBoardShot = (d, phone) => {
+  const shot = phone ? BOARD_SHOTS.phone : BOARD_SHOTS.desk;
+  const reach = Math.hypot(...shot.position.map((v, j) => v - shot.target[j]));
+  const off = Math.hypot(...d.camera.map((v, j) => v - shot.position[j]));
+  const aim = Math.hypot(...d.aim.map((v, j) => v - shot.target[j]));
+  return { ok: aim < 1e-6 && off <= DRIFT * reach, off: off / reach, aim };
+};
+
+async function loupe(context) {
+  const n = (report.sections.loupe = {});
+  const page = await context.newPage();
+  const pos = await open(page, 'loupe').catch((err) => ({ error: String(err) }));
+  if (!check('opened', at(pos, 'loupe'), where(pos))) {
+    await page.close();
+    return;
+  }
+  const p = await pointer(page, touch);
+  const phone = (n.phone = (await read(page, 'electronics-bench'))?.phone === true);
+  const dive = () => read(page, 'electronics-dive');
+  const hands = () => read(page, 'electronics-hand');
+  const board = () => read(page, 'electronics-board');
+  const snap = (what) => join(out, `loupe-${what}-${tag}.jpg`);
+  /** The ladder «де ми» as the DOM interface draws it: the floor lit, null while it is hidden (a phone hides it). */
+  const ladder = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('[data-ui="floor-ladder"]');
+      if (!el || el.hidden || window.getComputedStyle(el).display === 'none') return null;
+      return el.querySelector('li.on')?.dataset.floor ?? null;
+    });
+  /** Frames until the dive's rail stops (and the camera is given back on the board's shot), at most `max`. */
+  const settle = async (max = 400) => {
+    for (let i = 0; i < max; i++) {
+      const d = await dive();
+      if (!d.moving) return i;
+      await page.evaluate(() => window.__app.step(1 / 60, 1));
+    }
+    return max;
+  };
+  /** The safe 3 : 2 frame in CSS px, fitted into the area the interface leaves free. */
+  const safeFrame = () =>
+    page.evaluate(() => {
+      const i = window.__app.engine.hud.insetFractions();
+      const fw = window.innerWidth * (1 - i.left - i.right);
+      const fh = window.innerHeight * (1 - i.top - i.bottom);
+      return { w: Math.min(fw, fh * 1.5), h: Math.min(fh, fw / 1.5) };
+    });
+  const dist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+  /** The body's share of the safe frame's width, its bands in px, the ring's share of the frame's height. */
+  const sizes = async () => {
+    const f = await safeFrame();
+    const [e0, e1, rt, rb] = await Promise.all(
+      ['dive:end0', 'dive:end1', 'dive:ring-top', 'dive:ring-bottom'].map((x) => locate(page, x)),
+    );
+    const body = dist(e0, e1);
+    // the resistor's band is 0.07 of its 0.73 (`shared/parts/resistor.ts`), seen across its axis
+    return { body: body / f.w, band: (body * 0.07) / 0.73, ring: dist(rt, rb) / f.h };
+  };
+  /** Press on a probe and move the pointer 12 px: what the hand holds then (the pointer stays down). */
+  const grab = async (probe) => {
+    const g = await locate(page, probe);
+    await p.down(g.x, g.y);
+    for (let k = 1; k <= 4; k++) await p.move(g.x + 3 * k, g.y);
+    return { at: g, held: (await hands())?.held ?? null };
+  };
+
+  // 0. on the board's shot: the door is ready, the rail rests, no ladder, the lens in its holder, the hand works
+  const d0 = await dive();
+  n.start = d0;
+  check(
+    'on the board’s shot: the door ready, the rail at rest, the lens in its holder',
+    d0?.ready && !d0.engaged && d0.position === d0.min && d0.floor === null && !d0.flying && d0.atHolder && d0.cut === 0,
+    `ready ${d0?.ready}, engaged ${d0?.engaged}, position ${d0?.position}, floor ${d0?.floor}, flying ${d0?.flying}, holder ${d0?.atHolder}`,
+  );
+  check('no ladder on the board’s shot', (await ladder()) === null);
+  const g0 = await grab('part:R1');
+  check('on the board’s shot the hand takes R1', g0.held === 'part:R1', `held ${g0.held}`);
+  for (let k = 3; k >= 0; k--) await p.move(g0.at.x + 3 * k, g0.at.y);
+  await p.up();
+  await advance(page, 0.6);
+  const legs0 = (await board())?.parts?.R1?.legs;
+  check('…and lays it back in a5, a9', JSON.stringify(legs0) === '["a5","a9"]', JSON.stringify(legs0));
+  await screenshot(page, snap('board'));
+
+  // 1. the dive's stops, at rest (the slider set as a reader's key would, then the flight waited out)
+  const to = async (slider) => {
+    await page.evaluate((v) => window.__ui.set('depth', v, true), slider);
+    await settle();
+    await advance(page, 0.2);
+    return dive();
+  };
+  const door = await to(LENS_LEG);
+  const doorSize = await sizes();
+  n.door = { position: door.position, floor: door.floor, ...doorSize };
+  check(
+    'rail 0: the lens over R1, at work — its ring 22–26 % of the frame’s height (VISUAL §7)',
+    door.position === 0 && (touch || (doorSize.ring >= 0.22 && doorSize.ring <= 0.26)),
+    `ring ${round(doorSize.ring, 3)} of the height, body ${round(doorSize.body, 3)} of the width; floor ${door.floor}`,
+  );
+  await screenshot(page, snap('door'));
+  const part = await to(1);
+  const partSize = await sizes();
+  n.part = { position: part.position, floor: part.floor, ladder: await ladder(), ...partSize };
+  check(
+    'rail 0.5: the floor `part` begins — ladder «деталь», the bands ≥ 12 px at 1280 × 720',
+    part.floor === 'part' && (touch || n.part.ladder === 'part') && (width !== 1280 || partSize.band >= 12),
+    `floor ${part.floor}, ladder ${n.part.ladder}; body ${round(partSize.body, 3)} of the width, band ${round(partSize.band, 1)} px`,
+  );
+  await screenshot(page, snap('part'));
+  const close = await to(1.2);
+  const closeSize = await sizes();
+  n.close = { position: close.position, floor: close.floor, ...closeSize };
+  check(
+    'rail 0.7: R1 whole, its body ≥ 35 % of the safe frame’s width (VISUAL §7)',
+    close.floor === 'part' && close.cut === 0 && !close.open && closeSize.body >= 0.35,
+    `body ${round(closeSize.body, 3)}, band ${round(closeSize.band, 1)} px, cut ${close.cut}`,
+  );
+  await screenshot(page, snap('close'));
+  const inside = await to(DEPTH);
+  n.inside = { position: inside.position, floor: inside.floor, ladder: await ladder(), cut: inside.cut };
+  check(
+    'rail 1: «усередині» — the cut open, the ladder says so',
+    inside.position === 1 && inside.floor === 'inside' && inside.cut === 1 && inside.open && (touch || n.inside.ladder === 'inside'),
+    `position ${inside.position}, floor ${inside.floor}, ladder ${n.inside.ladder}, cut ${inside.cut}, open ${inside.open}`,
+  );
+  await screenshot(page, snap('inside'));
+  const calls = (n.drawCalls = await drawCalls(page));
+  check('draw calls inside', calls.engine > 0 && calls.engine <= DRAW_CALLS.gate, `${calls.engine} (gate ≤ ${DRAW_CALLS.gate})`);
+  // while the camera is down there the hand does nothing: a press on R1 takes nothing
+  const g1 = await grab('part:R1');
+  n.handsBelow = g1.held;
+  check('below the board’s shot the hand takes nothing', g1.held === null && inside.flying && inside.bench, `held ${g1.held}, flying ${inside.flying}`);
+  await p.up();
+  await to(0);
+  await advance(page, 0.3);
+  const home = await dive();
+  const homeShot = onBoardShot(home, phone);
+  check(
+    'back at 0: the rail lets the camera go on the board’s shot, the lens in its holder, R1 whole',
+    !home.engaged && home.position === home.min && home.atHolder && home.cut === 0 && !home.open && !home.flying &&
+      homeShot.ok,
+    `engaged ${home.engaged}, position ${home.position}, holder ${home.atHolder}, cut ${home.cut}; camera off the shot ` +
+      `${round(homeShot.off, 4)} of the distance (drift ≤ ${DRIFT}), aim ${homeShot.aim.toExponential(1)}`,
+  );
+
+  // 2. the slider dragged by a real pointer px by px down and back: the frame never jumps; the ladder, the floor and
+  // the hand's state follow the rail every frame
+  if (touch) {
+    const tab = await page.evaluate(() => {
+      for (const el of document.querySelectorAll('[data-ui="sheet-tabs:controls"]')) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0 && !el.closest('[hidden]')) return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      }
+      return null;
+    });
+    if (tab) await p.tap(tab.x, tab.y);
+    await advance(page, 0.5);
+  }
+  const track = await page.evaluate(() => {
+    const el = document.querySelector('[data-ui="ctl-depth"] input[type="range"]');
+    if (!el) return null;
+    const b = el.getBoundingClientRect();
+    return { x: b.x, y: b.y + b.height / 2, w: b.width };
+  });
+  if (!check('the depth slider is on screen', !!track && track.w > 50, JSON.stringify(track))) {
+    await page.close();
+    return;
+  }
+  const xAt = (f) => track.x + track.w * (0.02 + 0.96 * f);
+  /** Drag from `a` to `b` (track shares) 1 px a move, one engine frame each; every frame sampled. */
+  const drag = async (a, b) => {
+    const samples = [];
+    await p.down(xAt(a), track.y);
+    const px = Math.round(Math.abs(xAt(b) - xAt(a)));
+    const dir = Math.sign(b - a);
+    for (let k = 1; k <= px + 6; k++) {
+      await p.move(xAt(a) + dir * Math.min(k, px + 4), track.y);
+      samples.push({ ...(await dive()), ladder: touch ? undefined : await ladder() });
+    }
+    for (let k = 0; k < 20; k++) {
+      await page.evaluate(() => window.__app.step(1 / 60, 1));
+      samples.push({ ...(await dive()), ladder: touch ? undefined : await ladder() });
+    }
+    await p.up();
+    return samples;
+  };
+  const judge = (what, samples) => {
+    const steps = [];
+    for (let i = 1; i < samples.length; i++) {
+      const [a, b] = [samples[i - 1], samples[i]];
+      const d = Math.hypot(a.camera[0] - a.aim[0], a.camera[1] - a.aim[1], a.camera[2] - a.aim[2]);
+      const move = Math.hypot(...b.camera.map((v, j) => v - a.camera[j])) + Math.hypot(...b.aim.map((v, j) => v - a.aim[j]));
+      steps.push(move / d);
+    }
+    let spike = 0;
+    for (let i = 0; i < steps.length; i++) {
+      if (steps[i] < 0.004) continue;
+      spike = Math.max(spike, steps[i] / Math.max(steps[i - 1] ?? 0, steps[i + 1] ?? 0, 0.002));
+    }
+    const max = Math.max(0, ...steps);
+    (n.drags ??= {})[what] = { frames: samples.length, max: round(max, 4), spike: round(spike, 2), last: samples.at(-1)?.position };
+    check(`${what}: no jump`, max <= DIVE_STRIDE && spike < 3, `largest step ${max.toFixed(4)} of the distance, spike ${spike.toFixed(2)}`);
+    const wrong = samples.filter((s) => s.floor !== floorOf(s.position, s.min) || (!touch && s.ladder !== s.floor));
+    check(
+      `${what}: floor and ladder follow the rail (part from 0.5, inside from 1)`,
+      wrong.length === 0 && samples.some((s) => s.floor === 'part') && samples.some((s) => s.floor === 'inside'),
+      wrong.length ? `first wrong ${JSON.stringify(wrong[0] && { position: wrong[0].position, floor: wrong[0].floor, ladder: wrong[0].ladder })}` : `${samples.length} frames`,
+    );
+    const loose = samples.filter((s) => s.bench !== s.flying || s.flying !== (s.engaged && (s.moving || s.position > s.min + 1e-6)));
+    check(`${what}: the hand is off whenever the camera is off the board’s shot`, loose.length === 0, `${loose.length} frames otherwise`);
+  };
+  const down = await drag(0, 1);
+  judge('slider down', down);
+  check('dragged to the end: inside', down.at(-1)?.position === 1 && down.at(-1)?.floor === 'inside', `position ${down.at(-1)?.position}`);
+  const up = await drag(1, 0);
+  judge('slider back up', up);
+  await advance(page, 0.3);
+  const back = await dive();
+  const backShot = onBoardShot(back, phone);
+  check(
+    'dragged back to 0: the board’s shot again, the lens in its holder, no ladder, the hand on',
+    !back.engaged && back.position === back.min && back.atHolder && !back.flying && (await ladder()) === null &&
+      backShot.ok,
+    `camera off the shot ${round(backShot.off, 4)} of the distance (drift ≤ ${DRIFT}), aim ` +
+      `${backShot.aim.toExponential(1)}; engaged ${back.engaged}, holder ${back.atHolder}, flying ${back.flying}`,
+  );
+  await screenshot(page, snap('back'));
+
+  // 3. a tap on the track's end: the whole flight in its time, shorter with reduced motion; back the same way
+  const flight = async () => {
+    await p.down(xAt(1), track.y);
+    await p.up();
+    const frames = (await settle()) + 2;
+    const there = await dive();
+    await p.down(xAt(0), track.y);
+    await p.up();
+    await settle();
+    await advance(page, 0.2);
+    return { seconds: frames / 60, there: there.position, back: (await dive()).position };
+  };
+  const normal = await flight();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const reduced = await flight();
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  n.flight = { normal, reduced };
+  check(
+    'the whole flight 1.6–2.2 s (VISUAL §7)',
+    normal.there === 1 && normal.back === -LENS_LEG && normal.seconds >= FLIGHT.from && normal.seconds <= FLIGHT.to,
+    `${round(normal.seconds, 2)} s`,
+  );
+  check(
+    'reduced motion shortens it to ≈ 0.6 s',
+    reduced.there === 1 && reduced.seconds <= FLIGHT.reduced + 0.1 && reduced.seconds < normal.seconds,
+    `${round(reduced.seconds, 2)} s against ${round(normal.seconds, 2)} s`,
+  );
+
+  // 4. a tap on the resting lens lays it over R1 (the slider to the end of the lens leg)
+  const lens = await locate(page, 'bench:lens');
+  if (lens && !touch) {
+    await p.down(lens.x, lens.y);
+    await p.up();
+    await settle();
+    const laid = await dive();
+    check('a tap on the lens lays it over R1', laid.position === 0 && !laid.atHolder, `position ${laid.position}`);
+    await to(0);
+  }
+
+  const errors = await appErrors(page);
+  n.errors = errors;
+  check('console', errors.length === 0, consoleText(errors));
+  await page.close();
+}
+
 /* ---------------------------------------------------------------------------------------------- run */
 
-const SECTIONS = { room, shots, parts, hand, meter, heat };
+const SECTIONS = { room, shots, parts, hand, meter, heat, loupe };
 const only =
   typeof args.only === 'string'
     ? args.only

@@ -1241,8 +1241,10 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
       syncSlots();
 
       // the grips: shown on a touch screen always, with a mouse while the pointer is on the thing and 1.5 s after;
-      // hidden while the hand holds anything else, and on the parts the hand drives
+      // hidden while the hand holds anything else, and on the parts the hand drives; while the camera flies (the
+      // magnifier's dive) nothing can be taken, so no grip is shown and no body glows
       const touch = ctx.device.hover === false;
+      const still = !world.flying();
       const phone = world.phone();
       const spots: { g: Grip; s: GripSpot }[] = [];
       for (const rec of recs.values()) {
@@ -1251,7 +1253,10 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
         rec.linger = rec.over ? LINGER : Math.max(rec.linger - Math.max(dt, 0), 0);
         const mine = held !== null && (held === `part:${rec.id}` || held.startsWith(`leg:${rec.id}:`));
         const want =
-          (touch || rec.linger > 0) && (held === null || mine) && (!hands.busy(rec.id) || end?.part === rec.id);
+          still &&
+          (touch || rec.linger > 0) &&
+          (held === null || mine) &&
+          (!hands.busy(rec.id) || end?.part === rec.id);
         if (rec.grips.some((g) => g)) {
           for (const s of gripSpots(rec.model, rec.shape, tips)) {
             const g = rec.grips[s.leg];
@@ -1262,7 +1267,13 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
           }
         }
         // the body glows under the pointer (0.3) and pulses while it waits in the air (the phone's dock)
-        const glow = offered === rec.id ? 0.25 + 0.12 * Math.sin(t * 2.4) : rec.over & 1 && held === null ? 0.3 : 0;
+        const glow = !still
+          ? 0
+          : offered === rec.id
+            ? 0.25 + 0.12 * Math.sin(t * 2.4)
+            : rec.over & 1 && held === null
+              ? 0.3
+              : 0;
         if (Math.abs(glow - rec.glow) > 1e-3) {
           rec.glow = glow;
           parts.glow(rec.id, glow);
@@ -1271,7 +1282,7 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
       for (const rec of leadRecs.values()) {
         const l = rec.lead;
         rec.linger = rec.over ? LINGER : Math.max(rec.linger - Math.max(dt, 0), 0);
-        const want = (touch || rec.linger > 0) && (held === null || held === rec.grip.key) && rec.ready();
+        const want = still && (touch || rec.linger > 0) && (held === null || held === rec.grip.key) && rec.ready();
         const at = l.gripAt(new Vector3());
         spots.push({ g: rec.grip, s: { leg: 0, kind: 'end', at, r: GRIP_R, axis: l.gripAxis(new Vector3()) } });
         rec.grip.shown.go(want ? 1 : 0, 0.15);

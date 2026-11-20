@@ -8,7 +8,8 @@ import { defineChapter } from '@/engine/api';
  * marks on the board (step `parts`); E2-5: the hand, the tray, the plug leads and the switch (step `hand`); E2-6: the
  * circuit model on the bench and the multimeter with its probes (steps `meter`, `divider`); E2-7: the light, the heat
  * and the burn from the model's state (steps `led`, `overload`, `lamp`) and the bulged electrolytic's look alone
- * (`bulged-look`; E2-9 binds the state to the model in its own step `bulged` and takes this one away).
+ * (`bulged-look`; E2-9 binds the state to the model in its own step `bulged` and takes this one away); E2-8: the
+ * magnifier as the door from the board to a resistor and into it, with the ladder «де ми» (step `loupe`).
  * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
@@ -66,6 +67,11 @@ export const SANDBOX = {
       blurb:
         'Лише вигляд стану «здутий», поза схемою: праворуч верх випнутий, насічка розійшлася, плівка трохи роздалася; ліворуч — цілий конденсатор. Модель цього стану ще не дає.',
     },
+    loupe: {
+      title: 'Лупа: до деталі й усередину',
+      blurb:
+        'Резистор 4,7 kΩ у гніздах a5…a9. Повзунок «Глибина» або дотик до лупи кладе її з тримача на резистор, а далі камера летить крізь кільце: спершу поверх «деталь», де читаються смужки, у кінці — «усередині», поки що тимчасовий розріз. Сходинки «Де ми» показують поверх. Поки камера летить, рука не діє; на нулі все вертається на плату.',
+    },
   },
   /** The names under the pointer (tooltips) and on the dock's buttons of the tray (a phone). */
   names: {
@@ -92,6 +98,12 @@ export const SANDBOX = {
   },
   /** The multimeter in the panel: its number, the dial's switch (V, A, Ω are symbols; «off» is a word). */
   meter: { readout: 'Мультиметр', mode: 'Режим', off: 'Вимкнено' },
+  /** The dive (step `loupe`): the depth slider, its marks — the floors where they begin — and the magnifier's name. */
+  loupe: {
+    depth: 'Глибина',
+    floors: { stand: 'стенд', part: 'деталь', inside: 'усередині', atoms: 'атоми' },
+    lens: 'Лупа',
+  },
 } as const;
 
 export default defineChapter({

@@ -167,6 +167,8 @@ bench.hands.policy = {
   go of whatever the hand holds (`hands.reset`), and the model forgets every part they take off (`model.forget`, «model»
   below): a preset's parts are new and whole. The body's glow under the pointer is cyan emissive on the part's
   `body` materials (E2-7's heat look shares them).
+- While the camera flies (`bench.flying`: the magnifier's dive, «dive» below) nothing can be taken: every handler is
+  off, no grip is shown (on a touch screen neither) and no body glows.
 - `hand/swap.ts` (`createSwap`) is a scripted repair kept for the chapters: a still copy of a thing leaves along a way
   while the new one comes back the same way.
 
@@ -311,6 +313,61 @@ lights, smoke: { active, fired }, burns: [{ id, t }] }` (`lights` — every ligh
 The sandbox's steps `led`, `overload`, `lamp`, `bulged-look` (the look alone, for a snapshot; E2-9's step `bulged`
 binds it to the model) and `qa/measure.mjs --only heat` drive them.
 
+## `dive` — the floors: the magnifier as the door (E2-8)
+
+The axis «Поверх» of the volume (`stand` → `part` → `inside` → `atoms`, VISUAL §7): the magnifier is the only door
+from the step's shot down to one part on the board and into it. A chapter makes a door for a part and feeds its rail
+from a depth slider; the keeper lays the lens, the ladder shows the floor:
+
+```ts
+const door = partDoor(ctx, bench, 'R1', { lead: 'board' }); // the step's shot the dive starts from and ends on
+const keeper = lensKeeper(bench.tools); // the magnifier's pose after the bench's own update
+const ladder = benchLadder(ctx, () => door.floor); // the ladder «де ми» (null on the step's shot: hidden)
+ui.define({ inside: { controls: [{ type: 'slider', id: 'depth', min: 0, max: 1 + LENS_LEG, step: 0.005, value: 0,
+  label, onChange: (v) => door.travelTo(v - LENS_LEG), // a click or a key: the flight's time
+  onInput: (v, how) => how === 'drag' && door.rail.scrub(v - LENS_LEG) }] } }); // a drag: the frame at once
+keeper.to(() => door.lens(door.rail.position), 1.2); // on the step's entry
+// update(dt, t): bench.update(dt, t); door.update(dt); keeper.rim = door.rim(p); keeper.glass = door.glass(p);
+//                keeper.late(dt, t); ladder.update();      (p = door.rail.position; rim 0, glass 1 while not engaged)
+// leaving the step: door.home({ instant: info.instant, then: nextStepShot })
+```
+
+- **The rail** (`rail-math.ts`, `camera-rail.ts`, copies of `circuit`): one position −`LENS_LEG` … 1 is the whole way,
+  both ways, at any speed — −½ the step's shot with the lens in its holder; 0 the lens at work over the part (its ring
+  22–26 % of the frame's height, the camera about as far as the shot `board`); 1 the part opened on its place, close,
+  on the same line. A drag (`rail.scrub`) follows the hand; `door.travelTo` glides in the flight's time (`levels.ts`
+  `flightSeconds`: the whole way 2 s, with reduced motion 0.6 s, a shorter way less). The rail takes the camera with the
+  first move and gives it back when it rests on the step's shot again (that shot held, `ctx.camera.hold`); while the
+  camera is anywhere else the door writes `bench.flying` — the hand and the switch do nothing.
+- **The stops** (`poses.ts`, pure maths of the part's sockets and its model's `hit`): both cameras on one line from the
+  body, 60° over the board's face, across the part's axis on the reader's side (`partPlace`, `partStops`; `PART_VIEW`
+  holds the numbers). A part moved while the rail rests gets new stops; the door is `ready` only while every leg of its
+  part is in a socket. `partLensPose(bench, id, from)` is the lens over a part as the dive lays it.
+- **The floors** (`levels.ts`, VISUAL §7): `floorAt(position)` — `part` from 0.5 (the push-in has brought the part
+  large; its bands ≥ 12 px at 1280 × 720, the body ≥ 35 % of the safe frame's width from ≈ 0.64), `inside` from 1,
+  `atoms` from 2 (a third stop E3 adds); on the slider that is `part` from 1 and `inside` at its end. `door.floor` is
+  null while the rail rests on the step's shot. `benchLadder` is the platform's `floorLadder` with the volume's floors —
+  in a `_dev` sandbox too, whose own axis has none (the context it is built with answers the volume «Радіоелектроніка» as
+  `nav.volume`); on a phone the ladder is the header's chip, which in `_dev` keeps the sandbox's own label.
+- **Through the ring** (`door.ts`): the ring comes to meet the camera and passes it at `PASS` 0.82, its rim's arcs stay
+  in the frame's corners (`rim`), its glass thins out before (`glass`); the part opens after it (`CUT_OPENS` 0.78 … 1).
+  The keeper (`lens-keeper.ts`) lays the lens after the bench's update: while a chapter calls its `late`, the bench's
+  own `lens`, `lensTarget`, `lensCall` and `dive` have no say over the magnifier.
+- **The temporary cutaway** (`cutaway.ts`, VISUAL §7, plan decision 13): a quarter wedge of the body taken out on the
+  camera's side, 90° · `cut` wide; flat faces show the resistor's white ceramic rod, its thin ink film, the metal caps
+  (`mist`) and the lacquer of the body's colour with the bands' paint at the rim. The body's materials clip the wedge
+  (two planes, `clipIntersection`, parked far away while closed: opening compiles nothing); the faces stand a hair inside
+  the clipped side with materials that clip nothing — the lacquer's a twin of the body's sharing its heat, so a hot part
+  is hot in the section too. `createCutaway(model)` is null for a kind with no inside yet (E3 builds the real ones in the
+  same mechanics: the door's `cut` opens them). Four draw calls while open.
+
+For checks: `__app.read('electronics-dive')` → `{ part, ready, engaged, position, target, moving, min, floor, flying,
+bench, cut, open, camera, aim, lens, atHolder, stops }` (the door's rail, the floor shown, whether it flies and
+`bench.flying`, the cutaway, the camera and its aim, the lens's ring and whether it lies in its holder, the stops);
+probes `dive:end0`, `dive:end1` (the body's ends along its axis) and `dive:ring-top`, `dive:ring-bottom` (the ring's
+extent along the camera's up). One door per chapter: a second one's reader takes the name over. The sandbox's step
+`loupe` (a 4.7 kΩ in a5 … a9) and `qa/measure.mjs --only loupe` (a mouse, `--touch`) drive them.
+
 ## Копії
 
 Volumes do not import each other, so what the bench takes from `circuit` and `radio` is copied here. Every copy has a
@@ -352,10 +409,10 @@ from «заплановано» to «зроблено» in the same commit and c
 | `circuit/chapters/battery/parts/cue.ts` | `electronics/shared/hand/cue.ts` | внутрішній радіус кільця, швидкість появи й ім’я — параметри (кільце-підказка на гнізді: 0,12 і 0,025, 0,12 s) | E2-5 | зроблено |
 | `circuit/chapters/build/qa/helpers.mjs` | `_dev/chapters/_sandbox-electronics-bench/qa/helpers.mjs` | нічого, лише коментар-заголовок (бриф E2-3 називає файл серед файлів пісочниці, і `measure.mjs` бере з нього `read`) | E2-3 | зроблено |
 | `circuit/shared/stage/tools/gauge.ts` (щуп і дріт) | `electronics/shared/instruments/probe.ts` | щуп у мірилі стенда (вістря 0,25, ручка 0,9), червоний `coral` і чорний `ink`; вістря — `Leg` руки (гніздо, лежить на основі, рука, спокій біля приладу); дріт `DynTube` — від гнізда приладу дугою до спинки щупа; стрілку, шкалу, `GAUGE_HOME`, нахил приладу й число в 3D не взято | E2-6 | зроблено |
-| `circuit/shared/world/dive.ts` | `electronics/shared/dive/rail-math.ts` | нічого | E2-8 | заплановано |
-| `circuit/chapters/lamp/parts/rail.ts` | `electronics/shared/dive/camera-rail.ts` | імпорт — з `./rail-math` | E2-8 | заплановано |
-| `circuit/chapters/lamp/parts/lens-keeper.ts` | `electronics/shared/dive/lens-keeper.ts` | спирається на лупу стенда (`BenchTools`) | E2-8 | заплановано |
-| `circuit/chapters/lamp/parts/door.ts` | `electronics/shared/dive/door.ts` | `partDoor(ctx, bench, partId)`: зупинки — з пози деталі на платі; `cut` веде розріз деталі | E2-8 | заплановано |
-| `circuit/shared/world/levels.ts` | `electronics/shared/dive/levels.ts` | поверхи `stand`, `part`, `inside`, `atoms`; `legsBetween` не взято | E2-8 | заплановано |
-| `circuit/chapters/resistance/parts/poses.ts` | `electronics/shared/dive/poses.ts` | `partLensPose(bench, id)` | E2-8 | заплановано |
-| `circuit/shared/world/__tests__/dive.test.ts`, `levels.test.ts` | `electronics/shared/dive/__tests__/` | синтетичні зупинки | E2-8 | заплановано |
+| `circuit/shared/world/dive.ts` | `electronics/shared/dive/rail-math.ts` | нічого, лише коментар-заголовок | E2-8 | зроблено |
+| `circuit/chapters/lamp/parts/rail.ts` | `electronics/shared/dive/camera-rail.ts` | лише імпорт — з `./rail-math` | E2-8 | зроблено |
+| `circuit/chapters/lamp/parts/lens-keeper.ts` | `electronics/shared/dive/lens-keeper.ts` | спирається на лупу стенда (`BenchTools`: модель лупи й поза тримача); решта як була | E2-8 | зроблено |
+| `circuit/chapters/lamp/parts/door.ts` | `electronics/shared/dive/door.ts` | `partDoor(ctx, bench, partId, { lead })` — двері в будь-яку деталь на платі: зупинки — з її місця (`poses.ts`), нові, коли деталь переставили, поки камера на ракурсі кроку; камеру бере з першим рухом і віддає на ракурсі кроку (`home`); поки камера деінде — `bench.flying`; `cut` відкриває тимчасовий розріз (`cutaway.ts`) після проходу кільця (`CUT_OPENS` 0,78 … 1, `PASS` 0,82 як у `circuit`); читач `electronics-dive` і проби для перевірок | E2-8 | зроблено |
+| `circuit/shared/world/levels.ts` | `electronics/shared/dive/levels.ts` | поверхи тому `stand`, `part`, `inside`, `atoms` і де кожен починається на рейці — дані, а не найближча зупинка (`part` від 0,5, `inside` від 1, `atoms` від 2); час прольоту, коротший зі зменшеним рухом; `mixAt`, `floorValue`, `LEG`, `FLIGHT_EASE` і `legsBetween` не взято | E2-8 | зроблено |
+| `circuit/chapters/resistance/parts/poses.ts` | `electronics/shared/dive/poses.ts` | узято лише задум (лупа над місцем, піднята до камери вздовж погляду — тут через `overPose` стенда); код новий: місце деталі з її гнізд (`partPlace`), зупинки прольоту в неї (`partStops`), лупа над нею (`partLensPose`) | E2-8 | зроблено |
+| `circuit/shared/world/__tests__/dive.test.ts`, `levels.test.ts` | `electronics/shared/dive/__tests__/dive.test.ts`, `levels.test.ts` | синтетичні зупинки замість ракурсів `circuit` (перша зупинка — лупа в роботі приблизно так далеко, як ракурс, далі — на одній лінії до точки плати); рівні — поверхи тому, пороги на рейці й час прольоту | E2-8 | зроблено |

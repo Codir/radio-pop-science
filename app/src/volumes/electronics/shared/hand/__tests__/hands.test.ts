@@ -18,7 +18,7 @@ import {
   type Object3D,
 } from 'three';
 import { describe, expect, it } from 'vitest';
-import type { ChapterContext, DragInfo, InteractionHandlers } from '@/engine/api';
+import type { ChapterContext, DragInfo, InteractionHandlers, PointerInfo } from '@/engine/api';
 import { netlistOf } from '@electronics/sim/board';
 import { createElectrolytic, createLed, buildPart, type PartModel } from '../../parts';
 import { STAGE_SHOTS, mountBench, type Bench } from '../../bench';
@@ -337,6 +337,29 @@ describe('gesture 2: one leg at a time', () => {
     bench.hands.policy = { take: (k) => k !== 'leg:R1:1' };
     expect(hd.enabled!()).toBe(false);
     expect(handlers.get(bench.parts.models.get('R1')!.hit)!.enabled!()).toBe(true);
+  });
+
+  it('shows no grip and lights no body while the camera flies (a touch screen shows them otherwise)', () => {
+    const { bench, ctx, frames, handlers, grip } = setup();
+    (ctx.device as { hover: boolean }).hover = false;
+    bench.preset([{ id: 'R1', spec: 'resistor-1k', at: 'a3' }], { 'spk+': 'c17' });
+    frames(1 / 60);
+    const r1 = bench.parts.models.get('R1')!;
+    handlers.get(r1.hit)!.hover?.(true, {} as PointerInfo);
+    frames(0.3);
+    const shown = (k: HandKey) => bench.hands.grip(k)!.shown.value;
+    expect(shown('leg:R1:0')).toBe(1);
+    expect(shown('lead:spk+')).toBe(1);
+    expect(r1.body[0]!.emissiveIntensity).toBeCloseTo(0.3, 9);
+    bench.flying = true;
+    frames(0.3);
+    expect(shown('leg:R1:0')).toBe(0);
+    expect(shown('lead:spk+')).toBe(0);
+    expect(r1.body[0]!.emissiveIntensity).toBe(0);
+    bench.flying = false;
+    frames(0.3);
+    expect(shown('leg:R1:0')).toBe(1);
+    expect(handlers.get(grip('leg:R1:0'))!.enabled!()).toBe(true);
   });
 });
 
