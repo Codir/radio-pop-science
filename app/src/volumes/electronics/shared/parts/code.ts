@@ -2,10 +2,15 @@
  * The marks of the parts as data (docs/volumes/electronics/VISUAL.md §4.2, §4.7): the colour code of a resistor
  * (IEC 60062, four bands), the three-digit code printed on a ceramic or film capacitor, and the colours of the bands.
  * The palette has no gold, silver or band brown and the platform takes no new tokens, so those three are mixed from
- * tokens by VISUAL's recipes; there is no hex anywhere. Pure: no three.js beyond `Color`.
+ * tokens by VISUAL's recipes; there is no hex anywhere. And the reading of them: which band a point on a resistor's
+ * body is (`bandAt`), and the series of values a resistor is made in (IEC 60063: `seriesValues`, `nearestInSeries`),
+ * over the circuit model's catalog. Pure: no three.js beyond `Color` and a part's numbers.
  */
 import type { Color } from 'three';
 import { col } from '@/style';
+import { PARTS, resistorKey } from '@electronics/sim/core';
+import type { PartModel } from './part';
+import type { ResistorModel } from './resistor';
 
 export type BandColor =
   | 'black'
@@ -126,4 +131,78 @@ export const BAND_METAL: ReadonlySet<BandColor> = new Set<BandColor>(['gold', 's
 /** The colour of a band (linear, as `col` gives it). */
 export function bandColor(c: BandColor, out?: Color): Color {
   return out ? out.copy(RECIPES[c]) : RECIPES[c].clone();
+}
+
+/* ------------------------------------------------------------------------------------- the series of values */
+
+/** The series a resistor of the catalog is made in (IEC 60063): E24, and E12 — every second value of E24. */
+export type Series = 'E12' | 'E24';
+
+/** A value of the catalog: its ohms and its key (`resistorKey`). */
+export interface SeriesValue {
+  readonly ohms: number;
+  readonly key: string;
+}
+
+/** Every resistor of the catalog by its value, ascending, with its series (a value of E12 is one of E24 too). */
+const CATALOG: readonly { ohms: number; key: string; e12: boolean }[] = Object.entries(PARTS)
+  .flatMap(([key, spec]) => (spec.kind === 'resistor' ? [{ ohms: spec.ohms, key, e12: spec.series === 'E12' }] : []))
+  .sort((a, b) => a.ohms - b.ohms);
+
+const inSeries = (series: Series) => CATALOG.filter((v) => series === 'E24' || v.e12);
+
+/**
+ * The values of `series` in the catalog from `from` to `to` Ω, both ends included, ascending: the stops of a value
+ * slider — E24 from 100 Ω to 1 kΩ is 25 values, 100 … 910 and 1 000.
+ */
+export function seriesValues(series: Series, from: number, to: number): number[] {
+  return inSeries(series)
+    .filter((v) => v.ohms >= from * (1 - 1e-9) && v.ohms <= to * (1 + 1e-9))
+    .map((v) => v.ohms);
+}
+
+/** The neighbours of a value in a series. */
+export interface SeriesNeighbours {
+  /** The largest value of the series at `ohms` or below it (null below the catalog's 1 Ω). */
+  readonly below: SeriesValue | null;
+  /** The smallest value at `ohms` or above it (null above the catalog's 10 MΩ). */
+  readonly above: SeriesValue | null;
+  /** The nearer of the two on the series' own scale, the logarithm (a tie: the lower one). */
+  readonly nearest: SeriesValue;
+}
+
+/**
+ * The values of `series` around `ohms` in the catalog: 352.5 Ω (the red LED's resistor from 9 V) lies between 330 and
+ * 360 Ω in E24 and between 330 and 390 Ω in E12. A value of the series is its own neighbour on both sides. Not a
+ * positive finite number: a RangeError.
+ */
+export function nearestInSeries(ohms: number, series: Series): SeriesNeighbours {
+  if (!Number.isFinite(ohms) || ohms <= 0) throw new RangeError(`no series value near ${ohms} Ω`);
+  const list = inSeries(series);
+  const lo = [...list].reverse().find((v) => v.ohms <= ohms * (1 + 1e-9));
+  const hi = list.find((v) => v.ohms >= ohms * (1 - 1e-9));
+  const value = (v: { ohms: number } | undefined): SeriesValue | null =>
+    v === undefined ? null : { ohms: v.ohms, key: resistorKey(v.ohms) };
+  const below = value(lo);
+  const above = value(hi);
+  const nearest =
+    below === null ? above! : above === null ? below : ohms / below.ohms <= above.ohms / ohms ? below : above;
+  return { below, above, nearest };
+}
+
+/* ------------------------------------------------------------------------------------------ the band reader */
+
+/**
+ * Which band of a resistor a point on its body is: the index 0 … 3 (digit, digit, multiplier, tolerance) of the band
+ * whose middle is nearest along the body, for `xLocal` — the x of the point in the part's body frame
+ * (`model.bodyGroup.worldToLocal`, e.g. of a ray's hit on the invisible `hit` box), which runs from leg 0 to leg 1 at
+ * any turn on the board. Null off the body, or for a part that wears no bands.
+ */
+export function bandAt(xLocal: number, model: PartModel): number | null {
+  const mids = (model as Partial<ResistorModel>).bandX;
+  if (!mids || mids.length === 0 || !Number.isFinite(xLocal)) return null;
+  if (Math.abs(xLocal - model.hit.position.x) > model.hit.scale.x / 2 + 1e-9) return null;
+  let best = 0;
+  for (let i = 1; i < mids.length; i++) if (Math.abs(mids[i]! - xLocal) < Math.abs(mids[best]! - xLocal)) best = i;
+  return best;
 }

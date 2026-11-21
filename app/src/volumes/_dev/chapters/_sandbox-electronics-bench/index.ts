@@ -10,7 +10,8 @@ import { defineChapter } from '@/engine/api';
  * probes (steps `meter`, `divider`); E2-7: the light, the heat and the burn from the model's state (steps `led`,
  * `overload`, `lamp`) and the bulged electrolytic's look alone (`bulged-look`; E2-9 binds the state to the model in its
  * own step `bulged` and takes this one away); E2-8: the magnifier as the door from the board to a resistor and into it,
- * with the ladder «де ми» (step `loupe`).
+ * with the ladder «де ми» (step `loupe`); E3-5: inside the resistor — the carbon film, its groove for the value, the
+ * electrons at the model's current (step `film`).
  * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
@@ -71,7 +72,12 @@ export const SANDBOX = {
     loupe: {
       title: 'Лупа: до деталі й усередину',
       blurb:
-        'Резистор 4,7 kΩ у гніздах a5…a9. Повзунок «Глибина» або дотик до лупи кладе її з тримача на резистор, а далі камера летить крізь кільце: спершу поверх «деталь», де читаються смужки, у кінці — «усередині», поки що тимчасовий розріз. Сходинки «Де ми» показують поверх. Поки камера летить, рука не діє; на нулі все вертається на плату.',
+        'Резистор 4,7 kΩ у гніздах a5…a9. Повзунок «Глибина» або дотик до лупи кладе її з тримача на резистор, а далі камера летить крізь кільце: спершу поверх «деталь», де читаються смужки, у кінці — «усередині», де резистор розкрито (крок «Усередині резистора»). Сходинки «Де ми» показують поверх. Поки камера летить, рука не діє; на нулі все вертається на плату.',
+    },
+    film: {
+      title: 'Усередині резистора',
+      blurb:
+        'Коло світлодіода з резистором 330 Ω, вимикач замкнено. Повзунок «Глибина» веде лупу на резистор і камеру всередину: лак розкривається з боку камери, видно білий керамічний стрижень, вугільну плівку з зернами й гвинтову канавку, ковпачки на кінцях. Електрони біжать доріжкою між витками зі швидкістю від струму моделі; перемикач «Резистор» ставить 10 kΩ — витків більше, доріжка вужча, а електрони повзуть.',
     },
   },
   /** The names under the pointer (tooltips) and on the dock's buttons of the tray (a phone). */
@@ -99,6 +105,8 @@ export const SANDBOX = {
   },
   /** The multimeter in the panel: its number, the dial's switch (V, A, Ω are symbols; «off» is a word). */
   meter: { readout: 'Мультиметр', mode: 'Режим', off: 'Вимкнено' },
+  /** Step `film`: the switch of the resistor's value (the values are the code's numbers and units). */
+  film: { value: 'Резистор' },
   /** The dive (step `loupe`): the depth slider, its marks — the floors where they begin — and the magnifier's name. */
   loupe: {
     depth: 'Глибина',

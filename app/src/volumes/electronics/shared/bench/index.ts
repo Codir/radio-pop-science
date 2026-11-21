@@ -19,17 +19,14 @@ import {
   BENCH_FIXED,
   createBoardState,
   createLayout,
-  footprintOf,
   netlistOf,
   occupant,
-  place,
-  put,
   remove,
-  seatLead,
+  seatPreset,
   setSetting,
   type BoardLayout,
   type BoardState,
-  type Orientation,
+  type PresetPart,
   type SocketId,
 } from '@electronics/sim/board';
 import { createHands, createTerrain, createTray, type Hands, type Raised, type Tray } from '../hand';
@@ -76,12 +73,16 @@ export { STAGE_FOV, STAGE_POST, STAGE_SHOTS, benchShots, boardToWorld, type Benc
 export { holderPose, overPose, worldDirToBoard, worldToBoard, type BenchTools, type LensPose } from './tools';
 // what the sandbox (`_dev`, which may import only `shared/**`) needs of the board as data
 export {
+  AMPLIFIER_IDS,
   BOARD_SPEC,
+  LED_LOOP,
   createLayout,
   netlistOf,
   type BoardLayout,
+  type BoardPreset,
   type BoardState,
   type Orientation,
+  type PresetPart,
   type RowId,
   type SocketId,
 } from '@electronics/sim/board';
@@ -99,23 +100,6 @@ export {
   type Hands,
   type Tray,
 } from '../hand';
-
-/** A part a step puts on the board: leg 0 in `at`, turned by `o` (default 0: the legs along the line, to the right). */
-export interface PresetPart {
-  /** The id on the board: the footprint's letters and a number (`R1`, `LED2`). */
-  readonly id: string;
-  /** The key of the catalog (`resistor-4k7`). */
-  readonly spec: string;
-  readonly at: SocketId;
-  readonly o?: Orientation;
-  /**
-   * A part of two legs that may stand at any span within its reach (a jumper, 1 … 16 P; a resistor 4 … 6 P): its
-   * leg 1 here instead of where `o` would put it — a jumper from a rail to the row it feeds.
-   */
-  readonly to?: SocketId;
-  /** A pot's setting 0…1. */
-  readonly setting?: number;
-}
 
 export interface Bench {
   /** Everything of the bench; already added to `ctx.root`. */
@@ -523,16 +507,6 @@ export function mountBench(ctx: ChapterContext): Bench {
     multimeter.view(eye);
   };
 
-  /** A part of two legs from `a` to `b` stands within its reach: its footprint's span, measured on the board. */
-  const spans = (spec: string, a: SocketId, b: SocketId): boolean => {
-    const fp = footprintOf(spec);
-    const sa = layout.socket(a);
-    const sb = layout.socket(b);
-    if (!fp?.span || fp.offsets.length !== 2 || !sa || !sb) return false;
-    const apart = Math.hypot(sb.x - sa.x, sb.z - sa.z) / layout.spec.pitch;
-    return apart >= fp.span[0] - 1e-9 && apart <= fp.span[1] + 1e-9;
-  };
-
   /**
    * Every part off the board, the one in the hand too, and the model forgets them at once: a preset puts its list
    * under fixed ids in the same call, with no sync between, so a new `R1` must not inherit an old one's memory. The
@@ -596,22 +570,7 @@ export function mountBench(ctx: ChapterContext): Bench {
     scope: 0,
     preset(list, leads) {
       takeOff();
-      for (const p of list) {
-        const stands =
-          p.to === undefined
-            ? place(layout, state, { id: p.id, spec: p.spec, anchor: p.at, o: p.o ?? 0 })
-            : spans(p.spec, p.at, p.to) && put(layout, state, { id: p.id, spec: p.spec, legs: [p.at, p.to] });
-        if (!stands) {
-          const where = p.to === undefined ? `at ${p.at}, o ${p.o ?? 0}` : `from ${p.at} to ${p.to}`;
-          throw new RangeError(`bench.preset: ${p.id} (${p.spec}) does not stand ${where}`);
-        }
-        if (p.setting !== undefined) setSetting(state, p.id, p.setting);
-      }
-      for (const [name, socket] of Object.entries(leads ?? {})) {
-        if (!fixed.leads.has(name) || !seatLead(layout, state, name, socket)) {
-          throw new RangeError(`bench.preset: the plug ${name} does not go into ${socket}`);
-        }
-      }
+      seatPreset(layout, state, list, leads, new Set(fixed.leads.keys()));
       parts.sync();
       fixed.sync(state, () => false);
     },

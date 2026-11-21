@@ -67,6 +67,8 @@ function profile(u0: number, u1: number, lift: number, steps: number): G.Pt[] {
 export interface ResistorModel extends PartModel {
   /** The four bands it wears, from leg 0. */
   readonly bands: readonly BandColor[];
+  /** The middle of each band, in the same order: its x in the body frame (`code.ts` `bandAt` reads it). */
+  readonly bandX: readonly number[];
 }
 
 export function createResistor(ohms: number, tolerance: number, key = 'resistor'): ResistorModel {
@@ -110,5 +112,5 @@ export function createResistor(ohms: number, tolerance: number, key = 'resistor'
     marks,
     prints: new Prints(),
   });
-  return Object.assign(m, { bands });
+  return Object.assign(m, { bands, bandX: RESISTOR.bands.map((u) => u - L / 2) });
 }

@@ -5,7 +5,7 @@
 // `qa/measure.mjs`, docs/volumes/electronics/REUSE.md «Копії»; the sections are the bench's own):
 //
 //   node app/src/volumes/_dev/chapters/_sandbox-electronics-bench/qa/measure.mjs --port 5480 --out <dir>
-//        [--only room,…] [--size 1280x720] [--touch]
+//        [--only room,…,film] [--size 1280x720] [--touch]
 //
 // Sections (`--only`, default all):
 //   room  — step `room` on a held page (`?freeze`): the bench's reader `electronics-bench` (204 sockets, 36 rows),
@@ -73,6 +73,15 @@
 //           holder, no ladder. A tap on the track's end: the whole flight 1.6–2.2 s, with reduced motion ≈ 0.6 s
 //           (`page.emulateMedia`); a tap on the resting lens lays it over R1; the console; snapshots
 //           `loupe-<board|door|part|close|inside|back>-<size>.jpg`.
+//   film  — inside the resistor (E3-5, `shared/inside/film.ts`) on a held page, step `film` (the red LED's loop with
+//           330 Ω, the switch closed, shot `board`): on the board's shot the film is closed and the LED takes the
+//           model's 21.2 mA; the slider set to its end (the flight waited out) — the floor `inside`, the cut open with
+//           the magnifier's dive, the groove's turns those of `filmTurns(330)`, electrons shown, the view ≤ 8 draw calls
+//           and the frame ≤ 350, the callouts' points (`film:film`, `film:groove`, `film:rod`) on screen; the
+//           electrons' speed is the model's current through R1 times one number (the readers, not pixels); the dock's
+//           switch to 10 kΩ — a new R1 of that value, more turns, a narrower and longer strip, the model's 0.73 mA and
+//           the speed that current times the same number, 29 times slower; back at 0 the film closed; the hue families
+//           (reported), the console; snapshots `film-<330|10k|board>-<size>.jpg`.
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-electronics-bench — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -1578,9 +1587,131 @@ async function loupe(context) {
   await page.close();
 }
 
+/* -------------------------------------------------------------------------------------- section film */
+
+/** `shared/inside/film.ts`: the groove's turns for a value (`filmTurns`) and the electrons' speed per ampere. */
+const filmTurns = (ohms) => Math.min(12, Math.max(1, -1.5 + 2 * Math.log10(ohms)));
+const PER_AMP = -6;
+
+async function film(context) {
+  const n = (report.sections.film = {});
+  const page = await context.newPage();
+  const pos = await open(page, 'film').catch((err) => ({ error: String(err) }));
+  if (!check('opened', at(pos, 'film'), where(pos))) {
+    await page.close();
+    return;
+  }
+  const dive = () => read(page, 'electronics-dive');
+  const model = () => read(page, 'electronics-model');
+  const board = () => read(page, 'electronics-board');
+  const snap = (what) => join(out, `film-${what}-${tag}.jpg`);
+  const settle = async (max = 400) => {
+    for (let i = 0; i < max; i++) {
+      const d = await dive();
+      if (!d.moving) return i;
+      await page.evaluate(() => window.__app.step(1 / 60, 1));
+    }
+    return max;
+  };
+  const to = async (slider) => {
+    await page.evaluate((v) => window.__ui.set('depth', v, true), slider);
+    await settle();
+    await advance(page, 0.3);
+    return dive();
+  };
+
+  // 0. on the board's shot: the film closed, the LED's loop on (the model's current)
+  const d0 = await dive();
+  const m0 = await model();
+  n.board = { open: d0?.inside?.open, amps: m0?.parts?.R1?.i, led: m0?.parts?.LED1?.i };
+  check('on the board’s shot the film is closed', d0?.ready && d0.cut === 0 && d0.inside?.open === false, JSON.stringify(n.board));
+  check(
+    'the LED’s loop: 21.2 mA through R1 and the LED (sim/core)',
+    Math.abs(Math.abs(m0?.parts?.LED1?.i ?? 0) - 0.0212351) < 1e-6 && Math.abs(Math.abs(m0?.parts?.R1?.i ?? 0) - 0.0212351) < 1e-6,
+    `LED1 ${m0?.parts?.LED1?.i}, R1 ${m0?.parts?.R1?.i}`,
+  );
+  await screenshot(page, snap('board'));
+
+  // 1. the dive to the end: the floor `inside`, the cut open, the film's numbers
+  const inside = await to(DEPTH);
+  const f330 = inside.inside;
+  const m330 = await model();
+  n.r330 = { floor: inside.floor, cut: inside.cut, ...f330 };
+  check(
+    'inside: the cut opens with the magnifier’s dive — the floor `inside`, the film open',
+    inside.position === 1 && inside.floor === 'inside' && inside.cut === 1 && f330?.open === true && f330?.amount === 1,
+    `position ${inside.position}, floor ${inside.floor}, cut ${inside.cut}, film ${f330?.open} ${f330?.amount}`,
+  );
+  check(
+    'the groove cut for 330 Ω (`filmTurns`), electrons on the strip',
+    Math.abs((f330?.turns ?? 0) - filmTurns(330)) < 1e-9 && f330?.shown > 0,
+    `turns ${round(f330?.turns, 3)} (filmTurns ${round(filmTurns(330), 3)}), ${f330?.shown} of ${f330?.electrons} electrons shown`,
+  );
+  check('the film’s view ≤ 8 draw calls', f330?.drawCalls >= 5 && f330?.drawCalls <= 8, `${f330?.drawCalls}`);
+  const calls = (n.drawCalls = await drawCalls(page));
+  check('draw calls of the frame inside ≤ 350', calls.engine > 0 && calls.engine <= DRAW_CALLS.gate, `${calls.engine}`);
+  const amps330 = m330?.parts?.R1?.i;
+  check(
+    'the electrons’ speed is the model’s current through R1 times one number (330 Ω)',
+    f330?.amps === amps330 && Math.abs(f330.speed - PER_AMP * amps330) <= 1e-12,
+    `speed ${f330?.speed} units/s at ${amps330} A (×${PER_AMP} = ${PER_AMP * amps330})`,
+  );
+  const probes = await onScreen(page, ['film:film', 'film:groove', 'film:rod']);
+  n.anchors = probes.probes;
+  check(
+    'the callouts’ points — film, groove, rod — on screen in the free area',
+    Object.values(probes.probes).every((p) => p && p.inside),
+    Object.entries(probes.probes).map(([k, p]) => `${k} ${p ? `${round(p.x)},${round(p.y)}${p.inside ? '' : ' out'}` : 'none'}`).join('; '),
+  );
+  const png = decodePng(await page.screenshot({ type: 'png' }));
+  const hue = (n.hue = hueFamilies(png));
+  check('hue families inside (reported)', true, `${hue.families.join(', ')} ${JSON.stringify(hue.shares)}`);
+  await screenshot(page, snap('330'));
+
+  // 2. the dock's switch to 10 kΩ: a new R1 there, more turns, a narrower and longer strip, the electrons crawl
+  await page.evaluate(() => window.__ui.set('film-value', 'resistor-10k', true));
+  await advance(page, 0.6);
+  const d10 = await dive();
+  const f10 = d10.inside;
+  const m10 = await model();
+  const amps10 = m10?.parts?.R1?.i;
+  n.r10k = { floor: d10.floor, spec: (await board())?.parts?.R1?.spec, ...f10 };
+  check(
+    'the switch puts a 10 kΩ in R1’s sockets, the camera still inside',
+    n.r10k.spec === 'resistor-10k' && d10.floor === 'inside' && f10?.open === true,
+    `R1 ${n.r10k.spec}, floor ${d10.floor}, film open ${f10?.open}`,
+  );
+  check(
+    '10 kΩ: more turns, a narrower and longer strip',
+    Math.abs((f10?.turns ?? 0) - filmTurns(10_000)) < 1e-9 && f10.turns > f330.turns && f10.width < f330.width && f10.path > f330.path,
+    `turns ${round(f330.turns, 2)} → ${round(f10?.turns, 2)}, width ${round(f330.width, 4)} → ${round(f10?.width, 4)}, path ${round(f330.path, 3)} → ${round(f10?.path, 3)}`,
+  );
+  check(
+    'the model’s 0.73 mA, and the electrons’ speed that current times the same number',
+    Math.abs(Math.abs(amps10 ?? 0) - 0.0007336) < 1e-6 && f10?.amps === amps10 && Math.abs(f10.speed - PER_AMP * amps10) <= 1e-12,
+    `${amps10} A, speed ${f10?.speed}`,
+  );
+  n.ratio = { speed: f330.speed / f10.speed, current: amps330 / amps10 };
+  check(
+    'speed in proportion to the current: 29 times slower with 10 kΩ',
+    Math.abs(n.ratio.speed / n.ratio.current - 1) < 1e-9 && n.ratio.current > 28 && n.ratio.current < 30,
+    `speed ratio ${round(n.ratio.speed, 3)}, current ratio ${round(n.ratio.current, 3)}`,
+  );
+  await screenshot(page, snap('10k'));
+
+  // 3. back at 0: the part whole again
+  const home = await to(0);
+  check('back at 0: the film closed, the part whole', home.cut === 0 && home.inside?.open === false && !home.flying, `cut ${home.cut}, film ${home.inside?.open}`);
+
+  const errors = await appErrors(page);
+  n.errors = errors;
+  check('console', errors.length === 0, consoleText(errors));
+  await page.close();
+}
+
 /* ---------------------------------------------------------------------------------------------- run */
 
-const SECTIONS = { room, shots, parts, hand, meter, heat, loupe };
+const SECTIONS = { room, shots, parts, hand, meter, heat, loupe, film };
 const only =
   typeof args.only === 'string'
     ? args.only

@@ -411,20 +411,78 @@ keeper.to(() => door.lens(door.rail.position), 1.2); // on the step's entry
   in the frame's corners (`rim`), its glass thins out before (`glass`); the part opens after it (`CUT_OPENS` 0.78 … 1).
   The keeper (`lens-keeper.ts`) lays the lens after the bench's update: while a chapter calls its `late`, the bench's
   own `lens`, `lensTarget`, `lensCall` and `dive` have no say over the magnifier.
-- **The temporary cutaway** (`cutaway.ts`, VISUAL §7, plan decision 13): a quarter wedge of the body taken out on the
-  camera's side, 90° · `cut` wide; flat faces show the resistor's white ceramic rod, its thin ink film, the metal caps
-  (`mist`) and the lacquer of the body's colour with the bands' paint at the rim. The body's materials clip the wedge
-  (two planes, `clipIntersection`, parked far away while closed: opening compiles nothing); the faces stand a hair inside
-  the clipped side with materials that clip nothing — the lacquer's a twin of the body's sharing its heat, so a hot part
-  is hot in the section too. `createCutaway(model)` is null for a kind with no inside yet (E3 builds the real ones in the
-  same mechanics: the door's `cut` opens them). Four draw calls while open.
+- **The inside** (`cutaway.ts`, VISUAL §7): the door opens the inner view of its part's kind (a partial table; a kind
+  with none stays whole on `inside`) by its `cut`, and every frame feeds it what the bench's model says of the part —
+  the current into its leg 0, its heat, whether it burnt (`follow`; the last good solve's while one fails). A resistor's
+  is its carbon film («inside» below), which took the place of E2-8's temporary cutaway. `door.cutaway` is the view;
+  `asFilm(door.cutaway)` (`shared/inside`) gives a resistor's film, its callouts' points and its numbers.
 
 For checks: `__app.read('electronics-dive')` → `{ part, ready, engaged, position, target, moving, min, floor, flying,
-bench, cut, open, camera, aim, lens, atHolder, stops }` (the door's rail, the floor shown, whether it flies and
-`bench.flying`, the cutaway, the camera and its aim, the lens's ring and whether it lies in its holder, the stops);
+bench, cut, open, inside, camera, aim, lens, atHolder, stops }` (the door's rail, the floor shown, whether it flies and
+`bench.flying`, the inner view: how far open and what it shows — a film's `FilmState`, below —, the camera and its
+aim, the lens's ring and whether it lies in its holder, the stops);
 probes `dive:end0`, `dive:end1` (the body's ends along its axis) and `dive:ring-top`, `dive:ring-bottom` (the ring's
 extent along the camera's up). One door per chapter: a second one's reader takes the name over. The sandbox's step
 `loupe` (a 4.7 kΩ in a5 … a9) and `qa/measure.mjs --only loupe` (a mouse, `--touch`) drive them.
+
+## `inside` — inside the parts (E3-5)
+
+The floor `inside` of the door's dive (VISUAL §7): the inner view of a part, opened on its place by the door's `cut`.
+The door makes and feeds it (`dive` above); a chapter reads it — `asFilm(door.cutaway)` — for its callouts and checks.
+
+```ts
+const film = createFilm(model); // a resistor's model of `shared/parts`, closed; a child of its body frame
+film.set(cut, view); // open by `cut` 0 … 1 toward `view` (world, from the body to the camera): the door does it
+film.flow(amps); film.heat(share); film.burnt(on); film.update(dt, t); // the model's state; the door's `follow`
+film.turns(10_000); // the groove cut for another value (`filmTurns`); a new part under the door makes a new film
+film.anchor('film' | 'groove' | 'rod', out); // a world point for a callout, on the camera's side
+```
+
+- **What it is** (`film.ts`): the white ceramic rod; the carbon film (`ink`) on it, a strip wound between the turns of
+  the helical groove, where the white ceramic shows; its grains (instanced, a shade lighter); the metal end caps
+  (`mist`) pressed on the rod's ends over the film, where the legs come in. The lacquer with the bands is the part's own
+  body: the wedge (`wedge.ts`, the mechanics of E2-8's cutaway, `FILM.wedge` 120° at `cut` 1, on the camera's side)
+  clips it away and section faces close the cut — the lacquer and the bands' paint all along, and up to `FILM.step`
+  from the end by leg 0 the cut goes down to the axis: the rod's section, the film on it and the cap, layers seen side
+  by side. Nothing is drawn while the part is whole.
+- **The model on it**: the groove's turns grow with the value, `filmTurns(ohms)` = 2 · log₁₀(Ω) − 1.5 held to 1 … 12
+  (330 Ω 3.5, 1 kΩ 4.5, 10 kΩ 6.5): more ohms, a longer and narrower strip. The electrons (`cyan`, the library's
+  electron orb without its glow) drift along the strip at `electronSpeed(amps)` = −6 units/s per ampere of the current
+  into leg 0, held at 0.6: the other way to the current, proportional to it, 29 times slower with 10 kΩ than with
+  330 Ω in the LED's loop. They come round from one end to the other under the caps. The heat of the model is the
+  film's colour (`createSurfaceLook`, VISUAL §4.8: never light); burnt, the film breaks under a charred belt with a
+  pale crack and the electrons stand. Both drawings are pictures of the rule, not of a real part (the script's
+  «Докладніше»: the turns are not a real part's, the speed shows only the current).
+- **Numbers** (`FILM`): the rod 0.085, the film to 0.092, the caps 0.01 … 0.17 of the length to 0.122 (as E2-8's
+  cutaway), the groove 0.012 wide, the electrons 0.008 across, 160 of them, the grains 640.
+- **Draw calls** while open: the rod and the caps, the strip, the grains, the electrons, the two section faces — six;
+  burnt, the belt makes seven. None while the part is whole.
+
+For checks: the door's reader (`dive` above) has the film's `state()` under `inside`: `{ ohms, turns, pitch, width,
+path, amps, speed, electrons, shown, open, amount, heat, burnt, surface, drawCalls }`. The sandbox's step `film` (the
+red LED's loop, the value switch 330 Ω / 10 kΩ, probes `film:film`, `film:groove`, `film:rod`) and `qa/measure.mjs
+--only film` drive it.
+
+## Boards of the steps (`sim/board/presets.ts`, E3-5)
+
+`bench.preset(parts, leads)` seats a step's board through `seatPreset` (`sim/board`), the same pure maths a test runs
+without the bench (`presetState`): `PresetPart` is `sim/board`'s, and the bench re-exports it. Boards as data, for the
+chapters:
+
+- `LED_LOOP` — the red LED's loop of `resistor` and `resistor-pick` (their scripts' «Бачимо»): J1 from `+5` to `a5`,
+  R1 330 Ω in `b5` … `b9`, LED1 anode `c9`, cathode `c10`, J2 from `e10` to `-10`; with the switch closed the model
+  gives 21.235 mA, 1.960 V on the LED, 7.008 V and 0.149 W on the resistor; with a 10 kΩ in R1's sockets 0.734 mA.
+  A step takes it whole (`ohm`, `inside`, `share`, `bands`, `series`) or leaves a part of it out (`limit`: R1, `calc`:
+  J2); the tests hold that no two of its bodies take the same place.
+- `AMPLIFIER_IDS` — the amplifier's ids (`sim/core` `amplifierNetlist`) as the bench names them: `B1` → `BAT`, `S1` →
+  `SW`, `PL` → `PLAYER`, `LS1` → `SPK`, `VR1` → `P1` (a pot's id on the board), every other part its own. The
+  amplifier's layout on the board is not here yet: the build `shared/model/__tests__/driver.test.ts` solved has twelve
+  pairs of bodies in one place, and its plugs `pl-` on `-2` and `spk-` on `-11` lie beyond their leads' 4.0 — `spk-`
+  cannot reach the − rail from the speaker at all (4.04 at the nearest), so its ground is a strip the board ties to the
+  rail. A layout for the chapters keeps every body clear of the others (`bench/__tests__/presets.test.ts` measures
+  that), every leg and plug out from under a low body (a raised one — an LED, a capacitor, a TO-92, the pot — may stand
+  over an axial part's leg or a jumper), every jumper off the sockets it passes and from under the axial parts, and
+  every plug within its lead.
 
 ## Копії
 

@@ -3,17 +3,18 @@
  * (`poses.ts`), the stops of the dive computed from that place — the lens at work over the body with its ring 22–26 %
  * of the frame's height, the floor `part` with the bands ≥ 12 px at 1280 × 720 (through the real `CameraDirector` with
  * the desk's panels), `inside` closer on the same line — a part moved or turned getting its own stops, a rail through
- * them from the bench's shot `board` without a jump; and the resistor's temporary cutaway (`cutaway.ts`): what its
- * planes clip, its faces, and the part given back whole.
+ * them from the bench's shot `board` without a jump; and which inner view a part opens (`cutaway.ts`; the views
+ * themselves are tested in `shared/inside/__tests__`).
  */
-import { Vector3, type BufferGeometry, type Material, type Mesh } from 'three';
+import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { CameraDirector, type Shot } from '@/engine/camera/director';
 import { createLayout, type SocketId } from '@electronics/sim/board';
 import { LENS, PLACES } from '../../bench/layout';
 import { STAGE_FOV, STAGE_SHOTS, boardToWorld } from '../../bench/shots';
-import { AXIAL_Y, RESISTOR, buildPart, createResistor, resistorRadius, type PartModel } from '../../parts';
-import { CLOSED, RESISTOR_INSIDE, createCutaway } from '../cutaway';
+import { asFilm } from '../../inside';
+import { AXIAL_Y, RESISTOR, buildPart, createResistor } from '../../parts';
+import { createCutaway } from '../cutaway';
 import { CUT_OPENS } from '../door';
 import { FLOOR_FROM } from '../levels';
 import { PART_VIEW, partPlace, partStops, type BodyBox } from '../poses';
@@ -204,127 +205,15 @@ describe('the stops follow the part', () => {
   });
 });
 
-/* ---------------------------------------------------------------------------------------- the cutaway */
+/* ----------------------------------------------------------------------------------- the inner views */
 
-const AXIS = new Vector3(0, AXIAL_Y, 0);
-/** Whether three's clipping (with `clipIntersection`) removes a point of the body frame (the model at the origin). */
-function clipped(m: Material, p: Vector3): boolean {
-  const planes = m.clippingPlanes ?? [];
-  if (planes.length === 0) return false;
-  const out = planes.map((pl) => pl.distanceToPoint(p) < 0);
-  return m.clipIntersection ? out.every(Boolean) : out.some(Boolean);
-}
-const faceArea = (g: BufferGeometry): number => {
-  const a = g.getAttribute('position');
-  let s = 0;
-  for (let i = 0; i < a.count; i += 3) {
-    const [x0, y0, x1, y1, x2, y2] = [a.getX(i), a.getY(i), a.getX(i + 1), a.getY(i + 1), a.getX(i + 2), a.getY(i + 2)];
-    s += Math.abs((x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)) / 2;
-  }
-  return s;
-};
-
-describe('the resistor’s temporary cutaway (VISUAL §7)', () => {
-  const make = (): PartModel => {
-    const m = buildPart('resistor-4k7')!;
-    m.group.updateWorldMatrix(true, true);
-    return m;
-  };
-
-  it('opens a quarter wedge on the camera’s side and keeps the rest', () => {
-    const m = make();
-    const cut = createCutaway(m)!;
-    const body = m.body[0]!;
-    // closed: nothing clipped, nothing drawn
-    cut.set(0, new Vector3(0, 1, 0));
-    expect(cut.open).toBe(false);
-    expect(clipped(body, AXIS.clone().add(new Vector3(0, 0.1, 0)))).toBe(false);
-    // open toward +y: the wedge ±45° about +y is gone, the side at 90° and the far side are kept
-    cut.set(1, new Vector3(0, 1, 0));
-    expect(cut.open).toBe(true);
-    expect(cut.amount).toBe(1);
-    const at = (deg: number, r = 0.1): Vector3 => {
-      const a = (deg * Math.PI) / 180;
-      return AXIS.clone().add(new Vector3(0.05, r * Math.cos(a), r * Math.sin(a)));
-    };
-    // (each plane clips 0.002 past itself, where the section face stands: 50° at r 0.1 is 0.009 off the plane)
-    for (const deg of [0, 30, -30, 44, -44]) expect(clipped(body, at(deg)), `${deg}°`).toBe(true);
-    for (const deg of [50, -50, 90, -90, 180]) expect(clipped(body, at(deg)), `${deg}°`).toBe(false);
-    // half open: the wedge is half as wide
-    cut.set(0.5, new Vector3(0, 1, 0));
-    expect(clipped(body, at(20))).toBe(true);
-    expect(clipped(body, at(25))).toBe(false);
-    // the legs are never cut
-    expect(m.legs.material as Material).not.toBe(body);
-    expect(((m.legs.material as Material).clippingPlanes ?? []).length).toBe(0);
-    // a camera on the reader's side (+z of the body frame): the wedge turns there
-    cut.set(1, new Vector3(0, 0, 1));
-    expect(clipped(body, at(90))).toBe(true);
-    expect(clipped(body, at(0))).toBe(false);
-  });
-
-  it('closes its section with faces of the rod, the film, the caps and the lacquer, within the body', () => {
-    const m = make();
-    const body = m.body[0]!;
-    const cut = createCutaway(m)!;
-    cut.set(1, new Vector3(0, 1, 0));
-    const pivot = m.bodyGroup.getObjectByName(`${m.key}:cutaway`)!;
-    const faces = pivot.children;
-    expect(faces).toHaveLength(2);
-    const L = RESISTOR.length;
-    // the lacquer and the bands' paint up to the body's surface, nothing beyond it, and no gap: each face covers the
-    // body's section under its profile (and the paint of the bands)
-    const under = (() => {
-      let s = 0;
-      const n = 4000;
-      for (let i = 0; i < n; i++) s += (resistorRadius(((i + 0.5) / n) * L) * L) / n;
-      return s;
-    })();
-    const paint = RESISTOR.bands.length * RESISTOR.band * RESISTOR_INSIDE.paint;
-    for (const face of faces) {
-      const meshes = face.children as Mesh[];
-      // the lacquer is a twin of the body's own material that clips nothing and takes the body's heat (one uniform)
-      const lacquer = meshes[0]!.material as typeof body;
-      expect(lacquer).not.toBe(body);
-      expect(lacquer.uniforms.uKHeat).toBe(body.uniforms.uKHeat);
-      expect(lacquer.clippingPlanes ?? []).toHaveLength(0);
-      expect((meshes[1]!.material as Material).clippingPlanes ?? []).toHaveLength(0);
-      let area = 0;
-      for (const mesh of meshes) {
-        const g = mesh.geometry;
-        area += faceArea(g);
-        const p = g.getAttribute('position');
-        // (the positions are float32: a micrometre of slack)
-        for (let i = 0; i < p.count; i++) {
-          const u = p.getX(i) + L / 2;
-          expect(u).toBeGreaterThanOrEqual(-1e-6);
-          expect(u).toBeLessThanOrEqual(L + 1e-6);
-          const r = resistorRadius(Math.min(Math.max(u, 0), L));
-          expect(p.getY(i)).toBeLessThanOrEqual(r + RESISTOR_INSIDE.paint + 1e-6);
-        }
-      }
-      // each face stands in the hair its plane clips into the kept side: whatever of the body reaches the plane is cut
-      // away behind the face (a point of it, in the body frame at the origin, is clipped by both planes)
-      face.updateWorldMatrix(true, true);
-      const g = meshes[0]!.geometry.getAttribute('position');
-      const onFace = new Vector3(g.getX(0), g.getY(0), g.getZ(0)).applyMatrix4(meshes[0]!.matrixWorld);
-      expect(Math.abs(g.getZ(0))).toBeGreaterThan(0);
-      expect(clipped(body, onFace)).toBe(true);
-      expect(area).toBeCloseTo(under + paint, 3);
-    }
-    cut.set(CLOSED / 2, new Vector3(0, 1, 0));
-    expect(faces.every((f) => !f.visible)).toBe(true);
-  });
-
-  it('gives the part back whole when it is disposed; a kind with no cutaway of its own stays whole', () => {
-    const m = make();
-    const before = m.materials.map((x) => x.clippingPlanes);
-    const cut = createCutaway(m)!;
-    cut.set(1, new Vector3(0, 1, 0));
-    cut.dispose();
-    expect(m.materials.map((x) => x.clippingPlanes)).toEqual(before);
-    expect(m.bodyGroup.getObjectByName(`${m.key}:cutaway`)).toBeUndefined();
+describe('the inner views by kind (cutaway.ts)', () => {
+  it('a resistor opens its carbon film; a kind with no inner view yet stays whole', () => {
+    const r = createCutaway(createResistor(100, 0.05, 'resistor-100'));
+    expect(r).not.toBeNull();
+    expect(asFilm(r)).not.toBeNull();
+    r!.dispose();
     expect(createCutaway(buildPart('led-red')!)).toBeNull();
-    expect(createCutaway(createResistor(100, 0.05, 'resistor-100'))).not.toBeNull();
+    expect(createCutaway(buildPart('ceramic-100n')!)).toBeNull();
   });
 });

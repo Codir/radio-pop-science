@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChapterContext } from '@/engine/api';
 import { CameraDirector } from '@/engine/camera/director';
 import { benchShots, mountBench, type Bench } from '../../bench';
+import { asFilm, electronSpeed, filmTurns } from '../../inside';
 import { partDoor, type Door } from '../door';
 
 /** A chapter context with only what the bench and the door use: the camera is the engine's own director. */
@@ -130,5 +131,50 @@ describe('the door’s way home', () => {
     expect(bench.flying).toBe(false);
     // the rail let the camera go toward the next step's shot
     expect(camera.currentShot).toBe(benchShots(false).stand);
+  });
+});
+
+describe('the door into a resistor opens its carbon film, fed by the bench’s model', () => {
+  it('on `inside` the film is open, its groove cut for the value, its electrons at the speed of the model’s current', () => {
+    const { ctx, camera } = stubContext();
+    const bench = mountBench(ctx);
+    // the LED's loop of `resistor/limit`: + rail → J1 → 330 Ω → the red LED → J2 → − rail, the switch closed
+    bench.preset([
+      { id: 'J1', spec: 'jumper', at: '+5', to: 'a5' },
+      { id: 'R1', spec: 'resistor-330', at: 'b5' },
+      { id: 'LED1', spec: 'led-red', at: 'c9' },
+      { id: 'J2', spec: 'jumper', at: 'e10', to: '-10' },
+    ]);
+    bench.closed = 1;
+    bench.snap();
+    camera.go('board', { instant: true });
+    const door = partDoor(ctx, bench, 'R1', { lead: 'board' });
+    const t = { now: 0 };
+    frame(bench, door, t);
+    door.travelTo(1);
+    for (let i = 0; i < 600 && door.rail.moving; i++) frame(bench, door, t);
+    frame(bench, door, t);
+    const film = asFilm(door.cutaway);
+    expect(film).not.toBeNull();
+    const s = film!.state();
+    expect(s.open).toBe(true);
+    expect(s.amount).toBe(1);
+    expect(s.turns).toBe(filmTurns(330));
+    // the model's current through R1 (into its leg 0, b5): 21.2 mA, and the electrons' speed is that current's
+    const amps = bench.model.reading('R1')!.i;
+    expect(Math.abs(amps)).toBeCloseTo(0.0212351, 6);
+    expect(s.amps).toBe(amps);
+    expect(s.speed).toBeCloseTo(electronSpeed(amps), 12);
+    expect(s.shown).toBeGreaterThan(0);
+    expect(s.burnt).toBe(false);
+    // the switch opened: no current (the open switch's leak, ~1e-22 A), the electrons stand
+    bench.closed = 0;
+    for (let i = 0; i < 30; i++) frame(bench, door, t);
+    expect(Math.abs(film!.state().amps)).toBeLessThan(1e-12);
+    expect(Math.abs(film!.state().speed)).toBeLessThan(1e-11);
+    // back home the part is whole again
+    door.home({ instant: true });
+    frame(bench, door, t);
+    expect(film!.state().open).toBe(false);
   });
 });

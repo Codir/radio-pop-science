@@ -9,7 +9,9 @@
  * - 0 … 1, through the ring: the camera pushes in to `inside` on the same line — the floor `part` from halfway
  *   (`levels.ts`), the body large, its bands read; the ring comes to meet it, passes it at `PASS` and stays as the thin
  *   cyan arcs in the frame's corners (`rim`); its glass thins out on the way so the tint never snaps; past the ring the
- *   part opens (`cut`, `cutaway.ts`) and stands opened at the end, the floor `inside`.
+ *   part opens (`cut`, `cutaway.ts`: a resistor's carbon film, `shared/inside/film.ts`) and stands opened at the
+ *   end, the floor `inside`; the door feeds the inner view what the bench's model says of the part every frame (its
+ *   current, its heat, whether it burnt).
  *
  * The door follows its part: while its rail rests on the step's shot, a part moved to other sockets (or the phone's
  * shot instead of the desk's) gives it new stops. The camera is the rail's only while it is off the step's shot: back
@@ -67,7 +69,8 @@ export interface Door {
   readonly floor: FloorId | null;
   /** The camera is off the step's shot (flying or resting below): the hand does nothing. */
   readonly flying: boolean;
-  /** The part's cutaway (null for a kind with none yet, or while the part has no model). */
+  /** The part's inner view (null for a kind with none yet, or while the part has no model): a resistor's is its film
+   * (`shared/inside` `asFilm`: the callouts' points, its numbers). */
   readonly cutaway: Cutaway | null;
   /** The lens's pose for a position (base frame; the rail's camera for that position is read from the rail). */
   lens(t: number): LensPose;
@@ -143,6 +146,7 @@ export function partDoor(ctx: ChapterContext, bench: Bench, partId: string, opts
   let flying = false;
   let cutaway: Cutaway | null = null;
   let cutModel: object | null = null;
+  let time = 0;
 
   const pose = emptyPose();
   const eye = emptyPose();
@@ -224,6 +228,15 @@ export function partDoor(ctx: ChapterContext, bench: Bench, partId: string, opts
         cutModel = model;
       }
       if (cutaway && stops) cutaway.set(rail.engaged ? door.cut(position()) : 0, stops.view);
+      // the inner view shows the model's state of the part: its current, its heat, a burn (the last good solve's while
+      // the model's last solve failed)
+      if (cutaway?.follow) {
+        time += Math.max(dt, 0);
+        // (a part out of the circuit, a burnt one solved out, has no reading: no current through it)
+        const state = bench.model.part(partId);
+        const amps = state ? (bench.model.reading(partId)?.i ?? 0) : 0;
+        cutaway.follow(state ? { amps, heat: state.heat, burnt: state.condition === 'burnt' } : null, dt, time);
+      }
       const now = rail.engaged && (rail.moving || rail.position > rail.rail.min + 1e-6);
       if (now !== flying) {
         flying = now;
@@ -276,6 +289,7 @@ export function partDoor(ctx: ChapterContext, bench: Bench, partId: string, opts
       bench: bench.flying,
       cut: cutaway?.amount ?? 0,
       open: cutaway?.open ?? false,
+      inside: cutaway?.state?.() ?? null,
       camera: ctx.camera.camera.getWorldPosition(new Vector3()).toArray(),
       aim: ctx.camera.target.toArray(),
       lens: bench.tools.lens.ring.getWorldPosition(new Vector3()).toArray(),

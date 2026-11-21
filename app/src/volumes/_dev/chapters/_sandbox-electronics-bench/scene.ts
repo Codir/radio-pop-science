@@ -35,7 +35,13 @@
  *           in the flight's time (shorter with reduced motion), a tap on the resting lens lays it over the part; the
  *           ladder «де ми» shows the floor (`benchLadder`: the volume's floors, here in `_dev` too); everything may be
  *           taken while the camera is on the board's shot, nothing while it flies. Leaving the step, the rail flies
- *           back to the board's shot first, then the next step's camera takes over and the door is given up.
+ *           back to the board's shot first, then the next step's camera takes over and the door is given up;
+ *   film  — inside the resistor (E3-5, `shared/inside`), shot `board`: the red LED's loop (`LED_LOOP` of `sim/board`:
+ *           J1, 330 Ω in b5 … b9, the LED in c9/c10, J2), the switch closed; the same door and slider as `loupe` lead
+ *           into R1, whose floor `inside` is its carbon film — the groove cut for the value, the electrons at the model's
+ *           current, the film's colour from the model's heat; the dock's switch `film-value` puts a 330 Ω or a 10 kΩ in
+ *           R1's sockets (a new part under the same id, whole: the door follows it). Probes `film:film`, `film:groove`,
+ *           `film:rod` — the callouts' points of the film.
  * Every other step has an empty board and an empty tray, and the probes at rest. Readers: the bench's own
  * `electronics-bench` (sockets, rows, draw calls, the print shown), `electronics-board` (the parts and their legs, the
  * plugs, the settings, the netlist's key), `electronics-parts` (every model: where, draw calls, its print),
@@ -47,9 +53,11 @@
  * `lead:<name>`, `end:<name>`, `probe:<red|black>` (the grip on a probe's handle; its tip `end:red`, `end:black`),
  * `tray:<key>`, `switch`, and the door's `dive:end0`, `dive:end1`, `dive:ring-top`, `dive:ring-bottom`.
  */
+import { Vector3 } from 'three';
 import { defineScene } from '@/engine/api';
 import { stepUi } from '@/hud';
 import {
+  LED_LOOP,
   PARTS as CATALOG,
   mountBench,
   trayLabel,
@@ -65,6 +73,7 @@ import {
   partDoor,
   type Door,
 } from '@electronics/shared/dive';
+import { asFilm, type FilmAnchor } from '@electronics/shared/inside';
 import { SANDBOX } from './index';
 import { METER_MODES, type MeterMode } from '@electronics/shared/instruments';
 import { buildPart } from '@electronics/shared/parts';
@@ -156,10 +165,17 @@ const LOUPE: readonly PresetPart[] = [{ id: 'R1', spec: 'resistor-4k7', at: 'a5'
 /** The depth slider runs 0 … `DEPTH`; the door's rail position is the slider − `LENS_LEG`. */
 const DEPTH = 1 + LENS_LEG;
 
+/** Step `film`: the values the dock's switch puts in R1's sockets of the LED's loop (`LED_LOOP`). */
+const FILM_VALUES = ['resistor-330', 'resistor-10k'] as const;
+const filmBoard = (spec: string): readonly PresetPart[] =>
+  LED_LOOP.parts.map((p) => (p.id === 'R1' ? { ...p, spec } : p));
+/** The steps with the magnifier's door into R1. */
+const DOOR_STEPS: ReadonlySet<string> = new Set(['loupe', 'film']);
+
 /** The steps whose circuit is on: the battery's switch closed. */
-const LIVE: ReadonlySet<string> = new Set(['divider', 'led', 'overload', 'lamp']);
-/** The steps where the reader may take everything (in `loupe` only while the camera is on the board's shot). */
-const FREE: ReadonlySet<string> = new Set(['hand', 'meter', 'divider', 'led', 'overload', 'lamp', 'loupe']);
+const LIVE: ReadonlySet<string> = new Set(['divider', 'led', 'overload', 'lamp', 'film']);
+/** The steps where the reader may take everything (with a door only while the camera is on the board's shot). */
+const FREE: ReadonlySet<string> = new Set(['hand', 'meter', 'divider', 'led', 'overload', 'lamp', 'loupe', 'film']);
 /** Each step's circuit (every other step: an empty board) and its tray. */
 const PRESETS: Readonly<Record<string, readonly PresetPart[]>> = {
   parts: PARTS,
@@ -168,6 +184,7 @@ const PRESETS: Readonly<Record<string, readonly PresetPart[]>> = {
   overload: OVERLOAD,
   lamp: LAMP,
   loupe: LOUPE,
+  film: filmBoard(FILM_VALUES[0]),
 };
 /** Each step's shot (the bench's names). */
 const CAMERAS: Readonly<Record<string, BenchShot>> = {
@@ -184,6 +201,7 @@ const CAMERAS: Readonly<Record<string, BenchShot>> = {
   lamp: 'stand',
   'bulged-look': 'board',
   loupe: 'board',
+  film: 'board',
 };
 const TRAYS: Readonly<Record<string, readonly string[]>> = { hand: TRAY, overload: ['resistor-100'] };
 
@@ -285,38 +303,61 @@ export default defineScene((ctx) => {
   let door: Door | null = null;
   const keeper = lensKeeper(bench.tools);
   const ladder = benchLadder(ctx, () => door?.floor ?? null);
-  const here = (): boolean => ctx.stage.current === 'loupe';
+  const here = (): boolean => DOOR_STEPS.has(ctx.stage.current ?? '');
   /** The door's rail rests on the board's shot with the lens in its holder. */
   const resting = (): boolean =>
     !!door && !door.rail.moving && door.rail.position <= door.rail.rail.min + 1e-6;
   let fill = -1;
+  const depth = {
+    type: 'slider' as const,
+    id: 'depth',
+    label: SANDBOX.loupe.depth,
+    min: 0,
+    max: DEPTH,
+    value: 0,
+    step: 0.005,
+    // the floors where they begin on the slider (VISUAL §7)
+    marks: [
+      { value: 0, label: SANDBOX.loupe.floors.stand },
+      { value: 1, label: SANDBOX.loupe.floors.part },
+      { value: DEPTH, label: SANDBOX.loupe.floors.inside },
+    ],
+    format: (v: number) => SANDBOX.loupe.floors[floorAt(v - LENS_LEG)],
+    disabled: () => !door?.ready && resting(),
+    onChange: (v: number) => door?.travelTo(v - LENS_LEG),
+    onInput: (v: number, how: 'drag' | 'jump' | 'step') => {
+      if (how === 'drag') door?.rail.scrub(v - LENS_LEG);
+    },
+  };
   ui.define({
-    loupe: {
+    loupe: { controls: [depth] },
+    // step `film`: the same dive, and the value in R1's sockets — a new part under the same id, the door follows it
+    film: {
       controls: [
+        depth,
         {
-          type: 'slider',
-          id: 'depth',
-          label: SANDBOX.loupe.depth,
-          min: 0,
-          max: DEPTH,
-          value: 0,
-          step: 0.005,
-          // the floors where they begin on the slider (VISUAL §7)
-          marks: [
-            { value: 0, label: SANDBOX.loupe.floors.stand },
-            { value: 1, label: SANDBOX.loupe.floors.part },
-            { value: DEPTH, label: SANDBOX.loupe.floors.inside },
-          ],
-          format: (v: number) => SANDBOX.loupe.floors[floorAt(v - LENS_LEG)],
-          disabled: () => !door?.ready && resting(),
-          onChange: (v: number) => door?.travelTo(v - LENS_LEG),
-          onInput: (v: number, how: 'drag' | 'jump' | 'step') => {
-            if (how === 'drag') door?.rail.scrub(v - LENS_LEG);
+          type: 'segmented' as const,
+          id: 'film-value',
+          label: SANDBOX.film.value,
+          items: FILM_VALUES.map((spec) => ({ id: spec, label: trayLabel(spec) })),
+          value: FILM_VALUES[0],
+          onChange: (spec: string) => {
+            bench.preset(filmBoard(spec));
+            bench.closed = 1;
           },
         },
       ],
     },
   });
+  // the callouts' points of the film (checks): far below the bench while there is none
+  const filmProbe = (name: FilmAnchor) => {
+    const v = new Vector3();
+    return (): Vector3 => {
+      const film = asFilm(door?.cutaway ?? null);
+      return film && film.open ? film.anchor(name, v) : v.set(0, -100, 0);
+    };
+  };
+  for (const name of ['film', 'groove', 'rod'] as const) ctx.qa.probe(`film:${name}`, filmProbe(name));
   // a tap on the resting magnifier lays it over the part: the slider glides to the end of its lens leg
   ctx.input.register(bench.tools.lens.group, {
     cursor: 'pointer',
@@ -329,7 +370,7 @@ export default defineScene((ctx) => {
   });
   return {
     enterStep(id, info) {
-      if (id === 'loupe') {
+      if (DOOR_STEPS.has(id)) {
         door?.dispose();
       } else if (door) {
         // leaving the dive: back to the board's shot first (the lens with it into its holder), then this step's shot
@@ -355,7 +396,8 @@ export default defineScene((ctx) => {
       bench.multimeter.mode = 'V';
       ui.set('meter-mode', 'V');
       bench.hands.policy = FREE.has(id) ? { take: () => true, tooltip } : { take: () => false };
-      if (id === 'loupe') {
+      if (id === 'film') ui.set('film-value', FILM_VALUES[0]);
+      if (DOOR_STEPS.has(id)) {
         door = partDoor(ctx, bench, 'R1', { lead: 'board' });
         const d = door;
         keeper.call = 1;
