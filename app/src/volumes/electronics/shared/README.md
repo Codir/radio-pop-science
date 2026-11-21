@@ -197,7 +197,8 @@ bench.hands.policy = {
   a probe click in when let go within `SNAP` (they cross many sockets on their way), and lie where they were let go
   otherwise (a probe let go off the base goes back to rest by the meter); a part's leg let go with no socket goes back.
 - On a touch screen the thing rides `LIFT` (48 px) above the finger and the grips are always shown; with a mouse they
-  come while the pointer is on the part and 1.5 s after. The grips' spheres never overlap (VISUAL §6 and §8: the tests
+  come while the pointer is on the part and 1.5 s after. Either way a grip shows only on an end the step's policy lets
+  the hand take (`policy.take` of `leg:…`, `lead:…`, `probe:…`): a grip says «this can be moved» (VISUAL §6). The grips' spheres never overlap (VISUAL §6 and §8: the tests
   cast rays from the cameras of `stand`, `board` and `phone`). On a phone the radial parts' tabs are hidden: those
   parts are carried whole.
 - The leads lie on the bench's ground and drape over what stands up: the board's body, the things on the base and the
@@ -212,7 +213,8 @@ bench.hands.policy = {
   follow the board's state at once (a step's `preset`, a test's `seatLeg`). `bench.preset` and `bench.clear` first let
   go of whatever the hand holds (`hands.reset`), and the model forgets every part they take off (`model.forget`, «model»
   below): a preset's parts are new and whole. The body's glow under the pointer is cyan emissive on the part's
-  `body` materials (E2-7's heat look shares them).
+  `body` materials (E2-7's heat look shares them); a mouse's pointer only — the engine keeps the last touched thing
+  «under» a lifted finger, and a glow left there would tint the part (a burnt LED's dark dome) until the next touch.
 - While the camera flies (`bench.flying`: the magnifier's dive, «dive» below) nothing can be taken: every handler is
   off, no grip is shown (on a touch screen neither) and no body glows.
 - `hand/swap.ts` (`createSwap`) is a scripted repair kept for the chapters: a still copy of a thing leaves along a way
@@ -442,7 +444,8 @@ const film = createFilm(model); // a resistor's model of `shared/parts`, closed;
 film.set(cut, view); // open by `cut` 0 … 1 toward `view` (world, from the body to the camera): the door does it
 film.flow(amps); film.heat(share); film.burnt(on); film.update(dt, t); // the model's state; the door's `follow`
 film.turns(10_000); // the groove cut for another value (`filmTurns`); a new part under the door makes a new film
-film.anchor('film' | 'groove' | 'rod', out); // a world point for a callout, on the camera's side
+film.anchor('film' | 'groove' | 'rod', out); // a world point for a callout, on the camera's side (`anchorX`: the groove's
+// crossing by ANCHOR_X, the film's a strip's middle a turn or so toward leg 1 from it, both open between the caps)
 ```
 
 - **What it is** (`film.ts`): the white ceramic rod; the carbon film (`ink`) on it, a strip wound between the turns of

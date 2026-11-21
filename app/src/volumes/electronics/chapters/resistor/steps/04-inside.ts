@@ -119,9 +119,11 @@ export const insideStep: StepFactory = ({ ctx, ui, stand, reached, reach, here }
           },
         },
       ],
+      // three bands that never meet, a phone's narrow frame included: the film's tag above the film, the groove's to
+      // the left of its point (the film's point is a turn or so further toward leg 1: `film.anchor`), the rod's below
       callouts: [
         { anchor: points.film, text: word(4), side: 'up', visible: down },
-        { anchor: points.groove, text: word(5), side: 'up', visible: down },
+        { anchor: points.groove, text: word(5), side: 'left', visible: down },
         { anchor: points.rod, text: word(6), side: 'down', visible: down },
       ],
       goal: () => reached(S),

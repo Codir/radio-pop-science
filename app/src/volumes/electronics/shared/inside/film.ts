@@ -184,6 +184,36 @@ function groove(turns: number) {
 /** The groove's middle at the helix angle φ (radians from where the groove begins at the cap by leg 0). */
 const grooveX = (phi: number, pitch: number): number => -SPAN + (phi / (2 * Math.PI)) * pitch;
 
+/** Where the groove's callout point stands along the axis (body frame), a little toward leg 1 of the middle; the film's
+ * point is the middle of a strip at least `ANCHOR_GAP` further toward leg 1, so that the two tags have room. */
+export const ANCHOR_X = 0.035;
+export const ANCHOR_GAP = 0.05;
+
+/**
+ * The x of a callout's point at the wedge's middle `alpha`: the groove's crossing nearest `ANCHOR_X` (`groove`), and
+ * the middle of the strip the fewest whole turns further toward leg 1 that is at least `ANCHOR_GAP` from it (`film`:
+ * the strip beside it at 330 Ω, the next one at 10 kΩ) — both out in the open between the caps: a pair whose strip
+ * would reach under the cap by leg 1 (at 330 Ω, 3,5 turns, the strip beside the groove by 0,08 is half under it) gives
+ * way to the pair a turn further inward, the two points keeping their distance.
+ */
+export function anchorX(name: 'groove' | 'film', alpha: number, pitch: number, g: number): number {
+  // the groove's crossings at this angle stand `pitch` apart; the first one from where the groove begins by leg 0
+  const first = grooveX(alpha, pitch);
+  const gap = (Math.max(Math.ceil(ANCHOR_GAP / pitch - 0.5 - 1e-9), 0) + 0.5) * pitch;
+  const lo = Math.ceil((-SPAN + g - first) / pitch - 1e-9);
+  const hi = Math.floor((SPAN - pitch / 2 - gap - first) / pitch + 1e-9);
+  if (lo > hi) {
+    // a strip wider than the open film (a turn or so): the crossing and the strip's middle nearest the middle
+    const middle = name === 'groove' ? first : first + pitch / 2;
+    return middle - Math.round(middle / pitch) * pitch;
+  }
+  const groove = first + Math.min(Math.max(Math.round((ANCHOR_X - first) / pitch), lo), hi) * pitch;
+  return name === 'groove' ? groove : groove + gap;
+}
+
+/** The half-length of the open film between the caps (body frame): the anchors stay within it. */
+export const FILM_SPAN = SPAN;
+
 /** A point on the cylinder of radius r about the axis, at x and angle θ (from +y toward +z), in the body frame. */
 const onCylinder = (x: number, r: number, theta: number, out: Vector3): Vector3 =>
   out.set(x, AXIAL_Y + r * Math.cos(theta), r * Math.sin(theta));
@@ -653,12 +683,7 @@ export function createFilm(part: PartModel, opts: FilmOptions = {}): Film {
         // the rod's section between the cap and the step, halfway out from the axis toward the camera
         onCylinder((-SPAN + STEP_X) / 2, FILM.rod * 0.5, a, out);
       } else {
-        // the groove crossing the wedge's middle nearest a point a little toward leg 1, or the strip beside it
-        const target = name === 'groove' ? 0.08 : 0.08 + geo.pitch / 2;
-        const k = Math.round(((target + SPAN) / geo.pitch) - a / (2 * Math.PI));
-        const phi = a + 2 * Math.PI * k;
-        const x = grooveX(phi, geo.pitch) + (name === 'film' ? geo.pitch / 2 : 0);
-        onCylinder(x, name === 'groove' ? FILM.rod : FILM.film, a, out);
+        onCylinder(anchorX(name, a, geo.pitch, geo.g), name === 'groove' ? FILM.rod : FILM.film, a, out);
       }
       part.bodyGroup.updateWorldMatrix(true, false);
       return part.bodyGroup.localToWorld(out);

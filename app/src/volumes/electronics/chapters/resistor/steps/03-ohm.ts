@@ -3,8 +3,10 @@
  * resistors by themselves on the near half: 1 kΩ in g2 … g6, 4,7 kΩ in g12 … g16. The multimeter comes in on the
  * left, its dial «вимкнено». The hand takes the loop's resistor whole and the two probes. On the resistor in the live
  * loop the Ω mode shows «—» (a resistance is measured without power: plan E3 decision 5, `BenchModel.powered`); taken
- * out of the loop and set down on free sockets, it reads its 330 Ω. Goal: the Ω mode and three readings, each held
- * 1 s with the probes in the two rows of one resistor's legs — «330,0 Ω», «1,000 kΩ», «4,700 kΩ».
+ * out of the loop and set down on free sockets, it reads its 330 Ω. Let go off the board it would be gone (the step has
+ * no tray, and the 330 Ω is the only one): the step puts it back into the loop, new and whole, so the reading stays
+ * within reach. Goal: the Ω mode and three readings, each held 1 s with the probes in the two rows of one resistor's
+ * legs — «330,0 Ω», «1,000 kΩ», «4,700 kΩ».
  */
 import { kindOf, handPolicy } from '../parts/policy';
 import { OHM, WINDOWS } from '../parts/boards';
@@ -14,6 +16,8 @@ import { caption } from '../content';
 import type { StepFactory } from '../chapter';
 
 const S = 'ohm';
+/** The loop's resistor: the hand may carry it out of the loop; the step keeps one on the board. */
+const LOOP_RESISTOR = 'resistor-330';
 /** The three values the goal waits for, by the key of the resistor the probes are on: the display's window (Ω). */
 const VALUES = WINDOWS.ohm;
 type Value = keyof typeof VALUES;
@@ -40,6 +44,13 @@ export const ohmStep: StepFactory = ({ ctx, stand, reached, reach, here }) => {
     const [lo, hi] = VALUES[p.spec as Value];
     return within(bench.multimeter.value, lo, hi) ? (p.spec as Value) : null;
   };
+  /** The LED's loop with its 330 Ω, the two resistors by themselves, the switch closed: the step's board. */
+  const seat = (): void => {
+    stand.board(OHM);
+    bench.closed = 1;
+  };
+  /** Times the step put the 330 Ω back after it was let go off the board (QA). */
+  let returned = 0;
   ctx.qa.expose(S, () => ({
     mode: bench.multimeter.mode,
     rows: probeRows(),
@@ -48,6 +59,7 @@ export const ohmStep: StepFactory = ({ ctx, stand, reached, reach, here }) => {
     text: bench.multimeter.text,
     counted: [...tally.counted],
     holding: tally.holding,
+    returned,
     reached: reached(S),
   }));
 
@@ -60,14 +72,14 @@ export const ohmStep: StepFactory = ({ ctx, stand, reached, reach, here }) => {
     },
     enter() {
       tally.reset();
-      stand.board(OHM);
-      bench.closed = 1;
+      returned = 0;
+      seat();
       bench.tray.set([]);
       bench.multimeter.mode = 'off';
       bench.multimeter.put({ red: null, black: null });
       bench.hands.policy = handPolicy(bench, {
         // the loop's resistor, whole; the probes
-        part: (_spec, id) => id === 'R1',
+        part: (spec) => spec === LOOP_RESISTOR,
         probes: true,
         flip: (spec) => kindOf(spec) === 'resistor',
         name: (w) => (w.probe ? word(w.probe === 'red' ? 3 : 4) : w.spec && kindOf(w.spec) === 'resistor' ? word(5) : ''),
@@ -82,6 +94,12 @@ export const ohmStep: StepFactory = ({ ctx, stand, reached, reach, here }) => {
     },
     late(dt) {
       if (!here(S)) return;
+      // the 330 Ω let go off the board went to a tray the step does not have, and is gone: back into the loop (the
+      // other parts never move, so the step's board is the board as it was, with the 330 Ω in its place again)
+      if (![...bench.state.parts.values()].some((p) => p.spec === LOOP_RESISTOR)) {
+        seat();
+        returned++;
+      }
       tally.feed(reading(), dt);
       if (tally.all() && !reached(S)) reach(S);
     },

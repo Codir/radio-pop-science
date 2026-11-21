@@ -13,7 +13,9 @@
 // the value switched to 10 kΩ; three resistors from the tray, one at a time, on the ammeter; three voltages on «V»;
 // the amplifier: the meter on «A» across the supply burns the protection diode, «Нові деталі» puts it back, then the
 // voltage on 2,2 kΩ and, the jumper taken out, its current. After each goal the panel shows the takeaway and the
-// reader numbers are the model's; «Докладніше» opens; the recall links inside the chapter lead there and back; every
+// reader numbers are the model's; «Докладніше» opens; every recall link of every step is followed: one inside the
+// chapter (or into a built chapter) leads there and «назад» back, one into a chapter not built yet leaves the reader
+// where they are with no console error; the 330 Ω of `ohm` let go off the board comes back into its loop; every
 // step is arrived at with «Далі» and its camera sampled frame by frame for jumps; the closing card has three lines and
 // the bridge, and «Далі» on it is enabled only if `resistor-pick` is built. Goal snapshots `<step>-goal-<size>.jpg`
 // in --out; the console must stay free of errors. Last line: `PASS electronics/resistor — <n> checks (<size>)` or
@@ -39,11 +41,12 @@ const ID = 'electronics/resistor';
 const INSIDE = JSON.parse(readFileSync(new URL('../../../volume.json', import.meta.url), 'utf8')).axis.floors.find(
   (f) => f.id === 'inside',
 ).label;
-/** The steps' titles as the reader sees them (the recall links name them): the generated manifest. */
-const TITLES = Object.fromEntries(
-  JSON.parse(
-    readFileSync(new URL('../../../content/generated/resistor.manifest.json', import.meta.url), 'utf8'),
-  ).steps.map((s) => [s.id, s.title]),
+/** Every step's recall links as the reader sees them (`electronics/<chapter>/<step>` and its title): the generated
+ * content of the chapter. */
+const RECALLS = Object.fromEntries(
+  JSON.parse(readFileSync(new URL('../../../content/generated/resistor.json', import.meta.url), 'utf8')).steps.map(
+    (s) => [s.id, s.path?.recall ?? []],
+  ),
 );
 const args = parseArgs();
 if (typeof args.out !== 'string') {
@@ -249,28 +252,50 @@ async function freeIn(row) {
 }
 /** The row of a socket (`a5` → `5ae`). */
 const rowOf = (socket) => `${Number.parseInt(socket.slice(1), 10)}${'abcde'.includes(socket[0]) ? 'ae' : 'fj'}`;
-/** Follow the recall link to the step `id` of the chapter (by its title) and back with «назад». */
-async function recall(id) {
-  const target = TITLES[id];
+/**
+ * Follow every recall link of the step on screen (the script's «Згадати», in its order): a link into this chapter or
+ * into a built one leads to that step, and «назад» returns; a link into a chapter that is not built yet (the HUD keeps
+ * it a button, `nav.open` refuses) leaves the reader on this step, with no new console error — checked as it is now,
+ * until that chapter is built.
+ */
+async function recalls() {
+  const list = RECALLS[step] ?? [];
   await textTab();
   const links = await page.evaluate(() =>
     [...document.querySelectorAll('[data-ui="path-recall"]')].filter((b) => !b.closest('[hidden]')).map((b) => b.textContent),
   );
-  check('«Згадайте» links shown', links.length > 0, links.join(' | '));
-  const i = await page.evaluate((t) => {
-    const all = [...document.querySelectorAll('[data-ui="path-recall"]')].filter((b) => !b.closest('[hidden]'));
-    const k = all.findIndex((b) => b.textContent.includes(t));
-    if (k >= 0) all[k].click();
-    return k;
-  }, target);
-  if (!check(`the recall to ${id} is there`, i >= 0)) return;
-  await advance(page, 1.5);
-  const there = await page.evaluate(() => window.__app.position());
-  check('it leads to the recalled step', there.chapterId === 'resistor' && there.stepId === id, `${there.chapterId}/${there.stepId}`);
-  await press(page, '[data-ui="path-back"]');
-  await advance(page, 2);
-  const back = await page.evaluate(() => window.__app.position());
-  check('«назад» returns to the step', back.chapterId === 'resistor' && back.stepId === step, `${back.chapterId}/${back.stepId}`);
+  check('every «Згадайте» link of the step is shown', links.length === list.length, links.join(' | '));
+  const built = new Set(
+    await page.evaluate(() => window.__app.listChapters('electronics').map((c) => `electronics/${c.id}`)),
+  );
+  for (const { target, title } of list) {
+    await textTab();
+    const errorsBefore = (await appErrors(page)).filter((e) => e.level === 'error').length;
+    const i = await page.evaluate((t) => {
+      const all = [...document.querySelectorAll('[data-ui="path-recall"]')].filter((b) => !b.closest('[hidden]'));
+      const k = all.findIndex((b) => b.textContent.includes(t));
+      if (k >= 0) all[k].click();
+      return k;
+    }, title);
+    if (!check(`the recall to ${target} is there`, i >= 0, title)) continue;
+    await advance(page, 1.5);
+    const there = await page.evaluate(() => window.__app.position());
+    const [, chapter, stepId] = target.split('/');
+    if (built.has(`electronics/${chapter}`)) {
+      check(`the recall leads to ${target}`, there.chapterId === chapter && there.stepId === stepId, `${there.chapterId}/${there.stepId}`);
+      await press(page, '[data-ui="path-back"]');
+      await advance(page, 2);
+      const back = await page.evaluate(() => window.__app.position());
+      check('«назад» returns to the step', back.chapterId === 'resistor' && back.stepId === step, `${back.chapterId}/${back.stepId}`);
+    } else {
+      const errors = (await appErrors(page)).filter((e) => e.level === 'error');
+      check(
+        `the recall to ${target} (not built yet) leaves the reader here, no console error`,
+        there.chapterId === 'resistor' && there.stepId === step && errors.length === errorsBefore,
+        `${there.chapterId}/${there.stepId}; ${errors.slice(errorsBefore).map((e) => e.message).join(' | ').slice(0, 200)}`,
+      );
+    }
+  }
 }
 
 const steps = {
@@ -278,6 +303,7 @@ const steps = {
     await textTab();
     if (await shown(page, '[data-ui="path-opening"]')) await press(page, '[data-ui="path-opening"] button');
     check('no takeaway before the goal', !(await takeaway()));
+    await recalls();
     const s0 = await read(page, 'flash');
     check('on entry: no LED in place, the switch open', s0.led === null && s0.closed === 0, JSON.stringify(s0));
     await snap('flash-start');
@@ -308,7 +334,7 @@ const steps = {
     await next('limit');
     const s0 = await read(page, 'limit');
     check('on entry: a new LED, dark; the switch open; the gap empty', s0.resistor === null && s0.closed === 0 && !(s0.i > 1e-6), JSON.stringify(s0));
-    await recall('flash');
+    await recalls();
     await fromTray('resistor-330', 'd5');
     const s1 = await read(page, 'limit');
     check('the 330 Ω in the gap from 5ae to 9ae', s1.resistor !== null, JSON.stringify((await read(page, 'electronics-board')).parts));
@@ -322,6 +348,7 @@ const steps = {
   },
   async ohm() {
     await next('ohm');
+    await recalls();
     const m0 = await meterNow();
     check('the meter on its place, «вимкнено», «—»', m0.shown >= 0.999 && m0.mode === 'off' && m0.text === '—', JSON.stringify(m0));
     await tapControl('meter-mode:ohm');
@@ -330,6 +357,17 @@ const steps = {
     await advance(page, 1.2);
     const live = await meterNow();
     check('on the live loop the Ω mode shows «—»', live.mode === 'ohm' && live.text === '—' && live.value === null && live.panel === '—', JSON.stringify(live));
+    // R1 let go off the board (a phone: anywhere off it) has no tray to go to: the step puts it back into its loop
+    await bring('part:R1', 'tip:R1:0', await offBoard());
+    await advance(page, 0.6);
+    const lost = await read(page, 'ohm');
+    const b0 = await read(page, 'electronics-board');
+    check(
+      'R1 let go off the board is back in the loop (b5 … b9), the LED lit, the probes where they were',
+      lost.returned >= 1 && JSON.stringify(b0.parts.R1?.legs) === JSON.stringify(['b5', 'b9']) &&
+        (await read(page, 'electronics-heat')).parts.LED1?.i > 0.02 && lost.rows?.join() === '5ae,9ae',
+      JSON.stringify({ returned: lost.returned, R1: b0.parts.R1, rows: lost.rows }),
+    );
     // R1 whole out of the loop, onto the near half's free sockets (not in another resistor's rows)
     await bring('part:R1', 'tip:R1:0', 'socket:i1');
     const b = await read(page, 'electronics-board');
@@ -356,7 +394,7 @@ const steps = {
     await next('inside');
     const s0 = await read(page, 'inside');
     check('on the board’s shot, no floor', s0.floor === null && s0.value === 'resistor-330', JSON.stringify(s0));
-    await recall('ohm');
+    await recalls();
     // the slider dragged to its end by the pointer: the lens onto the resistor, then the camera through the ring
     await controls();
     const r = await control('depth');
@@ -394,6 +432,7 @@ const steps = {
   },
   async law() {
     await next('law');
+    await recalls();
     await advance(page, 0.5);
     const m0 = await meterNow();
     check('the meter on «A», the probes put in e9 and −9, «0,000 A»', m0.mode === 'A' && m0.red === 'e9' && m0.black === '-9' && m0.text === '0,000 A', JSON.stringify(m0));
@@ -417,7 +456,7 @@ const steps = {
   },
   async share() {
     await next('share');
-    await recall('law');
+    await recalls();
     await tapControl('meter-mode:V');
     const want = [
       ['d9', 'd10', '1,960 V'],
@@ -434,6 +473,7 @@ const steps = {
   },
   async amp() {
     await next('amp');
+    await recalls();
     const entry = await read(page, 'amp');
     check('on entry: «V», the gap closed, the LED «on» lit', entry.mode === 'V' && entry.gapClosed && entry.led > 0.0029, JSON.stringify(entry));
     // the interaction check of the bench (not the goal): «A» across the supply and the − rail burns D1

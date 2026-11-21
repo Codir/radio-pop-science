@@ -49,7 +49,10 @@ state, and `flash` starts with no LED and the switch open, so nothing burns befo
   (`__tests__/boards.test.ts`). The script's step `amp` (Текст, Висновок, Ціль, Підписи, Підказки, Докладніше,
   Бачимо, the fact notes) was rewritten for 2,2 kΩ: 6,587 V and 2,994 mA (the oracle `amplifier-op.json`: 6,59 V
   on 2,2 kΩ); `PATH.md` records it among the scripts' deviations, the ledger's run note says so. The gap jumper's id is
-  `J11` (the amplifier has `J1` … `J10`), not the script's earlier `J1`.
+  `J11` (the amplifier has `J1` … `J10`), not the script's earlier `J1`. **Open (review of E3-6):** `resistor-pick/on`
+  measures the same R1 (6,59 V, ≈ 3 mA) and asks why 2,2 kΩ, which `amp`'s «Докладніше» already answers; the
+  controller or the owner chooses before E3-7 — `amp` back to 470 Ω (a gap in J8, the leak allowed for) or another
+  resistor, or `resistor-pick/on` rewritten to build on the current measured here (`PATH.md`, the deviation line).
 - **Names under the pointer of things the step keeps in place** (the script's «назви за наведенням» of jumpers, the
   LED in `limit`, the amplifier's parts, the multimeter): the bench's hand names only what it may take, so the chapter
   adds invisible twins of those parts' `hit` boxes (`parts/names.ts`). Only where a pointer hovers: on a touch screen a
@@ -59,6 +62,16 @@ state, and `flash` starts with no LED and the switch open, so nothing burns befo
 - `inside`: the value switch is in the step (`bench.preset` of the loop with another R1 under the same id), not a
   `parts/value.ts`; the slider's marks are «стенд» and «усередині резистора» only (the script's captions).
 - `amp` (b) reads the meter's current against the LED's (they are R1's): with the gap open nothing else flows there.
+- `ohm`: the 330 Ω let go off the board (a phone: anywhere off it) would go to a tray the step does not have and be
+  gone, the only 330 Ω with it; the step puts it back into the loop (`b5` … `b9`, new and whole: the step's board
+  again, the other parts never move), so «330,0 Ω» stays within reach (review of E3-6; the script's «Бачимо» says so).
+- `share`: the three callouts step aside while a probe is in the hand — on a phone «світлодіод» has room only below
+  the LED, over the sockets of its rows the probe is aimed at.
+- `inside`: the callouts' sides are fixed bands that cannot meet on a phone — «вугільна плівка» up, «канавка» left,
+  «керамічний стрижень» down; `film.anchor` keeps the film's point a whole strip between the caps and a turn or so
+  toward leg 1 from the groove's (`shared/inside/film.ts` `anchorX`).
+- The hand (shared): a grip shows only on an end the step lets the hand take (on a touch screen too), and a finger
+  leaves no glow on the body it touched (the engine keeps the last touched thing «under» the lifted finger).
 
 ## QA
 
@@ -68,5 +81,5 @@ node app/src/volumes/electronics/chapters/resistor/qa/interactions.mjs --base <u
 ```
 
 Frozen clock; starts on `electronics/resistor/flash`; last line `PASS electronics/resistor — <n> checks (<size>)`
-(101 checks on a desk, 112 on a phone) or `FAIL … — <k> of <n> checks (…)`, exit 1. Goal snapshots
+(122 checks on a desk, 133 on a phone) or `FAIL … — <k> of <n> checks (…)`, exit 1. Goal snapshots
 `<step>-goal-<size>.jpg` in `--out`.

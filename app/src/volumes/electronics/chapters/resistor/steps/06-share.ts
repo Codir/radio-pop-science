@@ -2,9 +2,10 @@
  * `resistor/share` — «Куди йде напруга». The LED's loop with 330 Ω, the switch closed, the LED shining; the multimeter
  * on its place, its dial «вимкнено», the probes at rest — the hand takes only them. Three callouts over the board name
  * where to measure: «світлодіод» over its rows, «резистор» over its, «батарейка» over the + rail; each goes once its
- * reading has counted. Goal: the V mode and three readings, each held 1 s (the probes either way round): 1,960 V on
- * the LED's rows (9ae, 10ae), 7,008 V on the resistor's (5ae, 9ae), 8,968 V from the + side (the rail or 5ae) to the −
- * side (the rail or 10ae).
+ * reading has counted, and all three step aside while a probe is in the hand (on a phone there is no room beside the
+ * LED: its name stands below it, over the sockets of its rows the probe is aimed at). Goal: the V mode and three
+ * readings, each held 1 s (the probes either way round): 1,960 V on the LED's rows (9ae, 10ae), 7,008 V on the
+ * resistor's (5ae, 9ae), 8,968 V from the + side (the rail or 5ae) to the − side (the rail or 10ae).
  */
 import { Box3, Vector3 } from 'three';
 import { handPolicy } from '../parts/policy';
@@ -54,7 +55,9 @@ export const shareStep: StepFactory = ({ ctx, stand, reached, reach, here }) => 
   };
   const rail = new Vector3();
   const railPoint = (): Vector3 => bench.board.socketWorld('+3', rail);
-  const visible = (k: Where) => (): boolean => here(S) && !tally.done(k) && !bench.flying;
+  /** A probe is in the hand: the names step aside, the sockets they stand over are the probe's targets. */
+  const aiming = (): boolean => bench.hands.held?.startsWith('probe:') ?? false;
+  const visible = (k: Where) => (): boolean => here(S) && !tally.done(k) && !bench.flying && !aiming();
   ctx.qa.expose(S, () => ({
     mode: bench.multimeter.mode,
     rows: probeRows(),
