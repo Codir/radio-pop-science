@@ -363,8 +363,13 @@ export function mountBench(ctx: ChapterContext, options: BenchOptions = {}): Ben
   const multimeter = createMultimeter(instruments);
   props.meter.add(multimeter.body);
   ctx.onDispose(() => multimeter.dispose());
-  // the circuit model of what is on the board, the meter's own part in it (the A mode)
-  const model = createBenchModel({ layout, board: state, extra: () => multimeter.extra() });
+  // the circuit model of what is on the board, the instruments' own parts in it: the meter in the A mode, the scope's
+  // inputs of 1 MΩ while its probes are in sockets (`SCOPE_INPUT`)
+  const model = createBenchModel({
+    layout,
+    board: state,
+    extra: () => [...multimeter.extra(), ...oscilloscope.extra()],
+  });
   // the speaker in sound (the option `sound`): the volume's own output, which paces the model in time
   const spec = PARTS[SPEAKER_PART.spec];
   const speaker =

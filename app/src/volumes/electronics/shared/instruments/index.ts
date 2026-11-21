@@ -39,6 +39,7 @@ export {
 } from './probe';
 export { decimateMinMax, findTrigger, type Points } from './sweep';
 export {
+  PEAK_CHUNK,
   ROLL_BUCKETS,
   SCOPE_CHANNELS,
   SCOPE_COLORS,
@@ -50,6 +51,7 @@ export {
   ScopeModel,
   scopeRange,
   scopeSettings,
+  voltsOf,
   type ScopeDisplay,
   type ScopeSettings,
   type ScopeSetup,
@@ -60,6 +62,7 @@ export {
   type ScopeWords,
 } from './scope-model';
 export {
+  SCOPE_INPUT,
   SCOPE_LEAD,
   SCOPE_PROBES,
   SCOPE_SCREEN,

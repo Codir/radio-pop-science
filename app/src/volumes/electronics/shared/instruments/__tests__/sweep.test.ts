@@ -9,7 +9,15 @@ import { describe, expect, it } from 'vitest';
 import type { ChartApi } from '@/ui3d';
 import { createLayout, presetState, type BoardPreset } from '@electronics/sim/board';
 import { createBenchModel } from '../../model';
-import { SCOPE_GRID, SCREEN_POINTS, SWEEP_BUCKETS, ScopeModel } from '../scope-model';
+import {
+  SCOPE_GRID,
+  SCREEN_POINTS,
+  SWEEP_BUCKETS,
+  ScopeModel,
+  scopeRange,
+  voltsOf,
+  type ScopeSettings,
+} from '../scope-model';
 import { decimateMinMax, findTrigger } from '../sweep';
 
 const FS = 24000;
@@ -213,6 +221,110 @@ describe('the board’s chart', () => {
     scope.setOn(1, false);
     spec.update!(b.chart, 3);
     expect(b.calls.at(-1)).toEqual({ id: 'ch2', n: 0 });
+  });
+});
+
+describe('a channel’s own scale (a real scope’s knob per channel; E3-8, `meter/twice`)', () => {
+  const words = { x: 't, ms', y: 'U, V · ch2', y2: (s: ScopeSettings) => `U, V · ${voltsOf(s, 0)}`, ch1: 'ch1', ch2: 'ch2' };
+  /** Channel 1 a sine of 0.06 V, channel 2 one of 0.98 V (the input and the speaker of the amplifier). */
+  const two = (scope: ScopeModel, blocks = 10) => {
+    for (let b = 0; b < blocks; b++) {
+      scope.feed(b * 400, [sine(400, 100, 0.06, b * 400), sine(400, 100, -0.98, b * 400)]);
+      scope.update((b + 1) * 400);
+    }
+  };
+
+  it('is the common one until a step gives one: the screen and the chart’s axes follow each channel’s', () => {
+    const scope = new ScopeModel(FS, { timePerDiv: 0.001, voltsPerDiv: 0.25, trigger: { level: 0 } });
+    expect(scope.settings.channelVolts).toEqual([null, null]);
+    expect([voltsOf(scope.settings, 0), voltsOf(scope.settings, 1)]).toEqual([0.25, 0.25]);
+    two(scope);
+    // one scale: the small wave 0.24 of a division, 0.06 of the screen's half height
+    expect(Math.max(...scope.screen(0)!)).toBeCloseTo(0.06, 4);
+    expect(Math.max(...scope.screen(1)!)).toBeCloseTo(0.98, 4);
+    scope.settings = { ...scope.settings, channelVolts: [0.02, null] };
+    expect(scope.settings.channelVolts).toEqual([0.02, null]);
+    expect(scopeRange(scope.settings, 0)).toEqual([-0.08, 0.08]);
+    expect(scopeRange(scope.settings, 1)).toEqual([-1, 1]);
+    two(scope);
+    // channel 1 at 0.02 V a division: 3 of its 4 divisions; channel 2 as it was
+    expect(Math.max(...scope.screen(0)!)).toBeCloseTo(0.75, 4);
+    expect(Math.max(...scope.screen(1)!)).toBeCloseTo(0.98, 4);
+    expect(scope.state().channelVolts).toEqual([0.02, null]);
+    expect(scope.state().volts).toEqual([0.02, 0.25]);
+    expect(() => (scope.settings = { channelVolts: [0, null] })).toThrow(RangeError);
+  });
+
+  it('on the chart with `y2`: channel 1 on the right axis at its scale, cut at its edge; channel 2 on the left', () => {
+    const scope = new ScopeModel(FS, { timePerDiv: 0.001, voltsPerDiv: 0.25, trigger: { level: 0 } });
+    two(scope);
+    const spec = scope.chart('scope', words);
+    expect(spec.chart.series.map((s) => s.axis ?? 'y')).toEqual(['y2', 'y']);
+    expect(spec.chart.y).toMatchObject({ min: -1, max: 1 });
+    expect(spec.chart.y2).toMatchObject({ min: -1, max: 1, label: 'U, V · 0.25' });
+    const axes: { which: string; min?: number; label?: string }[] = [];
+    const data = new Map<string, number[]>();
+    const chart: ChartApi = {
+      setData: (id, _xs, ys) => void data.set(id, Array.from(ys)),
+      push: () => {},
+      clearData: () => {},
+      setAxis: (which, a) => void axes.push({ which, min: a.min, label: a.label }),
+      setMarker: () => {},
+    };
+    spec.init!(chart);
+    expect(Math.max(...data.get('ch1')!)).toBeCloseTo(0.06, 5);
+    // the step turns channel 1's knob: the right axis follows on the next update, the left one stays
+    scope.settings = { ...scope.settings, channelVolts: [0.02, null] };
+    // a wave bigger than channel 1's screen: cut at its edge, ±0.08 V
+    for (let b = 10; b < 20; b++) {
+      scope.feed(b * 400, [sine(400, 100, 0.1, b * 400), sine(400, 100, -0.98, b * 400)]);
+      scope.update((b + 1) * 400);
+    }
+    spec.update!(chart, 1);
+    expect(axes.filter((a) => a.which === 'y2').at(-1)).toMatchObject({ min: -0.08, label: 'U, V · 0.02' });
+    expect(axes.filter((a) => a.which === 'y').at(-1)).toMatchObject({ min: -1 });
+    expect(Math.max(...data.get('ch1')!)).toBeCloseTo(0.08, 6);
+    expect(Math.max(...data.get('ch2')!)).toBeCloseTo(0.98, 4);
+    // without `y2` the chart has one axis, at the common scale
+    const plain = scope.chart('plain', { x: 't', y: 'U', ch1: 'a', ch2: 'b' });
+    expect(plain.chart.y2).toBeUndefined();
+    expect(plain.chart.series.map((s) => s.axis ?? 'y')).toEqual(['y', 'y']);
+  });
+});
+
+describe('the peak of a channel (`peak`: the largest |v| over the last seconds shown)', () => {
+  it('follows the samples up to the one shown now, a window of the step’s length; null while the channel is off', () => {
+    const scope = new ScopeModel(FS, { timePerDiv: 0.001 }, 4 * 1536);
+    expect(scope.peak(0, 0.5)).toBeNull();
+    // 1 s of a 0.3 V sine, then 1 s of a 0.05 V one, fed in blocks of 1536, shown up to the end of each block
+    let at = 0;
+    const block = (a: number) => {
+      const s = sine(1536, 100, a, at);
+      scope.feed(at, [s, new Float32Array(1536).fill(-0.7)]);
+      at += 1536;
+      scope.update(at);
+    };
+    while (at < FS) block(0.3);
+    expect(scope.peak(0, 0.5)).toBeCloseTo(0.3, 3);
+    expect(scope.peak(1, 0.5)).toBeCloseTo(0.7, 6);
+    while (at < 2 * FS) block(0.05);
+    // the last 0.5 s are of the small sine alone
+    expect(scope.peak(0, 0.5)).toBeCloseTo(0.05, 3);
+    // a longer window reaches back into the big one
+    expect(scope.peak(0, 1.5)).toBeCloseTo(0.3, 3);
+    // samples come ahead of the one shown (the plan's lead): they do not count until shown
+    const big = new Float32Array(1536).fill(0.9);
+    scope.feed(at, [big, big]);
+    expect(scope.peak(0, 0.5)).toBeCloseTo(0.05, 3);
+    scope.update(at + 1536);
+    expect(scope.peak(0, 0.5)).toBeCloseTo(0.9, 6);
+    // a probe out of its socket: nothing to say
+    scope.setOn(0, false);
+    expect(scope.peak(0, 0.5)).toBeNull();
+    // the time source started again: nothing of the old board
+    scope.setOn(0, true);
+    scope.reset();
+    expect(scope.peak(0, 0.5)).toBeNull();
   });
 });
 

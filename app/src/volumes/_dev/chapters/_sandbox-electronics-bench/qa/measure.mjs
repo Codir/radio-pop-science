@@ -91,7 +91,8 @@
 //           screen, ≤ 350 draw calls; the filter's resistor 1 → 4.7 → 10 kΩ (`__ui.set('filter', …)`, held pages):
 //           the amplitude of channel 2 after the filter falls, channel 1's stays; step `rc` (10 kΩ, 100 μF, a roll) — the
 //           switch closed by a real pointer (a phone: the dock's toggle), 1.5 s of frames: channel 2 at the model's
-//           moment `since` + τ = 1 s is 63.2 % ± 0.5 % of 9 V (E1-5's tolerance), channel 1 at 9 V; a live page of
+//           moment `since` + 1 s is 62.95 % ± 0.5 % of 9 V (R·C = 1 s with the scope's own input of 1 MΩ on the
+//           capacitor, E3-8; E1-5's tolerance), channel 1 at 9 V; a live page of
 //           `scope` (no `freeze`): the model in the background thread (`mode` worker), the first sweep ≤ 5 s after the
 //           page settled, sweeps and blocks keep coming; the console; snapshots `scope-<what>-<size>.jpg`.
 //   sound — the speaker in sound (E2-10), step `sound` (the player → a 10 kΩ pot as the volume control → the speaker)
@@ -1795,8 +1796,17 @@ async function film(context) {
 
 /** The model's rate in time (`shared/model/live.ts` `LIVE`). */
 const RATE = 24000;
-/** E1-5's RC: 9 V through 10 kΩ into 100 μF reaches 63.2 % ± 0.5 % of 9 V after R·C = 1 s (sim/core transient.test.ts). */
-const RC63 = { share: 0.632, tolerance: 0.005, tau: 1, volts: 9 };
+/**
+ * E1-5's RC: 9 V through 10 kΩ into 100 μF reaches 63.2 % ± 0.5 % of 9 V after R·C = 1 s (sim/core transient.test.ts) —
+ * here with the scope's input of 1 MΩ on the capacitor (E3-8, `SCOPE_INPUT`): toward 9 V · 1 M / 1,01 M with τ of
+ * 10 kΩ ∥ 1 MΩ, 62.95 % of 9 V after 1 s.
+ */
+const RC63 = (() => {
+  const r = 10e3;
+  const input = 1e6;
+  const tau = ((r * input) / (r + input)) * 100e-6;
+  return { share: (input / (r + input)) * (1 - Math.exp(-1 / tau)), tolerance: 0.005, tau: 1, volts: 9 };
+})();
 /** A live page: its first sweep within this many seconds after it settled (the brief). */
 const FIRST_SWEEP = 5;
 /** The filter's resistors of the step `scope`, in the order the dock's switch offers them. */
@@ -1935,7 +1945,7 @@ async function scope(context) {
         `since ${round(s1.since, 4)} s (was ${round(before, 4)}), channel 2 before it ${round(v0, 6)} V`,
       );
       check(
-        'rc: channel 2 at τ = R·C = 1 s after it: 63.2 % ± 0.5 % of 9 V (E1-5’s tolerance); channel 1 at 9 V',
+        'rc: channel 2 at R·C = 1 s after it: 62.95 % ± 0.5 % of 9 V (the scope’s 1 MΩ on it; E1-5’s tolerance); channel 1 at 9 V',
         v !== null && Math.abs(v / RC63.volts - RC63.share) <= RC63.tolerance && Math.abs(v1 - 9) < 0.02,
         `${round(v, 4)} V = ${round((v / RC63.volts) * 100, 3)} %; channel 1 ${round(v1, 4)} V`,
       );

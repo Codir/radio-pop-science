@@ -19,7 +19,9 @@
  * for the step's board chart (`chart`), and `SCREEN_POINTS` for the instrument's screen (`screen`) — the same samples
  * in fewer buckets. The scale is the step's, never picked by the scope: `voltsPerDiv` over eight divisions with the
  * ground line `ground` divisions from the middle, `timePerDiv` over ten; what is beyond the screen is cut at its edge.
- * A held page (`?freeze`) shows `hold`: one span after the first edge of the window the model computed at once.
+ * A channel may have a scale of its own (`channelVolts`, E3-8), on the chart the right axis of channel 1. A held page
+ * (`?freeze`) shows `hold`: one span after the first edge of the window the model computed at once. `peak` is a
+ * channel's crest over the last seconds shown (E3-8), kept per chunk of `PEAK_CHUNK` samples as they are fed.
  */
 import { fmtNumber } from '@/content/format';
 import type { ChartSpec } from '@/hud';
@@ -47,6 +49,12 @@ export interface ScopeSettings {
   readonly timePerDiv: number;
   /** V a division (eight up the screen). */
   readonly voltsPerDiv: number;
+  /**
+   * A channel's own V a division, as a real scope has a knob for each channel (null: `voltsPerDiv`; E3-8): its trace
+   * on the screen and its axis on the chart. The board's chart draws channel 1 at its own scale on the right axis — a
+   * chart made with `ScopeWords.y2`; without it every channel is drawn there at `voltsPerDiv`.
+   */
+  readonly channelVolts: readonly [number | null, number | null];
   /** Where 0 V is: divisions from the middle of the screen (−4 its bottom … 4 its top). */
   readonly ground: number;
   readonly trigger: ScopeTrigger;
@@ -72,10 +80,16 @@ export const ROLL_BUCKETS = 300;
 /** The colours of the two channels (VISUAL §2, §5.2). */
 export const SCOPE_COLORS = ['lime', 'magenta'] as const;
 
+/** The largest |v| of each channel is kept for every this many samples (10 ms at 24 000 a second): `peak`. */
+export const PEAK_CHUNK = 240;
+/** How many such chunks are kept: 5.12 s at 24 000 samples a second. */
+const PEAK_CHUNKS = 512;
+
 export const SCOPE_DEFAULTS: ScopeSettings = Object.freeze({
   display: 'sweep',
   timePerDiv: 0.002,
   voltsPerDiv: 1,
+  channelVolts: Object.freeze([null, null] as const),
   ground: 0,
   trigger: Object.freeze({ channel: 0, level: null, slope: 1, auto: true }),
   holdoff: 0,
@@ -88,10 +102,14 @@ export function scopeSettings(setup: ScopeSetup = {}): ScopeSettings {
   const voltsPerDiv = setup.voltsPerDiv ?? SCOPE_DEFAULTS.voltsPerDiv;
   if (!(timePerDiv > 0 && Number.isFinite(timePerDiv)) || !(voltsPerDiv > 0 && Number.isFinite(voltsPerDiv)))
     throw new RangeError(`scope: time and volts a division above 0: ${timePerDiv}, ${voltsPerDiv}`);
+  const [own1 = null, own2 = null] = setup.channelVolts ?? SCOPE_DEFAULTS.channelVolts;
+  for (const v of [own1, own2])
+    if (v !== null && !(v > 0 && Number.isFinite(v))) throw new RangeError(`scope: a channel's volts a division above 0: ${v}`);
   return {
     display: setup.display ?? SCOPE_DEFAULTS.display,
     timePerDiv,
     voltsPerDiv,
+    channelVolts: [own1, own2],
     ground: setup.ground ?? SCOPE_DEFAULTS.ground,
     trigger: { ...SCOPE_DEFAULTS.trigger, ...setup.trigger },
     holdoff: setup.holdoff ?? SCOPE_DEFAULTS.holdoff,
@@ -118,6 +136,9 @@ export interface ScopeState {
   readonly unit: ScopeUnit;
   readonly timePerDiv: number;
   readonly voltsPerDiv: number;
+  /** Each channel's own V a division (null: the common one), and the one each channel is shown at. */
+  readonly channelVolts: readonly (number | null)[];
+  readonly volts: readonly number[];
   readonly ground: number;
   /** The last sweep's trigger: its level (V; NaN when it ran free with its channel off), whether an edge started it,
    * the model's moment of its start (s). */
@@ -142,17 +163,26 @@ export interface ScopeState {
 /** The words of a chart (the step's documents): an axis' title may follow the settings (V/div, time/div on it). */
 export interface ScopeWords {
   readonly x: string | ((s: ScopeSettings) => string);
+  /** The left axis: channel 2's scale with `y2`, the common one without. */
   readonly y: string | ((s: ScopeSettings) => string);
+  /** The right axis, channel 1's at its own scale (`voltsOf(s, 0)`); without it the chart has the left one alone. */
+  readonly y2?: string | ((s: ScopeSettings) => string);
   readonly ch1: string;
   readonly ch2: string;
 }
 
 const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
 
-/** The volts the screen holds: from its bottom edge to its top one. */
-export function scopeRange(s: ScopeSettings): readonly [number, number] {
+/** The V a division a channel is shown at: its own, or the common one. */
+export function voltsOf(s: ScopeSettings, channel: number): number {
+  return s.channelVolts[channel] ?? s.voltsPerDiv;
+}
+
+/** The volts the screen holds: from its bottom edge to its top one (of a channel at its own scale, when given). */
+export function scopeRange(s: ScopeSettings, channel?: number): readonly [number, number] {
   const half = SCOPE_GRID.y / 2;
-  return [(0 - half - s.ground) * s.voltsPerDiv, (SCOPE_GRID.y - half - s.ground) * s.voltsPerDiv];
+  const v = channel === undefined ? s.voltsPerDiv : voltsOf(s, channel);
+  return [(0 - half - s.ground) * v, (SCOPE_GRID.y - half - s.ground) * v];
 }
 
 export class ScopeModel {
@@ -193,6 +223,11 @@ export class ScopeModel {
   private settingsRev = 0;
   /** Scratch for the chart: the volts cut at the screen's edges. */
   private readonly cut = new Float32Array(2 * SWEEP_BUCKETS + 4);
+  // the peaks: each channel's largest |v| of every chunk of PEAK_CHUNK samples, a ring by the chunk's own index
+  private readonly pkId: Float64Array[];
+  private readonly pkV: Float32Array[];
+  /** The stream's index of the sample shown now (`update`); −1 before. */
+  private shown = -1;
 
   constructor(fs: number, setup: ScopeSetup = {}, lookahead = 0) {
     if (!(fs > 0 && Number.isFinite(fs))) throw new RangeError(`scope: a rate above 0: ${fs}`);
@@ -210,6 +245,8 @@ export class ScopeModel {
     this.rLoI = many(buckets);
     this.rHiV = many(buckets);
     this.rHiI = many(buckets);
+    this.pkId = many(() => new Float64Array(PEAK_CHUNKS).fill(-1));
+    this.pkV = many(() => new Float32Array(PEAK_CHUNKS));
     this.fit();
   }
 
@@ -271,6 +308,7 @@ export class ScopeModel {
     this.held = 0;
     this.next = this.head;
     this.rollAt = -1;
+    for (const ids of this.pkId) ids.fill(-1);
     this.clear();
   }
 
@@ -289,6 +327,19 @@ export class ScopeModel {
       const src = samples[c];
       const dst = this.ring[c]!;
       for (let k = Math.max(0, n - size); k < n; k++) dst[(first + k) % size] = src ? src[k]! : 0;
+      // the chunks' peaks, by the samples' own index
+      const ids = this.pkId[c]!;
+      const pk = this.pkV[c]!;
+      for (let k = Math.max(0, n - PEAK_CHUNKS * PEAK_CHUNK); k < n; k++) {
+        const chunk = Math.floor((first + k) / PEAK_CHUNK);
+        const slot = chunk % PEAK_CHUNKS;
+        if (ids[slot] !== chunk) {
+          ids[slot] = chunk;
+          pk[slot] = 0;
+        }
+        const a = src ? Math.abs(src[k]!) : 0;
+        if (a > pk[slot]!) pk[slot] = a;
+      }
     }
     this.head = first + n;
     this.held = Math.min(size, this.held + n);
@@ -301,7 +352,28 @@ export class ScopeModel {
   update(now: number): boolean {
     if (this.held === 0 || !Number.isFinite(now)) return false;
     const at = Math.min(Math.floor(now), this.head);
+    this.shown = at;
     return this.s.display === 'sweep' ? this.sweep(at) : this.roll(at);
+  }
+
+  /**
+   * A channel's largest |v| over the last `seconds` of the samples shown (up to the one `update` showed last; the
+   * samples that came ahead of it do not count yet), within a chunk of `PEAK_CHUNK` samples at either end: a step's
+   * readout of a wave's crest (E3-8). Null while the channel is off, or before any of its samples was shown.
+   */
+  peak(channel: number, seconds: number): number | null {
+    if (!this.live[channel] || this.shown < 0 || !(seconds > 0)) return null;
+    const ids = this.pkId[channel]!;
+    const pk = this.pkV[channel]!;
+    // the chunks wholly shown, whose end lies within the window
+    const last = Math.floor(this.shown / PEAK_CHUNK) - 1;
+    const first = Math.max(Math.floor((this.shown - seconds * this.fs) / PEAK_CHUNK), last - PEAK_CHUNKS + 1);
+    let best = -1;
+    for (let chunk = first; chunk <= last; chunk++) {
+      const slot = ((chunk % PEAK_CHUNKS) + PEAK_CHUNKS) % PEAK_CHUNKS;
+      if (ids[slot] === chunk && pk[slot]! > best) best = pk[slot]!;
+    }
+    return best < 0 ? null : best;
   }
 
   /** The middle of the smallest and the largest sample of `src` in [a, b) (a ring by index). */
@@ -391,7 +463,8 @@ export class ScopeModel {
   private toScreen(c: number, volts: ArrayLike<number>, m: number): void {
     const out = this.screens[c]!;
     const half = SCOPE_GRID.y / 2;
-    const { voltsPerDiv, ground } = this.s;
+    const { ground } = this.s;
+    const voltsPerDiv = voltsOf(this.s, c);
     for (let k = 0; k < SCREEN_POINTS; k++) {
       const v = m > 0 ? volts[Math.min(k, m - 1)]! : 0;
       out[k] = clamp((v / voltsPerDiv + ground) / half, -1, 1);
@@ -494,21 +567,25 @@ export class ScopeModel {
   chart(id: string, words: ScopeWords, height = 220): ChartSpec {
     const seen = new WeakMap<ChartApi, { version: number; settings: number }>();
     const text = (w: string | ((s: ScopeSettings) => string)): string => (typeof w === 'string' ? w : w(this.s));
+    // with a right axis channel 1 is drawn on it at its own scale, channel 2 on the left one at its own
+    const two = words.y2 !== undefined;
+    const scaleOf = (ch: number): number | undefined => (two ? ch : undefined);
     const axes = (c: ChartApi): void => {
-      const { x, y } = this.axes();
+      const { x, y, y2 } = this.axes(two);
       c.setAxis('x', { ...x, label: text(words.x) });
       c.setAxis('y', { ...y, label: text(words.y) });
+      if (two) c.setAxis('y2', { ...y2, label: text(words.y2!) });
     };
     const draw = (c: ChartApi): void => {
-      const [lo, hi] = scopeRange(this.s);
       for (let ch = 0; ch < SCOPE_CHANNELS; ch++) {
+        const [lo, hi] = scopeRange(this.s, scaleOf(ch));
         const { n, x, v } = this.trace(ch);
         const shown = this.live[ch] ? n : 0;
         for (let k = 0; k < shown; k++) this.cut[k] = clamp(v[k]!, lo, hi);
         c.setData(`ch${ch + 1}`, x.subarray(0, shown), this.cut.subarray(0, shown));
       }
     };
-    const { x, y } = this.axes();
+    const { x, y, y2 } = this.axes(two);
     return {
       type: 'chart',
       id,
@@ -516,8 +593,9 @@ export class ScopeModel {
         height,
         x: { ...x, label: text(words.x) },
         y: { ...y, label: text(words.y) },
+        ...(two ? { y2: { ...y2, label: text(words.y2!) } } : {}),
         series: [
-          { id: 'ch1', label: words.ch1, color: SCOPE_COLORS[0], width: 2 },
+          { id: 'ch1', label: words.ch1, color: SCOPE_COLORS[0], width: 2, ...(two ? { axis: 'y2' as const } : {}) },
           { id: 'ch2', label: words.ch2, color: SCOPE_COLORS[1], width: 2 },
         ],
         legend: true,
@@ -537,21 +615,28 @@ export class ScopeModel {
     };
   }
 
-  /** The chart's axes for the settings now: a tick every division, a label every other on the time's. */
-  private axes() {
+  /**
+   * The chart's axes for the settings now: a tick every division, a label every other on the time's. With `two`
+   * the left one is channel 2's scale and the right one channel 1's; without, the left one is the common scale.
+   */
+  private axes(two = false) {
     const { timePerDiv, unit, display, voltsPerDiv, ground } = this.s;
     const scale = UNIT_SCALE[unit];
     const shift = display === 'roll' ? SCOPE_GRID.x : 0;
     const xt = Array.from({ length: SCOPE_GRID.x + 1 }, (_, k) => (k - shift) * timePerDiv * scale);
     const half = SCOPE_GRID.y / 2;
-    const yt = Array.from({ length: SCOPE_GRID.y + 1 }, (_, k) => (k - half - ground) * voltsPerDiv);
+    const volts = (v: number) => {
+      const t = Array.from({ length: SCOPE_GRID.y + 1 }, (_, k) => (k - half - ground) * v);
+      return { min: t[0]!, max: t[SCOPE_GRID.y]!, ticks: t, format: fmtTick };
+    };
     const label = (v: number): string => {
       const k = Math.round(v / (timePerDiv * scale)) + shift;
       return k % 2 === 0 ? fmtTick(v) : '';
     };
     return {
       x: { min: xt[0]!, max: xt[SCOPE_GRID.x]!, ticks: xt, format: label },
-      y: { min: yt[0]!, max: yt[SCOPE_GRID.y]!, ticks: yt, format: fmtTick },
+      y: volts(two ? voltsOf(this.s, 1) : voltsPerDiv),
+      y2: volts(voltsOf(this.s, 0)),
     };
   }
 
@@ -580,6 +665,8 @@ export class ScopeModel {
       unit: this.s.unit,
       timePerDiv: this.s.timePerDiv,
       voltsPerDiv: this.s.voltsPerDiv,
+      channelVolts: [...this.s.channelVolts],
+      volts: [voltsOf(this.s, 0), voltsOf(this.s, 1)],
       ground: this.s.ground,
       trigger: { ...this.s.trigger, ...this.trig },
       version: this.version_,

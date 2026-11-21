@@ -25,6 +25,7 @@ import { Builder, G } from '@/kit';
 import { K, col, type ColorLike } from '@/style';
 import type { ChartSpec } from '@/hud';
 import type { SocketId } from '@electronics/sim/board';
+import { resistorKey, type PartInstance } from '@electronics/sim/core';
 import { PLACES } from '../bench/layout';
 import { DynTube, resample } from '../bench/dyn-tube';
 import { disposeTree } from '../parts/part';
@@ -63,6 +64,14 @@ const PROBE_PLACES: ProbePlaces<ScopeProbeName> = {
 /** How far a probe's tip reaches from its input in plan: to the board's farthest socket (`-1`, ≈ 9.6) and more. */
 export const SCOPE_LEAD = { reach: 10.5 } as const;
 /**
+ * The input of each channel, as a real scope's (E3-8; the script `meter`, step `flat`): 1 MΩ from the probe's row to
+ * the scope's ground, the − rail — the catalog's resistor, a part of the circuit while the probe is in a socket
+ * (`extra`), so that a row it touches is loaded as on a real bench: a rail behind an open switch falls to the leak
+ * through its diode instead of following its charged reservoir, and a node of kilohms moves by a few parts in a
+ * thousand. The ids differ from the board's and the fixed parts'.
+ */
+export const SCOPE_INPUT = { ohms: 1e6, spec: resistorKey(1e6), ids: ['SCOPE1', 'SCOPE2'] } as const;
+/**
  * The ground's clip: on the battery's minus wire by its power terminal on the right end of the − rail (VISUAL §3:
  * (2.75; 1.95) of the board's frame), its lead from the ground's jack left of the inputs over the battery's box.
  */
@@ -90,6 +99,9 @@ export interface Oscilloscope {
   readonly sockets: Readonly<Record<ScopeProbeName, SocketId | null>>;
   /** What the model in time records for the two channels: the node of each probe's row (0, the ground, when out). */
   taps(): StillTap[];
+  /** The scope's own parts of the board's circuit (the driver's `extra`): the input of each probe in a socket off
+   * the − rail, `SCOPE_INPUT`. */
+  extra(): PartInstance[];
   /** A step puts the tips into sockets at once, or back to rest (null). */
   put(at: Partial<Record<ScopeProbeName, SocketId | null>>): void;
   /** The step's board chart: the main trace. */
@@ -252,6 +264,15 @@ export function createOscilloscope(
         const s = sockets[name];
         return { node: s === null ? 0 : (world.layout.socket(s)?.node ?? 0) };
       });
+    },
+    extra() {
+      const parts: PartInstance[] = [];
+      SCOPE_PROBES.forEach((name, c) => {
+        const s = sockets[name];
+        const node = s === null ? 0 : (world.layout.socket(s)?.node ?? 0);
+        if (node !== 0) parts.push({ id: SCOPE_INPUT.ids[c]!, spec: SCOPE_INPUT.spec, pins: [node, 0] });
+      });
+      return parts;
     },
     put: (at) => pair.put(at),
     chart: (id, words, height) => model.chart(id, words, height),

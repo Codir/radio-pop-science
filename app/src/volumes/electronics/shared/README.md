@@ -484,7 +484,18 @@ ui.define({ scope: { board: { title, size: 'md', children: [
 - **What it shows** (`scope-model.ts`, no three.js): the samples of the model in time, the voltage of each probe's row
   (a probe out of a socket: its channel shows nothing). The scale is the step's, never picked by the scope (VISUAL
   §5.2): `voltsPerDiv` over eight divisions with 0 V `ground` divisions from the middle, `timePerDiv` over ten; beyond
-  the screen the trace is cut at its edge. **Sweep** (`display: 'sweep'`): a sweep starts where the trigger's channel
+  the screen the trace is cut at its edge. A channel may have a scale of its own, as a real scope has a knob for each
+  (`channelVolts`, E3-8: `meter/twice` shows the amplifier's small input at 0,02 V a division beside its speaker at
+  0,25 V): its trace on the screen at it, and on the board's chart channel 1 on the right axis — a chart made with
+  `ScopeWords.y2`; without it every channel is drawn on the chart at `voltsPerDiv`.
+- **The input** (`SCOPE_INPUT`, E3-8): each probe in a socket off the − rail puts 1 MΩ from its row to the − rail
+  into the circuit (`oscilloscope.extra()`, beside the meter's own part in the driver's `extra`), as a real scope's
+  input does: the model's row is loaded as on a real bench — a rail behind an open switch falls to its diode's
+  leak (0,014 V) instead of following the reservoir it is cut off from, and a node of kilohms moves by parts in a
+  thousand (the divider's 5,997 V reads 5,993 V with a probe on it). The input leaves with the probe.
+- **A channel's crest** (`model.peak(channel, seconds)`, E3-8): the largest |v| of the samples shown over the last
+  seconds (kept per chunk of `PEAK_CHUNK` 240 samples, 10 ms; the samples ahead of the one shown do not count yet),
+  null while the channel is off — a step's readout of a wave's crest (`meter/twice`). **Sweep** (`display: 'sweep'`): a sweep starts where the trigger's channel
   crosses its level the way its slope says (the level: the step's, or the middle of the last span of that channel;
   `sweep.ts` `findTrigger`), within the last span of candidates and not before the end of the last sweep and its
   `holdoff`; with `auto` and no edge for a whole span it runs free; at most one a frame, only of samples that came.
@@ -510,9 +521,9 @@ ui.define({ scope: { board: { title, size: 'md', children: [
   On a phone the chart is in the panel's tab «Графіки» and the instrument out of the shot.
 
 For checks: `__app.read('electronics-scope')` → `{ mode, blocks, ms, since, now, display, fs, span, unit, timePerDiv,
-voltsPerDiv, ground, trigger: { channel, level, slope, auto, used, found, at }, version, sweeps, holds, on, n, min,
+voltsPerDiv, channelVolts, volts, ground, trigger: { channel, level, slope, auto, used, found, at }, version, sweeps, holds, on, n, min,
 max, screen, t0, hash, points, frozen, stills, still: { warmup, tau, ms }, ch1, ch2, shown, ready }` (`mode` — where the
-model runs in time: `worker`, `sync`, `off`; `points` — each channel's trace, its times on the chart's axis from `t0`;
+model runs in time: `worker`, `sync`, `off`; `volts` — the V a division each channel is shown at; `points` — each channel's trace, its times on the chart's axis from `t0`;
 `screen` — the instrument's extremes, −1 … 1; `hash` — FNV-1a of the points: two pages that show the same, the same
 hash). The sandbox's steps `scope` and `rc` and `qa/measure.mjs --only scope` drive it.
 
