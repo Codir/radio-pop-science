@@ -48,11 +48,11 @@ every frame), `layout` (the board as data, `sim/board`), `board` (the 3D breadbo
 `socketLocal(id)`, the instanced `mouths`, the `print`, the lit rows `highlight(rows, dt)` / `lit`), `state` and
 `parts` (the parts on the board, below), `props` (the permanent things: the battery box with the switch, the player,
 the speaker and the lamp with their real marks from `shared/parts` — `props.things`, `props.bulb` — the lamp post and
-the `filament` where the light hangs; `props.meter` is the multimeter's place on the table, the oscilloscope still a
-stand-in of its size and colour), `fixed`, `switch`, `tray` and `hands` (the reader's hand, «hand» below), `tools` (the
-magnifier and its `holder` pose), `model` (the circuit model of the board, «model» below), `multimeter` («instruments»
-below), `leds` and `smoke` (the LEDs' light on the board; the wisps of a burn in the air, read-only — «light, heat,
-burn» below).
+the `filament` where the light hangs; `props.meter` and `props.scope` are the instruments' places on the table),
+`fixed`, `switch`, `tray` and `hands` (the reader's hand, «hand» below), `tools` (the magnifier and its `holder` pose),
+`model` and `live` (the circuit model of the board, and the same in time, «model» below), `multimeter` and
+`oscilloscope` («instruments» below), `leds` and `smoke` (the LEDs' light on the board; the wisps of a burn and a
+bulged can's steam in the air, read-only — «light, heat, burn» below).
 
 The board's print (the letters of the lines, the column numbers) is drawn only where all of it has ≥ 16 px-equivalent
 per em (`chapter-check`'s rule): on `board`, not on `stand`, never on a phone. The rails' «+» and «−» are not print
@@ -102,7 +102,7 @@ On the bench: `bench.state` (the board as data) and `bench.parts` (`bench/on-boa
 the state — a part that came gets its model, a part whose legs moved stands on its new sockets, a leg taken out of its
 socket hangs in the air over where it was while the body keeps its turn, a part that left is disposed (the hand moves
 the legs of the parts it drives: «hand» below); `bench.parts.show(id, model, sockets)` stands a model the state does not
-hold outside the circuit (a look alone, as the sandbox's `bulged-look`). `bench.preset([{ id: 'R1', spec:
+hold outside the circuit (a look alone). `bench.preset([{ id: 'R1', spec:
 'resistor-4k7', at: 'a3', o?, setting? }, …], leads?)` makes the board hold exactly a step's parts at once, and the
 named plugs in their sockets (a part or a plug that does not stand there is a RangeError); a part of two legs that
 stands at any span within its reach — a jumper from a rail to the row it feeds — takes `to`, the socket of its leg 1,
@@ -268,8 +268,35 @@ model.part('R1'); // { condition, load, heat, kelvin? } as the bench shows it; n
   build has no jumper, so its legs stand anywhere in their rows; built as on a real board — every part in its
   footprint's own shape (`place`), within its reach, and six jumpers (`seatLeg`) where one strip cannot hold a node —
   it has that point within 1e-4: a jumper's 1 mΩ (`WIRE_OHMS`) under its strip's current moves it by up to 5.1e-5,
-  most in the output pair's bias current. The model's time here is the operating point's alone; the time of the
-  transient on the bench is E2-9's.
+  most in the output pair's bias current. The model's time here is the operating point's alone; the circuit in time
+  is below.
+
+- **A burnt part and a bulged can** (E1-5) stay so wherever they are moved, until they leave the bench: `part(id)` is
+  `burnt` or `bulged` in the circuit and out of it, and the ohmmeter's own solve takes a burnt part as a gap and a
+  bulged can as its leak of 1 kΩ (`BULGED_OHMS`). `advance` tells both by id; `part(id).condition` says which.
+
+**The circuit in time** (E2-9). Two ways, both the model's:
+
+- **`live.ts` — the board played in time** for the oscilloscope (and, in E2-10, the speaker): `bench.live`, E1-9's
+  stream (`shared/sound`: one background thread, the main thread when there is none, and on a held page) at 24 000
+  samples a second in blocks of 1536, paced by the bench's own engine time through E1-9's `BlockPlan` (a request while
+  the plan has room; `live.now` the sample the plan plays now, which the scope shows). It runs only while
+  `bench.scope` is above 0 — no thread before. A new solve of the driver gives the stream the board of that moment
+  (the model goes on from its last moment); a step's `preset` or `clear`, and every start after a pause, start it again
+  from the board's operating point (`Stream.restart`), its parts new and whole there too. The scope's probes are its
+  taps: the node of each probe's row (`Stream.probes`, the next request carries them; the model plays on). `live.since`
+  is the model's moment (s, by the stream's numbering) from which the blocks are of the board and probes now. The
+  stream's model keeps a state of its own (E1-9's handler): its heat gathers from the stream's own start, so a part
+  overloaded there burns by it, not by the driver's word.
+- **`still(window)` — a held page's window** (`?freeze`, plan decision 16): the board now from its operating point,
+  computed at once on the main thread, the bench's damage and heat in a state of its own (nothing of the bench's
+  written): warmed up for `STILL.warmup(tauMax())`, then `count` samples of each tap. `tauMax()` is the longest time
+  constant of its capacitors — the capacitance times the resistance the circuit at its operating point shows between its
+  pins (a test current of 0.5 μA through them): 9 V through 10 kΩ into 100 μF 0.997 s, the amplifier with the
+  filter of the sandbox's step `scope` 0.045–0.055 s. The warm-up is max(0.2 s, 5 τmax) rounded up to a whole beat
+  of the melody (0.5 s), so that two boards of one step show the same stretch of the music, and held to 2 s: an RC
+  behind an open switch has τ of minutes (its capacitor's own leak), and a circuit of direct currents is at rest from its
+  operating point anyway. The same board gives the same samples (the checks hash them).
 
 For checks: `__app.read('electronics-model')` → `{ key, version, compiles, ok, failure, dcMs, iterations, issues,
 pending, parts: { id: { u, i, p } }, rows: { row: volts } }` (the rows a part uses; nothing of a failed solve).
@@ -314,6 +341,60 @@ prints }` (`live` — the reading now; `value`, `text` — what the display show
 grips) and `end:red`, `end:black` (the tips on the board's face). The sandbox's steps `meter` and `divider` and
 `qa/measure.mjs --only meter` drive them.
 
+## `instruments` — the oscilloscope (E2-9)
+
+The bench mounts the oscilloscope with itself (`bench.oscilloscope`, VISUAL §5.2): a `slate` case on the table at the
+back on the right, its face toward the reader — the screen of dark glass with its grid of 10 × 8 divisions, three
+knobs, the inputs of the two channels with their rings (`lime`, `magenta`) under the screen's left part, toward the
+board — and two probes on their leads, an `ink` handle with a ring of the channel's colour; the ground is a black clip
+on the battery's minus wire by its power terminal (the − rail, node 0; no socket). It comes and goes with
+`bench.scope` (0.6 s); its probes are taken only when it is on its place. While it is there the model plays the board
+in time (`bench.live`, «model» above) and the scope shows it.
+
+```ts
+bench.scope = 1; // or the step's param, tweened
+bench.oscilloscope.configure({ display: 'sweep', timePerDiv: 0.002, voltsPerDiv: 0.1, trigger: { channel: 0 } });
+bench.oscilloscope.put({ ch1: 'j17', ch2: 'j13' }); // a step's own probes, at once; null — back to rest
+ui.define({ scope: { board: { title, size: 'md', children: [
+  bench.oscilloscope.chart('scope', { x: (s) => `t, ${s.unit} · …`, y: (s) => `U, V · …`, ch1: words.ch1, ch2: words.ch2 }),
+] } } }); // the main trace: the step's board chart (the design §6.2)
+```
+
+- **What it shows** (`scope-model.ts`, no three.js): the samples of the model in time, the voltage of each probe's row
+  (a probe out of a socket: its channel shows nothing). The scale is the step's, never picked by the scope (VISUAL
+  §5.2): `voltsPerDiv` over eight divisions with 0 V `ground` divisions from the middle, `timePerDiv` over ten; beyond
+  the screen the trace is cut at its edge. **Sweep** (`display: 'sweep'`): a sweep starts where the trigger's channel
+  crosses its level the way its slope says (the level: the step's, or the middle of the last span of that channel;
+  `sweep.ts` `findTrigger`), within the last span of candidates and not before the end of the last sweep and its
+  `holdoff`; with `auto` and no edge for a whole span it runs free; at most one a frame, only of samples that came.
+  **Roll** (`display: 'roll'`): the newest sample at the right edge, the window kept in 300 buckets of equal time; a
+  roll that starts fills the window behind its first sample with that sample (the circuit at rest before).
+- **The same samples twice**: every sweep is drawn by min/max decimation (`sweep.ts` `decimateMinMax`: each bucket's
+  smallest and largest sample in their order, so no peak is lost and a window of audio draws as the band it is) —
+  up to 300 buckets, ≤ 600 points a channel, for the board chart; 80 buckets, 160 points, for the instrument's screen.
+  The chart is filled at every entry of a step (`init`: the DOM charts are made again then) and drawn again only when
+  a new sweep came (`update`).
+- **The screen** (`scope.ts`) is built of `createScreen` and `RibbonLines` of `@/fx` — the pieces `createScope` is made
+  of, not `createScope` itself: its traces are drawn again only on its own tick, which runs only when the engine's
+  time moves (`fx/core/tick.ts`), so a held page's window would never reach the screen; and it holds its trace in 0.8
+  of the screen's half height. The trace is painted in its channel's colour (`RibbonLines` in the `normal` blend): no
+  glow, no bloom. The grid's tint is `steel` at 0.6 (the platform's screen draws its rim in it too).
+- **A held page** (`?freeze`): the bench's stream runs on the main thread (frames of fixed time give the same samples)
+  and, on a frame with no time after anything changed — the board, a setting, a probe, the scale, time that passed —,
+  the scope shows `model.still` of two spans (once per change, as the radio's held frames): one span after the first
+  edge within the first span, or from its start without one. A roll keeps what it rolled.
+- **The probes** are ends of the hand like the multimeter's (`probe:ch1`, `probe:ch2`; `end:ch1`, `end:ch2` their tips),
+  any socket but the other one's; they rest on the table in front of the scope, on a phone on the base in front of the
+  board where the multimeter's rest (VISUAL §9: a step with both instruments on a phone puts one pair in sockets).
+  On a phone the chart is in the panel's tab «Графіки» and the instrument out of the shot.
+
+For checks: `__app.read('electronics-scope')` → `{ mode, blocks, ms, since, now, display, fs, span, unit, timePerDiv,
+voltsPerDiv, ground, trigger: { channel, level, slope, auto, used, found, at }, version, sweeps, holds, on, n, min,
+max, screen, t0, hash, points, frozen, stills, still: { warmup, tau, ms }, ch1, ch2, shown, ready }` (`mode` — where the
+model runs in time: `worker`, `sync`, `off`; `points` — each channel's trace, its times on the chart's axis from `t0`;
+`screen` — the instrument's extremes, −1 … 1; `hash` — FNV-1a of the points: two pages that show the same, the same
+hash). The sandbox's steps `scope` and `rc` and `qa/measure.mjs --only scope` drive it.
+
 ## Light, heat, burn — the model's state on the bench (E2-7)
 
 Everything on the bench that shines, warms or burns is the circuit model's output for the board now (VISUAL §1,
@@ -346,15 +427,16 @@ bench.lamp; // the lamp's filament from the model, read-only
   resistor's bands take no heat but char with the body. The kinds are a partial table (`KIND_LOOK`): a battery and a
   speaker only tint (the battery never burns), a burnt speaker shows a dark ring on its cone, a burnt lamp its broken
   filament and a greyed top of the glass (`bulb.setBurnt`), a burnt resistor a black belt with a crack, a diode a crack,
-  an LED a black spot on its crystal. An electrolytic under the state `bulged` (E1-5 gives it; E2-9 binds it to the
-  model) domes its top up 0.05 with the vent opened and its sleeve a little wider.
+  an LED a black spot on its crystal. An electrolytic under the state `bulged` (E1-5's: over its rated voltage, or more
+  than 1 V the wrong way round, its heat to 1 — 100 μF / 6.3 V the wrong way round on the battery after ≈ 1.2 s)
+  domes its top up 0.05 with the vent opened and its sleeve a little wider, and stays so until it leaves the bench.
 - **The burn** (`smoke.ts`): at the moment the model tells a part burnt (`model.advance` gave its id) the bench itself
   lets out one wisp — eight soft puffs of `mist`, at most 0.35 opaque, rising 0.6 in 1.2 s over the part's body — once,
   never a loop, no flame, spark, flash or sound. The lamp gives none: its filament breaks inside the sealed glass, so the
-  broken coil, the greyed top of the glass and the dark are the whole event. Nothing else lets a wisp out: `bench.smoke`
-  is read-only (`active`, `fired`, for the checks), and a chapter has no way to puff smoke or steam. A bulged can's one
-  puff of steam (1.5 s) will be the same kind of thing — on the model's event, E1-5's `bulged`, which E2-9 binds; until
-  then nothing lets steam out. The puffs are lit translucent plastic, the lamp's stem's very shader, made with the bench
+  broken coil, the greyed top of the glass and the dark are the whole event. A can that bulges lets out one puff of
+  steam (four puffs, 1.5 s) out of its vent instead, on the same event of the model (its id from `advance`, its
+  condition `bulged`). Nothing else lets a wisp out: `bench.smoke` is read-only (`active`, `fired`, for the checks), and
+  a chapter has no way to puff smoke or steam. The puffs are lit translucent plastic, the lamp's stem's very shader, made with the bench
   and hidden while nothing burns.
 - **Light**: an LED's brightness b = min(1, (Φ / Φ₀)^(1/3)) from the model's current (`ledBrightness`), its glow and
   halo; the three brightest LEDs (ties by id) take the bench's three shadowless point lights (`bench.leds`,
@@ -363,10 +445,10 @@ bench.lamp; // the lamp's filament from the model, read-only
   in, 0 out of the circuit or burnt; the light rig makes it the room's key light.
 
 For checks: `__app.read('electronics-heat')` → `{ ok, parts: { id: { key, condition, heat, load, i, light, surface,
-marks } }, things: { battery, speaker, lamp }, lamp: { level, glow, output, intensity }, leds: { lit, intensity },
-lights, smoke: { active, fired }, burns: [{ id, t }] }` (`lights` — every light under the chapter's root: five, always).
-The sandbox's steps `led`, `overload`, `lamp`, `bulged-look` (the look alone, for a snapshot; E2-9's step `bulged`
-binds it to the model) and `qa/measure.mjs --only heat` drive them.
+marks, bulged } }, things: { battery, speaker, lamp }, lamp: { level, glow, output, intensity }, leds: { lit, intensity
+}, lights, smoke: { active, fired }, burns: [{ id, t, what }] }` (`lights` — every light under the chapter's root: five,
+always; `what` — `burnt` or `bulged`). The sandbox's steps `led`, `overload`, `lamp`, `bulged` (an electrolytic the
+wrong way round) and `qa/measure.mjs --only heat` drive them.
 
 ## `dive` — the floors: the magnifier as the door (E2-8)
 

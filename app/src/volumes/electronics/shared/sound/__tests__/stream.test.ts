@@ -36,7 +36,12 @@ class FakeWorker implements WorkerLike {
   }
 
   answer(i: number): void {
-    this.emit(this.handler.handle(this.requests()[i]!)!.reply);
+    this.emit(this.prepare(i));
+  }
+
+  /** The reply to the i-th request, computed now and emitted later (a real thread answers in the order it was sent). */
+  prepare(i: number): FromWorker {
+    return this.handler.handle(this.requests()[i]!)!.reply;
   }
 }
 
@@ -118,6 +123,61 @@ describe('the model stream', () => {
     w.answer(1);
     expect(w.requests()[2]!.request.net).toBeNull();
     expect(got.map((b) => b.revision)).toEqual([1, 3]);
+  });
+
+  it('new probes go with the next request, once, and bump the revision (E2-9: a scope’s probes)', () => {
+    const w = new FakeWorker();
+    stream = createStream(ctx, SETUP, options({ makeWorker: () => w }));
+    room = 10;
+    w.emit({ type: 'ready' });
+    expect(w.requests()[0]!.request.probes ?? null).toBeNull();
+    const probes = [{ node: 1 }, { node: 2 }];
+    stream.probes(probes);
+    stream.probes(probes.map((p) => ({ ...p }))); // the same list again: nothing new
+    expect(stream.revision).toBe(2);
+    w.answer(0);
+    expect(w.requests()[1]!.request).toMatchObject({ net: null, probes, revision: 2 });
+    w.answer(1);
+    expect(w.requests()[2]!.request.probes ?? null).toBeNull();
+    expect(got.map((b) => b.samples.length)).toEqual([2, 2]);
+    w.answer(2);
+    expect(got[2]!.samples).toHaveLength(2);
+    expect(got[2]!.revision).toBe(2);
+  });
+
+  it('restart: the model starts again from the operating point of the new board, the numbering runs on', () => {
+    const w = new FakeWorker();
+    stream = createStream(ctx, SETUP, options({ makeWorker: () => w }));
+    room = 10;
+    w.emit({ type: 'ready' });
+    w.answer(0);
+    expect(w.requests()).toHaveLength(2); // the second on its way
+    const stale = w.prepare(1); // the thread answers it before the new init
+    stream.restart(filterBoard(null));
+    expect(stream.revision).toBe(2);
+    expect(w.posted.at(-1)).toEqual({ type: 'init', setup: { ...SETUP, net: filterBoard(null) } });
+    w.emit(stale); // the reply to the request before the restart: not taken
+    expect(got).toHaveLength(1);
+    expect(w.requests()).toHaveLength(2); // nothing leaves before the model is ready again
+    w.emit({ type: 'ready' });
+    expect(w.requests()).toHaveLength(3);
+    expect(w.requests()[2]!.request).toMatchObject({ first: BLOCK, net: null, revision: 2 });
+    w.answer(2);
+    const fresh = createHandler(() => 0);
+    fresh.handle({ type: 'init', setup: { ...SETUP, net: filterBoard(null) } });
+    const want = fresh.handle({ type: 'block', request: { seq: 1, first: BLOCK, net: null, revision: 2 } })!;
+    expect(want.reply.type === 'block' && want.reply.reply.samples).toEqual(got[1]!.samples);
+    expect(got[1]!.first).toBe(BLOCK);
+    // on the main thread: the next block from the operating point of the board given
+    const sync = createStream(ctx, SETUP, options({ mode: 'sync' }));
+    stream.dispose();
+    got = [];
+    sync.pump();
+    sync.restart(filterBoard(null));
+    sync.pump();
+    expect(got).toHaveLength(2);
+    expect(got[1]!.samples).toEqual(want.reply.type === 'block' && want.reply.reply.samples);
+    expect(got[1]!.first).toBe(BLOCK);
   });
 
   it('a failing thread → the main thread, with the board of that moment', () => {

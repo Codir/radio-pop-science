@@ -119,11 +119,22 @@ probes }` (`protocol.ts`; a probe is `{ node }` or `{ part }`, as `Transient.run
   block on its way when the thread fell is lost (the plan may run out: an underrun). The samples are numbered by the
   stream, so they run on. An error of the model on the main thread gives no block; a board the model cannot start is not tried again
   until another board comes.
+- **New probes** (`stream.probes(list)`, E2-9: an oscilloscope's probe moved to another row): the next request carries
+  them (`BlockRequest.probes`), once; the handler makes new arrays for them and the model plays on — only what it
+  records changes. The same list again changes nothing; a new one bumps the revision, as a new board does.
+- **A restart** (`stream.restart(net)`, E2-9: a step's own new board, its parts new and whole): the model starts again
+  from the operating point of `net` — in the thread by a new `init` (the reply to the request on its way then is not
+  taken; nothing leaves before it is `ready` again), on the main thread at the next block. The samples are numbered on.
 - `dispose` (also from `ctx.onDispose`) ends the thread; a reply after it changes nothing.
 
 What is different from `radio/shared/link`: blocks of samples instead of frames; a request leaves while the output
-has room, not at 25 a second, and the next one right after a reply; the board travels only when it changed; no
-`still`; the main thread computes a block per update (not one in six) while the output wants one.
+has room, not at 25 a second, and the next one right after a reply; the board and the probes travel only when they
+changed; no `still` (a held page's window is the bench's model driver's, `shared/model`); the main thread computes a
+block per update (not one in six) while the output wants one.
+
+The bench's oscilloscope (E2-9, `shared/model/live.ts`) plays the board through this stream with no sound output: it
+paces the requests by `BlockPlan` on the bench's own engine time (a clock nobody hears) and shows the sample the plan
+plays now. E2-10's speaker takes the same stream and paces it by the sound output.
 
 ## Rate and block
 
@@ -187,7 +198,9 @@ lead, never more than three on the plan, blocks played, the sample heard, a rese
 `AudioContext` and store: nothing before the gesture, none with `?noaudio`, the context at the blocks' rate, the
 gain and the limiter, blocks on `currentTime` with a 30-second run without a gap and an underrun after a stall, the
 settings, the dispose); `tape.test.ts`; `handler.test.ts` and `stream.test.ts` (the protocol: the same samples as a
-`Transient` of the same board, a new board carried once and taken by `rebuild`, own buffers in the transfer list,
+`Transient` of the same board, a new board carried once and taken by `rebuild`, new probes carried once and recorded
+from that block on while the model plays on, a restart from the operating point of a new board with the numbering
+running on, own buffers in the transfer list,
 one request on its way and the next at once when a block comes, the main thread after a failure, numbering, the
 dispose); `board.test.ts` (the board, the resistors, the full scale, and that through 1 kΩ and 10 kΩ the high notes
 fall).

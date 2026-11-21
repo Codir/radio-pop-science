@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-/* global process, console, window, document */
+/* global process, console, window, document, performance */
 // Browser check and measurements of the sandbox `_dev/_sandbox-electronics-bench` (a dev or preview server up; the
 // skeleton — arguments, `report` / `check` / verdict, `open`, `held` — is copied from the radio sandbox's
 // `qa/measure.mjs`, docs/volumes/electronics/REUSE.md «Копії»; the sections are the bench's own):
 //
 //   node app/src/volumes/_dev/chapters/_sandbox-electronics-bench/qa/measure.mjs --port 5480 --out <dir>
-//        [--only room,…,film] [--size 1280x720] [--touch]
+//        [--only room,…,film,scope] [--size 1280x720] [--touch]
 //
 // Sections (`--only`, default all):
 //   room  — step `room` on a held page (`?freeze`): the bench's reader `electronics-bench` (204 sockets, 36 rows),
@@ -15,9 +15,8 @@
 //           (VISUAL §2), the frame ≤ 8 ms on a desktop (`__app.measure`; a phone's is reported), the console;
 //           snapshot `room-<size>.jpg`. With `--touch` the page is a phone's and the bench shows the shot `phone`.
 //   shots — steps `board`, `meter`, `scope` on held pages: draw calls, the pitch, the board's print (all 12 texts on
-//           `board` and every world text ≥ 16 px-equivalent; none on a phone), the instrument's stand-in inside the
-//           free area of its shot (not on a phone, where every shot is `phone`), the console; snapshots
-//           `<step>-<size>.jpg`.
+//           `board` and every world text ≥ 16 px-equivalent; none on a phone), the instrument inside the free area of
+//           its shot (not on a phone, where every shot is `phone`), the console; snapshots `<step>-<size>.jpg`.
 //   parts — step `parts` on a held page (E2-4, E2-M): `electronics-board` lists every part placed with the sockets of
 //           its legs — one of every kind of the model's catalog, the capacitors and the transistor too — and nothing
 //           shown outside the circuit; each one has a model; the model solves the board with all of them (`ok`, every
@@ -58,9 +57,12 @@
 //           LED's current the model's (± 1e-9) and its light > 0, the red one's its 330 Ω's by Ohm's law, three
 //           lights on the board, the 330 Ω of red and green warm (after a minute h ≈ 0.6, barely tinted), of blue
 //           ok, the hue families ≤ 4; step `lamp` — the filament at the model's ≈ 1 875 °C lights the room
-//           (`light.output` > 0); step `bulged-look` — the look alone, nothing let out (no model event behind it);
-//           the console everywhere; snapshots `heat-<state>[-close]-<size>.jpg` of «ok», «тепла», «гаряча», the
-//           wisp, «згоріла», the new part, the LEDs, the lamp and «здутий».
+//           (`light.output` > 0); step `bulged` (E2-9) — 100 μF / 6.3 V the wrong way round across the battery: «гаряча»
+//           by its load of 9, «здутий» in E1-5's window (τ·ln((L − H) / (L − 1)) from the open page, within a frame),
+//           told once as bulged, one puff of steam and no wisp of smoke, its top domed, its leak of 1 kΩ (9 mA), still
+//           bulged and nothing more let out 2 s later; the console everywhere; snapshots
+//           `heat-<state>[-close]-<size>.jpg` of «ok», «тепла», «гаряча», the wisp, «згоріла», the new part, the LEDs, the
+//           lamp, the steam and «здутий».
 //   loupe — the magnifier as the door (E2-8) on a held page, step `loupe` (a 4.7 kΩ in a5 … a9, shot `board`): on the
 //           board's shot the door is ready, no ladder, the lens in its holder, and a real press takes R1 (laid back);
 //           the slider set to the dive's stops (`__ui.set`, the flight waited out) — rail 0: the lens at work, its ring
@@ -82,6 +84,16 @@
 //           switch to 10 kΩ — a new R1 of that value, more turns, a narrower and longer strip, the model's 0.73 mA and
 //           the speed that current times the same number, 29 times slower; back at 0 the film closed; the hue families
 //           (reported), the console; snapshots `film-<330|10k|board>-<size>.jpg`.
+//   scope — the oscilloscope (E2-9): step `scope` (the amplifier with a low-pass before its volume control, the
+//           probes in j17 and j13) on two held pages — the same `electronics-scope.hash` (the window `model.still`
+//           computes at once: deterministic), a sweep triggered on channel 1, ≤ 600 points a channel, the chart and the
+//           instrument's screen of the same sweep (the screen's extremes the chart's on its scale), the board chart on
+//           screen, ≤ 350 draw calls; the filter's resistor 1 → 4.7 → 10 kΩ (`__ui.set('filter', …)`, held pages):
+//           the amplitude of channel 2 after the filter falls, channel 1's stays; step `rc` (10 kΩ, 100 μF, a roll) — the
+//           switch closed by a real pointer (a phone: the dock's toggle), 1.5 s of frames: channel 2 at the model's
+//           moment `since` + τ = 1 s is 63.2 % ± 0.5 % of 9 V (E1-5's tolerance), channel 1 at 9 V; a live page of
+//           `scope` (no `freeze`): the model in the background thread (`mode` worker), the first sweep ≤ 5 s after the
+//           page settled, sweeps and blocks keep coming; the console; snapshots `scope-<what>-<size>.jpg`.
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-electronics-bench — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -938,6 +950,8 @@ async function meter(context) {
 
 /** E1-4's resistor: τ 10 s, 0.25 W (sim/core/README.md, «Limits»). */
 const RESISTOR_TAU = 10;
+/** The heat's time constant of a capacitor (E1-5, `HEAT_SECONDS.capacitor`): an electrolytic bulges at H = 1. */
+const CAPACITOR_TAU = 10;
 /** The red LED with 330 Ω from the 9 V battery against ngspice (sim/core/README.md: 21.24 mA). */
 const RED_LED_A = 0.02124;
 /** Close-ups for the reader of the look: the part's sphere filling a narrow frame from the front and above. */
@@ -1260,34 +1274,77 @@ async function heat(context) {
     await page.close();
   }
 
-  /* ---- step `bulged-look`: the look under the state's name alone, for the reader (E2-9 binds it to the model) */
+  /* ---- step `bulged`: an electrolytic the wrong way round — the model bulges it (E1-5), the bench lets out steam */
   {
     const page = await context.newPage();
-    const pos = await open(page, 'bulged-look').catch((err) => ({ error: String(err) }));
-    if (!check('bulged-look: opened', at(pos, 'bulged-look'), where(pos))) {
+    const pos = await open(page, 'bulged').catch((err) => ({ error: String(err) }));
+    if (!check('bulged: opened', at(pos, 'bulged'), where(pos))) {
       await page.close();
       return;
     }
-    const b = await read(page, 'electronics-board');
-    const h = await heatNow(page);
+    const h0 = await heatNow(page);
+    const c0 = h0?.parts?.C1;
+    n.bulgedOpen = c0;
     check(
-      'bulged-look: the two cans shown outside the circuit, and nothing let out — no model event behind the look',
-      ['C-whole', 'C-bulged'].every((id) => b?.shown?.includes(id)) &&
-        Object.keys(b?.parts ?? {}).length === 0 &&
-        h?.smoke?.fired === 0 &&
-        h.smoke.active === 0 &&
-        h.burns?.length === 0,
-      `shown ${JSON.stringify(b?.shown)}, parts ${JSON.stringify(Object.keys(b?.parts ?? {}))}; smoke ${JSON.stringify(h?.smoke)}; burns ${JSON.stringify(h?.burns)}`,
+      'bulged: C1 «гаряча» by its load — 9 V the wrong way round against its 1 V: 9 — whole to the eye',
+      c0?.condition === 'hot' && Math.abs(c0.load - 9) < 0.05 && c0.bulged === false && h0.smoke?.fired === 0,
+      `condition ${c0?.condition}, load ${round(c0?.load, 3)}, heat ${round(c0?.heat, 3)}, bulged ${c0?.bulged}`,
     );
-    await screenshot(page, snap('bulged'));
+    // when it must bulge from here (E1-5: the heat of a capacitor with τ 10 s, bulged at H = 1)
+    const left = CAPACITOR_TAU * Math.log((c0.load - c0.heat) / (c0.load - 1));
+    let frames = 0;
+    let state = c0;
+    while (state?.condition !== 'bulged' && frames < 60 * 4) {
+      await page.evaluate(() => window.__app.step(1 / 60, 1));
+      frames++;
+      state = (await heatNow(page))?.parts?.C1;
+    }
+    const t = frames / 60;
+    const h1 = await heatNow(page);
+    n.bulged = { after: round(t, 4), expected: round(left, 4), C1: h1?.parts?.C1, burns: h1?.burns, smoke: h1?.smoke };
+    check(
+      'bulged: «здутий» in E1-5’s window, τ·ln((L − H) / (L − 1)) from the open page, within a frame',
+      state?.condition === 'bulged' && t >= left - 1e-9 && t < left + 1 / 60 + 1e-9,
+      `bulged after ${round(t, 3)} s; E1-5 says ${round(left, 3)} s`,
+    );
+    check(
+      'bulged: told once as bulged, one puff in the air; its top domed; its leak of 1 kΩ: 9 mA',
+      h1?.burns?.length === 1 &&
+        h1.burns[0].id === 'C1' &&
+        h1.burns[0].what === 'bulged' &&
+        h1.smoke?.fired === 1 &&
+        h1.smoke?.active === 1 &&
+        h1.parts.C1.bulged === true &&
+        h1.parts.C1.marks === false &&
+        Math.abs(Math.abs(h1.parts.C1.i) - 9e-3) < 2e-4,
+      `burns ${JSON.stringify(h1?.burns)}; smoke ${JSON.stringify(h1?.smoke)}; bulged ${h1?.parts?.C1?.bulged}, i ${h1?.parts?.C1?.i}`,
+    );
+    // the steam in the air (a third of its 1.5 s)
+    await page.evaluate(() => window.__app.step(1 / 60, 30));
+    await screenshot(page, snap('steam'));
     const parts = await read(page, 'electronics-parts');
-    const can = parts?.['C-bulged'];
+    const can = parts?.C1;
+    if (!touch && can) {
+      await close(page, can.center, Math.max(can.radius, NEAR.least) * NEAR.fill * 1.4);
+      await screenshot(page, snap('steam-close'));
+      await back(page, 'board');
+    }
+    await page.evaluate(() => window.__app.step(1 / 60, 120));
+    const h2 = await heatNow(page);
+    check(
+      'bulged: 2 s later still bulged, the steam gone, nothing more let out',
+      h2?.parts?.C1?.condition === 'bulged' && h2.parts.C1.bulged === true && h2.smoke?.fired === 1 && h2.smoke.active === 0 && h2.burns?.length === 1,
+      `${h2?.parts?.C1?.condition}; smoke ${JSON.stringify(h2?.smoke)}; burns ${h2?.burns?.length}`,
+    );
+    const calls = await drawCalls(page);
+    check('bulged: draw calls ≤ 350', calls.engine > 0 && calls.engine <= DRAW_CALLS.gate, `${calls.engine}`);
+    await screenshot(page, snap('bulged'));
     if (!touch && can) {
       await close(page, can.center, Math.max(can.radius, NEAR.least) * NEAR.fill * 1.4);
       await screenshot(page, snap('bulged-close'));
     }
     const errors = await appErrors(page);
-    check('bulged-look: console', errors.length === 0, consoleText(errors));
+    check('bulged: console', errors.length === 0, consoleText(errors));
     await page.close();
   }
 }
@@ -1715,9 +1772,217 @@ async function film(context) {
   await page.close();
 }
 
+/* -------------------------------------------------------------------------------------- section scope */
+
+/** The model's rate in time (`shared/model/live.ts` `LIVE`). */
+const RATE = 24000;
+/** E1-5's RC: 9 V through 10 kΩ into 100 μF reaches 63.2 % ± 0.5 % of 9 V after R·C = 1 s (sim/core transient.test.ts). */
+const RC63 = { share: 0.632, tolerance: 0.005, tau: 1, volts: 9 };
+/** A live page: its first sweep within this many seconds after it settled (the brief). */
+const FIRST_SWEEP = 5;
+/** The filter's resistors of the step `scope`, in the order the dock's switch offers them. */
+const FILTERS = ['resistor-1k', 'resistor-4k7', 'resistor-10k'];
+
+/** The value of a channel's points at the model's moment `t` (s): straight between the points round it. */
+function traceAt(scope, channel, t) {
+  const { x, v } = scope.points[channel];
+  const k = scope.unit === 'ms' ? 1000 : 1;
+  let prev = null;
+  for (let i = 0; i < x.length; i++) {
+    const ti = scope.t0 + x[i] / k;
+    if (ti >= t) {
+      if (prev === null) return null;
+      const [tp, vp] = prev;
+      return ti === tp ? v[i] : vp + ((v[i] - vp) * (t - tp)) / (ti - tp);
+    }
+    prev = [ti, v[i]];
+  }
+  return null;
+}
+
+async function scope(context) {
+  const n = (report.sections.scope = {});
+  const scopeNow = (page) => read(page, 'electronics-scope');
+  const snap = (what) => join(out, `scope-${what}-${tag}.jpg`);
+
+  // 1. step `scope` on two held pages: the same window, the same hash
+  const hashes = [];
+  for (const k of [0, 1]) {
+    const page = await context.newPage();
+    const pos = await open(page, 'scope').catch((err) => ({ error: String(err) }));
+    if (!check(`scope: opened (page ${k + 1})`, at(pos, 'scope'), where(pos))) {
+      await page.close();
+      return;
+    }
+    await held(page);
+    const sc = await scopeNow(page);
+    hashes.push(sc?.hash);
+    if (k === 1) {
+      await page.close();
+      break;
+    }
+    n.held = { ...sc, points: undefined };
+    check(
+      'scope: a held page shows the window computed at once (main thread), triggered on channel 1',
+      sc?.frozen === true && sc.mode === 'sync' && sc.display === 'sweep' && sc.stills >= 1 && sc.holds >= 1 && sc.trigger?.found === true,
+      `mode ${sc?.mode}, stills ${sc?.stills}, holds ${sc?.holds}, warm-up ${sc?.still?.warmup} s (τmax ${round(sc?.still?.tau, 4)} s, ${round(sc?.still?.ms, 0)} ms), trigger at ${round(sc?.trigger?.at, 5)} s, level ${round(sc?.trigger?.used, 5)} V`,
+    );
+    check(
+      'scope: the probes in j17 (before the filter) and j13 (after it); ≤ 600 points a channel, both drawn',
+      sc?.ch1 === 'j17' && sc.ch2 === 'j13' && sc.n.every((m) => m > 0 && m <= 600) && sc.on.every(Boolean),
+      `ch1 ${sc?.ch1}, ch2 ${sc?.ch2}, points ${JSON.stringify(sc?.n)}`,
+    );
+    // the instrument's 160 points are the same sweep: their extremes are the chart's on the screen's scale
+    const onScreen = (v) => Math.max(-1, Math.min(1, (v / sc.voltsPerDiv + sc.ground) / 4));
+    const same = [0, 1].every(
+      (c) =>
+        sc.screen[c] &&
+        Math.abs(sc.screen[c].max - onScreen(sc.max[c])) < 1e-6 &&
+        Math.abs(sc.screen[c].min - onScreen(sc.min[c])) < 1e-6,
+    );
+    check(
+      'scope: the instrument’s screen shows the chart’s sweep (its extremes the same on the screen’s scale)',
+      same,
+      `ch1 ${round(sc?.min?.[0], 4)} … ${round(sc?.max?.[0], 4)} V → ${round(sc?.screen?.[0]?.min, 4)} … ${round(sc?.screen?.[0]?.max, 4)}; ch2 ${round(sc?.min?.[1], 4)} … ${round(sc?.max?.[1], 4)} V → ${round(sc?.screen?.[1]?.min, 4)} … ${round(sc?.screen?.[1]?.max, 4)}`,
+    );
+    if (touch) await page.evaluate(() => window.__ui.setSheet?.({ tab: 'board' }));
+    const chart = await page.evaluate(() => window.__ui.locate('ctl-scope-scope'));
+    check('scope: the board chart on screen', chart !== null && chart.w > 50, JSON.stringify(chart));
+    const calls = await drawCalls(page);
+    n.drawCalls = calls.engine;
+    check('scope: draw calls ≤ 350 with the amplifier, the scope and its probes', calls.engine > 0 && calls.engine <= DRAW_CALLS.gate, `${calls.engine}; ${calls.triangles} triangles`);
+    await screenshot(page, snap('held'));
+
+    // 2. the filter's resistor grows: channel 2 after the filter falls, channel 1 before it stays
+    const amps = [];
+    for (const spec of FILTERS) {
+      await page.evaluate((id) => window.__ui.set('filter', id, true), spec);
+      await held(page);
+      await held(page);
+      const f = await scopeNow(page);
+      amps.push({ spec, ch1: f.max[0] - f.min[0], ch2: f.max[1] - f.min[1], warmup: f.still?.warmup, at: f.trigger?.at });
+      await screenshot(page, snap(spec.replace('resistor-', '')));
+    }
+    n.filter = amps.map((a) => ({ ...a, ch1: round(a.ch1, 5), ch2: round(a.ch2, 5) }));
+    check(
+      'scope: the amplitude of channel 2 after the filter falls as R grows 1 → 4.7 → 10 kΩ; channel 1’s stays',
+      amps[0].ch2 > amps[1].ch2 && amps[1].ch2 > amps[2].ch2 && amps.every((a) => Math.abs(a.ch1 / amps[0].ch1 - 1) < 0.1),
+      amps.map((a) => `${a.spec.slice(9)}: ch2 ${round(a.ch2 * 1000, 1)} mV, ch1 ${round(a.ch1 * 1000, 1)} mV`).join('; '),
+    );
+    check(
+      'scope: the three windows the same stretch of the melody (the warm-up on a whole beat, the same trigger)',
+      amps.every((a) => a.warmup === amps[0].warmup && Math.abs(a.at - amps[0].at) < 1e-9),
+      amps.map((a) => `${a.warmup} s, ${round(a.at, 5)} s`).join('; '),
+    );
+    const errors = await appErrors(page);
+    check('scope: console', errors.length === 0, consoleText(errors));
+    await page.close();
+  }
+  n.hashes = hashes;
+  check('scope: two held pages, the same electronics-scope.hash', hashes.length === 2 && hashes[0] === hashes[1] && hashes[0] !== '811c9dc5', hashes.join(' = '));
+
+  // 3. step `rc`: the switch closed, channel 2 at τ = 1 s after the model took it
+  {
+    const page = await context.newPage();
+    const pos = await open(page, 'rc').catch((err) => ({ error: String(err) }));
+    if (check('rc: opened', at(pos, 'rc'), where(pos))) {
+      const s0 = await scopeNow(page);
+      check(
+        'rc: a roll, both channels at 0 V with the switch open',
+        s0?.display === 'roll' && s0.ch1 === 'e3' && s0.ch2 === 'e7' && s0.n.every((m) => m > 0) && [0, 1].every((c) => Math.abs(s0.max[c]) < 1e-6 && Math.abs(s0.min[c]) < 1e-6),
+        `display ${s0?.display}, ch1 ${s0?.ch1} ${round(s0?.max?.[0], 6)} V, ch2 ${s0?.ch2} ${round(s0?.max?.[1], 6)} V`,
+      );
+      const before = s0?.since;
+      const phone = (await read(page, 'electronics-bench'))?.phone === true;
+      const p = await pointer(page, touch);
+      if (phone) await page.evaluate(() => window.__ui.setSheet?.({ tab: 'controls' }));
+      await held(page);
+      const sw = phone
+        ? await page.evaluate(() => window.__ui.locate('ctl-battery-switch'))
+        : await page.evaluate(() => window.__app.locate('switch'));
+      if (sw) await p.tap(sw.x, sw.y);
+      const closed = (await read(page, 'electronics-board'))?.settings?.SW;
+      check(`rc: a tap on ${phone ? 'the dock’s toggle' : 'the slider'} closes the switch`, closed === 1, `SW ${closed}`);
+      await page.evaluate(() => window.__app.step(1 / 60, 90));
+      await held(page);
+      const s1 = await scopeNow(page);
+      const v = traceAt(s1, 1, s1.since + RC63.tau);
+      const v1 = traceAt(s1, 0, s1.since + RC63.tau);
+      const v0 = traceAt(s1, 1, s1.since - 0.05);
+      n.rc = { since: s1?.since, before, at: round(v, 5), share: round(v / RC63.volts, 5), ch1: round(v1, 4), now: s1?.now };
+      check(
+        'rc: the switch taken by the model at a moment of its own (`since`); channel 2 at 0 V before it',
+        s1.since > (before ?? 0) && Math.abs(v0) < 1e-3,
+        `since ${round(s1.since, 4)} s (was ${round(before, 4)}), channel 2 before it ${round(v0, 6)} V`,
+      );
+      check(
+        'rc: channel 2 at τ = R·C = 1 s after it: 63.2 % ± 0.5 % of 9 V (E1-5’s tolerance); channel 1 at 9 V',
+        v !== null && Math.abs(v / RC63.volts - RC63.share) <= RC63.tolerance && Math.abs(v1 - 9) < 0.02,
+        `${round(v, 4)} V = ${round((v / RC63.volts) * 100, 3)} %; channel 1 ${round(v1, 4)} V`,
+      );
+      const calls = await drawCalls(page);
+      check('rc: draw calls ≤ 350', calls.engine > 0 && calls.engine <= DRAW_CALLS.gate, `${calls.engine}`);
+      await screenshot(page, snap('rc'));
+      const errors = await appErrors(page);
+      check('rc: console', errors.length === 0, consoleText(errors));
+    }
+    await page.close();
+  }
+
+  // 4. a live page: the model in the background thread, sweeps that come and keep coming
+  {
+    const page = await context.newPage();
+    const url = appUrl(base, { route: route('scope'), q });
+    let ok = true;
+    let first = null;
+    try {
+      // from the page's navigation on: when the first sweep is there (the page's own clock, s), polled every 50 ms
+      await page.goto(url, { waitUntil: 'commit', timeout: OPEN_TIMEOUT_MS });
+      await page.waitForFunction(
+        () => {
+          try {
+            return window.__app.read('electronics-scope').sweeps > 0;
+          } catch {
+            return false; // the engine not ready yet, or the step's scene not mounted
+          }
+        },
+        null,
+        { polling: 50, timeout: OPEN_TIMEOUT_MS },
+      );
+      first = await page.evaluate(() => {
+        const r = window.__app.read('electronics-scope');
+        const shown = performance.getEntriesByType('navigation')[0];
+        return { t: performance.now() / 1000, load: (shown?.loadEventEnd ?? 0) / 1000, mode: r.mode, sweeps: r.sweeps, blocks: r.blocks };
+      });
+    } catch (err) {
+      ok = check('live: opened', false, String(err));
+    }
+    if (ok) {
+      await sleep(2000);
+      const later = await scopeNow(page);
+      n.live = { first, later: { mode: later?.mode, sweeps: later?.sweeps, blocks: later?.blocks, ms: round(later?.ms, 2), frozen: later?.frozen } };
+      check('live: the model in the background thread', later?.mode === 'worker' && later.frozen === false, `mode ${later?.mode}`);
+      check(
+        `live: the first sweep within ${FIRST_SWEEP} s of the page's navigation`,
+        first.sweeps > 0 && first.t <= FIRST_SWEEP,
+        `${round(first.t, 2)} s from the navigation (the page loaded at ${round(first.load, 2)} s), ${first.blocks} blocks`,
+      );
+      check(
+        'live: sweeps and blocks keep coming',
+        later?.sweeps > first.sweeps + 10 && later.blocks > first.blocks + 10,
+        `2 s later: ${later?.sweeps} sweeps (were ${first.sweeps}), ${later?.blocks} blocks (were ${first.blocks}), ${round(later?.ms, 1)} ms a block of ${round((1536 / RATE) * 1000, 0)} ms`,
+      );
+      await screenshot(page, snap('live'));
+      const errors = await appErrors(page);
+      check('live: console', errors.length === 0, consoleText(errors));
+    }
+    await page.close();
+  }
+}
+
 /* ---------------------------------------------------------------------------------------------- run */
 
-const SECTIONS = { room, shots, parts, hand, meter, heat, loupe, film };
+const SECTIONS = { room, shots, parts, hand, meter, heat, loupe, film, scope };
 const only =
   typeof args.only === 'string'
     ? args.only

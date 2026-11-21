@@ -1,10 +1,9 @@
 /**
  * The permanent things of the bench (docs/volumes/electronics/VISUAL.md §2, §4.1, §5), each one on its place: the
  * battery's open box with the switch on its lid, the player, the speaker and the lamp on its post — the models with
- * real marks of `shared/parts` (E2-4) — and the magnifier's holder; on the table the places of the two instruments:
- * the multimeter's (`shared/instruments`, E2-6; the bench puts it in `meter`) and the oscilloscope, still a stand-in of
- * its size and colours (E2-9). The tray of parts is the hand's (`shared/hand/tray.ts`), the wires of these things are
- * `fixed.ts`'s.
+ * real marks of `shared/parts` (E2-4) — and the magnifier's holder; on the table the places of the two instruments
+ * (`shared/instruments`): the multimeter's (E2-6; the bench puts it in `meter`) and the oscilloscope's (E2-9; in
+ * `scope`). The tray of parts is the hand's (`shared/hand/tray.ts`), the wires of these things are `fixed.ts`'s.
  */
 import { Group, Object3D, Vector3 } from 'three';
 import { Builder } from '@/kit';
@@ -42,7 +41,8 @@ export interface Props {
   things: { readonly battery: PartView; readonly player: PartView; readonly speaker: PartView };
   /** The battery's switch: the yellow slider on the box's lid. */
   slider: SliderModel;
-  /** The instruments' groups (world), placed by `place`: the multimeter's case goes into `meter`. */
+  /** The instruments' groups (world), placed by `place`: the multimeter's case goes into `meter`, the oscilloscope's
+   * into `scope`. */
   meter: Group;
   scope: Group;
   /** 0 = open (the thumb pushed to the left, the gap shows) … 1 = closed. */
@@ -51,20 +51,6 @@ export interface Props {
   place(meter: number, scope: number): void;
   /** Every frame: the prints of the permanent things («9 V», «8 Ω», «6 V») where they can be read. */
   view(eye: PartEye): void;
-}
-
-/** The oscilloscope on the table, its face toward the reader: a dark screen with no trace yet (VISUAL §5.2). */
-function scope(): Group {
-  const { width: W, depth: D, height: H } = PLACES.scope;
-  const b = new Builder('scope');
-  b.box(W, H, D, { r: 0.12, c: 'slate' });
-  b.box(W - 0.14, H - 0.14, 0.02, { at: [0, 0.07, D / 2], r: 0.04, c: 'ink' });
-  b.box(1.6, 1.28, 0.02, { at: [-0.25, 0.3, D / 2 + 0.012], r: 0.03, slot: 'gloss', c: 'bg.deep' });
-  for (const y of [0.55, 1.0, 1.45])
-    b.cyl(0.09, 0.06, { at: [0.85, y, D / 2], rot: [Math.PI / 2, 0, 0], seg: 20, c: 'mist' });
-  const group = b.build().group;
-  group.name = 'scope';
-  return group;
 }
 
 export function createProps(): Props {
@@ -99,10 +85,11 @@ export function createProps(): Props {
 
   const onTable = new Group();
   onTable.name = 'table-props';
-  // the multimeter's place: the bench puts the instrument in it
+  // the instruments' places: the bench puts the multimeter and the oscilloscope in them
   const m = new Group();
   m.name = 'meter';
-  const s = scope();
+  const s = new Group();
+  s.name = 'scope';
   onTable.add(m, s);
 
   const at = new Vector3();

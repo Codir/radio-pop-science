@@ -13,6 +13,10 @@
  * - An error of the model on the main thread gives no block; the next `pump` tries again. The stream writes at most
  *   one `console.error` in its life.
  * - The stream numbers the samples (`first`), so they run on when the model starts again on the main thread.
+ * - New probes (`probes`, an oscilloscope's probe moved: E2-9) go with the next request, once; the model plays on.
+ *   `restart` (a step's own new board, its parts new and whole: E2-9) starts the model again from the operating point
+ *   of the board given, in the thread with a new `init` (the reply to the request on its way then is not taken) or on
+ *   the main thread; the samples are numbered on.
  * - `createStream` puts its own `dispose` into `ctx.onDispose` (two copies of a chapter may live side by side at a
  *   boundary, so the thread belongs to the mount, never to the module); a reply after `dispose` changes nothing.
  *
@@ -21,7 +25,7 @@
 import type { ChapterContext } from '@/engine/api';
 import type { Netlist } from '@electronics/sim/core';
 import { createHandler, type Handler } from './handler';
-import type { BlockReply, BlockRequest, FromWorker, StreamSetup, ToWorker } from './protocol';
+import type { BlockReply, BlockRequest, FromWorker, ProbeSpec, StreamSetup, ToWorker } from './protocol';
 
 export type StreamMode = 'worker' | 'sync';
 
@@ -48,12 +52,17 @@ export interface Stream {
   readonly blocks: number;
   /** A request is on its way. */
   readonly busy: boolean;
-  /** How many boards have been given (the setup's is the first): a block carries the revision it was asked with. */
+  /** How many boards and lists of probes have been given (the setup's is the first): a block carries the revision it
+   * was asked with. */
   readonly revision: number;
   /** How long the model took for its last block, ms (NaN before the first). */
   readonly ms: number;
   /** A new board: the next request carries it, and the model goes on with it from its last moment. */
   board(net: Netlist): void;
+  /** New probes (the same list again changes nothing): the next request carries them, the model plays on. */
+  probes(list: readonly ProbeSpec[]): void;
+  /** The model starts again from the operating point of `net` (a step's own board): the samples are numbered on. */
+  restart(net: Netlist): void;
   /** Once per engine update: a request (or, on the main thread, a block) while the output wants one. */
   pump(): void;
   dispose(): void;
@@ -85,9 +94,11 @@ export function createStream(ctx: ChapterContext, setup: StreamSetup, opts: Stre
   /** The stream's index of the next block's first sample. */
   let next = 0;
   let net = setup.net;
+  let probes: readonly ProbeSpec[] = setup.probes;
   let revision = 1;
-  /** The revision the model on the current path has. */
-  let sent = 1;
+  /** The board and the probes the model on the current path has (a request carries what it has not). */
+  let netSent = true;
+  let probesSent = true;
   let blocks = 0;
   let ms = Number.NaN;
   let complained = false;
@@ -103,10 +114,18 @@ export function createStream(ctx: ChapterContext, setup: StreamSetup, opts: Stre
   };
 
   const ask = (): BlockRequest => {
-    const request: BlockRequest = { seq: ++seq, first: next, net: sent === revision ? null : net, revision };
-    sent = revision;
+    const request: BlockRequest = {
+      seq: ++seq,
+      first: next,
+      net: netSent ? null : net,
+      ...(probesSent ? {} : { probes }),
+      revision,
+    };
+    netSent = probesSent = true;
     return request;
   };
+  /** The setup the model starts with now: the board and the probes of this moment. */
+  const now = (): StreamSetup => ({ ...setup, net, probes });
 
   const take = (reply: BlockReply): void => {
     next = reply.first + setup.block;
@@ -172,7 +191,7 @@ export function createStream(ctx: ChapterContext, setup: StreamSetup, opts: Stre
     if (local === null) {
       if (refused === revision) return;
       const h = createHandler(clockMs);
-      const out = h.handle({ type: 'init', setup: structuredClone({ ...setup, net }) });
+      const out = h.handle({ type: 'init', setup: structuredClone(now()) });
       if (out?.reply.type !== 'ready') {
         refused = revision;
         complain(
@@ -181,7 +200,7 @@ export function createStream(ctx: ChapterContext, setup: StreamSetup, opts: Stre
         return;
       }
       local = h;
-      sent = revision;
+      netSent = probesSent = true;
     }
     const request = ask();
     const out = local.handle({
@@ -213,6 +232,37 @@ export function createStream(ctx: ChapterContext, setup: StreamSetup, opts: Stre
       if (disposed) return;
       net = board;
       revision++;
+      netSent = false;
+    },
+
+    probes(list) {
+      if (disposed) return;
+      const same =
+        list.length === probes.length &&
+        list.every((p, k) => JSON.stringify(p) === JSON.stringify(probes[k]));
+      if (same) return;
+      probes = list.map((p) => ({ ...p }));
+      revision++;
+      probesSent = false;
+    },
+
+    restart(board) {
+      if (disposed) return;
+      net = board;
+      revision++;
+      // the model of this moment starts again: the request on its way (if any) is not taken
+      pending = null;
+      local = null;
+      refused = 0;
+      const w = worker;
+      if (mode !== 'worker' || w === null) return;
+      ready = false;
+      netSent = probesSent = true;
+      try {
+        w.postMessage({ type: 'init', setup: now() });
+      } catch (e) {
+        fail(told(e));
+      }
     },
 
     pump() {

@@ -7,8 +7,10 @@
  * scale, needle and number are not taken: the bench's meter is digital and its number is in the step's panel.
  *
  * A probe takes no socket of the board: its socket is its own (`socket`), and it goes into any socket — one a leg or a
- * plug is in too, touching the top of what is there — but the other probe's. Red (`coral`) and black (`ink`) as a
- * real meter's (plan decision 9); its grip is the hand's `cyan` capsule on the handle (`hand/grips.ts`).
+ * plug is in too, touching the top of what is there — but the other probe's. The multimeter's are red (`coral`) and
+ * black (`ink`) as a real meter's (plan decision 9); the oscilloscope's have an `ink` handle with a ring of their
+ * channel's colour (`lime`, `magenta`: VISUAL §5.2) and an `ink` lead. Its grip is the hand's `cyan` capsule on the
+ * handle (`hand/grips.ts`).
  *
  * Board frame: the tip, the body and the lead live in the breadboard's group; the meter tells it every frame where its
  * jack is, which way is up and where its rest is.
@@ -20,7 +22,11 @@ import { K, type ColorLike } from '@/style';
 import type { SocketId } from '@electronics/sim/board';
 import { DynTube, resample } from '../bench/dyn-tube';
 import { Leg, type LegWorld, type Place, type ProbeEnd } from '../hand';
-import type { ProbeName } from './meter-model';
+
+/** A probe's colours: its handle (and lead) and the guard's ring by the needle; one colour is both. */
+export type ProbeColors = ColorLike | { readonly handle: ColorLike; readonly ring: ColorLike };
+const colorsOf = (c: ProbeColors): { handle: ColorLike; ring: ColorLike } =>
+  typeof c === 'object' && c !== null && 'handle' in c ? c : { handle: c, ring: c };
 
 /** The probe along its axis from the tip (VISUAL §5.1): the needle, the guard, the handle, the cap. */
 export const PROBE = {
@@ -49,8 +55,8 @@ const TOUCH = new Vector3(0, 0.07, 0.07);
 
 const UP = new Vector3(0, 1, 0);
 
-export interface Probe extends ProbeEnd {
-  readonly name: ProbeName;
+export interface Probe<N extends string = string> extends ProbeEnd {
+  readonly name: N;
   /** The needle, the guard, the handle and the cap (board frame). */
   readonly body: Group;
   /** The lead from the jack. */
@@ -91,12 +97,12 @@ export interface ProbeWorld extends LegWorld {
 }
 
 /** The probe's body along +y from the tip at the origin (copied in its shape from the gauge's `buildProbe`). */
-function buildProbe(name: ProbeName, color: ColorLike): Group {
+function buildProbe(name: string, colors: { handle: ColorLike; ring: ColorLike }): Group {
   const b = new Builder(`probe-${name}`);
   const { needle, needleRadius, guard, guardRadius, handle, radius, cap } = PROBE;
   b.cyl(needleRadius, needle, { at: [0, 0, 0], axis: 'y', seg: 10, slot: 'metal', c: ['steel', 'mist'], bevel: 0.006 });
-  b.cyl(guardRadius, guard, { at: [0, needle, 0], axis: 'y', seg: 16, c: color, bevel: 0.012 });
-  b.cyl(radius, handle, { at: [0, needle + guard, 0], axis: 'y', seg: 16, slot: 'gloss', c: color, bevel: 0.02 });
+  b.cyl(guardRadius, guard, { at: [0, needle, 0], axis: 'y', seg: 16, c: colors.ring, bevel: 0.012 });
+  b.cyl(radius, handle, { at: [0, needle + guard, 0], axis: 'y', seg: 16, slot: 'gloss', c: colors.handle, bevel: 0.02 });
   b.cyl(radius * 0.8, cap, { at: [0, needle + guard + handle, 0], axis: 'y', seg: 12, c: 'ink', bevel: 0.015 });
   const group = b.build().group;
   group.name = `probe:${name}`;
@@ -104,7 +110,14 @@ function buildProbe(name: ProbeName, color: ColorLike): Group {
   return group;
 }
 
-export function createProbe(name: ProbeName, color: ColorLike, world: ProbeWorld): Probe {
+/** A probe `name` of its instrument, its tip reaching `reach` from its jack in plan (the multimeter's by default). */
+export function createProbe<N extends string>(
+  name: N,
+  color: ProbeColors,
+  world: ProbeWorld,
+  reach: number = PROBE_LEAD.reach,
+): Probe<N> {
+  const colors = colorsOf(color);
   const restAt = new Vector3();
   const restAxis = new Vector3(0, 0, 1);
   const rest: Place = { kind: 'rest', at: restAt };
@@ -117,9 +130,9 @@ export function createProbe(name: ProbeName, color: ColorLike, world: ProbeWorld
     ground: (x, z) => world.ground(x, z),
   };
   const leg = new Leg(tipWorld, rest);
-  const body = buildProbe(name, color);
+  const body = buildProbe(name, colors);
   const tube = new DynTube(30, 8);
-  const wire = new Mesh(tube.geometry, K.toon({ color, gloss: 0.4, highlight: 0.4 }));
+  const wire = new Mesh(tube.geometry, K.toon({ color: colors.handle, gloss: 0.4, highlight: 0.4 }));
   wire.name = `probe-lead:${name}`;
   wire.castShadow = false;
   wire.receiveShadow = true;
@@ -148,11 +161,11 @@ export function createProbe(name: ProbeName, color: ColorLike, world: ProbeWorld
     return out.copy(lying).lerp(STANDING, up).normalize();
   };
 
-  const probe: Probe = {
+  const probe: Probe<N> = {
     name,
     leg,
     from,
-    reach: PROBE_LEAD.reach,
+    reach,
     body,
     wire,
     rest,

@@ -92,7 +92,7 @@ export interface Multimeter {
   readonly body: Group;
   /** The probes and their leads (board frame). */
   readonly leads: Group;
-  readonly probes: ReadonlyMap<ProbeName, Probe>;
+  readonly probes: ReadonlyMap<ProbeName, Probe<ProbeName>>;
   /** The dial's position: a step's or the panel's (default `V`). */
   mode: MeterMode;
   /** Where each tip is. */
@@ -178,7 +178,7 @@ export function createMultimeter(world: MeterWorld): Multimeter {
   leads.name = 'meter-leads';
   world.frame.add(leads);
   const sockets: Record<ProbeName, SocketId | null> = { red: null, black: null };
-  const probes = new Map<ProbeName, Probe>();
+  const probes = new Map<ProbeName, Probe<ProbeName>>();
   for (const name of PROBE_NAMES) {
     const pw: ProbeWorld = {
       socket: (id, out) => world.socket(id, out),

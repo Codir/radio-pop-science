@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { type Probe, Transient } from '@electronics/sim/core';
 import { BOARD_NODES, BOARD_PROBES, filterBoard } from '../board';
 import { createHandler } from '../handler';
-import type { BlockReply, StreamSetup, ToWorker } from '../protocol';
+import type { BlockReply, BlockRequest, StreamSetup, ToWorker } from '../protocol';
 
 const RATE = 24000;
 const BLOCK = 512;
@@ -12,9 +12,15 @@ const setup = (ohms: number | null = 1000): StreamSetup => ({
   block: BLOCK,
   probes: BOARD_PROBES,
 });
+const request = (seq: number, net: StreamSetup['net'] | null = null): BlockRequest => ({
+  seq,
+  first: (seq - 1) * BLOCK,
+  net,
+  revision: net === null ? 1 : 2,
+});
 const block = (seq: number, net: StreamSetup['net'] | null = null): ToWorker => ({
   type: 'block',
-  request: { seq, first: (seq - 1) * BLOCK, net, revision: net === null ? 1 : 2 },
+  request: request(seq, net),
 });
 
 function ready(s: StreamSetup = setup()) {
@@ -74,6 +80,27 @@ describe('the stream handler', () => {
     const [sound] = ref.next();
     expect(r.revision).toBe(2);
     expect(r.samples[0]).toEqual(sound);
+  });
+
+  it('a request with probes records them from that block on; the board plays on (E2-9: a scope’s probe moved)', () => {
+    const h = ready();
+    const ref = reference(1000);
+    replyOf(h.handle(block(1)));
+    ref.next();
+    const probes = [{ node: BOARD_NODES.player }, { node: BOARD_NODES.output }, { node: 0 }];
+    const r = replyOf(h.handle({ type: 'block', request: { ...request(2), probes } }));
+    // the same transient on: its next block, with the new probes
+    const want = probes.map(() => new Float32Array(BLOCK));
+    ref.t.run(BLOCK, probes.map((p, k) => ({ ...p, out: want[k]! })));
+    expect(r.samples).toHaveLength(3);
+    expect(r.samples).toEqual(want);
+    expect(Array.from(r.samples[2]!).every((v) => v === 0)).toBe(true); // the ground
+    // the next block without probes keeps them
+    expect(replyOf(h.handle(block(3))).samples).toHaveLength(3);
+    // a probe the board has not: an error, and the old probes stay
+    const bad = h.handle({ type: 'block', request: { ...request(4), probes: [{ part: 'R99' }] } });
+    expect(bad?.reply).toEqual({ type: 'error', message: 'no part R99 on the board' });
+    expect(replyOf(h.handle(block(5))).samples).toHaveLength(3);
   });
 
   it('the reply carries arrays of its own, and they are in transfer', () => {

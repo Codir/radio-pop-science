@@ -19,21 +19,30 @@
  * no reading of the circuit now on the board until one succeeds — never a NaN, never the zeros of the failure.
  *
  * The model's time passes frame by frame (`advance`, the frame's dt, after the sync): every part's heat moves toward its
- * load (E1-4's `advanceHeat`), and a part that burns is a gap from the same frame on — the driver solves again at once
- * and tells its id once. `part(id)` is what the bench shows of a part: its condition, load, heat and a lamp's filament.
+ * load (E1-4's `advanceHeat`), and a part that burns — or an electrolytic that bulges (E1-5) — is changed in the
+ * circuit from the same frame on: the driver solves again at once and tells its id once. `part(id)` is what the bench
+ * shows of a part: its condition (a burnt part stays `burnt` and a bulged can `bulged` wherever it is moved, until it
+ * leaves the bench), load, heat and a lamp's filament.
+ *
+ * A held page (`?freeze`) shows the oscilloscope's window from `still` (plan decision 16): the circuit on the board in
+ * time, computed at once from its operating point — warmed up for max(0.2 s, 5 τmax), τmax the longest time constant of
+ * its capacitors (`tauMax`), then the samples asked for. The model in time on a live page is the stream's (`live.ts`).
  */
 import {
   PARTS,
+  Transient,
   advanceHeat,
   compile,
   createModelState,
   memoryOf,
+  resistorKey,
   solveDC,
   type Circuit,
   type Condition,
   type DcFailure,
   type DcSolution,
   type ModelState,
+  type Netlist,
   type PartInstance,
   type PartReading,
 } from '@electronics/sim/core';
@@ -128,7 +137,60 @@ export interface BenchModel {
    * null when the board has no circuit yet or the meter's own solve fails. Its own state: the bench's is untouched.
    */
   ohms(a: number, b: number): number | null;
+  /**
+   * The longest time constant of the circuit now on the board (s): of every capacitor, its capacitance times the
+   * resistance the circuit at its operating point shows between its pins (a small test current through them: the
+   * capacitor's own leak and series resistance included, every other capacitor open). 0 with no capacitor or no
+   * solve.
+   */
+  tauMax(): number;
+  /**
+   * A held page's oscilloscope (plan decision 16): the circuit now on the board in time at `fs` samples a second, from
+   * its operating point, warmed up for `STILL.warmup(tauMax())`, then `count` samples of each tap (a node's voltage or
+   * the current into a part's first pin, as the stream's probes). The bench's memory goes in — a burnt part is a gap,
+   * a bulged can its leak, every part as warm as it is — and nothing of the bench's is written. The same board, the
+   * same samples. Null while the board has no good solve, or when a moment of it has none.
+   */
+  still(window: StillWindow): Still | null;
 }
+
+/** What `still` computes: the rate, how many samples after the warm-up, what to record. */
+export interface StillWindow {
+  readonly fs: number;
+  readonly count: number;
+  readonly taps: readonly StillTap[];
+  /** Steps of integration a sample (1 when absent; the stream's). */
+  readonly substeps?: number;
+}
+
+/** A node's voltage, or the current into the first pin of a part (`sim/core` `Probe` without its array). */
+export type StillTap = { readonly node: number } | { readonly part: string };
+
+export interface Still {
+  /** The model's time before the first sample (s). */
+  readonly warmup: number;
+  /** The longest time constant it was warmed up by (s). */
+  readonly tau: number;
+  /** A channel a tap. */
+  readonly samples: Float32Array[];
+}
+
+/**
+ * The warm-up of a held page's window (plan decision 16: max(0.2 s, 5 τmax)), rounded up to a whole beat of the
+ * volume's melody (0.5 s at 120 beats a minute: two boards of one step that differ in a part show the same stretch of
+ * the music) and held to `max` — an RC behind an open switch has τ of minutes (its capacitor's own leak), and a
+ * circuit of direct currents is at rest from its operating point on anyway.
+ */
+export const STILL = {
+  least: 0.2,
+  taus: 5,
+  beat: 0.5,
+  max: 2,
+  warmup(tau: number): number {
+    const want = Math.max(STILL.least, STILL.taus * (Number.isFinite(tau) ? tau : Infinity));
+    return Math.min(STILL.max, Math.ceil(want / STILL.beat - 1e-9) * STILL.beat);
+  },
+} as const;
 
 /**
  * The ohmmeter's source (the plan's decision, made in task E2-6): 5 V behind 10 kΩ — at most 0.5 mA, a small test
@@ -142,6 +204,11 @@ const OHM_SOURCE = 'OHM-V';
 const OHM_SERIES = 'OHM-R';
 /** A current smaller than this (A) is the rounding of none: no path between the probes. */
 const NO_CURRENT = 1e-15;
+/**
+ * The test current of `tauMax`: 5 V behind 10 MΩ, at most 0.5 μA — small against a transistor's bias, so the
+ * resistance it sees is the circuit's at its operating point.
+ */
+const TAU_TEST = { source: 'ideal-5v', series: resistorKey(10e6), source_id: 'TAU-V', series_id: 'TAU-R' } as const;
 /** The kinds the ohmmeter takes out of the circuit: what gives power (the batteries, the references, the player). */
 const SOURCES: ReadonlySet<string> = new Set(['battery', 'source', 'player']);
 
@@ -203,6 +270,48 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
     if (dc.ok) solution = dc;
   };
 
+  /** A state of its own with the bench's damage and heat (a burnt part a gap, a bulged can its leak): what a solve
+   * of the meter or a held page starts from, so that nothing of the bench's is written. */
+  const damaged = (parts: readonly PartInstance[], heat = false): ModelState => {
+    const own = createModelState();
+    for (const p of parts) {
+      const m = state.parts.get(p.id);
+      if (!m) continue;
+      if (m.burnt) memoryOf(own, p.id).burnt = true;
+      if (m.bulged) memoryOf(own, p.id).bulged = true;
+      if (heat && m.heat > 0) memoryOf(own, p.id).heat = m.heat;
+    }
+    return own;
+  };
+
+  let tauMemo: { version: number; value: number } | null = null;
+  /** The longest time constant of `net`'s capacitors at its operating point (`BenchModel.tauMax`). */
+  const tauOf = (net: Netlist): number => {
+    const caps = net.parts.filter((p) => PARTS[p.spec]?.kind === 'capacitor');
+    if (caps.length === 0) return 0;
+    const base = solveDC(net, { state: damaged(net.parts) });
+    if (!base.ok) return 0;
+    let tau = 0;
+    for (const c of caps) {
+      const spec = PARTS[c.spec]!;
+      if (spec.kind !== 'capacitor') continue;
+      const [a, b] = c.pins as [number, number];
+      const inner = net.nodes;
+      const parts: PartInstance[] = [
+        ...net.parts,
+        { id: TAU_TEST.source_id, spec: TAU_TEST.source, pins: [inner, b] },
+        { id: TAU_TEST.series_id, spec: TAU_TEST.series, pins: [inner, a] },
+      ];
+      const dc = solveDC({ nodes: inner + 1, parts }, { state: damaged(net.parts) });
+      if (!dc.ok) continue;
+      const i = dc.parts[TAU_TEST.series_id]!.i;
+      if (!(Math.abs(i) > NO_CURRENT)) continue;
+      const dv = dc.v[a]! - dc.v[b]! - (base.v[a]! - base.v[b]!);
+      tau = Math.max(tau, spec.farads * Math.abs(dv / i));
+    }
+    return tau;
+  };
+
   const model: BenchModel = {
     state,
     get net() {
@@ -260,10 +369,11 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
       if (!ok || !solution) return null;
       const memory = state.parts.get(id);
       const status = solution.status[id];
-      const burnt = memory?.burnt === true;
+      // a burnt part and a bulged can stay so wherever they are moved, in the circuit or out of it
+      const failed: Condition | null = memory?.burnt === true ? 'burnt' : memory?.bulged === true ? 'bulged' : null;
       const base = {
-        condition: burnt ? ('burnt' as const) : (status?.condition ?? 'ok'),
-        load: burnt ? 0 : (status?.load ?? 0),
+        condition: failed ?? status?.condition ?? 'ok',
+        load: failed ? 0 : (status?.load ?? 0),
         heat: memory?.heat ?? 0,
       };
       return memory?.kelvin === undefined ? base : { ...base, kelvin: memory.kelvin };
@@ -294,10 +404,9 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
         { id: OHM_SOURCE, spec: OHMMETER.source, pins: [inner, b] },
         { id: OHM_SERIES, spec: OHMMETER.series, pins: [inner, a] },
       );
-      // its own memory: the burnt parts are gaps here as on the bench, and nothing of the bench's is written
-      const own = createModelState();
-      for (const p of parts) if (state.parts.get(p.id)?.burnt) memoryOf(own, p.id).burnt = true;
-      const dc = solveDC({ nodes: size + 1, parts }, { state: own });
+      // its own memory: the burnt parts are gaps here as on the bench, a bulged can its leak, and nothing of the
+      // bench's is written
+      const dc = solveDC({ nodes: size + 1, parts }, { state: damaged(parts) });
       let value: number | null = null;
       if (dc.ok) {
         const i = dc.parts[OHM_SERIES]!.i;
@@ -305,6 +414,30 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
       }
       ohmsMemo = { key, value };
       return value;
+    },
+    tauMax() {
+      if (!ok || !net) return 0;
+      if (tauMemo?.version !== version) tauMemo = { version, value: tauOf(net.net) };
+      return tauMemo.value;
+    },
+    still({ fs, count, taps, substeps }) {
+      if (!ok || !net || !(fs > 0) || !Number.isInteger(count) || count < 1) return null;
+      const tau = model.tauMax();
+      const warmup = STILL.warmup(tau);
+      try {
+        // the board as it is now, the bench's damage and heat in a state of its own
+        const board = structuredClone(net.net);
+        const t = new Transient(board, { dt: 1 / fs, substeps, state: damaged(board.parts, true) });
+        if (!t.start('dc')) return null;
+        const warm = Math.round(warmup * fs);
+        if (t.run(warm) < warm) return null;
+        const samples = taps.map(() => new Float32Array(count));
+        if (t.run(count, taps.map((tap, k) => ({ ...tap, out: samples[k]! }))) < count) return null;
+        return { warmup, tau, samples };
+      } catch {
+        // a tap the board has not: nothing to show
+        return null;
+      }
     },
   };
   return model;

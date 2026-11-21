@@ -26,7 +26,12 @@ export interface BlockRequest {
   first: number;
   /** A new board for this block and the next ones (a part put in, a knob turned), or null: the same board. */
   net: Netlist | null;
-  /** How many boards the scene had given when it asked: the block carries it back. */
+  /**
+   * New probes for this block and the next ones — an oscilloscope's probe moved to another row (E2-9) — or, absent or
+   * null, the same probes. The model plays on: only what it records changes.
+   */
+  probes?: readonly ProbeSpec[] | null;
+  /** How many boards and lists of probes the scene had given when it asked: the block carries it back. */
   revision: number;
 }
 

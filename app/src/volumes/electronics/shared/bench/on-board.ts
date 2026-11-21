@@ -9,8 +9,8 @@
  * from the tray is levelled with the table on its way (`level`), and a body glows `cyan` under the pointer (`glow`).
  * `look` gives every model the circuit model's state of its part (heat, burnt, an LED's light) and a pot its setting.
  *
- * `show(id, model, sockets)` stands a model on the board that the state does not hold — a look alone, as the sandbox's
- * `bulged-look` — shown but never in the circuit.
+ * `show(id, model, sockets)` stands a model on the board that the state does not hold — a look alone, shown but never
+ * in the circuit.
  *
  * Local frame of `group` = the board's own frame (add it to `BoardView.group`).
  */

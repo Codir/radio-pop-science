@@ -35,7 +35,7 @@ import {
   type RowId,
   type SocketId,
 } from '@electronics/sim/board';
-import { createBenchModel } from '../driver';
+import { STILL, createBenchModel } from '../driver';
 
 const layout = createLayout();
 const node = (row: string) => layout.node(row);
@@ -780,3 +780,94 @@ function amplifierBuilt(net: Netlist): BoardState {
   setSetting(s, 'SW', 1);
   return s;
 }
+
+describe('a bulged electrolytic (E1-5) on the bench, apart from a burnt part (E2-9)', () => {
+  /** + rail → J1 → 3ae → 100 μF / 6.3 V the wrong way round (minus 3ae, plus 4ae) → 4ae → J2 → − rail. */
+  function reversed(): BoardState {
+    const s = createBoardState();
+    expect(put(layout, s, { id: 'J1', spec: 'jumper', legs: ['+3', 'a3'] })).toBe(true);
+    expect(place(layout, s, { id: 'C1', spec: 'electrolytic-100u-6v3', anchor: 'c4', o: 2 })).toBe(true);
+    expect(s.parts.get('C1')!.legs).toEqual(['c4', 'c3']); // plus in 4ae, minus in 3ae: 9 V the wrong way round
+    expect(put(layout, s, { id: 'J2', spec: 'jumper', legs: ['e4', '-4'] })).toBe(true);
+    setSetting(s, 'SW', 1);
+    return s;
+  }
+
+  it('bulges after ≈ 1.2 s, told once; stays «bulged» in the circuit and out of it; the ohmmeter reads its 1 kΩ', () => {
+    const board = reversed();
+    const model = createBenchModel({ layout, board });
+    model.sync();
+    expect(model.part('C1')).toMatchObject({ condition: 'hot' });
+    const told: { id: string; t: number }[] = [];
+    for (let k = 1; k <= 120; k++) for (const id of model.advance(1 / 60)) told.push({ id, t: k / 60 });
+    // load 9 (9 V against its 1 V the wrong way round), τ 10 s: 10 · ln(9 / 8) = 1.18 s
+    expect(told.map((x) => x.id)).toEqual(['C1']);
+    expect(told[0]!.t).toBeCloseTo(10 * Math.log(9 / 8), 1);
+    expect(model.part('C1')).toMatchObject({ condition: 'bulged', load: 0 });
+    // its leak of 1 kΩ (BULGED_OHMS) across the battery, not its healthy one: 9 mA
+    expect(model.reading('C1')!.i).toBeCloseTo(-9 / 1000, 3);
+    expect(model.ohms(node('3ae'), node('4ae'))!).toBeCloseTo(1000, -1);
+    // taken out of the circuit by a leg, it stays bulged (not «ok» as a part out of the circuit would be)
+    expect(seatLeg(layout, board, 'C1', 1, null)).toBe(true);
+    model.sync();
+    expect(model.part('C1')!.condition).toBe('bulged');
+    // a new part under the id (a step's preset): whole again
+    model.forget('C1');
+    expect(seatLeg(layout, board, 'C1', 1, 'c3')).toBe(true);
+    model.sync();
+    expect(model.part('C1')!.condition).toBe('hot');
+  });
+});
+
+describe('the longest time constant and a held page’s window (E2-9)', () => {
+  /** + rail → J1 → 3ae → 10 kΩ → 7ae → 100 μF (plus 7ae, minus 8ae) → J2 → − rail. */
+  function rc(closed: boolean): BoardState {
+    const s = createBoardState();
+    expect(put(layout, s, { id: 'J1', spec: 'jumper', legs: ['+3', 'a3'] })).toBe(true);
+    expect(place(layout, s, { id: 'R1', spec: 'resistor-10k', anchor: 'b3', o: 0 })).toBe(true);
+    expect(place(layout, s, { id: 'C1', spec: 'electrolytic-100u-16v', anchor: 'c7', o: 0 })).toBe(true);
+    expect(put(layout, s, { id: 'J2', spec: 'jumper', legs: ['e8', '-8'] })).toBe(true);
+    setSetting(s, 'SW', closed ? 1 : 0);
+    return s;
+  }
+
+  it('9 V through 10 kΩ into 100 μF: τ = R·C ≈ 1 s with the switch closed; its own leak alone with it open', () => {
+    const closed = createBenchModel({ layout, board: rc(true) });
+    closed.sync();
+    // C · (ESR + (10 kΩ + 1.5 Ω + the wires) ∥ the leak of 2.581 MΩ)
+    const r = 10001.5 + 3 * WIRE_OHMS;
+    const leak = 2.581e6;
+    expect(closed.tauMax()).toBeCloseTo(100e-6 * (2.653 + (r * leak) / (r + leak)), 3);
+    const open = createBenchModel({ layout, board: rc(false) });
+    open.sync();
+    expect(open.tauMax()).toBeGreaterThan(200);
+    // no capacitor: none
+    const d = createBenchModel({ layout, board: divider(true) });
+    d.sync();
+    expect(d.tauMax()).toBe(0);
+  });
+
+  it('the warm-up: max(0.2 s, 5 τ) on a whole beat of the melody, at most 2 s', () => {
+    expect([0, 0.05, 0.1, 0.15, 0.3, 1, Infinity, Number.NaN].map((t) => STILL.warmup(t))).toEqual([
+      0.5, 0.5, 0.5, 1, 1.5, 2, 2, 2,
+    ]);
+  });
+
+  it('the window: the bench’s damage goes in (a burnt resistor a gap), nothing of the bench’s is written', () => {
+    const model = createBenchModel({ layout, board: rc(true) });
+    model.sync();
+    const taps = [{ node: node('7ae') }];
+    const whole = model.still({ fs: 24000, count: 240, taps })!;
+    // from the operating point: the capacitor charged to its leak's divider of 9 V (sim/core README, «Capacitors»)
+    expect(whole.samples[0]![0]!).toBeCloseTo(8.965, 2);
+    expect(whole.samples[0]![239]!).toBeCloseTo(8.965, 2);
+    const before = JSON.stringify([...model.state.parts]);
+    model.still({ fs: 24000, count: 240, taps });
+    expect(JSON.stringify([...model.state.parts])).toBe(before);
+    memoryOf(model.state, 'R1').burnt = true;
+    const gap = model.still({ fs: 24000, count: 240, taps })!;
+    expect(Math.abs(gap.samples[0]![0]!)).toBeLessThan(1e-6);
+    // a tap the board has not: no window
+    expect(model.still({ fs: 24000, count: 240, taps: [{ part: 'R99' }] })).toBeNull();
+  });
+});

@@ -4,9 +4,10 @@
  *
  * - `init` compiles the board into a `Transient` at the setup's rate, starts it from the operating point and makes
  *   one array per probe; a second `init` replaces it all (that is how the model starts again).
- * - `block` takes the request's board, if it has one (`Transient.rebuild`: time and charges run on), and runs one
- *   block. The model writes into its own arrays block after block, so the reply carries copies — new buffers, which
- *   make the transfer list. `ms` is the clock's reading after the model minus before it.
+ * - `block` takes the request's board, if it has one (`Transient.rebuild`: time and charges run on), then its
+ *   probes, if it has them (an oscilloscope's probe moved: new arrays, the model plays on), and runs one block. The
+ *   model writes into its own arrays block after block, so the reply carries copies — new buffers, which make the
+ *   transfer list. `ms` is the clock's reading after the model minus before it.
  * - A block before `init`, a board without an operating point, a malformed board or probe, or any exception of the
  *   model is an `error` reply, never an exception out of here.
  */
@@ -58,9 +59,16 @@ export function createHandler(now: () => number): Handler {
       if (msg.type !== 'block') return null;
       if (playing === null) return failed('stream: block before init');
       const { seq, first, net, revision } = msg.request;
-      const { transient, block, probes } = playing;
+      const { transient, block } = playing;
       try {
         if (net !== null) transient.rebuild(net);
+        const asked = msg.request.probes;
+        if (asked) {
+          const own = asked.map((p): Probe => ({ ...p, out: new Float32Array(block) }));
+          transient.run(0, own); // the probes are checked before the block; a bad one keeps the old ones
+          playing.probes = own;
+        }
+        const { probes } = playing;
         const before = now();
         const steps = transient.run(block, probes);
         const ms = now() - before;
