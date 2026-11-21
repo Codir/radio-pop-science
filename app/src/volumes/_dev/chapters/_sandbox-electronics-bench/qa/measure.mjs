@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-/* global process, console, window, document, performance */
+/* global process, console, window, document, performance, requestAnimationFrame, URL */
 // Browser check and measurements of the sandbox `_dev/_sandbox-electronics-bench` (a dev or preview server up; the
 // skeleton — arguments, `report` / `check` / verdict, `open`, `held` — is copied from the radio sandbox's
 // `qa/measure.mjs`, docs/volumes/electronics/REUSE.md «Копії»; the sections are the bench's own):
 //
 //   node app/src/volumes/_dev/chapters/_sandbox-electronics-bench/qa/measure.mjs --port 5480 --out <dir>
-//        [--only room,…,film,scope] [--size 1280x720] [--touch]
+//        [--only room,…,scope,sound,repeat,leaks] [--size 1280x720] [--touch]
 //
 // Sections (`--only`, default all):
 //   room  — step `room` on a held page (`?freeze`): the bench's reader `electronics-bench` (204 sockets, 36 rows),
@@ -94,6 +94,25 @@
 //           moment `since` + τ = 1 s is 63.2 % ± 0.5 % of 9 V (E1-5's tolerance), channel 1 at 9 V; a live page of
 //           `scope` (no `freeze`): the model in the background thread (`mode` worker), the first sweep ≤ 5 s after the
 //           page settled, sweeps and blocks keep coming; the console; snapshots `scope-<what>-<size>.jpg`.
+//   sound — the speaker in sound (E2-10), step `sound` (the player → a 10 kΩ pot as the volume control → the speaker)
+//           on a live page WITHOUT `noaudio` (the QA helpers add it: the address is built here, G31): before the
+//           gesture the output waits and the model plays silently on the engine's clock; a real click on the scene
+//           where the canvas is on top and no part is (G1: `ctx.gesture`; the board unchanged by it) — the output on
+//           the context's clock at 24 kHz, the model in its thread; 10 s of sound: no underrun, ≥ 90 % of the blocks of
+//           10 s played, the latency ≤ 0.25 s, two contexts (the engine's and the bench's); the sound off in the
+//           engine's settings → the gain 0 (asked and applied), on at volume 0.5 → 0.5² × 0.55; the volume slider at 0
+//           (`__ui.set`) → every block the model computed after the knob turned has the level 0 at the output (its
+//           samples, not a microphone), at 1 → the level back; the console; then a page WITH `?noaudio` and a click:
+//           no `AudioContext` made at all (an init script counts every one, `window.__qaAudio`), the output `off` on
+//           the engine's clock, the model playing on in its thread; snapshot `sound-<size>.jpg`.
+//   repeat — step `sound` on two held pages (`?freeze`, one after the other; 1 s held, then 60 steps): the speaker's
+//           blocks on the main thread are the same — the same count and the same `electronics-sound.hash` of every
+//           sample given to the output, the melody in them; the console.
+//   leaks — step `sound` on a live page without `noaudio`, clicked: three visits to `_dev/_sandbox-ui` and back —
+//           while away no background thread and no live context of the bench (the engine's own one stays); after each
+//           return one thread and the sound running again; geometries, textures and programs after the 3rd return not
+//           above the 1st; five contexts made (the engine's and four of the bench), two live; the console (but the
+//           one known warning of `_sandbox-ui`).
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-electronics-bench — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -1980,9 +1999,326 @@ async function scope(context) {
   }
 }
 
+/* ------------------------------------------------------------------------------- sections sound, repeat, leaks */
+
+/** The chapter the visits of `leaks` go to and come back from (as the radio sandbox's). */
+const ELSEWHERE = '_sandbox-ui';
+/**
+ * The one console message `leaks` leaves out: `_dev/_sandbox-ui` shows a WebGL-only custom control on purpose
+ * (`_sandbox-ui/parts/dom-widgets.ts`, id 'legacy') and the DOM interface warns about it on every visit.
+ */
+const VISIT_WARNING = "hud-dom: custom control 'legacy' has no 'dom' widget";
+const visitWarning = (m) => m.level === 'warn' && m.message.startsWith(VISIT_WARNING);
+/** How long the sound may take to start after the click, a thread to stop after an exit (ms). */
+const SOUND_WITHIN_MS = 8000;
+const LISTEN_S = 10;
+/** The share of the blocks of LISTEN_S that must have played, and the latency's limit (E1-9's check). */
+const MIN_PLAYED = 0.9;
+const MAX_LATENCY_S = 0.25;
+/** The engine's master level: the output's gain is volume² × 0.55 (`OUTPUT_LEVEL`). */
+const OUTPUT_LEVEL = 0.55;
+/** The blocks of a board looked at for its level. */
+const LEVEL_BLOCKS = 8;
+
+const soundNow = (page) => read(page, 'electronics-sound');
+const audioCount = (page) =>
+  page.evaluate(() => ({ made: window.__qaAudio.made(), live: window.__qaAudio.live(), rates: window.__qaAudio.rates() }));
+
+/** Waits (real time) until `test(value)` holds for `get()`, at most `limit` ms; returns the last value. */
+async function until(get, test, limit) {
+  const t0 = Date.now();
+  let v = await get();
+  while (!test(v) && Date.now() - t0 < limit) {
+    await sleep(100);
+    v = await get();
+  }
+  return v;
+}
+
+/** A page of step `sound` on the live clock, with or without `?noaudio` (the QA helpers always add it). */
+async function openLive(page, noaudio) {
+  const url = new URL(appUrl(base, { route: route('sound'), q }));
+  if (!noaudio) url.searchParams.delete('noaudio');
+  const gpu = await Promise.race([
+    openApp(page, url.toString(), { timeout: OPEN_TIMEOUT_MS }),
+    sleep(OPEN_TIMEOUT_MS).then(() => {
+      throw new Error(`no answer from ${url} within ${OPEN_TIMEOUT_MS / 1000} s`);
+    }),
+  ]);
+  report.gpu ??= gpu;
+  await page.evaluate(() => window.__app.settled());
+  return position(page);
+}
+
+/**
+ * A real click (or tap) on the scene for the engine's gesture: the first point of a grid over the top of the frame —
+ * the dark room — where the canvas is on top and no part, plug or probe of the bench is under it.
+ */
+async function clickScene(page) {
+  const point = await page.evaluate(() => {
+    for (const fy of [0.12, 0.18, 0.08, 0.25])
+      for (const fx of [0.5, 0.4, 0.6, 0.3, 0.7]) {
+        const x = Math.round(window.innerWidth * fx);
+        const y = Math.round(window.innerHeight * fy);
+        if (document.elementFromPoint(x, y)?.tagName === 'CANVAS') return { x, y };
+      }
+    return null;
+  });
+  if (point === null) throw new Error('no point of the scene where the canvas is on top');
+  // a trusted input event on the live clock (the helpers' pointer steps a held clock)
+  if (touch) await page.touchscreen.tap(point.x, point.y);
+  else await page.mouse.click(point.x, point.y);
+  return point;
+}
+
+/** The bench's sound running on the context's clock, its model in a thread. */
+const running = (r) => r?.on === true && r.state === 'running' && r.clock === 'audio' && r.mode === 'worker' && r.blocks > 3;
+
+/** Animation frames of the page (real time). */
+const frames = (page, n) =>
+  page.evaluate(
+    (count) =>
+      new Promise((resolve) => {
+        let left = count;
+        const tick = () => (--left <= 0 ? resolve() : requestAnimationFrame(tick));
+        requestAnimationFrame(tick);
+      }),
+    n,
+  );
+
+async function sound(context) {
+  const n = (report.sections.sound = {});
+  {
+    const page = await context.newPage();
+    const pos = await openLive(page, false).catch((err) => ({ error: String(err) }));
+    if (!check('sound: opened (no noaudio)', at(pos, 'sound'), where(pos))) {
+      await page.close();
+      return;
+    }
+    // before the gesture: the output waits, the model plays silently on the engine's clock
+    const before = await until(() => soundNow(page), (r) => r?.blocks > 3, SOUND_WITHIN_MS);
+    const key = (await read(page, 'electronics-board'))?.key;
+    check(
+      'sound: before the gesture the output waits; the model plays silently on the engine’s clock, the speaker in the circuit',
+      before?.on === true && before.state === 'waiting' && before.clock === 'engine' && before.speaker === true && before.blocks > 3,
+      `${before?.state}/${before?.clock}, speaker ${before?.speaker}, ${before?.blocks} blocks, mode ${before?.mode}`,
+    );
+    const click = await clickScene(page);
+    const r = await until(() => soundNow(page), running, SOUND_WITHIN_MS);
+    const after = (await read(page, 'electronics-board'))?.key;
+    const audio0 = await audioCount(page);
+    check(
+      'sound: a real click on the scene starts it — the context’s clock at 24 kHz, the model in its thread; the board as it was',
+      running(r) && after === key && audio0.rates.includes(24000),
+      `click at (${click.x}, ${click.y}): ${r?.state}/${r?.clock}, mode ${r?.mode}, ${r?.blocks} blocks; contexts at ${audio0.rates.join(', ')} Hz; board ${after === key ? 'unchanged' : 'CHANGED'}`,
+    );
+    // ten seconds of sound
+    const a = await soundNow(page);
+    const t0 = Date.now();
+    const latencies = [];
+    while (Date.now() - t0 < LISTEN_S * 1000) {
+      await sleep(250);
+      latencies.push((await soundNow(page)).latency);
+    }
+    const b = await soundNow(page);
+    const seconds = (Date.now() - t0) / 1000;
+    const blockMs = (1000 * b.block) / b.rate;
+    Object.assign(n, {
+      seconds: round(seconds, 2),
+      blockMs: round(blockMs, 1),
+      expected: Math.floor((seconds * 1000) / blockMs),
+      played: b.played - a.played,
+      underruns: b.underruns - a.underruns,
+      underrunsTotal: b.underruns,
+      blocks: b.blocks - a.blocks,
+      modelMs: round(b.ms, 2),
+      latency: { min: round(Math.min(...latencies), 3), max: round(Math.max(...latencies), 3) },
+      audio: await audioCount(page),
+      gpu: report.gpu?.renderer ?? null,
+    });
+    check(
+      `sound: ${LISTEN_S} s — no underrun, the blocks played`,
+      n.underruns === 0 && n.underrunsTotal === 0 && n.played >= MIN_PLAYED * n.expected && b.state === 'running' && b.mode === 'worker',
+      `${n.played} blocks played in ${n.seconds} s (${n.expected} fit in it), ${n.underruns} underruns (${n.underrunsTotal} since the start), the model ${n.modelMs} ms a block of ${n.blockMs} ms`,
+    );
+    check(
+      'sound: the latency — the sound planned ahead and the context’s own',
+      n.latency.max <= MAX_LATENCY_S && n.latency.min > 0,
+      `${n.latency.min} … ${n.latency.max} s (limit ${MAX_LATENCY_S})`,
+    );
+    check(
+      'sound: two contexts — the engine’s and the bench’s',
+      n.audio.made === 2 && n.audio.live === 2,
+      `${n.audio.made} made, ${n.audio.live} live, at ${n.audio.rates.join(' and ')} Hz`,
+    );
+    // the engine's settings: the sound off → silence (the gain asked and applied), on at volume 0.5
+    const set = (patch) => page.evaluate((x) => window.__app.engine.store.updateSettings(x), patch);
+    const original = await page.evaluate(() => window.__app.engine.store.get().settings);
+    await set({ audio: false });
+    const off = await until(() => soundNow(page), (x) => x.gain === 0 && Math.abs(x.gainNow) < 1e-3, 3000);
+    n.off = { gain: off.gain, gainNow: round(off.gainNow, 6), state: off.state };
+    check('sound: the sound off in the settings → silence: the gain 0', off.gain === 0 && Math.abs(off.gainNow) < 1e-3, `gain ${off.gain}, applied ${n.off.gainNow}`);
+    await set({ audio: true, volume: 0.5 });
+    const want = 0.25 * OUTPUT_LEVEL;
+    const half = await until(() => soundNow(page), (x) => Math.abs(x.gainNow - want) < 1e-3, 3000);
+    n.half = { gain: round(half.gain, 6), gainNow: round(half.gainNow, 6) };
+    check(
+      'sound: on again at volume 0.5 → 0.5² × 0.55',
+      Math.abs(half.gain - want) < 1e-9 && Math.abs(half.gainNow - want) < 1e-3,
+      `gain ${n.half.gain}, applied ${n.half.gainNow} (want ${want})`,
+    );
+    await set({ audio: original.audio, volume: original.volume });
+    // the volume knob: the level of the blocks the model computed with each setting (the output's samples)
+    const levelAt = async (value) => {
+      const s0 = (await soundNow(page)).since;
+      await page.evaluate((v) => window.__ui.set('volume', v, true), value);
+      const x = await until(
+        () => soundNow(page),
+        (s) => s.since > s0 && s.levels.filter((l) => l.first >= s.since * s.rate).length >= LEVEL_BLOCKS,
+        SOUND_WITHIN_MS,
+      );
+      const after = x.levels.filter((l) => l.first >= x.since * x.rate);
+      return {
+        value,
+        since: round(x.since, 3),
+        blocks: after.length,
+        peak: Math.max(...after.map((l) => l.peak)),
+        rms: Math.max(...after.map((l) => l.rms)),
+        setting: (await read(page, 'electronics-board'))?.settings?.P1,
+      };
+    };
+    const zero = await levelAt(0);
+    const top = await levelAt(1);
+    n.volume = { zero, top };
+    check(
+      'sound: the volume at 0 → every block after the knob turned has the level 0 at the output; at 1 the level is back',
+      zero.setting === 0 && zero.blocks >= LEVEL_BLOCKS && zero.peak === 0 && zero.rms === 0 && top.setting === 1 && top.peak > 1e-3,
+      `0: P1 ${zero.setting}, ${zero.blocks} blocks from ${zero.since} s, peak ${zero.peak}; 1: P1 ${top.setting}, peak ${round(top.peak, 5)} of full scale, RMS ${round(top.rms, 5)}`,
+    );
+    const end = await soundNow(page);
+    check('sound: still no underrun', end.underruns === 0, `${end.underruns} underruns, ${end.played} blocks played`);
+    await screenshot(page, join(out, `sound-${tag}.jpg`));
+    const errors = await appErrors(page);
+    check('sound: console', errors.length === 0, consoleText(errors));
+    await page.close();
+  }
+  // `?noaudio` and a click: no context at all, the model plays on silently
+  {
+    const page = await context.newPage();
+    const pos = await openLive(page, true).catch((err) => ({ error: String(err) }));
+    if (check('noaudio: opened', at(pos, 'sound'), where(pos))) {
+      await clickScene(page);
+      const r = await until(() => soundNow(page), (x) => x?.blocks > 20, SOUND_WITHIN_MS);
+      await sleep(1000);
+      const audio = await audioCount(page);
+      const flag = await page.evaluate(() => window.__app.engine.flags.noaudio);
+      n.noaudio = { audio, state: r?.state, clock: r?.clock, blocks: r?.blocks, mode: r?.mode, flag };
+      check(
+        'noaudio: no AudioContext made after a click; the output off on the engine’s clock',
+        flag === true && audio.made === 0 && r?.state === 'off' && r.clock === 'engine',
+        `?noaudio ${flag}: ${audio.made} AudioContext made; output ${r?.state} on the ${r?.clock} clock`,
+      );
+      check('noaudio: the model plays on silently in its thread', r?.blocks > 20 && r.mode === 'worker', `${r?.blocks} blocks, ${r?.mode}`);
+      const errors = await appErrors(page);
+      check('noaudio: console', errors.length === 0, consoleText(errors));
+    }
+    await page.close();
+  }
+}
+
+async function repeat(context) {
+  const n = (report.sections.repeat = {});
+  const visit = async () => {
+    const page = await context.newPage();
+    const pos = await open(page, 'sound', 1).catch((err) => ({ error: String(err) }));
+    if (!at(pos, 'sound')) {
+      await page.close();
+      return { pos };
+    }
+    await page.evaluate(() => window.__app.step(1 / 60, 60));
+    await held(page);
+    const s = await soundNow(page);
+    const errors = await appErrors(page);
+    await page.close();
+    return { pos, s, errors };
+  };
+  const a = await visit();
+  const b = await visit();
+  if (!check('repeat: opened (two held pages)', at(a.pos, 'sound') && at(b.pos, 'sound'), `1 ${where(a.pos)}, 2 ${where(b.pos)}`))
+    return;
+  const pick = (s) => ({ mode: s.mode, blocks: s.blocks, hash: s.hash, peak: Math.max(...s.levels.map((l) => l.peak)) });
+  n.pages = [pick(a.s), pick(b.s)];
+  const [p, r] = n.pages;
+  check(
+    'repeat: the speaker’s blocks the same on both — their count and the hash of every sample, the melody in them',
+    p.mode === 'sync' && p.blocks > 10 && p.blocks === r.blocks && p.hash === r.hash && p.hash !== '811c9dc5' && p.peak > 1e-3,
+    `${p.mode}: ${p.blocks} / ${r.blocks} blocks, hash ${p.hash} / ${r.hash}, peak ${round(p.peak, 5)}`,
+  );
+  const errors = [...a.errors, ...b.errors];
+  check('repeat: console', errors.length === 0, consoleText(errors));
+}
+
+async function leaks(context) {
+  const n = (report.sections.leaks = { trips: [] });
+  const page = await context.newPage();
+  const pos = await openLive(page, false).catch((err) => ({ error: String(err) }));
+  if (!check('leaks: opened (no noaudio)', at(pos, 'sound'), where(pos))) {
+    await page.close();
+    return;
+  }
+  await clickScene(page);
+  const first = await until(() => soundNow(page), running, SOUND_WITHIN_MS);
+  check('leaks: the sound running', running(first), `${first?.state}/${first?.clock}, ${first?.mode}`);
+  for (let i = 0; i < 3; i++) {
+    await page.evaluate((c) => window.__app.goto(c), ELSEWHERE);
+    const away = await until(
+      async () => ({ workers: page.workers().length, ...(await audioCount(page)) }),
+      (x) => x.workers === 0 && x.live === 1,
+      SOUND_WITHIN_MS,
+    );
+    await page.evaluate(([c, s]) => window.__app.goto(c, s), [CHAPTER, 'sound']);
+    const back = await until(
+      async () => ({ workers: page.workers().length, r: await soundNow(page).catch(() => null) }),
+      (x) => x.workers === 1 && running(x.r),
+      SOUND_WITHIN_MS,
+    );
+    await frames(page, 10);
+    const s = await stats(page);
+    n.trips.push({
+      away: { workers: away.workers, live: away.live },
+      back: { workers: back.workers, state: back.r?.state, mode: back.r?.mode },
+      memory: { geometries: s.geometries, textures: s.textures, programs: s.programs },
+    });
+  }
+  const audio = await audioCount(page);
+  n.audio = audio;
+  check(
+    'leaks: after each exit no thread and no live context of the bench (the engine’s own one stays)',
+    n.trips.every((t) => t.away.workers === 0 && t.away.live === 1),
+    n.trips.map((t) => `${t.away.workers} threads, ${t.away.live} live context`).join('; '),
+  );
+  check(
+    'leaks: after each return one thread and the sound running; five contexts made, two live',
+    n.trips.every((t) => t.back.workers === 1 && t.back.state === 'running') && at(await position(page), 'sound') && audio.made === 5 && audio.live === 2,
+    `${n.trips.map((t) => `${t.back.workers} thread, ${t.back.state}`).join('; ')}; contexts ${audio.made} made (the engine’s and four of the bench), ${audio.live} live`,
+  );
+  const memory = n.trips.map((t) => t.memory);
+  const grew = ['geometries', 'textures', 'programs'].filter((k) => memory[2][k] > memory[0][k]);
+  check(
+    'leaks: geometries, textures and programs do not grow',
+    grew.length === 0,
+    `after the 1st return ${JSON.stringify(memory[0])}, after the 3rd ${JSON.stringify(memory[2])}`,
+  );
+  const log = await appErrors(page);
+  n.visitMessages = log.filter(visitWarning).length;
+  const errors = log.filter((m) => !visitWarning(m));
+  check('leaks: console', errors.length === 0, `${consoleText(errors)}; left out: ${n.visitMessages} × the known '${ELSEWHERE}' warning`);
+  await page.close();
+}
+
 /* ---------------------------------------------------------------------------------------------- run */
 
-const SECTIONS = { room, shots, parts, hand, meter, heat, loupe, film, scope };
+const SECTIONS = { room, shots, parts, hand, meter, heat, loupe, film, scope, sound, repeat, leaks };
 const only =
   typeof args.only === 'string'
     ? args.only
@@ -2000,6 +2336,23 @@ if (unknown.length) {
 
 const { browser, context, page } = await launch({ width, height, dpr: touch ? 3 : 1, touch });
 await page.close(); // every section opens the pages it needs and closes them
+// every AudioContext a page makes, the engine's and the bench's (section `sound`, `leaks`)
+await context.addInitScript(() => {
+  const Base = window.AudioContext;
+  if (!Base) return;
+  const made = [];
+  window.AudioContext = class extends Base {
+    constructor(...a) {
+      super(...a);
+      made.push(this);
+    }
+  };
+  window.__qaAudio = {
+    made: () => made.length,
+    live: () => made.filter((c) => c.state !== 'closed').length,
+    rates: () => made.map((c) => c.sampleRate),
+  };
+});
 try {
   for (const name of only) {
     section = name;

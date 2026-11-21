@@ -12,7 +12,9 @@ import { defineChapter } from '@/engine/api';
  * ми» (step `loupe`); E3-5: inside the resistor — the carbon film, its groove for the value, the electrons at the
  * model's current (step `film`); E2-9: the oscilloscope — the player's music before and after a low-pass in front of
  * the amplifier (step `scope`), a capacitor charging through 10 kΩ on a rolling trace (step `rc`) — and an
- * electrolytic the wrong way round, which the model bulges (step `bulged`).
+ * electrolytic the wrong way round, which the model bulges (step `bulged`); E2-10: the speaker in sound — the player
+ * through a 10 kΩ pot as the volume control into the speaker, the volume slider in the panel (step `sound`; the bench
+ * is mounted with its option `sound`, so the speaker plays wherever it is in the circuit).
  * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
@@ -86,6 +88,11 @@ export const SANDBOX = {
       blurb:
         'Коло світлодіода з резистором 330 Ω, вимикач замкнено. Повзунок «Глибина» веде лупу на резистор і камеру всередину: лак розкривається з боку камери, видно білий керамічний стрижень, вугільну плівку з зернами й гвинтову канавку, ковпачки на кінцях. Електрони біжать доріжкою між витками зі швидкістю від струму моделі; перемикач «Резистор» ставить 10 kΩ — витків більше, доріжка вужча, а електрони повзуть.',
     },
+    sound: {
+      title: 'Звук із динаміка',
+      blurb:
+        'Плеєр грає мелодію в динамік через змінний резистор 10 kΩ — регулятор гучності: сигнал плеєра на одному кінці доріжки, земля на другому, движок веде до «+» динаміка. Повзунок «Гучність» повертає ручку; на нулі движок стоїть на землі, і динамік мовчить. Без підсилювача музику ледь чути: динамік грає лише те, що модель дала на ньому. Звук вмикається першим дотиком до сцени чи клавішею — дотик до панелі не рахується.',
+    },
   },
   /** The names under the pointer (tooltips) and on the dock's buttons of the tray (a phone). */
   names: {
@@ -127,6 +134,8 @@ export const SANDBOX = {
     },
     resistor: 'Резистор фільтра',
   },
+  /** Step `sound`: the volume slider (its value the code's per cent). */
+  sound: { volume: 'Гучність' },
   /** The dive (step `loupe`): the depth slider, its marks — the floors where they begin — and the magnifier's name. */
   loupe: {
     depth: 'Глибина',

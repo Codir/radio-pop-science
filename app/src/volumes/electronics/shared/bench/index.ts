@@ -5,12 +5,13 @@
  * the battery's switch under the hand (`switch.ts`), the tray of parts and the reader's hand (`shared/hand`), the
  * parts on the board, which stand on their legs (`on-board.ts`), the circuit model that solves what is on the board
  * (`shared/model`), the multimeter that reads it and the oscilloscope that shows it in time (`shared/instruments`,
- * the model in time `shared/model/live.ts`), and what the model's state shows: the LEDs' light (`lights.ts`), the lamp
- * lit by its filament, the heat and the burn of every part (`shared/parts/look.ts`), the wisp of a burn and a bulged
- * can's puff of steam (`smoke.ts`). A chapter
- * mounts it once in its scene factory and drives it through plain parameters (shared/README.md, «bench», «hand»,
- * «model», «instruments»). Copied in its shape from `circuit/shared/stage/index.ts` (`mountStage` → `mountBench`;
- * shared/README.md, «Копії»): no flashlight, unfolding, snail, battery cutaway or lamp close-up.
+ * the model in time `shared/model/live.ts`), with the option `sound` the speaker that plays it through the volume's
+ * own sound output (`shared/instruments/speaker.ts`), and what the model's state shows: the LEDs' light
+ * (`lights.ts`), the lamp lit by its filament, the heat and the burn of every part (`shared/parts/look.ts`), the wisp
+ * of a burn and a bulged can's puff of steam (`smoke.ts`). A chapter mounts it once in its scene factory and drives it
+ * through plain parameters (shared/README.md, «Mount», «State», «bench», «hand», «model», «instruments»). Copied in
+ * its shape from `circuit/shared/stage/index.ts` (`mountStage` → `mountBench`; docs/volumes/electronics/REUSE.md,
+ * «Копії»): no flashlight, unfolding, snail, battery cutaway or lamp close-up.
  */
 import { Box3, Group, Raycaster, Vector3, type Material, type Mesh, type Object3D } from 'three';
 import { damp, type ChapterContext } from '@/engine/api';
@@ -30,8 +31,17 @@ import {
   type PresetPart,
   type SocketId,
 } from '@electronics/sim/board';
+import { PARTS } from '@electronics/sim/core';
 import { createHands, createTerrain, createTray, type Hands, type ProbeEnd, type Raised, type Tray } from '../hand';
-import { createMultimeter, createOscilloscope, type MeterWorld, type Multimeter, type Oscilloscope } from '../instruments';
+import {
+  createMultimeter,
+  createOscilloscope,
+  createSpeaker,
+  type MeterWorld,
+  type Multimeter,
+  type Oscilloscope,
+  type Speaker,
+} from '../instruments';
 import { LIVE, createBenchModel, createLive, type BenchModel, type Live } from '../model';
 import {
   LED_LOOK,
@@ -80,6 +90,7 @@ export {
   LED_LOOP,
   createLayout,
   netlistOf,
+  setSetting,
   type BoardLayout,
   type BoardPreset,
   type BoardState,
@@ -102,6 +113,19 @@ export {
   type Hands,
   type Tray,
 } from '../hand';
+
+/** What a chapter chooses once, at the mount. */
+export interface BenchOptions {
+  /**
+   * The speaker in sound (E2-10; default false): the bench makes the volume's own sound output (`shared/sound`: an
+   * `AudioContext` of its own after the first gesture, none with `?noaudio`) and plays through it what the circuit
+   * model gives the speaker `SPK`. The model in time then runs from the mount, paced by that output — the player plays
+   * on whether the speaker is in the circuit or not — and the chapter's ambient mood is silent while the speaker is in
+   * the circuit (VISUAL §1, principle 3). Without it the bench makes no sound and no `AudioContext`, and the model in
+   * time runs only while the oscilloscope is there.
+   */
+  readonly sound?: boolean;
+}
 
 export interface Bench {
   /** Everything of the bench; already added to `ctx.root`. */
@@ -147,8 +171,11 @@ export interface Bench {
   /** The oscilloscope on the table: its scale and trigger (`settings`), its probes (`put`), its trace for the step's
    * board (`chart`); it comes and goes with `scope`, and while it is there the model plays the board in time. */
   readonly oscilloscope: Oscilloscope;
-  /** The circuit model in time (`shared/model/live.ts`): the board played at 24 000 samples a second for the scope. */
+  /** The circuit model in time (`shared/model/live.ts`): the board played at 24 000 samples a second for the scope
+   * and the speaker. */
   readonly live: Live;
+  /** The speaker in sound (the option `sound`), or null: its current through the volume's own sound output. */
+  readonly speaker: Speaker | null;
   /**
    * Lift of the unlit room 0…1 (default `BENCH_AMBIENT`): an even cool fill and a stronger moon that step back as
    * the lamp's light rises.
@@ -287,7 +314,10 @@ function raised(area: ReturnType<typeof boardArea>): Raised[] {
   ];
 }
 
-export function mountBench(ctx: ChapterContext): Bench {
+/** The bench's speaker: the fixed part `SPK` of the netlist, the catalog's `speaker-8`. */
+const SPEAKER_PART = BENCH_FIXED.find((f) => f.id === 'SPK')!;
+
+export function mountBench(ctx: ChapterContext, options: BenchOptions = {}): Bench {
   const group = new Group();
   group.name = 'electronics-bench';
   ctx.root.add(group);
@@ -335,6 +365,12 @@ export function mountBench(ctx: ChapterContext): Bench {
   ctx.onDispose(() => multimeter.dispose());
   // the circuit model of what is on the board, the meter's own part in it (the A mode)
   const model = createBenchModel({ layout, board: state, extra: () => multimeter.extra() });
+  // the speaker in sound (the option `sound`): the volume's own output, which paces the model in time
+  const spec = PARTS[SPEAKER_PART.spec];
+  const speaker =
+    options.sound === true && spec?.kind === 'speaker'
+      ? createSpeaker(ctx, { rate: LIVE.rate, ohms: spec.ohms, part: SPEAKER_PART.id })
+      : null;
   // the oscilloscope and the model in time behind it (one background thread; a held page on the main thread, its
   // window computed at once: `model.still`)
   const frozen = new URLSearchParams(globalThis.location?.search ?? '').has('freeze');
@@ -344,6 +380,7 @@ export function mountBench(ctx: ChapterContext): Bench {
     onBlock: (first, samples, steps) =>
       oscilloscope.feed(first, steps < (samples[0]?.length ?? 0) ? samples.map((x) => x.subarray(0, steps)) : samples),
     onRestart: () => oscilloscope.reset(),
+    sound: speaker ?? undefined,
   });
   const oscilloscope = createOscilloscope(instruments, LIVE.rate, live.lookahead);
   props.scope.add(oscilloscope.body);
@@ -528,9 +565,11 @@ export function mountBench(ctx: ChapterContext): Bench {
     model.sync();
     show(dt);
     multimeter.measure(dt, model, snap);
-    // the model in time while the scope is there: its probes' rows, the board, the blocks; then the sweep shown now
+    // the model in time while the scope is there, and all the time with the speaker (the player plays on): the
+    // scope's probes' rows, the board, the blocks; then the sweep shown now — with the speaker, of the sample heard now
     live.taps(oscilloscope.taps());
-    live.update(dt, bench.scope > 0);
+    live.update(dt, bench.scope > 0 || speaker !== null);
+    speaker?.circuit(model.net?.net.parts.some((p) => p.id === SPEAKER_PART.id) ?? false);
     oscilloscope.show(live.now);
     if (frozen) held(dt);
     board.highlight(hands.rows, dt);
@@ -608,6 +647,7 @@ export function mountBench(ctx: ChapterContext): Bench {
     multimeter,
     oscilloscope,
     live,
+    speaker,
     leds,
     // what is in the air, never `puff`: only `show` lets a wisp out, on the model's event
     smoke: {
@@ -799,6 +839,37 @@ export function mountBench(ctx: ChapterContext): Bench {
     shown: bench.scope,
     ready: oscilloscope.probes.get('ch1')!.ready(),
   }));
+  // `__app.read('electronics-sound')` — the speaker in sound (the option `sound`; `on` false without it): the output
+  // (its state and clock, blocks played and late, queued, the latency, the gain asked for and applied), where the model
+  // runs and what a block costs, the moment the board now was taken (`since`, s) and the sample heard now (s); whether
+  // the speaker is in the circuit, its full scale, the blocks it gave, the last blocks' levels as the output got them
+  // and the hash of every sample it gave
+  ctx.qa.expose('electronics-sound', () => {
+    if (speaker === null) return { on: false, mode: live.mode };
+    const o = speaker.output;
+    return {
+      on: true,
+      state: o.state,
+      clock: o.clock,
+      played: o.played,
+      underruns: o.underruns,
+      queued: o.queued,
+      latency: o.latency,
+      gain: o.gain,
+      gainNow: o.gainNow,
+      mode: live.mode,
+      rate: LIVE.rate,
+      block: LIVE.block,
+      ms: live.ms,
+      since: live.since,
+      heard: live.now === null ? null : live.now / LIVE.rate,
+      speaker: speaker.inCircuit,
+      fullScale: speaker.fullScale,
+      blocks: speaker.blocks,
+      levels: speaker.levels.map((l) => ({ ...l })),
+      hash: speaker.hash,
+    };
+  });
   // `__app.read('electronics-hand')` — the hand: what it holds, where a carried end would go, the preview of a carried
   // part, the lit rows, the parts it drives, how often the reader flipped the switch
   ctx.qa.expose('electronics-hand', () => ({

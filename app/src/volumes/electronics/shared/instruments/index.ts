@@ -1,9 +1,11 @@
 /**
  * The instruments of the bench (docs/volumes/electronics/VISUAL.md §5): the multimeter (`meter.ts`) with its probes
  * (`probe.ts`) and what it reads (`meter-model.ts`); the oscilloscope (`scope.ts`) with its probes, what it shows
- * (`scope-model.ts`) and the arithmetic of a sweep (`sweep.ts`). The bench mounts both (`bench.multimeter`,
- * `bench.oscilloscope`); a chapter turns the meter's dial (`mode`), sets the scope's scale (`settings`), puts their
- * probes (`put`) and shows the meter's number (`readout`) and the scope's trace (`chart`) in the step's panel.
+ * (`scope-model.ts`) and the arithmetic of a sweep (`sweep.ts`); the speaker in sound (`speaker.ts`: its current
+ * through the volume's own sound output, which paces the model in time). The bench mounts the meter and the scope
+ * (`bench.multimeter`, `bench.oscilloscope`) and, with its option `sound`, the speaker (`bench.speaker`); a chapter
+ * turns the meter's dial (`mode`), sets the scope's scale (`settings`), puts their probes (`put`) and shows the meter's
+ * number (`readout`) and the scope's trace (`chart`) in the step's panel.
  */
 export {
   METER_ID,
@@ -65,3 +67,12 @@ export {
   type Oscilloscope,
   type ScopeProbeName,
 } from './scope';
+export {
+  SPEAKER,
+  createSpeaker,
+  speakerFullScale,
+  speakerSamples,
+  type Speaker,
+  type SpeakerLevel,
+  type SpeakerOptions,
+} from './speaker';

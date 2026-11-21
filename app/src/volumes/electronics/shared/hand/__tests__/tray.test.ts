@@ -6,7 +6,7 @@
  * with its rated voltage, and every label no wider than its slot.
  */
 import { readFileSync } from 'node:fs';
-import { Box3, Vector3 } from 'three';
+import { Box3, Vector3, type Mesh } from 'three';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { NBSP } from '@/content';
 import { setFontData, type FontJson, type Text3D } from '@/text';
@@ -209,5 +209,25 @@ describe('the labels in the font (VISUAL §6)', () => {
     expect(widest.key).toMatch(/^ceramic-100[pn]$/);
     expect(widest.width).toBeCloseTo(1.12, 2);
     tray.dispose();
+  });
+});
+
+describe('the tray freed with the chapter', () => {
+  it('frees its block’s geometry and materials too: once its group leaves the tree, the teardown cannot reach them', () => {
+    const tray = createTray();
+    tray.set(['resistor-1k']);
+    const block = tray.group.getObjectByName('tray-block')!;
+    const freed = new Set<object>();
+    const own: { addEventListener(type: 'dispose', fn: () => void): void }[] = [];
+    block.traverse((o) => {
+      const mesh = o as Mesh;
+      if (!mesh.isMesh) return;
+      own.push(mesh.geometry, ...(Array.isArray(mesh.material) ? mesh.material : [mesh.material]));
+    });
+    expect(own.length).toBeGreaterThan(1);
+    for (const r of own) r.addEventListener('dispose', () => freed.add(r));
+    tray.dispose();
+    expect(tray.group.parent).toBeNull();
+    expect(freed.size).toBe(new Set(own).size);
   });
 });

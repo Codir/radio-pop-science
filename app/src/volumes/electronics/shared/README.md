@@ -1,45 +1,156 @@
 # `shared` — the bench of the volume «Радіоелектроніка»
 
 The scene's side of the volume: the dark room and the stand, the breadboard, the parts, the hand, the instruments, the
-dive through the magnifier and the bench's link to the circuit model (`sim/core`, `sim/board`). No step logic lives
-here. The look and the numbers of all of it are fixed by `docs/volumes/electronics/VISUAL.md`. Batch E2
-(`docs/superpowers/plans/2026-11-20-electronics/batch-E2.md`) builds the modules one task at a time; this file grows
-with them (task E2-10 writes the mount, the options, the state table and the readers for checks).
+speaker, the dive through the magnifier and the bench's link to the circuit model (`sim/core`, `sim/board`). No step
+logic lives here: a chapter mounts the bench, puts its step's board on it and says what the reader may take. The look
+and the numbers of all of it are fixed by `docs/volumes/electronics/VISUAL.md`. Batch E2
+(`docs/superpowers/plans/2026-11-20-electronics/batch-E2.md`) built it one task at a time, E3-5 added the inside of a
+resistor and the boards of the pilot's steps; the batch's report is `docs/volumes/electronics/reports/batch-E2.md`.
 
 Each module has its public face in `shared/<module>/index.ts`; there is no `shared/index.ts`. The sandbox
 `_dev/chapters/_sandbox-electronics-bench` imports only `@electronics/shared/<module>`.
 
-## `bench` — the room, the base and the breadboard (E2-3)
+## The parts
+
+| Module | What it is | Files | Batch · task |
+|---|---|---|---|
+| `bench` | the room, the base, the breadboard in 3D, the light rig, the permanent things, the magnifier in its holder, the shots; `mountBench` and the frame | `index`, `room`, `base`, `board-view`, `layout`, `light`, `materials`, `mounts`, `props`, `shots`, `air`, `dyn-tube`, `switch-slider`, `tools/` | E2 · E2-3 |
+| | the parts on the board on their legs; a look outside the circuit (`show`) | `on-board` | E2 · E2-4, E2-5 |
+| | the leads and plugs of the things, the battery's switch under the hand, what a lead drapes over | `fixed`, `switch`, `mounds` | E2 · E2-5 |
+| | the LEDs' three lights; the wisp of a burn and the bulged can's steam | `lights`, `smoke` | E2 · E2-7 (steam E2-9) |
+| `parts` | every kind of part with the marks of the real one; the permanent things; the look of heat, the burn, the bulge | `part`, `resistor`, `capacitors`, `diode`, `led`, `transistor`, `pot`, `jumper`, `speaker`, `battery9v`, `player`, `bulb`, `code`, `look`, `heat-scale` | E2 · E2-4; the look E2-7; the catalog's marks E2-M; the bands' reader E3-5 |
+| `hand` | the two gestures, the grips and cues, the tray, the legs, the ground a lead lies on, the scripted swap | `hands`, `tray`, `leg`, `grips`, `cue`, `curves`, `glide`, `terrain`, `swap` | E2 · E2-5 |
+| `model` | the only caller of the circuit model (`driver`); the model in time for the scope and the speaker (`live`); the checks' hashes | `driver`, `live`, `hash` | E2 · E2-6; the model's time E2-7; `live`, `still` E2-9; the speaker's pace E2-10 |
+| `instruments` | the multimeter and its probes; the oscilloscope; the speaker in sound | `meter`, `meter-model`, `probe`; `scope`, `scope-model`, `sweep`; `speaker` | E2 · E2-6; E2-9; E2-10 |
+| `dive` | the magnifier as the door from the step's shot to a part and into it; the ladder «де ми» | `door`, `camera-rail`, `rail-math`, `poses`, `levels`, `lens-keeper`, `ladder`, `cutaway` | E2 · E2-8 |
+| `inside` | a resistor's carbon film, opened by the door | `film`, `wedge` | E3 · E3-5 |
+| `sound` | the volume's own sound output and the model playing in blocks (its own README) | `output`, `plan`, `stream`, `handler`, `protocol`, `model.worker`, `tape`, `board` | E1 · E1-9; probes, restart, damage E2-9 |
+| beside it: `sim/board` | the board as data: sockets and rows, footprints, what stands where, the netlist, the steps' boards | `layout`, `footprint`, `seat`, `netlist`, `presets` | E2 · E2-2; footprints E2-M; presets E3-5 |
+
+## Mount
 
 ```ts
+import { mountBench, type PresetPart } from '@electronics/shared/bench';
+
 export default defineScene((ctx) => {
-  const bench = mountBench(ctx); // the room, the base with the breadboard, the light, the magnifier; once per mount
-  ctx.stage.define({ look: { camera: 'stand' } }); // the bench registers its shots: stand, board, phone, meter, scope
+  const bench = mountBench(ctx, { sound: true }); // once per mount: everything below; freed with the chapter
+  ctx.stage.define({ intro: { camera: 'stand' }, measure: { camera: 'meter', params: { meter: 1 } } }); // shots by name
+  ctx.stage.param('meter', 0, { duration: 0.6, onChange: (v) => (bench.meter = v) }); // an instrument slides in
   return {
-    enterStep: (_id, info) => void (info.instant && bench.snap()), // deep links: no filament or slider ramp
-    update: (dt, t) => bench.update(dt, t),
+    enterStep(id, info) {
+      bench.preset(BOARDS[id] ?? [], PLUGS[id]); // the step's own board, its parts new and whole (or `bench.clear()`)
+      bench.tray.set(TRAYS[id] ?? []); // what the tray offers
+      bench.hands.policy = { take: (k) => FREE.has(id), tooltip: (k) => WORDS[k] }; // what may be taken, and its name
+      bench.closed = 1; // the battery's switch
+      if (info.instant) bench.snap(); // a deep link: no ramps
+    },
+    update: (dt, t) => bench.update(dt, t), // once a frame, before anything that reads the bench
   };
 });
 ```
 
-`mountBench(ctx)` adds the bench to `ctx.root`, sets the room's environment and the depth of field of the main shot,
-and registers the shots of `shots.ts` under their names. On a phone every name (`stand`, `board`, `meter`, `scope`)
-is the shot `phone` — the field of sockets only (VISUAL §9); the bench re-registers them when the form factor changes.
-Each mount builds its own bench; nothing lives at module level.
+`mountBench(ctx, options?)` adds the bench to `ctx.root`, sets the room's environment and the depth of field of the
+main shot and registers the shots of `shots.ts` under their names (`stand`, `board`, `meter`, `scope`; on a phone
+each of them is `phone`, the field of sockets only — VISUAL §9 —, registered again when the form factor changes). It
+makes the hand, the model of the board, the multimeter, the oscilloscope and, with `sound`, the speaker, and exposes
+the readers for checks. Every mount builds its own bench, nothing lives at module level, and everything it made — the
+background thread, the sound output, the listeners, the geometries — goes with the chapter (`ctx.onDispose`; the
+sandbox's check `leaks` holds it).
 
-What a chapter writes (plain numbers, read every frame by `bench.update`):
+**The frame** (`bench.update`): the filament's and the slider's ramps; the light and the room; the parts and the plugs
+follow the board's state; the instruments' probes; the hand (what arrives this frame is in the state); the model's sync
+(a new shape compiles, a new setting solves); the model's time (`advance`: heat, a burn and its one wisp); the looks
+and the lights from the model; the multimeter's reading; the model in time (the scope's taps, the board, the blocks,
+the speaker) and the sweep shown now; on a held page the scope's window; the lit rows, the tray, the prints. A chapter
+reads the bench after `bench.update`; the dive's door and the magnifier's keeper go after it («dive» below).
 
-| Member | Default | What it is |
+## Options
+
+| Option | Default | What it does |
 |---|---|---|
-| `ambient` | `BENCH_AMBIENT` 0.8 | lift of the unlit room: a cool fill and a stronger moon that step back when the lamp burns |
-| `moon` | 1 | strength of the cold moon |
-| `lamp` | 0 | read-only: the lamp's filament 0 cold … 1 white, from the circuit model alone («light, heat, burn» below); shown with the filament's inertia |
-| `closed` | 0 | the battery's switch: 0 open (the thumb pushed left, the gap shows) … 1 closed — the setting of the model's part `SW` in `state.settings`; a tap on the slider flips it |
-| `flying` | false | the camera flies (the magnifier, a chapter's border): the hand and the switch do nothing |
-| `lens`, `lensTarget` | 0, `null` | the magnifier: 0 in its holder … 1 at `lensTarget` (a `LensPose` in the base frame, e.g. `overPose`) |
-| `lensCall` | 0 | the step asks the reader to take the magnifier: the resting ring turns full cyan and pulses |
-| `dive` | 0 | progress of the flight through the ring: the rim's arcs from 0.5 on |
-| `meter`, `scope` | 0 | the instruments: 0 away beyond the frame's edge … 1 on their places (a step tweens them, 0.6 s); the multimeter's probes may be taken only at 1, and go with it when it leaves |
+| `sound` | false | the speaker in sound («instruments — the speaker» below): the bench makes the volume's own sound output (an `AudioContext` of its own after the first gesture on the scene, none with `?noaudio`) and plays through it the current the model gives the speaker `SPK`. The model in time then runs from the mount, paced by that output — the player plays on whether the speaker is in the circuit or not — and the chapter's ambient mood is silent while the speaker is in the circuit. Without it the bench makes no sound and no context, and the model in time runs only while the scope is there |
+
+## State
+
+What a chapter, the reader's hand and the bench write, and what each part of the bench is (the numbers are read every
+frame by `bench.update`):
+
+| Member | Default | Written by | What it is |
+|---|---|---|---|
+| `ambient` | `BENCH_AMBIENT` 0.8 | the chapter | lift of the unlit room: a cool fill and a stronger moon that step back when the lamp burns |
+| `moon` | 1 | the chapter | strength of the cold moon |
+| `closed` | 0 | the chapter; the hand (a tap on the slider, or the dock's toggle the chapter binds) | the battery's switch: 0 open (the thumb pushed left, the gap shows) … 1 closed — the setting of the model's part `SW` in `state.settings` |
+| `flying` | false | the dive's door; a chapter at its border | the camera flies: the hand and the switch do nothing |
+| `lens`, `lensTarget` | 0, `null` | the chapter (a door's keeper takes it over) | the magnifier: 0 in its holder … 1 at `lensTarget` (a `LensPose` in the base frame, e.g. `overPose`) |
+| `lensCall` | 0 | the chapter | the step asks the reader to take the magnifier: the resting ring turns full cyan and pulses |
+| `dive` | 0 | the chapter (a door's keeper) | progress of the flight through the ring: the rim's arcs from 0.5 on |
+| `meter`, `scope` | 0 | the chapter (a step's param, tweened 0.6 s) | the instruments: 0 away beyond the frame's edge … 1 on their places; their probes may be taken only at 1, and go with them when they leave |
+| `state` | empty | the chapter (`preset`, `clear`; a pot's knob: `setSetting(bench.state, 'P1', v)`); the hand (legs, plugs) | the board as data (`sim/board`): what stands in which socket, the plugs, the settings |
+| `hands.policy`, `tray.set` | nothing taken, an empty tray | the chapter | what the reader may take, the words under the pointer, what the tray offers («hand») |
+| `multimeter.mode`, `.put` | `'V'`, at rest | the chapter; the hand moves the probes | the meter's dial and its probes («instruments — the multimeter») |
+| `oscilloscope.configure`, `.put` | `SCOPE_DEFAULTS`, at rest | the chapter; the hand moves the probes | the scope's scale, display, trigger and probes («instruments — the oscilloscope») |
+| `lamp` | 0 | the bench, from the model | read-only: the lamp's filament 0 cold … 1 white, from the circuit model alone, shown with the filament's inertia |
+| `model` | — | the bench (sync and time every frame) | the circuit on the board; a chapter reads it (`reading`, `part`, `rowVolts`) and calls `forget` only for a part it puts under a used id by hand |
+| `live` | `off` | the bench | the model in time: for the scope, and with `sound` for the speaker |
+| `speaker` | `null` | the bench (`sound`) | the speaker in sound; a chapter reads it (`inCircuit`, `output`) |
+| `leds`, `smoke` | — | the bench, on the model's events | read-only: the LEDs' lights; the wisps of a burn and a bulged can's steam |
+| `room`, `base`, `light`, `layout`, `board`, `parts`, `props`, `fixed`, `switch`, `tools` | — | the bench | the things themselves, below |
+
+**Who writes what.** The chapter writes the plain numbers above, the step's board (`preset`, `clear`, a pot's
+setting), the hand's policy, the tray, the instruments' dial, scale and probes, and the words of its panel. The
+reader's hand writes the board's state (a part, a leg, a plug), the switch and the probes' places. The bench writes
+everything the model says: the model's solve and time, the lamp, the looks, the lights, the wisps, the meter's reading,
+the scope's trace and the speaker's sound — none of these has a setter. The dive's door writes `flying` and lays the
+magnifier through its keeper. Only `shared/model/driver.ts` calls the circuit model; the stream's thread runs the
+same model on the board the driver gives it.
+
+## Rules
+
+- **The instrument shows only the model** (VISUAL §1, principle 3): whatever shines, warms, burns, sounds or shows on an
+  instrument is the circuit model's output for the board now. While the model's last solve failed (`ok: false`) the
+  bench holds the last good look and shows nothing new — never a `NaN` in a chart or a readout.
+- **No step logic, no words.** The bench has no step ids and no Ukrainian word; a chapter gives the words (the hand's
+  tooltips, the readouts' labels, the chart's axes). The sandbox's words are its `SANDBOX`.
+- **A step's board is new and whole.** `preset` and `clear` take every part off and the model forgets them, the
+  permanent things too; a part put under a used id by other means needs `model.forget(id)` first.
+- **Time** is the engine's: tweens and counters in `update(dt)`, never a timer; `dt` 0 (a held frame) and 1/15 s are
+  normal frames; chance is `ctx.random`, ids are counters; no state at module level (two copies of a chapter live side
+  by side at a border).
+- **Tables by kind are partial** (`Partial<Record<PartKind, …>>` with a `null` branch), never an exhaustive switch:
+  the catalog grows.
+- **The light count never changes**: the LEDs' three lights, the wisps' and the marks' keepers are made with the bench.
+- **Sound** starts only after the engine's gesture — a press on the scene or a key; a press on the panel is not one —,
+  never with `?noaudio`, follows the engine's sound and volume settings and is never louder than the engine
+  (`shared/sound/README.md`). From the circuit one hears only the speaker; the chapter's mood is silent while the
+  speaker is in the circuit.
+- **What leaves the tree is freed by its owner.** The engine frees the chapter's root after `ctx.onDispose`; a thing
+  that takes its group out of the tree in its own `dispose` frees it there (the tray's block: one geometry a mount was
+  left behind until the check `leaks` found it, E2-10).
+- **Imports.** The sandbox imports only `@electronics/shared/<module>`; what it needs of `sim/**` comes through
+  `bench/index.ts`. No other volume is imported: copies are recorded in `docs/volumes/electronics/REUSE.md`.
+
+## Readers for checks
+
+| Reader (`__app.read`) | What it gives | Section of the sandbox's `qa/measure.mjs` |
+|---|---|---|
+| `electronics-bench` | the mouths drawn, the rows, the last frame's draw calls, the print shown, a phone's page | `room`, `shots` and every draw-call check |
+| `electronics-board` | every part with the socket of each leg, the plugs, the settings, the models, the netlist's key, the parts pending | `parts`, `hand`, `meter`, `heat`, `loupe`, `film`, `scope`, `sound` |
+| `electronics-parts` | every part and permanent thing: where, its draw calls, its prints and whether the camera sees them | `parts` |
+| `electronics-hand` | what the hand holds, where a carried end would go, the preview, the lit rows, the switch's flips | `hand` |
+| `electronics-motion` | the camera, the thing moved, its tilt and every plug, every frame | `hand` |
+| `electronics-model` | the netlist's key, solves, compiles, `ok`, `failure`, `dcMs`, every part's reading and the rows' volts | `parts`, `meter`, `heat`, `film` |
+| `electronics-heat` | every part's condition, heat, load, light and surface; the things, the lamp, the LEDs' lights, the wisps, the burns | `heat` |
+| `electronics-meter` | the dial, the probes' sockets, the reading now and the display's text | `meter` |
+| `electronics-scope` | the model in time (where, blocks, `since`, `now`), the sweep, its points and hash, a held page's windows | `scope` |
+| `electronics-sound` | `on` (the option); the output (state, clock, played, underruns, queued, latency, gain), the stream (mode, ms, `since`, the sample heard), the speaker in the circuit, its full scale, blocks, levels and hash | `sound`, `repeat`, `leaks` |
+| `electronics-dive` | the door's rail, the floor, whether it flies, the inner view, the camera and the lens | `loupe`, `film` |
+
+Probes (`__app.locate`): `socket:<id>` for all 204 sockets; `bench:lamp`, `bench:lens`, `bench:meter`, `bench:scope`,
+`switch`; the hand's `part:<id>`, `leg:<id>:<k>`, `tip:<id>:<k>`, `lead:<name>`, `end:<name>`, `tray:<key>`,
+`probe:<red|black|ch1|ch2>` and the probes' tips `end:<red|black|ch1|ch2>`; the door's `dive:end0`, `dive:end1`,
+`dive:ring-top`, `dive:ring-bottom`. The sandbox adds `film:film`, `film:groove`, `film:rod`.
+
+## `bench` — the room, the base and the breadboard (E2-3)
 
 What the bench has (read-only): `room`, `base` (`base.frame` is the tilted base frame: whatever stands on the base
 goes there, then `tameAll(bench.group)`), `light` (the rig owns `ctx.env.tune`; never tune the environment from a
@@ -50,9 +161,9 @@ every frame), `layout` (the board as data, `sim/board`), `board` (the 3D breadbo
 the speaker and the lamp with their real marks from `shared/parts` — `props.things`, `props.bulb` — the lamp post and
 the `filament` where the light hangs; `props.meter` and `props.scope` are the instruments' places on the table),
 `fixed`, `switch`, `tray` and `hands` (the reader's hand, «hand» below), `tools` (the magnifier and its `holder` pose),
-`model` and `live` (the circuit model of the board, and the same in time, «model» below), `multimeter` and
-`oscilloscope` («instruments» below), `leds` and `smoke` (the LEDs' light on the board; the wisps of a burn and a
-bulged can's steam in the air, read-only — «light, heat, burn» below).
+`model` and `live` (the circuit model of the board, and the same in time, «model» below), `multimeter`,
+`oscilloscope` and, with the option `sound`, `speaker` («instruments» below), `leds` and `smoke` (the LEDs' light on
+the board; the wisps of a burn and a bulged can's steam in the air, read-only — «light, heat, burn» below).
 
 The board's print (the letters of the lines, the column numbers) is drawn only where all of it has ≥ 16 px-equivalent
 per em (`chapter-check`'s rule): on `board`, not on `stand`, never on a phone. The rails' «+» and «−» are not print
@@ -277,11 +388,15 @@ model.part('R1'); // { condition, load, heat, kelvin? } as the bench shows it; n
 
 **The circuit in time** (E2-9). Two ways, both the model's:
 
-- **`live.ts` — the board played in time** for the oscilloscope (and, in E2-10, the speaker): `bench.live`, E1-9's
-  stream (`shared/sound`: one background thread, the main thread when there is none, and on a held page) at 24 000
-  samples a second in blocks of 1536, paced by the bench's own engine time through E1-9's `BlockPlan` (a request while
-  the plan has room; `live.now` the sample the plan plays now, which the scope shows). It runs only while
-  `bench.scope` is above 0 — no thread before. A new solve of the driver gives the stream the board of that moment
+- **`live.ts` — the board played in time** for the oscilloscope and the speaker: `bench.live`, E1-9's stream
+  (`shared/sound`: one background thread, the main thread when there is none, and on a held page) at 24 000 samples a
+  second in blocks of 1536. Without the option `sound` it is paced by the bench's own engine time through E1-9's
+  `BlockPlan` (a request while the plan has room; `live.now` the sample the plan plays now, which the scope shows) and
+  runs only while `bench.scope` is above 0 — no thread before. With `sound` the speaker's output paces it (a request
+  while fewer than two blocks are queued there; `live.now` the sample heard now) and it runs from the mount, the
+  player playing on whether the speaker is in the circuit or not; every request then records the speaker's current
+  first — the ground's 0 V in its place while the speaker is out of the board given in the same request, so that a
+  request's board and taps always agree — and the scope's taps after it («instruments — the speaker»). A new solve of the driver gives the stream the board of that moment
   (the model goes on from its last moment); a step's `preset` or `clear`, and every start after a pause, start it again
   from the board's operating point (`Stream.restart`). The driver's damage is the stream's (`benchDamage`: its burnt
   parts and bulged cans on the board, `StreamDamage`): it goes with every start — so a part burnt before the scope came,
@@ -400,6 +515,49 @@ max, screen, t0, hash, points, frozen, stills, still: { warmup, tau, ms }, ch1, 
 model runs in time: `worker`, `sync`, `off`; `points` — each channel's trace, its times on the chart's axis from `t0`;
 `screen` — the instrument's extremes, −1 … 1; `hash` — FNV-1a of the points: two pages that show the same, the same
 hash). The sandbox's steps `scope` and `rc` and `qa/measure.mjs --only scope` drive it.
+
+## `instruments` — the speaker in sound (E2-10)
+
+With the option `sound` (`mountBench(ctx, { sound: true })`) the bench's speaker plays what the circuit model gives it
+(VISUAL §1, principle 3; the design §6.3): its current, block by block from the model in time, through the volume's own
+sound output (`shared/sound`, E1-9). `instruments/speaker.ts`; `bench.speaker`, null without the option.
+
+```ts
+const bench = mountBench(ctx, { sound: true });
+bench.preset(VOLUME, { 'pl+': 'c13', 'pl-': 'c17', 'spk+': 'c15', 'spk-': 'a17' }); // the player → a pot → the speaker
+setSetting(bench.state, 'P1', v); // the volume knob, from the step's slider: the model's setting, the knob follows
+bench.speaker!.inCircuit; // both plugs in rows the circuit has: the speaker sounds, the chapter's mood is silent
+```
+
+- **The scale** (`SPEAKER`, `speakerFullScale`, `speakerSamples`): 1 W on the speaker is half of full scale — a
+  sample is the current over 2·√(1 W / R), 0.707 A for the 8 Ω speaker: a steady 1 W, or the RMS of a sine of 1 W, is
+  0.5; the rated 2 W 0.707; 4 W full scale, more held to it. No other scaling: what is louder on the board is louder in
+  the sound; the output's gain (the engine's settings, volume² × 0.55) and its limiter come after. The amplifier on the
+  board at its top gives 0.45 A (0.64 of full scale); the player straight on the speaker 7.5 mA at most, 0.0106 —
+  barely heard, as the prologue says. (E1-9's sound sandbox keeps its own full scale, 0.5 A: `SPEAKER_FULL_SCALE`.)
+- **The steps**: the samples are those of a 16-bit output, on steps of 2⁻¹⁵ of full scale, so a current below half a
+  step (10.8 μA on 8 Ω) is silence — a block of zeros. The volume knob at 0 leaves the 1 mΩ end of the pot's track
+  across the speaker, a few nanoamperes: zeros. After a moment without a solution (`steps`) the rest of a block is
+  zeros too.
+- **The pace**: a block is asked only while fewer than `SPEAKER.queue` (two) are queued on the output, so with the one
+  on its way at most three are planned — the output's capacity — and a change on the board is heard one to two blocks
+  later (the sandbox's check: latency 0.08–0.16 s with the context's own). Until the first gesture the output plans on
+  the engine's clock silently; with `?noaudio` always. The scope shows the sample heard now.
+- **Out of the circuit** (a plug out, or in the air) the speaker's tap is the ground: silence, and the model plays on —
+  the melody runs on, so the speaker plugged back sounds where the music is. A step's `preset` or `clear` starts the
+  model again from the new board's operating point (the melody from its start), as for the scope.
+- **The mood**: while the speaker is in the circuit the chapter's ambient pad (`audio.mood`) is silent; it comes back
+  — the chapter's theme's mood — when the speaker leaves. The bench says it every frame (`speaker.circuit(on)`); the
+  speaker tells the platform only on a change.
+- The output is made with the speaker and goes with the chapter (`ctx.onDispose`): its context closes, the background
+  thread ends.
+
+For checks: `__app.read('electronics-sound')` → `{ on, state, clock, played, underruns, queued, latency, gain, gainNow,
+mode, rate, block, ms, since, heard, speaker, fullScale, blocks, levels: [{ first, peak, rms }], hash }` (`on` false
+and `mode` only without the option; `levels` — the last 32 blocks as the output got them; `hash` — FNV-1a of every
+sample given to the output: two held pages that play the same, the same hash). The sandbox's step `sound` (the player →
+a 10 kΩ pot as the volume control → the speaker, the slider `volume`) and `qa/measure.mjs --only sound,repeat,leaks`
+drive it.
 
 ## Light, heat, burn — the model's state on the bench (E2-7)
 

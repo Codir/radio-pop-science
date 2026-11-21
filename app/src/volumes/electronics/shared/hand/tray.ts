@@ -29,7 +29,7 @@ import {
   type PartEye,
   type PartModel,
 } from '../parts';
-import { Prints } from '../parts/part';
+import { Prints, disposeTree } from '../parts/part';
 
 const T = PLACES.tray;
 
@@ -154,7 +154,8 @@ function block(): Group {
 export function createTray(): Tray {
   const group = new Group();
   group.name = 'tray';
-  group.add(block());
+  const body = block();
+  group.add(body);
   const hitGeometry = new BoxGeometry(1, 1, 1);
   const hitMaterial = new MeshBasicMaterial({ visible: false });
   let slots: Slot[] = [];
@@ -256,6 +257,9 @@ export function createTray(): Tray {
       clear();
       hitGeometry.dispose();
       hitMaterial.dispose();
+      // the block's own geometry and materials: once the group leaves the tree, the chapter's teardown no longer
+      // reaches them (a geometry left behind by every mount, found by the sandbox's check `leaks`)
+      disposeTree(body);
       group.removeFromParent();
     },
   };

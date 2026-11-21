@@ -51,14 +51,20 @@
  *           into R1, whose floor `inside` is its carbon film — the groove cut for the value, the electrons at the model's
  *           current, the film's colour from the model's heat; the dock's switch `film-value` puts a 330 Ω or a 10 kΩ in
  *           R1's sockets (a new part under the same id, whole: the door follows it). Probes `film:film`, `film:groove`,
- *           `film:rod` — the callouts' points of the film.
+ *           `film:rod` — the callouts' points of the film;
+ *   sound — the speaker in sound (E2-10), shot `stand`: the player → a 10 kΩ pot as the volume control → the speaker
+ *           (`VOLUME`: P1 in b17 … b13 — `ccw` on the ground row 17ae, J1 from it to the − rail, the wiper 15ae, `cw`
+ *           13ae; the plugs `pl+` in c13, `pl-` in c17, `spk+` in c15, `spk-` in a17); the panel's slider `volume`
+ *           is P1's setting, the knob follows it; at 0 the wiper is on the ground and the speaker silent. The bench is
+ *           mounted with its option `sound`: the speaker plays in every step where it is in the circuit (`scope` too).
  * Every other step has an empty board and an empty tray, and the probes at rest. Readers: the bench's own
  * `electronics-bench` (sockets, rows, draw calls, the print shown), `electronics-board` (the parts and their legs, the
  * plugs, the settings, the netlist's key), `electronics-parts` (every model: where, draw calls, its print),
  * `electronics-hand` (what the hand holds, the preview, the lit rows), `electronics-motion` (the camera, what the hand
  * moves, the plugs — every frame), `electronics-model` (the circuit model: its key, solves, dcMs, readings) and
  * `electronics-meter` (the dial, the probes' sockets, the reading and the display's text), `electronics-scope` (the
- * model in time, the sweep, its points and hash, a held page's windows) and, in the step `loupe`,
+ * model in time, the sweep, its points and hash, a held page's windows), `electronics-sound` (the sound output, the
+ * speaker in the circuit, its blocks' levels and hash) and, in the step `loupe`,
  * `electronics-dive` (the door's rail, the floor, whether it flies, the cut); probes `socket:<id>` for every socket of
  * the board (`a1` … `j17`, `+1` … `+17`, `-1` … `-17`), the hand's `part:<id>`, `leg:<id>:<k>`, `tip:<id>:<k>`,
  * `lead:<name>`, `end:<name>`, `probe:<red|black|ch1|ch2>` (the grip on a probe's handle; its tip `end:<name>`),
@@ -73,6 +79,7 @@ import {
   LED_LOOP,
   PARTS as CATALOG,
   mountBench,
+  setSetting,
   trayLabel,
   type BenchShot,
   type HandKey,
@@ -204,6 +211,18 @@ const RC: readonly PresetPart[] = [
   { id: 'J2', spec: 'jumper', at: 'e8', to: '-8' },
 ];
 
+/**
+ * Step `sound`: the player → a 10 kΩ pot as the volume control → the speaker, at the far right by the player and the
+ * speaker (as the amplifier's volume control stands): P1 turned (`o` 2) in b17 (`ccw`), b15 (the wiper), b13 (`cw`);
+ * the player's signal on `cw` (c13), its common, the speaker's minus and the pot's `ccw` on the ground row 17ae, which
+ * J1 ties to the − rail; the speaker's plus on the wiper (c15). The knob at its top: 0.3 V behind 32 Ω into 8 Ω.
+ */
+const VOLUME: readonly PresetPart[] = [
+  { id: 'P1', spec: 'pot-10k', at: 'b17', o: 2, setting: 1 },
+  { id: 'J1', spec: 'jumper', at: 'e17', to: '-17' },
+];
+const VOLUME_LEADS = { 'pl+': 'c13', 'pl-': 'c17', 'spk+': 'c15', 'spk-': 'a17' } as const;
+
 /** Step `bulged`: + rail → J1 → 3ae → 100 μF / 6.3 V the wrong way round (plus c4, minus c3: `o` 2) → J2 → − rail. */
 const REVERSED: readonly PresetPart[] = [
   { id: 'J1', spec: 'jumper', at: '+3', to: 'a3' },
@@ -251,6 +270,7 @@ const FREE: ReadonlySet<string> = new Set([
   'scope',
   'rc',
   'bulged',
+  'sound',
 ]);
 /** Each step's circuit (every other step: an empty board) and its tray. */
 const PRESETS: Readonly<Record<string, readonly PresetPart[]>> = {
@@ -264,9 +284,14 @@ const PRESETS: Readonly<Record<string, readonly PresetPart[]>> = {
   scope: filterParts(FILTER_VALUES[0]),
   rc: RC,
   bulged: REVERSED,
+  sound: VOLUME,
 };
 /** The plugs each step puts in (every other plug out). */
-const LEADS: Readonly<Record<string, Readonly<Record<string, SocketId>>>> = { lamp: LAMP_LEADS, scope: FILTER_LEADS };
+const LEADS: Readonly<Record<string, Readonly<Record<string, SocketId>>>> = {
+  lamp: LAMP_LEADS,
+  scope: FILTER_LEADS,
+  sound: VOLUME_LEADS,
+};
 /** Each step's shot (the bench's names). */
 const CAMERAS: Readonly<Record<string, BenchShot>> = {
   room: 'stand',
@@ -284,6 +309,7 @@ const CAMERAS: Readonly<Record<string, BenchShot>> = {
   bulged: 'board',
   loupe: 'board',
   film: 'board',
+  sound: 'stand',
 };
 const TRAYS: Readonly<Record<string, readonly string[]>> = { hand: TRAY, overload: ['resistor-100'] };
 
@@ -306,7 +332,8 @@ function buttonName(spec: string): string {
 }
 
 export default defineScene((ctx) => {
-  const bench = mountBench(ctx);
+  // with the speaker in sound: the model in time plays the board through the volume's own output (E2-10)
+  const bench = mountBench(ctx, { sound: true });
   const ui = stepUi(ctx);
   const phone = (): boolean => ctx.device.formFactor === 'phone';
   // the multimeter in the panel: the dial's switch and the number, a text readout (VISUAL §5.1)
@@ -384,6 +411,24 @@ export default defineScene((ctx) => {
         },
       ],
       board: scopeBoard('scope'),
+    },
+    // step `sound`: the volume control's knob is P1's setting; the knob in 3D follows it (plan decision 20)
+    sound: {
+      controls: [
+        ...dock([]).controls,
+        {
+          type: 'slider' as const,
+          id: 'volume',
+          label: SANDBOX.sound.volume,
+          min: 0,
+          max: 1,
+          step: 0.01,
+          value: 1,
+          format: (v: number) => `${Math.round(v * 100)} %`,
+          onInput: (v: number) => void setSetting(bench.state, 'P1', v),
+          onChange: (v: number) => void setSetting(bench.state, 'P1', v),
+        },
+      ],
     },
   });
   const specOf = (id: string): string => bench.state.parts.get(id)?.spec ?? '';
@@ -508,6 +553,7 @@ export default defineScene((ctx) => {
       ui.set('meter-mode', 'V');
       bench.hands.policy = FREE.has(id) ? { take: () => true, tooltip } : { take: () => false };
       if (id === 'film') ui.set('film-value', FILM_VALUES[0]);
+      if (id === 'sound') ui.set('volume', 1);
       if (DOOR_STEPS.has(id)) {
         door = partDoor(ctx, bench, 'R1', { lead: 'board' });
         const d = door;
