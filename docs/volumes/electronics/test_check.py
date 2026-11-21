@@ -168,6 +168,7 @@ class CheckTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             for rel in ('docs/volumes/electronics/PATH.md', 'docs/volumes/electronics/chapters/meter.md',
+                        'docs/volumes/electronics/VISUAL.md',
                         'app/src/volumes/electronics/volume.json', 'app/src/volumes/electronics/sim/core/dc.ts',
                         'app/src/volumes/_dev/chapters/_sandbox-electronics-bench/index.ts',
                         'app/src/volumes/_dev/chapters/_sandbox-radio-link/index.ts',
@@ -178,7 +179,8 @@ class CheckTest(unittest.TestCase):
             self.assertEqual(sorted(K.checked_files(root)), [
                 'app/src/volumes/_dev/chapters/_sandbox-electronics-bench/index.ts',
                 'app/src/volumes/electronics/sim/core/dc.ts', 'app/src/volumes/electronics/volume.json',
-                'docs/volumes/electronics/PATH.md', 'docs/volumes/electronics/chapters/meter.md'])
+                'docs/volumes/electronics/PATH.md', 'docs/volumes/electronics/VISUAL.md',
+                'docs/volumes/electronics/chapters/meter.md'])
 
     def test_nowhere(self):
         for s in HIT:
@@ -195,10 +197,27 @@ class CheckTest(unittest.TestCase):
 
     def test_documents(self):  # a document that is not there is a problem, not a skipped rule
         texts = dict.fromkeys(K.DOCUMENTS, '')
-        self.assertEqual(K.DOCUMENTS, ('VOLUME.md', 'PATH.md', 'PATH-ledger.md', 'PATH-NOTES.md', 'REUSE.md'))
+        self.assertEqual(K.DOCUMENTS,
+                         ('VOLUME.md', 'PATH.md', 'PATH-ledger.md', 'PATH-NOTES.md', 'REUSE.md', 'VISUAL.md'))
         self.assertEqual(K.missing(texts), [])
         self.assertEqual(K.missing(dict(texts, **{'PATH-NOTES.md': None, 'REUSE.md': None})),
                          ['PATH-NOTES.md is missing', 'REUSE.md is missing'])
+        self.assertEqual(K.missing(dict(texts, **{'VISUAL.md': None})), ['VISUAL.md is missing'])
+
+    def test_visual(self):  # rule 6: VISUAL.md has all its ten sections, a leading number allowed
+        names = ['Принципи', 'Кімната й стенд', 'Плата', 'Деталі', 'Прилади', 'Рука', 'Поверхи й лупа', 'Ракурси',
+                 'Телефон', 'Чек-лист аудитора']
+        self.assertEqual(K.VISUAL_SECTIONS, names)
+        full = '# Вигляд\n\n' + ''.join('## %d. %s\n\nТекст.\n\n' % (i + 1, h) for i, h in enumerate(names))
+        self.assertEqual(K.rule6(full), [])
+        self.assertEqual(K.rule6(full.replace('## 9. Телефон\n', '')), ['VISUAL.md: section «Телефон» missing'])
+        self.assertEqual(K.rule6(full.replace('## 6. Рука\n', '## 6. Руки\n')), ['VISUAL.md: section «Рука» missing'])
+        # a section's name under H3 is not the section
+        self.assertEqual(K.rule6(full.replace('## 3. Плата\n', '### 3. Плата\n')),
+                         ['VISUAL.md: section «Плата» missing'])
+        # and the document of this tree has them all
+        self.assertEqual(K.rule6((pathlib.Path(__file__).resolve().parent / 'VISUAL.md').read_text(encoding='utf-8')),
+                         [])
 
 
 if __name__ == '__main__':
