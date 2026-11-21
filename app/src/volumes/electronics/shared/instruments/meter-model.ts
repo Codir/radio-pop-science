@@ -8,7 +8,9 @@
  *   any other (`meterExtra`, which the bench's model driver takes in at every sync): the current that flows into the
  *   red probe. Put across the battery it is an honest short (plan decision 8): no fuse.
  * - **Ω** — the meter's own small test current through the circuit with its sources out (`BenchModel.ohms`); «OL»
- *   when no current flows or the resistance is beyond `OHM_LIMIT`.
+ *   when no current flows or the resistance is beyond `OHM_LIMIT`. A resistance is measured without power (plan
+ *   decision 5 of batch E3, task E3-6): while a source that drives a current — the battery behind its closed switch, a
+ *   plugged player — is in the island the probes touch (`BenchModel.powered`), it reads nothing, «—».
  *
  * A probe out of a socket reads nothing («—»); so does the meter turned off. The display shows four significant
  * digits with a decimal comma and an SI prefix («5,997 V», «4,700 kΩ») and, as a real meter's, refreshes every
@@ -73,6 +75,8 @@ export function readMeter(
     return a === null || b === null ? undefined : a - b;
   }
   if (mode === 'A') return model.reading(METER_ID)?.i ?? undefined;
+  // a resistance is measured without power (plan decision 5 of batch E3): a live island shows «—»
+  if (model.powered(red, black)) return null;
   return model.ohms(red, black) ?? undefined;
 }
 

@@ -242,7 +242,7 @@ export default defineScene((ctx) => {
     },
     bench.multimeter.readout('meter', SANDBOX.meter.readout),
   ];
-  ui.define({ meter: { controls: meterControls }, divider: { controls: meterControls } });
+  ui.define({ meter: { controls: meterControls } });
   // on a phone the tray is the dock's: a button per slot puts a new part in the hand over the board; the switch, out
   // of the shot `phone`, is a toggle there bound to `bench.closed` (VISUAL §9)
   const dock = (tray: readonly string[]) => ({
@@ -267,6 +267,9 @@ export default defineScene((ctx) => {
   });
   ui.define({
     hand: dock(TRAY),
+    // the divider: the meter, and the battery's switch in the dock (the checks open it for the Ω mode: a resistance is
+    // measured without power)
+    divider: { controls: [...meterControls, ...dock([]).controls] },
     led: dock([]),
     overload: dock(TRAYS.overload ?? []),
     lamp: dock([]),

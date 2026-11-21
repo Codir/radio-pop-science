@@ -230,10 +230,14 @@ describe('the multimeter’s probes in the hand', () => {
     frames(METER_REFRESH + 0.05);
     expect(bench.model.state.parts.get('R1')?.burnt ?? false).toBe(false);
     expect(text()).toBe('5,997 V');
-    // across R1 with the battery out: its 1 kΩ, no gap
+    // across R1 on the live divider: «—» (a resistance is measured without power, plan E3 decision 5); with the switch
+    // open, the battery out of the loop: its 1 kΩ, no gap
     bench.multimeter.mode = 'ohm';
     bench.multimeter.put({ red: 'c3', black: 'd7' });
     frames(0.3 + METER_REFRESH + 0.05);
+    expect(text()).toBe('—');
+    bench.closed = 0;
+    frames(METER_REFRESH + 0.05);
     expect(text()).toBe('1,000 kΩ');
     // the same for `clear`: what it takes off is forgotten at once, before any frame
     memoryOf(bench.model.state, 'R2').burnt = true;

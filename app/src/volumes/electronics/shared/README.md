@@ -237,6 +237,7 @@ model.sync(); // the board's netlist; a new shape compiles, a changed setting on
 model.ok; // the last solve succeeded; `failure` says why not ('singular', 'no-convergence')
 model.rowVolts('7ae'); // 5.997 V on the divider; `nodeVolts(n)`, `reading(id)` → { u, i, p }; null after a failure
 model.ohms(a, b); // what an ohmmeter reads between two nodes: Ω, Infinity (no path), null (no solve)
+model.powered(a, b); // a source that drives a current is in their island: the closed battery, a plugged player
 model.forget('R1'); // a new part goes under this id: its memory goes at once, the next sync solves again
 model.advance(dt); // the model's time passes (heat; a part that burns is solved out at once): the ids burnt now
 model.part('R1'); // { condition, load, heat, kelvin? } as the bench shows it; null while the last solve failed
@@ -261,6 +262,11 @@ model.part('R1'); // { condition, load, heat, kelvin? } as the bench shows it; n
   the meter's own source `OHMMETER` — 5 V behind 10 kΩ, at most 0.5 mA, so a lamp reads its cold 5.5 Ω — between the
   two nodes, and the voltage it makes over its current. It has a model state of its own (the burnt parts copied in as
   gaps): the bench's is untouched. Computed once per solve of the board and pair of nodes.
+- **Whether the probes touch a live circuit** (`powered`, task E3-6, plan decision 5 of batch E3): a source of the
+  circuit now on the board — the battery behind its switch, a plugged player — whose two terminals the rest of the
+  circuit joins (its loop closed: it drives a current), with that loop reaching one of the two nodes; joined through
+  the paths for direct current of every part at its setting (an open switch and a burnt part join nothing). The
+  multimeter's Ω mode reads nothing there («—»).
 - **Capacitors and transistors** (E1-5, E1-6) are parts of the board like any other: a board with them compiles and has
   its operating point (a capacitor open but for its leak), and the amplifier of `sim/core` (`amplifierNetlist`), every
   leg of every part in its node's row and the player's and the speaker's plugs too, has the very operating point of
@@ -295,7 +301,8 @@ bench.multimeter.put({ red: 'a7', black: '-3' }); // a step's own probes, at onc
   the meter is a wire between its probes (`METER`, the catalog's jumper, 1 mΩ) that the model driver takes into the
   circuit (`extra()`), the current into the red probe; across the battery an honest short, no fuse (plan decision 8);
   **Ω** — `model.ohms`, «OL» when no current flows or beyond `OHM_LIMIT` 40 MΩ (a pocket meter's top range; the
-  catalog's largest resistor is 10 MΩ). A probe out of a socket, or the meter off: «—». With the model's last solve
+  catalog's largest resistor is 10 MΩ); «—» while the probes touch a live circuit (`model.powered`: a resistance is
+  measured without power, plan decision 5 of batch E3 — task E3-6). A probe out of a socket, or the meter off: «—». With the model's last solve
   failed the display keeps what it shows.
 - **The display** (`createMeterDisplay`) shows four significant digits with a decimal comma and the range's SI prefix
   (V: mV, V; A: μA, mA, A; Ω: Ω, kΩ, MΩ), picked on the rounded value — «5,997 V», «4,700 kΩ», «500,0 mV», «2,998 mA»;

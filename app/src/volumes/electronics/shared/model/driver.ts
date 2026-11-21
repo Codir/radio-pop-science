@@ -128,6 +128,14 @@ export interface BenchModel {
    * null when the board has no circuit yet or the meter's own solve fails. Its own state: the bench's is untouched.
    */
   ohms(a: number, b: number): number | null;
+  /**
+   * Whether a source that gives power stands in the island of these nodes (plan decision 5 of batch E3: an ohmmeter
+   * reads a circuit without power only): a source of the circuit now on the board — the battery behind its switch, a
+   * plugged player — whose two terminals the rest of the circuit joins (its loop is closed, so it drives a current),
+   * with that loop reaching `a` or `b`. Joined are the nodes on a path for direct current through a part at its
+   * setting: an open switch joins nothing, nor does a burnt part. False before the first sync.
+   */
+  powered(a: number, b: number): boolean;
 }
 
 /**
@@ -170,6 +178,26 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
   /** A part's memory was deleted on demand since the last solve: the next sync solves again. */
   let forgotten = false;
   let ohmsMemo: { key: string; value: number | null } | null = null;
+  let poweredMemo: { key: string; value: boolean } | null = null;
+
+  /** The nodes of the compiled circuit joined by the paths for direct current of every part at its setting but the
+   * element `skip` and the burnt parts (union–find with halving of paths). */
+  const joinedBut = (c: Circuit, skip: number): ((n: number) => number) => {
+    const parent = Int32Array.from({ length: c.size }, (_, k) => k);
+    const find = (n: number): number => {
+      while (parent[n] !== n) {
+        parent[n] = parent[parent[n]!]!;
+        n = parent[n]!;
+      }
+      return n;
+    };
+    c.elements.forEach((e, k) => {
+      if (k === skip || state.parts.get(e.part.id)?.burnt) return;
+      const setting = e.behaviour.setting(e.part.setting);
+      for (const [p, q] of e.behaviour.links(setting)) parent[find(e.nodes[p]!)] = find(e.nodes[q]!);
+    });
+    return find;
+  };
 
   /** Copy the settings of the new netlist into the compiled parts; true when one changed. */
   const settle = (parts: readonly PartInstance[]): boolean => {
@@ -304,6 +332,22 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
         value = i > NO_CURRENT ? Math.abs(dc.v[a]! - dc.v[b]!) / i : Infinity;
       }
       ohmsMemo = { key, value };
+      return value;
+    },
+    powered(a, b) {
+      const c = circuit;
+      if (!c || !Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0 || a >= c.size || b >= c.size) return false;
+      const key = `${version}|${a}|${b}`;
+      if (poweredMemo?.key === key) return poweredMemo.value;
+      let value = false;
+      c.elements.forEach((e, k) => {
+        if (value || !e.behaviour.source || state.parts.get(e.part.id)?.burnt) return;
+        // its loop through the rest of the circuit: both terminals joined without the source itself
+        const find = joinedBut(c, k);
+        const plus = find(e.nodes[0]!);
+        value = plus === find(e.nodes[1]!) && (plus === find(a) || plus === find(b));
+      });
+      poweredMemo = { key, value };
       return value;
     },
   };

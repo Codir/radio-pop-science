@@ -471,6 +471,44 @@ describe('the ohmmeter’s own solve', () => {
     expect(model.ohms(node('7ae'), 0)).toBe(Infinity);
     expect(model.state.parts.get('R2')!.burnt).toBe(true);
   });
+
+  it('tells whether a source that gives power is in the island of two nodes: the closed battery, a plugged player', () => {
+    // the divider: the battery behind its closed switch drives all of it
+    const board = divider(true);
+    const model = createBenchModel({ layout, board });
+    model.sync();
+    expect(model.powered(node('7ae'), 0)).toBe(true);
+    expect(model.powered(node('3ae'), node('7ae'))).toBe(true);
+    expect(model.powered(node('11ae'), node('9fj'))).toBe(true);
+    // a lone resistor beside it: no source in its island
+    expect(place(layout, board, { id: 'R3', spec: 'resistor-4k7', anchor: 'f3', o: 0 })).toBe(true);
+    model.sync();
+    expect(model.powered(node('3fj'), node('7fj'))).toBe(false);
+    // the switch open: the battery's loop is open, it drives nothing
+    setSetting(board, 'SW', 0);
+    model.sync();
+    expect(model.powered(node('7ae'), 0)).toBe(false);
+    // closed again with the lower resistor burnt: a burnt part is a gap, the loop is open again
+    memoryOf(model.state, 'R2').burnt = true;
+    setSetting(board, 'SW', 1);
+    model.sync();
+    expect(model.powered(node('7ae'), 0)).toBe(false);
+    expect(model.powered(node('3ae'), node('7ae'))).toBe(false);
+
+    // the player's plugs in the rows of a resistor's legs: its loop closes through it; one plug out — no loop
+    const p = createBoardState();
+    expect(place(layout, p, { id: 'R1', spec: 'resistor-1k', anchor: 'a3', o: 0 })).toBe(true);
+    expect(seatLead(layout, p, 'pl+', 'b3')).toBe(true);
+    expect(seatLead(layout, p, 'pl-', 'b7')).toBe(true);
+    const played = createBenchModel({ layout, board: p });
+    played.sync();
+    expect(played.powered(node('3ae'), node('7ae'))).toBe(true);
+    expect(seatLead(layout, p, 'pl-', null)).toBe(true);
+    played.sync();
+    expect(played.powered(node('3ae'), node('7ae'))).toBe(false);
+    // before the first sync there is no circuit and nothing is powered
+    expect(createBenchModel({ layout, board: divider(true) }).powered(node('7ae'), 0)).toBe(false);
+  });
 });
 
 /**
