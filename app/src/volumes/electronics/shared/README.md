@@ -283,15 +283,21 @@ model.part('R1'); // { condition, load, heat, kelvin? } as the bench shows it; n
   the plan has room; `live.now` the sample the plan plays now, which the scope shows). It runs only while
   `bench.scope` is above 0 — no thread before. A new solve of the driver gives the stream the board of that moment
   (the model goes on from its last moment); a step's `preset` or `clear`, and every start after a pause, start it again
-  from the board's operating point (`Stream.restart`), its parts new and whole there too. The scope's probes are its
-  taps: the node of each probe's row (`Stream.probes`, the next request carries them; the model plays on). `live.since`
-  is the model's moment (s, by the stream's numbering) from which the blocks are of the board and probes now. The
-  stream's model keeps a state of its own (E1-9's handler): its heat gathers from the stream's own start, so a part
-  overloaded there burns by it, not by the driver's word.
+  from the board's operating point (`Stream.restart`). The driver's damage is the stream's (`benchDamage`: its burnt
+  parts and bulged cans on the board, `StreamDamage`): it goes with every start — so a part burnt before the scope came,
+  or while it was away, is a gap on the screen too, and a part a preset made new is whole — and with every solve that
+  changed it (`Stream.damage`: a part burnt while the scope plays is a gap from the next block on, ≈ 0.1–0.2 s after
+  the bench shows it, as any change on the board). The stream's model fails nothing on its own heat
+  (`TransientOptions.fails` false): the driver alone burns a part (plan decision 11), so beyond that lag the screen
+  and the bench never part on what is burnt (`model/__tests__/live.test.ts`: a part burnt before the start, during a
+  pause, while it plays, and a run longer than its own time to burn). The scope's probes are its taps: the node of each
+  probe's row (`Stream.probes`, the next request carries them; the model plays on). `live.since` is the model's moment
+  (s, by the stream's numbering) from which the blocks are of the board, the damage and the probes now.
 - **`still(window)` — a held page's window** (`?freeze`, plan decision 16): the board now from its operating point,
-  computed at once on the main thread, the bench's damage and heat in a state of its own (nothing of the bench's
-  written): warmed up for `STILL.warmup(tauMax())`, then `count` samples of each tap. `tauMax()` is the longest time
-  constant of its capacitors — the capacitance times the resistance the circuit at its operating point shows between its
+  computed at once on the main thread, the bench's damage in a state of its own (nothing of the bench's written, and
+  nothing fails in the window on its own heat, as in the stream): warmed up for `STILL.warmup(tauMax())`, then `count`
+  samples of each tap. `tauMax()` is the longest time constant of its capacitors — the capacitance times the
+  resistance the circuit at its operating point shows between its
   pins (a test current of 0.5 μA through them): 9 V through 10 kΩ into 100 μF 0.997 s, the amplifier with the
   filter of the sandbox's step `scope` 0.045–0.055 s. The warm-up is max(0.2 s, 5 τmax) rounded up to a whole beat
   of the melody (0.5 s), so that two boards of one step show the same stretch of the music, and held to 2 s: an RC

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Probe, Transient } from '@electronics/sim/core';
+import { type Probe, Transient, createModelState, memoryOf } from '@electronics/sim/core';
 import { BOARD_NODES, BOARD_PROBES, filterBoard } from '../board';
 import { createHandler } from '../handler';
 import type { BlockReply, BlockRequest, StreamSetup, ToWorker } from '../protocol';
@@ -101,6 +101,78 @@ describe('the stream handler', () => {
     const bad = h.handle({ type: 'block', request: { ...request(4), probes: [{ part: 'R99' }] } });
     expect(bad?.reply).toEqual({ type: 'error', message: 'no part R99 on the board' });
     expect(replyOf(h.handle(block(5))).samples).toHaveLength(3);
+  });
+
+  it('a setup with the scene’s damage: a burnt part is a gap from the first block (E2-9: the bench burnt it)', () => {
+    const damage = { burnt: ['RF'], bulged: [] };
+    const h = ready({ ...setup(), damage });
+    // the same board with RF burnt in the state of its transient
+    const state = createModelState();
+    memoryOf(state, 'RF').burnt = true;
+    const t = new Transient(filterBoard(1000), { dt: 1 / RATE, state, fails: false });
+    t.start('dc');
+    const want = new Float32Array(BLOCK);
+    t.run(BLOCK, [{ node: BOARD_NODES.player, out: want }]);
+    const ask = {
+      type: 'block',
+      request: { ...request(1), probes: [{ node: BOARD_NODES.player }] },
+    } as const;
+    const r = replyOf(h.handle(ask));
+    expect(r.samples[0]).toEqual(want);
+    // the filter's resistor a gap: nothing of the player reaches the amplifier's input, which sits at its rest
+    const whole = replyOf(ready().handle(ask)).samples[0]!;
+    const swing = (a: Float32Array) => Math.max(...a) - Math.min(...a);
+    expect(swing(r.samples[0]!)).toBeLessThan(1e-6);
+    expect(swing(whole)).toBeGreaterThan(1e-3);
+  });
+
+  it('a request with damage: the model plays it from that block on, and the damage alone builds the board again', () => {
+    const probes = [{ node: BOARD_NODES.player }];
+    const h = ready({ ...setup(), probes, damage: { burnt: [], bulged: [] } });
+    const state = createModelState();
+    const t = new Transient(filterBoard(1000), { dt: 1 / RATE, state, fails: false });
+    t.start('dc');
+    const out = new Float32Array(BLOCK);
+    const next = () => (t.run(BLOCK, [{ node: BOARD_NODES.player, out }]), out.slice());
+    expect(replyOf(h.handle(block(1))).samples[0]).toEqual(next());
+    // RF burns on the bench: the same board, a gap now
+    const burnt = h.handle({
+      type: 'block',
+      request: { ...request(2), damage: { burnt: ['RF'], bulged: [] } },
+    });
+    memoryOf(state, 'RF').burnt = true;
+    t.rebuild(filterBoard(1000));
+    expect(replyOf(burnt).samples[0]).toEqual(next());
+    // the next block without damage keeps it
+    expect(replyOf(h.handle(block(3))).samples[0]).toEqual(next());
+    // a damage that names nothing: every part whole again (a new part under the id)
+    const whole = h.handle({ type: 'block', request: { ...request(4), damage: { burnt: [], bulged: [] } } });
+    memoryOf(state, 'RF').burnt = false;
+    t.rebuild(filterBoard(1000));
+    expect(replyOf(whole).samples[0]).toEqual(next());
+  });
+
+  it('told the damage, the model fails nothing on its own heat; not told, it does (E1-9)', () => {
+    // the red LED straight on the 9 V battery: it burns after 0.07 s on its own (sim/core README, «Limits»)
+    const net = {
+      nodes: 2,
+      parts: [
+        { id: 'B1', spec: 'battery-9v', pins: [1, 0] },
+        { id: 'D1', spec: 'led-red', pins: [1, 0] },
+      ],
+    };
+    const probes = [{ part: 'D1' }];
+    const told = ready({ ...setup(), net, probes, damage: { burnt: [], bulged: [] } });
+    const own = ready({ ...setup(), net, probes });
+    let last = { told: 0, own: 0 };
+    for (let seq = 1; seq <= 8; seq++) {
+      const a = replyOf(told.handle(block(seq))).samples[0]!;
+      const b = replyOf(own.handle(block(seq))).samples[0]!;
+      last = { told: a[BLOCK - 1]!, own: b[BLOCK - 1]! };
+    }
+    // 8 blocks of 512 at 24 000 a second: 0.17 s
+    expect(last.told).toBeGreaterThan(0.3);
+    expect(last.own).toBe(0);
   });
 
   it('the reply carries arrays of its own, and they are in transfer', () => {

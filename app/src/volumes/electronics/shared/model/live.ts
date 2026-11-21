@@ -11,7 +11,11 @@
  * - **The board follows the bench's model** (`BenchModel`): a new solve (a part put in, a knob or the switch turned, a
  *   part burnt) gives the stream the board of that moment, and the model goes on with it from its last moment; a
  *   step's own new board (`restart`: `bench.preset`, `bench.clear`) and every new start after a pause start the model
- *   again from its operating point, its parts new and whole.
+ *   again from its operating point.
+ * - **So does the damage**: the driver is the one that burns a part or bulges a can (`advance`), and the stream plays
+ *   what it says — the damage of the board goes with every start and with every solve that changed it
+ *   (`StreamDamage`: a burnt part a gap, a bulged can its leak, every other part whole), and the stream's model fails
+ *   nothing on its own heat. A part burnt before the scope came, or while it was away, is a gap on its screen too.
  * - **Only while it is wanted** (`update(dt, run)`): no thread is made before then, nothing is computed while not.
  * - **A held page** (`?freeze`) runs on the main thread, so that every frame of fixed time gives the same samples; its
  *   oscilloscope shows `BenchModel.still` on a held frame.
@@ -26,6 +30,7 @@ import {
   type BlockReply,
   type ProbeSpec,
   type Stream,
+  type StreamDamage,
   type StreamMode,
   type WorkerLike,
 } from '../sound';
@@ -70,6 +75,18 @@ export interface Live {
   update(dt: number, run: boolean): void;
 }
 
+/** The damage of the board now on the bench, as the driver remembers it: its burnt parts and bulged cans. */
+export function benchDamage(model: BenchModel): StreamDamage {
+  const burnt: string[] = [];
+  const bulged: string[] = [];
+  for (const p of model.net?.net.parts ?? []) {
+    const memory = model.state.parts.get(p.id);
+    if (memory?.burnt) burnt.push(p.id);
+    else if (memory?.bulged) bulged.push(p.id);
+  }
+  return { burnt, bulged };
+}
+
 export function createLive(ctx: ChapterContext, model: BenchModel, opts: LiveOptions): Live {
   const { rate, block } = LIVE;
   const plan = new BlockPlan({ rate }, false);
@@ -91,15 +108,16 @@ export function createLive(ctx: ChapterContext, model: BenchModel, opts: LiveOpt
     opts.onBlock(b.first, b.samples, b.steps);
   };
 
-  /** Start the model again (or for the first time) with the board of this moment. */
+  /** Start the model again (or for the first time) with the board and the damage of this moment. */
   const start = (): void => {
     const net = model.net!.net;
+    const damage = benchDamage(model);
     sentVersion = model.version;
     plan.reset(false);
     if (stream === null) {
       stream = createStream(
         ctx,
-        { net, rate, block, probes: taps },
+        { net, rate, block, probes: taps, damage },
         {
           wants: () => running && plan.room(clock) > 0,
           onBlock,
@@ -107,7 +125,7 @@ export function createLive(ctx: ChapterContext, model: BenchModel, opts: LiveOpt
           makeWorker: opts.makeWorker,
         },
       );
-    } else stream.restart(net);
+    } else stream.restart(net, damage);
     lastRevision = -1;
     opts.onRestart?.();
   };
@@ -156,8 +174,10 @@ export function createLive(ctx: ChapterContext, model: BenchModel, opts: LiveOpt
         running = true;
         start();
       } else if (model.version !== sentVersion) {
+        // a new solve: the board of this moment, and its damage when that changed (a part burnt there)
         sentVersion = model.version;
         stream.board(model.net.net);
+        stream.damage(benchDamage(model));
       }
       clock += Math.max(dt, 0);
       stream!.pump();

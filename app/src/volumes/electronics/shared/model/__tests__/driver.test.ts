@@ -870,4 +870,18 @@ describe('the longest time constant and a held page’s window (E2-9)', () => {
     // a tap the board has not: no window
     expect(model.still({ fs: 24000, count: 240, taps: [{ part: 'R99' }] })).toBeNull();
   });
+
+  it('the window burns nothing on its own heat: a part the bench shows whole carries its current to the end', () => {
+    const model = createBenchModel({ layout, board: overload() });
+    model.sync();
+    // R1 at 0.999 of its limit under a load of 3.1: on its own heat it would burn in the first millisecond
+    memoryOf(model.state, 'R1').heat = 0.999;
+    expect(model.part('R1')!.condition).toBe('hot');
+    const w = model.still({ fs: 24000, count: 240, taps: [{ part: 'R1' }] })!;
+    expect(w.warmup).toBe(0.5);
+    const i = 9 / (101.5 + 3 * WIRE_OHMS);
+    expect(Math.abs(w.samples[0]![0]!)).toBeCloseTo(i, 6);
+    expect(Math.abs(w.samples[0]![239]!)).toBeCloseTo(i, 6);
+    expect(model.state.parts.get('R1')!.heat).toBe(0.999);
+  });
 });

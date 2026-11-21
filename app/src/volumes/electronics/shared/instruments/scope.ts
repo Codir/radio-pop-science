@@ -19,7 +19,7 @@
  * and the bench slides it in and out on the table (world); the probes, their leads and the ground's lead live in the
  * board's frame (the hand's), as the multimeter's do (`meter.ts`).
  */
-import { Group, Mesh, Quaternion, Vector3 } from 'three';
+import { Group, Mesh, Vector3 } from 'three';
 import { RibbonLines, createScreen } from '@/fx';
 import { Builder, G } from '@/kit';
 import { K, col, type ColorLike } from '@/style';
@@ -29,8 +29,7 @@ import { PLACES } from '../bench/layout';
 import { DynTube, resample } from '../bench/dyn-tube';
 import { disposeTree } from '../parts/part';
 import type { StillTap } from '../model';
-import type { MeterWorld } from './meter';
-import { PROBE, createProbe, type Probe, type ProbeWorld } from './probe';
+import { PROBE, createProbePair, type Probe, type ProbePairWorld, type ProbePlaces } from './probe';
 import { SCOPE_COLORS, SCREEN_POINTS, ScopeModel, type ScopeSettings, type ScopeSetup, type ScopeWords } from './scope-model';
 
 export type ScopeProbeName = 'ch1' | 'ch2';
@@ -46,17 +45,20 @@ export const SCOPE_SCREEN = { width: 1.6, height: 1.28, x: -0.25, bottom: 0.3 } 
  */
 const JACK = { y: 0.15, x: { ch1: -0.72, ch2: -0.44 } } as const;
 /**
- * The probes at rest on the table in front of the scope (case frame): lying with their tips toward the reader and
- * their backs toward the inputs. On a phone, where the instrument is not in the shot, on the base in front of the
- * board where the multimeter's rest (VISUAL §9).
+ * Where the probes' leads leave the case (the inputs) and where the probes rest (case frame): on the table in front of
+ * the scope, lying with their tips toward the reader and their backs toward the inputs. On a phone, where the
+ * instrument is not in the shot, on the base in front of the board where the multimeter's rest (VISUAL §9).
  */
-const REST: Readonly<Record<ScopeProbeName, { x: number; z: number; axis: readonly [number, number] }>> = {
-  ch1: { x: -0.85, z: D / 2 + 1.5, axis: [0.1, -1] },
-  ch2: { x: -0.2, z: D / 2 + 1.6, axis: [0.15, -1] },
-};
-const PHONE_REST: Readonly<Record<ScopeProbeName, { x: number; z: number }>> = {
-  ch1: { x: -2.0 + PROBE.needle + PROBE.guard + PROBE.handle + PROBE.cap, z: 2.3 },
-  ch2: { x: 1.4, z: 2.3 },
+const PROBE_PLACES: ProbePlaces<ScopeProbeName> = {
+  jack: { ch1: [JACK.x.ch1, JACK.y, D / 2 + 0.07], ch2: [JACK.x.ch2, JACK.y, D / 2 + 0.07] },
+  rest: {
+    ch1: { x: -0.85, z: D / 2 + 1.5, axis: [0.1, -1] },
+    ch2: { x: -0.2, z: D / 2 + 1.6, axis: [0.15, -1] },
+  },
+  phoneRest: {
+    ch1: { x: -2.0 + PROBE.needle + PROBE.guard + PROBE.handle + PROBE.cap, z: 2.3 },
+    ch2: { x: 1.4, z: 2.3 },
+  },
 };
 /** How far a probe's tip reaches from its input in plan: to the board's farthest socket (`-1`, ≈ 9.6) and more. */
 export const SCOPE_LEAD = { reach: 10.5 } as const;
@@ -139,7 +141,12 @@ function buildClip(): Group {
   return group;
 }
 
-export function createOscilloscope(world: MeterWorld, fs: number, lookahead: number, setup: ScopeSetup = {}): Oscilloscope {
+export function createOscilloscope(
+  world: ProbePairWorld,
+  fs: number,
+  lookahead: number,
+  setup: ScopeSetup = {},
+): Oscilloscope {
   const body = new Group();
   body.name = 'oscilloscope';
   body.add(buildCase());
@@ -170,24 +177,15 @@ export function createOscilloscope(world: MeterWorld, fs: number, lookahead: num
   body.add(glass);
   const points = SCOPE_COLORS.map(() => Array.from({ length: SCREEN_POINTS }, () => new Vector3()));
 
-  const leads = new Group();
-  leads.name = 'scope-leads';
-  world.frame.add(leads);
-  const sockets: Record<ScopeProbeName, SocketId | null> = { ch1: null, ch2: null };
-  const probes = new Map<ScopeProbeName, Probe<ScopeProbeName>>();
-  SCOPE_PROBES.forEach((name, i) => {
-    const pw: ProbeWorld = {
-      socket: (id, out) => world.socket(id, out),
-      ground: (x, z) => world.ground(x, z),
-      taken: (id) => world.taken(id),
-      lies: (x, z) => world.onBase(x, z),
-      other: () => sockets[name === 'ch1' ? 'ch2' : 'ch1'],
-      seated: (s) => (sockets[name] = s),
-    };
-    const p = createProbe(name, { handle: 'ink', ring: SCOPE_COLORS[i]! }, pw, SCOPE_LEAD.reach);
-    leads.add(p.body, p.wire);
-    probes.set(name, p);
+  // the two channels' probes: an `ink` handle with a ring of the channel's colour; their sockets are the scope's taps
+  const pair = createProbePair(world, {
+    what: 'scope',
+    names: SCOPE_PROBES,
+    colors: { ch1: { handle: 'ink', ring: SCOPE_COLORS[0] }, ch2: { handle: 'ink', ring: SCOPE_COLORS[1] } },
+    places: PROBE_PLACES,
+    reach: SCOPE_LEAD.reach,
   });
+  const { leads, probes, sockets } = pair;
   // the ground's clip and its lead (static: made when the scope has come, hidden while it moves)
   const clip = buildClip();
   leads.add(clip);
@@ -201,21 +199,7 @@ export function createOscilloscope(world: MeterWorld, fs: number, lookahead: num
 
   const model = new ScopeModel(fs, setup, lookahead);
   let drawn = -1;
-  let shownWas = 0;
-  const smooth = (x: number): number => x * x * (3 - 2 * x);
   const jackWorld = new Vector3();
-  const restWorld = new Vector3();
-  const phoneRest = new Vector3();
-  const unFrame = new Quaternion();
-  const ALONG = new Vector3(-1, 0, 0);
-  const pose = {
-    jack: new Vector3(),
-    jackUp: new Vector3(),
-    restAt: new Vector3(),
-    restAxis: new Vector3(),
-    ready: false,
-    shown: false,
-  };
 
   /** The ground's lead from its jack over the battery's box down to the clip (board frame). */
   const layGround = (): void => {
@@ -269,48 +253,14 @@ export function createOscilloscope(world: MeterWorld, fs: number, lookahead: num
         return { node: s === null ? 0 : (world.layout.socket(s)?.node ?? 0) };
       });
     },
-    put(at) {
-      for (const [name, s] of Object.entries(at) as [ScopeProbeName, SocketId | null | undefined][]) {
-        if (s === undefined || !probes.has(name)) continue;
-        if (s !== null && world.layout.socket(s) === undefined) {
-          throw new RangeError(`scope.put: the board has no socket ${s}`);
-        }
-        probes.get(name)!.put(s);
-      }
-    },
+    put: (at) => pair.put(at),
     chart: (id, words, height) => model.chart(id, words, height),
     update(dt, shown, busy) {
+      // the probes the hand does not hold follow the case, and leave with it
+      const placed = pair.follow(dt, body, shown, busy);
       const k = Math.min(Math.max(shown, 0), 1);
-      const leaving = k < shownWas - 1e-6;
-      shownWas = k;
-      body.updateWorldMatrix(true, true);
-      world.frame.updateWorldMatrix(true, false);
-      const phone = world.phone();
-      pose.ready = k >= 1 - 1e-3;
-      pose.shown = k > 1e-3;
-      world.frame.getWorldQuaternion(unFrame).invert();
-      pose.jackUp.set(0, 1, 0).applyQuaternion(unFrame);
-      for (const [name, p] of probes) {
-        if (!busy(name) && (p.leg.place.kind === 'hand' || (leaving && p.leg.place.kind !== 'rest'))) {
-          p.seat(null);
-          p.leg.go(p.rest, 0.3, 0.3);
-        }
-        body.localToWorld(jackWorld.set(JACK.x[name], JACK.y, D / 2 + 0.07));
-        world.frame.worldToLocal(pose.jack.copy(jackWorld));
-        const r = REST[name];
-        body.localToWorld(restWorld.set(r.x, PROBE.radius, r.z));
-        world.frame.worldToLocal(pose.restAt.copy(restWorld));
-        pose.restAxis.set(r.axis[0], 0, r.axis[1]).normalize().applyQuaternion(unFrame);
-        if (phone) {
-          const pr = PHONE_REST[name];
-          world.fromBase(pr.x, PROBE.radius, pr.z, phoneRest);
-          pose.restAt.lerp(phoneRest, smooth(k));
-          pose.restAxis.lerp(ALONG, smooth(k)).normalize();
-        }
-        p.update(dt, pose);
-      }
       // the ground: its clip and lead only while the scope stands on its place (never on a phone: not in its shot)
-      const ground = pose.ready && !phone;
+      const ground = placed && !world.phone();
       clip.visible = groundLead.visible = ground;
       if (ground && groundAt !== k) {
         layGround();
@@ -335,14 +285,13 @@ export function createOscilloscope(world: MeterWorld, fs: number, lookahead: num
       model.reset();
     },
     snap() {
-      for (const p of probes.values()) p.leg.snap();
+      pair.snap();
     },
     dispose() {
-      for (const p of probes.values()) p.dispose();
+      pair.dispose();
       groundTube.geometry.dispose();
       (groundLead.material as { dispose(): void }).dispose();
       disposeTree(clip);
-      leads.removeFromParent();
       body.removeFromParent();
       disposeTree(body);
     },

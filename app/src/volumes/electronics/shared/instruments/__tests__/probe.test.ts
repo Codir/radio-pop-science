@@ -254,4 +254,30 @@ describe('the multimeter’s probes in the hand', () => {
     expect(bench.multimeter.probes.get('black')!.leg.place.kind).toBe('rest');
     expect(bench.multimeter.probes.get('black')!.body.visible).toBe(false);
   });
+
+  it('the oscilloscope’s are the same pair (createProbePair): put by a step, its taps, gone with the scope', () => {
+    const { bench, frames, grip, handlers } = setup();
+    expect(() => bench.multimeter.put({ red: 'z99' })).toThrow('meter.put: the board has no socket z99');
+    expect(() => bench.oscilloscope.put({ ch1: 'z99' })).toThrow('scope.put: the board has no socket z99');
+    bench.scope = 1;
+    frames(0.05);
+    expect(bench.oscilloscope.probes.get('ch1')!.ready()).toBe(true);
+    bench.oscilloscope.put({ ch1: 'a7', ch2: 'c11' });
+    frames(0.05);
+    expect(bench.oscilloscope.sockets).toEqual({ ch1: 'a7', ch2: 'c11' });
+    expect(bench.oscilloscope.taps()).toEqual([
+      { node: bench.layout.socket('a7')!.node },
+      { node: bench.layout.socket('c11')!.node },
+    ]);
+    // the meter's pair is its own: its probes stay at rest
+    expect(bench.multimeter.sockets).toEqual({ red: null, black: null });
+    bench.scope = 0.5;
+    frames(1 / 60);
+    expect(bench.oscilloscope.sockets).toEqual({ ch1: null, ch2: null });
+    expect(handlers.get(grip('probe:ch1'))!.enabled!()).toBe(false);
+    bench.scope = 0;
+    frames(0.5);
+    expect(bench.oscilloscope.probes.get('ch2')!.leg.place.kind).toBe('rest');
+    expect(bench.oscilloscope.probes.get('ch2')!.body.visible).toBe(false);
+  });
 });

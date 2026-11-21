@@ -14,9 +14,11 @@
  *   one `console.error` in its life.
  * - The stream numbers the samples (`first`), so they run on when the model starts again on the main thread.
  * - New probes (`probes`, an oscilloscope's probe moved: E2-9) go with the next request, once; the model plays on.
- *   `restart` (a step's own new board, its parts new and whole: E2-9) starts the model again from the operating point
- *   of the board given, in the thread with a new `init` (the reply to the request on its way then is not taken) or on
- *   the main thread; the samples are numbered on.
+ *   So does the scene's new damage (`damage`, a part burnt on the bench: E2-9), which the model plays from that block
+ *   on — a stream given a damage in its setup takes every failure from the scene and makes none of its own.
+ *   `restart` (a step's own new board, or the model again after a pause: E2-9) starts the model again from the
+ *   operating point of the board given, with the damage of that moment, in the thread with a new `init` (the reply to
+ *   the request on its way then is not taken) or on the main thread; the samples are numbered on.
  * - `createStream` puts its own `dispose` into `ctx.onDispose` (two copies of a chapter may live side by side at a
  *   boundary, so the thread belongs to the mount, never to the module); a reply after `dispose` changes nothing.
  *
@@ -25,7 +27,15 @@
 import type { ChapterContext } from '@/engine/api';
 import type { Netlist } from '@electronics/sim/core';
 import { createHandler, type Handler } from './handler';
-import type { BlockReply, BlockRequest, FromWorker, ProbeSpec, StreamSetup, ToWorker } from './protocol';
+import type {
+  BlockReply,
+  BlockRequest,
+  FromWorker,
+  ProbeSpec,
+  StreamDamage,
+  StreamSetup,
+  ToWorker,
+} from './protocol';
 
 export type StreamMode = 'worker' | 'sync';
 
@@ -52,8 +62,8 @@ export interface Stream {
   readonly blocks: number;
   /** A request is on its way. */
   readonly busy: boolean;
-  /** How many boards and lists of probes have been given (the setup's is the first): a block carries the revision it
-   * was asked with. */
+  /** How many boards, lists of probes and damages have been given (the setup's is the first): a block carries the
+   * revision it was asked with. */
   readonly revision: number;
   /** How long the model took for its last block, ms (NaN before the first). */
   readonly ms: number;
@@ -61,8 +71,13 @@ export interface Stream {
   board(net: Netlist): void;
   /** New probes (the same list again changes nothing): the next request carries them, the model plays on. */
   probes(list: readonly ProbeSpec[]): void;
-  /** The model starts again from the operating point of `net` (a step's own board): the samples are numbered on. */
-  restart(net: Netlist): void;
+  /** The scene's damage now (the same again changes nothing): the next request carries it, the model plays on. */
+  damage(given: StreamDamage): void;
+  /**
+   * The model starts again from the operating point of `net` (a step's own board, or after a pause), with `damage`
+   * (absent: the last given): the samples are numbered on.
+   */
+  restart(net: Netlist, damage?: StreamDamage): void;
   /** Once per engine update: a request (or, on the main thread, a block) while the output wants one. */
   pump(): void;
   dispose(): void;
@@ -95,10 +110,12 @@ export function createStream(ctx: ChapterContext, setup: StreamSetup, opts: Stre
   let next = 0;
   let net = setup.net;
   let probes: readonly ProbeSpec[] = setup.probes;
+  let damage: StreamDamage | undefined = setup.damage;
   let revision = 1;
-  /** The board and the probes the model on the current path has (a request carries what it has not). */
+  /** The board, the probes and the damage the model on the current path has (a request carries what it has not). */
   let netSent = true;
   let probesSent = true;
+  let damageSent = true;
   let blocks = 0;
   let ms = Number.NaN;
   let complained = false;
@@ -119,13 +136,14 @@ export function createStream(ctx: ChapterContext, setup: StreamSetup, opts: Stre
       first: next,
       net: netSent ? null : net,
       ...(probesSent ? {} : { probes }),
+      ...(damageSent || !damage ? {} : { damage }),
       revision,
     };
-    netSent = probesSent = true;
+    netSent = probesSent = damageSent = true;
     return request;
   };
-  /** The setup the model starts with now: the board and the probes of this moment. */
-  const now = (): StreamSetup => ({ ...setup, net, probes });
+  /** The setup the model starts with now: the board, the probes and the damage of this moment. */
+  const now = (): StreamSetup => ({ ...setup, net, probes, ...(damage ? { damage } : {}) });
 
   const take = (reply: BlockReply): void => {
     next = reply.first + setup.block;
@@ -200,7 +218,7 @@ export function createStream(ctx: ChapterContext, setup: StreamSetup, opts: Stre
         return;
       }
       local = h;
-      netSent = probesSent = true;
+      netSent = probesSent = damageSent = true;
     }
     const request = ask();
     const out = local.handle({
@@ -246,9 +264,20 @@ export function createStream(ctx: ChapterContext, setup: StreamSetup, opts: Stre
       probesSent = false;
     },
 
-    restart(board) {
+    damage(given) {
+      if (disposed) return;
+      const same = (a: readonly string[], b: readonly string[] | undefined): boolean =>
+        b !== undefined && a.length === b.length && a.every((id, k) => id === b[k]);
+      if (same(given.burnt, damage?.burnt) && same(given.bulged, damage?.bulged)) return;
+      damage = { burnt: [...given.burnt], bulged: [...given.bulged] };
+      revision++;
+      damageSent = false;
+    },
+
+    restart(board, given) {
       if (disposed) return;
       net = board;
+      if (given) damage = { burnt: [...given.burnt], bulged: [...given.bulged] };
       revision++;
       // the model of this moment starts again: the request on its way (if any) is not taken
       pending = null;
@@ -257,7 +286,7 @@ export function createStream(ctx: ChapterContext, setup: StreamSetup, opts: Stre
       const w = worker;
       if (mode !== 'worker' || w === null) return;
       ready = false;
-      netSent = probesSent = true;
+      netSent = probesSent = damageSent = true;
       try {
         w.postMessage({ type: 'init', setup: now() });
       } catch (e) {

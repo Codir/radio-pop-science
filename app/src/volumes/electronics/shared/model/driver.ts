@@ -147,9 +147,10 @@ export interface BenchModel {
   /**
    * A held page's oscilloscope (plan decision 16): the circuit now on the board in time at `fs` samples a second, from
    * its operating point, warmed up for `STILL.warmup(tauMax())`, then `count` samples of each tap (a node's voltage or
-   * the current into a part's first pin, as the stream's probes). The bench's memory goes in — a burnt part is a gap,
-   * a bulged can its leak, every part as warm as it is — and nothing of the bench's is written. The same board, the
-   * same samples. Null while the board has no good solve, or when a moment of it has none.
+   * the current into a part's first pin, as the stream's probes). The bench's damage goes in — a burnt part is a gap,
+   * a bulged can its leak — nothing fails in the window on its own heat (the bench's model tells what burns, as it
+   * tells the live page's stream), and nothing of the bench's is written. The same board, the same samples. Null
+   * while the board has no good solve, or when a moment of it has none.
    */
   still(window: StillWindow): Still | null;
 }
@@ -270,16 +271,15 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
     if (dc.ok) solution = dc;
   };
 
-  /** A state of its own with the bench's damage and heat (a burnt part a gap, a bulged can its leak): what a solve
-   * of the meter or a held page starts from, so that nothing of the bench's is written. */
-  const damaged = (parts: readonly PartInstance[], heat = false): ModelState => {
+  /** A state of its own with the bench's damage (a burnt part a gap, a bulged can its leak): what a solve of the
+   * meter or a held page starts from, so that nothing of the bench's is written. */
+  const damaged = (parts: readonly PartInstance[]): ModelState => {
     const own = createModelState();
     for (const p of parts) {
       const m = state.parts.get(p.id);
       if (!m) continue;
       if (m.burnt) memoryOf(own, p.id).burnt = true;
       if (m.bulged) memoryOf(own, p.id).bulged = true;
-      if (heat && m.heat > 0) memoryOf(own, p.id).heat = m.heat;
     }
     return own;
   };
@@ -425,9 +425,10 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
       const tau = model.tauMax();
       const warmup = STILL.warmup(tau);
       try {
-        // the board as it is now, the bench's damage and heat in a state of its own
+        // the board as it is now, the bench's damage in a state of its own; nothing fails in the window on its own
+        // heat — the bench's model tells what burns, as it tells the stream of a live page (`live.ts`)
         const board = structuredClone(net.net);
-        const t = new Transient(board, { dt: 1 / fs, substeps, state: damaged(board.parts, true) });
+        const t = new Transient(board, { dt: 1 / fs, substeps, state: damaged(board.parts), fails: false });
         if (!t.start('dc')) return null;
         const warm = Math.round(warmup * fs);
         if (t.run(warm) < warm) return null;

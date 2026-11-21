@@ -101,7 +101,7 @@ when that is refused — then each buffer keeps the blocks' rate and its source 
 ## The stream (`createStream`)
 
 `createStream(ctx, setup, { wants, onBlock, mode?, makeWorker? })`, with `setup` = `{ net, rate, block, substeps?,
-probes }` (`protocol.ts`; a probe is `{ node }` or `{ part }`, as `Transient.run` records them):
+probes, damage? }` (`protocol.ts`; a probe is `{ node }` or `{ part }`, as `Transient.run` records them):
 
 - **A background thread** (`model.worker.ts`) when there is one. `init` carries the setup; the handler
   (`handler.ts`) compiles the board into a `Transient` at 1/rate, starts it from the operating point and makes one
@@ -122,14 +122,23 @@ probes }` (`protocol.ts`; a probe is `{ node }` or `{ part }`, as `Transient.run
 - **New probes** (`stream.probes(list)`, E2-9: an oscilloscope's probe moved to another row): the next request carries
   them (`BlockRequest.probes`), once; the handler makes new arrays for them and the model plays on — only what it
   records changes. The same list again changes nothing; a new one bumps the revision, as a new board does.
-- **A restart** (`stream.restart(net)`, E2-9: a step's own new board, its parts new and whole): the model starts again
-  from the operating point of `net` — in the thread by a new `init` (the reply to the request on its way then is not
-  taken; nothing leaves before it is `ready` again), on the main thread at the next block. The samples are numbered on.
+- **The scene's damage** (`setup.damage`, `stream.damage(now)`, E2-9: the bench's oscilloscope follows the bench's
+  model driver, which is the one that burns a part): `{ burnt, bulged }` by id, the whole truth of the board — a part
+  it does not name is whole. A stream whose setup has it starts with it (a burnt part a gap, a bulged can its leak) and
+  its model fails nothing on its own heat (`TransientOptions.fails` false): every failure is the scene's word, carried
+  by the next request (`BlockRequest.damage`) once, and played from that block on — the handler writes it into the
+  model's state and builds the board again (`Transient.rebuild`), so time and charges run on. The same damage again
+  changes nothing; a new one bumps the revision. Without `damage` the model fails its parts on its own heat, as
+  E1-9's sound check plays it.
+- **A restart** (`stream.restart(net, damage?)`, E2-9: a step's own new board, or the scope back after a pause): the
+  model starts again from the operating point of `net`, with `damage` (absent: the last given) — in the thread by a
+  new `init` (the reply to the request on its way then is not taken; nothing leaves before it is `ready` again), on
+  the main thread at the next block. The samples are numbered on.
 - `dispose` (also from `ctx.onDispose`) ends the thread; a reply after it changes nothing.
 
 What is different from `radio/shared/link`: blocks of samples instead of frames; a request leaves while the output
-has room, not at 25 a second, and the next one right after a reply; the board and the probes travel only when they
-changed; no `still` (a held page's window is the bench's model driver's, `shared/model`); the main thread computes a
+has room, not at 25 a second, and the next one right after a reply; the board, the probes and the damage travel
+only when they changed; no `still` (a held page's window is the bench's model driver's, `shared/model`); the main thread computes a
 block per update (not one in six) while the output wants one.
 
 The bench's oscilloscope (E2-9, `shared/model/live.ts`) plays the board through this stream with no sound output: it
@@ -199,8 +208,10 @@ lead, never more than three on the plan, blocks played, the sample heard, a rese
 gain and the limiter, blocks on `currentTime` with a 30-second run without a gap and an underrun after a stall, the
 settings, the dispose); `tape.test.ts`; `handler.test.ts` and `stream.test.ts` (the protocol: the same samples as a
 `Transient` of the same board, a new board carried once and taken by `rebuild`, new probes carried once and recorded
-from that block on while the model plays on, a restart from the operating point of a new board with the numbering
-running on, own buffers in the transfer list,
+from that block on while the model plays on, the scene's damage — a burnt part a gap from the first block of a setup
+with it and from the block of a request with it, the same board built again, no failure on the model's own heat when
+told and one when not, the damage carried once and in a restart's `init` and on the main thread — a restart from the
+operating point of a new board with the numbering running on, own buffers in the transfer list,
 one request on its way and the next at once when a block comes, the main thread after a failure, numbering, the
 dispose); `board.test.ts` (the board, the resistors, the full scale, and that through 1 kΩ and 10 kΩ the high notes
 fall).

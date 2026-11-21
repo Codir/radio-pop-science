@@ -10,7 +10,7 @@ export {
 export { BlockPlan, PLAN_CAPACITY, PLAN_LEAD, type PlanOptions, type PlannedBlock } from './plan';
 export { Tape } from './tape';
 export { createStream, type Stream, type StreamMode, type StreamOptions, type WorkerLike } from './stream';
-export type { BlockReply, BlockRequest, FromWorker, ProbeSpec, StreamSetup, ToWorker } from './protocol';
+export type { BlockReply, BlockRequest, FromWorker, ProbeSpec, StreamDamage, StreamSetup, ToWorker } from './protocol';
 export {
   BOARD_NODES,
   BOARD_PROBES,

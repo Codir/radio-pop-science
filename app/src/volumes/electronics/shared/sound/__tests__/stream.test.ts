@@ -180,6 +180,48 @@ describe('the model stream', () => {
     expect(got[1]!.first).toBe(BLOCK);
   });
 
+  it('the scene’s damage goes with the next request, once, and bumps the revision; a restart carries the damage of that moment (E2-9)', () => {
+    const w = new FakeWorker();
+    const none = { burnt: [], bulged: [] };
+    stream = createStream(ctx, { ...SETUP, damage: none }, options({ makeWorker: () => w }));
+    room = 10;
+    expect(w.posted[0]).toEqual({ type: 'init', setup: { ...SETUP, damage: none } });
+    w.emit({ type: 'ready' });
+    expect(w.requests()[0]!.request.damage ?? null).toBeNull();
+    stream.damage({ burnt: [], bulged: [] }); // the same again: nothing new
+    expect(stream.revision).toBe(1);
+    const burnt = { burnt: ['RF'], bulged: [] };
+    stream.damage(burnt);
+    stream.damage({ burnt: ['RF'], bulged: [] });
+    expect(stream.revision).toBe(2);
+    w.answer(0);
+    expect(w.requests()[1]!.request).toMatchObject({ net: null, damage: burnt, revision: 2 });
+    w.answer(1);
+    expect(w.requests()[2]!.request.damage ?? null).toBeNull();
+    expect(got[1]!.revision).toBe(2); // the block asked with it carries its revision
+    // a restart with a damage: the new init carries it; without one, the last given
+    stream.restart(filterBoard(null), { burnt: [], bulged: ['CF'] });
+    expect(w.posted.at(-1)).toEqual({
+      type: 'init',
+      setup: { ...SETUP, net: filterBoard(null), damage: { burnt: [], bulged: ['CF'] } },
+    });
+    stream.restart(filterBoard(1000));
+    expect(w.posted.at(-1)).toEqual({
+      type: 'init',
+      setup: { ...SETUP, damage: { burnt: [], bulged: ['CF'] } },
+    });
+    // on the main thread, after the thread fell: the model starts with the damage of that moment
+    const sync = createStream(ctx, { ...SETUP, damage: none }, options({ mode: 'sync' }));
+    stream.dispose();
+    got = [];
+    sync.damage(burnt);
+    sync.pump();
+    const fresh = createHandler(() => 0);
+    fresh.handle({ type: 'init', setup: { ...SETUP, damage: burnt } });
+    const want = fresh.handle({ type: 'block', request: { seq: 1, first: 0, net: null, revision: 2 } })!;
+    expect(want.reply.type === 'block' && want.reply.reply.samples).toEqual(got[0]!.samples);
+  });
+
   it('a failing thread → the main thread, with the board of that moment', () => {
     const w = new FakeWorker();
     stream = createStream(ctx, SETUP, options({ makeWorker: () => w }));

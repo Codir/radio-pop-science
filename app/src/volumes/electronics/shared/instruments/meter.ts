@@ -13,12 +13,12 @@
  * reader) and the bench slides it in and out on the table (world); the probes and their leads live in the board's
  * frame (the hand's), and the meter tells them every frame where its jacks and their rests are.
  */
-import { Group, Quaternion, Vector3, type Object3D } from 'three';
+import { Group } from 'three';
 import { Builder } from '@/kit';
 import { col } from '@/style';
 import type { ReadoutSpec } from '@/hud';
 import type { PartInstance } from '@electronics/sim/core';
-import type { BoardLayout, SocketId } from '@electronics/sim/board';
+import type { SocketId } from '@electronics/sim/board';
 import { PLACES } from '../bench/layout';
 import { Prints, disposeTree, type PartEye } from '../parts/part';
 import type { BenchModel } from '../model';
@@ -34,7 +34,7 @@ import {
   type ProbeName,
   type ProbeSockets,
 } from './meter-model';
-import { PROBE, createProbe, type Probe, type ProbeWorld } from './probe';
+import { PROBE, createProbePair, type Probe, type ProbePairWorld, type ProbePlaces } from './probe';
 
 const mix = (a: string, b: string, k: number) => col(a).lerp(col(b), k);
 
@@ -52,40 +52,28 @@ export const DIAL_ANGLE: Readonly<Record<MeterMode, number>> = {
 };
 /** The jacks on the face near the reader: black «COM» on the left, red «V Ω A» on the right (case frame). */
 const JACK = { z: D / 2 - 0.35, x: { black: -0.3, red: 0.3 } } as const;
-/** The probes at rest on the table, right of the case (case frame): the tips away from the reader, the handles toward
- * it; on a phone they rest on the base in front of the board instead (VISUAL §9). */
-const REST: Readonly<Record<ProbeName, { x: number; z: number; axis: readonly [number, number] }>> = {
-  red: { x: W / 2 + 0.45, z: -0.85, axis: [0.1, 1] },
-  black: { x: W / 2 + 0.2, z: -0.75, axis: [0.05, 1] },
-};
 /**
- * On a phone: lying on the base in front of the board along it, the handles toward the meter (base frame, VISUAL §9:
- * x −2.0 … 1.4, z 2.3 … 2.5) — both on the band's edge nearer the board: on a 360 × 800 phone with the panel at half,
- * z 2.5 puts a grip ≈ 13 px above the panel's top, where the panel's own grab strip takes the touch.
+ * Where the probes' leads leave the case (the jacks) and where the probes rest (case frame): on the table right of the
+ * case, the tips away from the reader, the handles toward it. On a phone they rest on the base in front of the board
+ * instead, lying along it, the handles toward the meter (base frame, VISUAL §9: x −2.0 … 1.4, z 2.3 … 2.5) — both on
+ * the band's edge nearer the board: on a 360 × 800 phone with the panel at half, z 2.5 puts a grip ≈ 13 px above the
+ * panel's top, where the panel's own grab strip takes the touch.
  */
-const PHONE_REST: Readonly<Record<ProbeName, { x: number; z: number }>> = {
-  red: { x: -2.0 + PROBE.needle + PROBE.guard + PROBE.handle + PROBE.cap, z: 2.3 },
-  black: { x: 1.4, z: 2.3 },
+const PROBE_PLACES: ProbePlaces<ProbeName> = {
+  jack: { red: [JACK.x.red, H + 0.03, JACK.z], black: [JACK.x.black, H + 0.03, JACK.z] },
+  rest: {
+    red: { x: W / 2 + 0.45, z: -0.85, axis: [0.1, 1] },
+    black: { x: W / 2 + 0.2, z: -0.75, axis: [0.05, 1] },
+  },
+  phoneRest: {
+    red: { x: -2.0 + PROBE.needle + PROBE.guard + PROBE.handle + PROBE.cap, z: 2.3 },
+    black: { x: 1.4, z: 2.3 },
+  },
 };
 const COLORS: Readonly<Record<ProbeName, string>> = { red: 'coral', black: 'ink' };
 
-/** Where the probes meet the bench. */
-export interface MeterWorld {
-  /** The breadboard's group: the probes' frame. */
-  readonly frame: Object3D;
-  readonly layout: BoardLayout;
-  /** A socket's mouth (board frame). */
-  socket(id: SocketId, out: Vector3): Vector3;
-  /** A leg or a plug is in the socket. */
-  taken(id: SocketId): boolean;
-  /** The ground a lead lies on (board frame). */
-  ground(x: number, z: number): number;
-  /** The base's face under this plan point of the board frame (a probe let go there lies there). */
-  onBase(x: number, z: number): boolean;
-  /** The base frame → the board frame (a phone's rest). */
-  fromBase(x: number, y: number, z: number, out: Vector3): Vector3;
-  phone(): boolean;
-}
+/** Where the instruments' probes meet the bench (`probe.ts`, `ProbePairWorld`): the multimeter's and the scope's. */
+export type MeterWorld = ProbePairWorld;
 
 export interface Multimeter {
   /** The case on the table (its own frame): the bench slides it in and out (`props.meter`). */
@@ -174,48 +162,20 @@ export function createMultimeter(world: MeterWorld): Multimeter {
     });
   }
 
-  const leads = new Group();
-  leads.name = 'meter-leads';
-  world.frame.add(leads);
-  const sockets: Record<ProbeName, SocketId | null> = { red: null, black: null };
-  const probes = new Map<ProbeName, Probe<ProbeName>>();
-  for (const name of PROBE_NAMES) {
-    const pw: ProbeWorld = {
-      socket: (id, out) => world.socket(id, out),
-      ground: (x, z) => world.ground(x, z),
-      taken: (id) => world.taken(id),
-      lies: (x, z) => world.onBase(x, z),
-      other: () => sockets[name === 'red' ? 'black' : 'red'],
-      // the probe's socket is the meter's record: what the reading and the A mode's wire use
-      seated: (s) => (sockets[name] = s),
-    };
-    const p = createProbe(name, COLORS[name]!, pw);
-    leads.add(p.body, p.wire);
-    probes.set(name, p);
-  }
+  // the red and the black probe; their sockets are the meter's record: what the reading and the A mode's wire use
+  const pair = createProbePair(world, {
+    what: 'meter',
+    names: PROBE_NAMES,
+    colors: COLORS,
+    places: PROBE_PLACES,
+  });
+  const { leads, probes, sockets } = pair;
 
   const display = createMeterDisplay();
   let mode: MeterMode = 'V';
   let live: number | null | undefined = null;
   let knob = DIAL_ANGLE[mode];
   let turn: { from: number; to: number; t: number } | null = null;
-  let shownWas = 0;
-
-  // scratch for the per-frame poses
-  const jackWorld = new Vector3();
-  const restWorld = new Vector3();
-  const phoneRest = new Vector3();
-  const unFrame = new Quaternion();
-  /** A phone's probes lie along the board, the handles toward the meter on the left (board frame). */
-  const ALONG = new Vector3(-1, 0, 0);
-  const pose = {
-    jack: new Vector3(),
-    jackUp: new Vector3(),
-    restAt: new Vector3(),
-    restAxis: new Vector3(),
-    ready: false,
-    shown: false,
-  };
   const smooth = (x: number): number => x * x * (3 - 2 * x);
 
   const meter: Multimeter = {
@@ -248,18 +208,9 @@ export function createMultimeter(world: MeterWorld): Multimeter {
     },
     prints,
     extra: () => meterExtra(world.layout, mode, sockets),
-    put(at) {
-      for (const [name, s] of Object.entries(at) as [ProbeName, SocketId | null | undefined][]) {
-        if (s === undefined || !probes.has(name)) continue;
-        if (s !== null && world.layout.socket(s) === undefined) {
-          throw new RangeError(`meter.put: the board has no socket ${s}`);
-        }
-        probes.get(name)!.put(s);
-      }
-    },
+    put: (at) => pair.put(at),
     readout: (id, label) => ({ type: 'readout', id, label, text: () => display.text }),
     update(dt, shown, busy) {
-      const k = Math.min(Math.max(shown, 0), 1);
       // the knob: to its position in 0.25 s, eased
       if (turn) {
         turn.t = Math.min(turn.t + Math.max(dt, 0) / DIAL.seconds, 1);
@@ -267,42 +218,8 @@ export function createMultimeter(world: MeterWorld): Multimeter {
         if (turn.t >= 1) turn = null;
       }
       pointer.rotation.y = -knob;
-      // leaving: the tips the hand does not hold come out of their sockets and go with the meter
-      const leaving = k < shownWas - 1e-6;
-      shownWas = k;
-      body.updateWorldMatrix(true, true);
-      world.frame.updateWorldMatrix(true, false);
-      const phone = world.phone();
-      pose.ready = k >= 1 - 1e-3;
-      pose.shown = k > 1e-3;
-      // world directions into the board's frame: its turn undone (the case on the table is never turned)
-      world.frame.getWorldQuaternion(unFrame).invert();
-      pose.jackUp.set(0, 1, 0).applyQuaternion(unFrame);
-      for (const p of probes.values()) {
-        const name = p.name;
-        if (!busy(name)) {
-          // a probe the hand let go of mid-way (a step reset the hand) or which leaves with the meter: to rest
-          if (p.leg.place.kind === 'hand' || (leaving && p.leg.place.kind !== 'rest')) {
-            p.seat(null);
-            p.leg.go(p.rest, 0.3, 0.3);
-          }
-        }
-        body.localToWorld(jackWorld.set(JACK.x[name], H + 0.03, JACK.z));
-        world.frame.worldToLocal(pose.jack.copy(jackWorld));
-        const r = REST[name];
-        body.localToWorld(restWorld.set(r.x, PROBE.radius, r.z));
-        world.frame.worldToLocal(pose.restAt.copy(restWorld));
-        // the lying direction on the table (world), in the board's frame
-        pose.restAxis.set(r.axis[0], 0, r.axis[1]).normalize().applyQuaternion(unFrame);
-        if (phone) {
-          // on the base in front of the board, the handle toward the meter; it comes there with the meter
-          const pr = PHONE_REST[name];
-          world.fromBase(pr.x, PROBE.radius, pr.z, phoneRest);
-          pose.restAt.lerp(phoneRest, smooth(k));
-          pose.restAxis.lerp(ALONG, smooth(k)).normalize();
-        }
-        p.update(dt, pose);
-      }
+      // the probes the hand does not hold follow the case, and leave with it
+      pair.follow(dt, body, shown, busy);
     },
     measure(dt, model, now = false) {
       live = readMeter(world.layout, model, mode, sockets);
@@ -317,11 +234,10 @@ export function createMultimeter(world: MeterWorld): Multimeter {
         turn = null;
       }
       pointer.rotation.y = -knob;
-      for (const p of probes.values()) p.leg.snap();
+      pair.snap();
     },
     dispose() {
-      for (const p of probes.values()) p.dispose();
-      leads.removeFromParent();
+      pair.dispose();
       body.removeFromParent();
       disposeTree(body);
     },
