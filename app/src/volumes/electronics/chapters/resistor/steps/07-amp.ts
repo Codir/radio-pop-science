@@ -1,15 +1,15 @@
 /**
  * `resistor/amp` — «Резистор у підсилювачі». The amplifier is back on the board as the volume puts it (`parts/boards.ts`
  * `AMP` = `AMPLIFIER_PRESET`), the switch closed, the player's and the speaker's plugs in; the gap for the meter is its
- * own violet J8, which feeds the row of R5's (470 Ω) leg from the supply's row; on a desk the step has its own shot,
- * steeper than `stand` (`SHOT`), so the reservoir's can hides neither. The multimeter on its place on «V»; the
- * hand takes the probes and J8 (whole or by an end; one let go off the board goes to the tray, which has a jumper) and
- * nothing else of the amplifier. A callout names «резистор 470 Ω». Goal, in this order: (a) the gap closed, «V», the
- * probes across R5 (2ae or 5ae, and 6ae), |U| 3,926 … 3,936 V for 1 s; (b) no jumper in the gap, «A», the probes in
- * J8's rows, |I| 8,370 … 8,377 mA for 1 s and the meter's current all that leaves the row 2ae — R5's and the reservoir
- * C3's leak — within 0,1 %. The meter on «A» elsewhere is nearly a wire and can short a part of the amplifier: a part
- * burns (the model's event); then the dock's button «Нові деталі» puts the step's board back, whole, the dial on «V»,
- * the probes at rest.
+ * own violet J8, which feeds the row of R5's (470 Ω) leg from the supply's row; on a desk and a tablet the step has its
+ * own shot, steeper than `stand` (`AMP_SHOT`), so the reservoir's can hides neither. The multimeter on its place on
+ * «V»; the hand takes the probes and J8 (whole or by an end; one let go off the board goes to the tray, which has a
+ * jumper) and nothing else of the amplifier. A callout names «резистор 470 Ω». Goal, in this order: (a) the gap
+ * closed, «V», the probes across R5 (2ae or 5ae, and 6ae), |U| 3,926 … 3,936 V for 1 s; (b) no jumper in the gap, «A»,
+ * the probes in J8's rows, |I| 8,370 … 8,377 mA for 1 s and the meter's current all that leaves the row 2ae — R5's and
+ * the reservoir C3's leak — within 0,1 %. The meter on «A» elsewhere is nearly a wire and can short a part of the
+ * amplifier: a part burns (the model's event); then the dock's button «Нові деталі» puts the step's board back, whole,
+ * the dial on «V», the probes at rest.
  */
 import { Box3, Vector3 } from 'three';
 import type { Shot } from '@/engine/api';
@@ -29,15 +29,21 @@ const { volts: VOLTS, amps: AMPS } = WINDOWS.amp;
 /** How far the meter's current may be from R5's and C3's together in (b) (relative). */
 const SAME = 1e-3;
 /**
- * The step's shot on a desk: the bench's `stand` (the board, the multimeter on the left, the tray) seen steeper, ≈ 56°
- * to the table instead of ≈ 40°, so that the reservoir's tall can (C3, by column 2) hides neither R5 with both its legs
- * nor J8's right half; in `stand` and `meter` it stands in front of R5's leg in a2 and of J8. On a phone the bench's
- * `phone` shot, which is steep already.
+ * The step's shot on a desk and a tablet: the bench's `stand` (the board, the multimeter on the left, the tray) seen
+ * steeper, ≈ 56° to the table instead of ≈ 40°, so that the reservoir's tall can (C3, by column 2) hides neither R5
+ * with both its legs nor J8's right half; in `stand` and `meter` it stands in front of R5's leg in a2 and of J8. On a
+ * phone the bench's `phone` shot, which is steep already. `fit` is for tablets (desktops ignore it, phones take
+ * `phone`): a sphere just around the multimeter's case with its probes at rest, R5's legs, J8's ends and the tray's
+ * left slot (world x −6.3 … −1.2; `__tests__/shot.test.ts`). Without it the engine crops a narrow free area by up to
+ * ×1.5 around `target`, and the multimeter, 4.9 to the left of it, leaves the frame; with it the picture is pulled back
+ * until the sphere fits (×0.85 on 820 × 1180 and 1180 × 820; the bench's larger `meter` sphere, off `target`, would hit
+ * the engine's ×0.7).
  */
-const SHOT: Shot = {
+export const AMP_SHOT: Shot = {
   position: [-0.2, 13.85, 9.67],
   target: [-0.7, 1.0, 1.0],
   fov: STAGE_FOV,
+  fit: { center: [-3.3, 1.1, 1.1], radius: 3.5 },
   orbit: STAGE_SHOTS.stand.orbit,
 };
 const SHOT_NAME = 'amp';
@@ -48,7 +54,7 @@ export const ampStep: StepFactory = ({ ctx, ui, stand, reached, reach, here }) =
   const { bench } = stand;
   const word = (i: number): string => caption(S, i);
   // the step's shot follows the page between a desk and a phone, as the bench's own shots do
-  const shoot = (): void => ctx.camera.shots({ [SHOT_NAME]: stand.phone() ? STAGE_SHOTS.phone : SHOT });
+  const shoot = (): void => ctx.camera.shots({ [SHOT_NAME]: stand.phone() ? STAGE_SHOTS.phone : AMP_SHOT });
   shoot();
   ctx.onResize(shoot);
   const first = createTally<'a'>(['a'], HOLD.reading);
