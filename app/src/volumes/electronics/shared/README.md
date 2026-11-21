@@ -450,16 +450,20 @@ film.anchor('film' | 'groove' | 'rod', out); // a world point for a callout, on 
   electron orb without its glow) drift along the strip at `electronSpeed(amps)` = −6 units/s per ampere of the current
   into leg 0, held at 0.6: the other way to the current, proportional to it, 29 times slower with 10 kΩ than with
   330 Ω in the LED's loop. They come round from one end to the other under the caps. The heat of the model is the
-  film's colour (`createSurfaceLook`, VISUAL §4.8: never light); burnt, the film breaks under a charred belt with a
+  colour of the film, the rod and the caps (`createSurfaceLook`, VISUAL §4.8: never light); burnt, the film breaks under a charred belt with a
   pale crack and the electrons stand. Both drawings are pictures of the rule, not of a real part (the script's
   «Докладніше»: the turns are not a real part's, the speed shows only the current).
 - **Numbers** (`FILM`): the rod 0.085, the film to 0.092, the caps 0.01 … 0.17 of the length to 0.122 (as E2-8's
   cutaway), the groove 0.012 wide, the electrons 0.008 across, 160 of them, the grains 640.
-- **Draw calls** while open: the rod and the caps, the strip, the grains, the electrons, the two section faces — six;
-  burnt, the belt makes seven. None while the part is whole.
+- **Draw calls** while open, the whole view — the part's own lacquer, painted bands, metal bands (a gold or silver
+  one) and legs with the inside: eight at most. The inside's four: the rod, the caps, the strip and (burnt) its belt
+  in one mesh, its colours per vertex, the heat on all of it; the grains (instanced); the electrons; both section
+  faces in one mesh, turned to the wedge. Burnt, the part shows its own charred belt on the lacquer too, a ninth.
+  None of the inside while the part is whole.
 
 For checks: the door's reader (`dive` above) has the film's `state()` under `inside`: `{ ohms, turns, pitch, width,
-path, amps, speed, electrons, shown, open, amount, heat, burnt, surface, drawCalls }`. The sandbox's step `film` (the
+path, amps, speed, electrons, shown, open, amount, heat, burnt, surface, drawCalls, insideCalls }` (`drawCalls` — the
+whole view, the part's meshes with the inside's; `insideCalls` — the inside's own). The sandbox's step `film` (the
 red LED's loop, the value switch 330 Ω / 10 kΩ, probes `film:film`, `film:groove`, `film:rod`) and `qa/measure.mjs
 --only film` drive it.
 
@@ -475,14 +479,22 @@ chapters:
   A step takes it whole (`ohm`, `inside`, `share`, `bands`, `series`) or leaves a part of it out (`limit`: R1, `calc`:
   J2); the tests hold that no two of its bodies take the same place.
 - `AMPLIFIER_IDS` — the amplifier's ids (`sim/core` `amplifierNetlist`) as the bench names them: `B1` → `BAT`, `S1` →
-  `SW`, `PL` → `PLAYER`, `LS1` → `SPK`, `VR1` → `P1` (a pot's id on the board), every other part its own. The
-  amplifier's layout on the board is not here yet: the build `shared/model/__tests__/driver.test.ts` solved has twelve
-  pairs of bodies in one place, and its plugs `pl-` on `-2` and `spk-` on `-11` lie beyond their leads' 4.0 — `spk-`
-  cannot reach the − rail from the speaker at all (4.04 at the nearest), so its ground is a strip the board ties to the
-  rail. A layout for the chapters keeps every body clear of the others (`bench/__tests__/presets.test.ts` measures
-  that), every leg and plug out from under a low body (a raised one — an LED, a capacitor, a TO-92, the pot — may stand
-  over an axial part's leg or a jumper), every jumper off the sockets it passes and from under the axial parts, and
-  every plug within its lead.
+  `SW`, `PL` → `PLAYER`, `LS1` → `SPK`, `VR1` → `P1` (a pot's id on the board), every other part its own.
+- `AMPLIFIER_PRESET` — the amplifier of E1-6 on the board (the prologue's; the chapters of the path take a part of it):
+  its sixteen parts, the jumpers `J1` … `J10`, the plugs `pl+`, `pl-`, `spk+`, `spk-`, the pot at 0.5 (where every node
+  is: the comment in `presets.ts`). With the jumpers taken as the wires they stand for, its nodes are
+  `amplifierNetlist`'s one by one and its operating point is sim/core's within 1e-9; with the jumpers of 1 mΩ within
+  1e-4 (`sim/board/__tests__/presets.test.ts`) — measured from the − rail, so a node of a few μV that returns through a
+  ground row may be off by that row's rise (the speaker's, 34 μV at rest: the 1 mΩ of its ground's jumper against the
+  speaker's 8 Ω is 1.25e-4 of it). No jumper carries the bias diodes' current between the bases of the output pair
+  (their bias is exponential in those voltages: 8 μV over such a jumper moved it by 1.4e-4). On the bench
+  (`bench/__tests__/presets.test.ts`, the real models): no two bodies take one place, the jumpers' too; no leg, jumper
+  or plug stands where another part is — a raised body (an LED, a can, a TO-92) may stand over a jumper or an axial
+  part's leg, the pot (its case from 0.22) over the leg only; and every plug is within its lead. `spk-` cannot reach
+  the − rail from the speaker (4.1 at the nearest socket), so it goes into a ground row a jumper ties to the rail.
+  On the bench's shots the tall cans stand at the back (C1 and C2 on the line a, C3 across the channel at the left)
+  and nothing tall in front of the volume knob, at the far right by the player; the speaker's coral lead lies over
+  the knob's case on its way to `c10` (the speaker's row is left of the pot).
 
 ## Копії
 

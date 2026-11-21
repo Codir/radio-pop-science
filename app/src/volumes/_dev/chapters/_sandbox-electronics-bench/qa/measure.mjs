@@ -76,8 +76,8 @@
 //   film  — inside the resistor (E3-5, `shared/inside/film.ts`) on a held page, step `film` (the red LED's loop with
 //           330 Ω, the switch closed, shot `board`): on the board's shot the film is closed and the LED takes the
 //           model's 21.2 mA; the slider set to its end (the flight waited out) — the floor `inside`, the cut open with
-//           the magnifier's dive, the groove's turns those of `filmTurns(330)`, electrons shown, the view ≤ 8 draw calls
-//           and the frame ≤ 350, the callouts' points (`film:film`, `film:groove`, `film:rod`) on screen; the
+//           the magnifier's dive, the groove's turns those of `filmTurns(330)`, electrons shown, the whole view (the
+//           part's lacquer, bands and legs with the inside) ≤ 8 draw calls and the frame ≤ 350, the callouts' points (`film:film`, `film:groove`, `film:rod`) on screen; the
 //           electrons' speed is the model's current through R1 times one number (the readers, not pixels); the dock's
 //           switch to 10 kΩ — a new R1 of that value, more turns, a narrower and longer strip, the model's 0.73 mA and
 //           the speed that current times the same number, 29 times slower; back at 0 the film closed; the hue families
@@ -1647,7 +1647,13 @@ async function film(context) {
     Math.abs((f330?.turns ?? 0) - filmTurns(330)) < 1e-9 && f330?.shown > 0,
     `turns ${round(f330?.turns, 3)} (filmTurns ${round(filmTurns(330), 3)}), ${f330?.shown} of ${f330?.electrons} electrons shown`,
   );
-  check('the film’s view ≤ 8 draw calls', f330?.drawCalls >= 5 && f330?.drawCalls <= 8, `${f330?.drawCalls}`);
+  // the whole view: the part's own lacquer, bands and legs with the inside (the rod, caps and strip; the grains; the
+  // electrons; the section faces)
+  check(
+    'the whole view of the opened resistor ≤ 8 draw calls',
+    f330?.drawCalls >= 5 && f330?.drawCalls <= 8 && f330?.insideCalls === 4,
+    `${f330?.drawCalls} (the inside ${f330?.insideCalls}, the part ${f330?.drawCalls - f330?.insideCalls})`,
+  );
   const calls = (n.drawCalls = await drawCalls(page));
   check('draw calls of the frame inside ≤ 350', calls.engine > 0 && calls.engine <= DRAW_CALLS.gate, `${calls.engine}`);
   const amps330 = m330?.parts?.R1?.i;

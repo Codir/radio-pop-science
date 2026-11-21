@@ -11,15 +11,18 @@
  *   and section faces close the cut — the lacquer with the bands' paint at its rim, and near leg 0, where the cut goes
  *   deeper (a step), the rod's section, the film on it and the cap: the rod and the film seen as layers;
  * - the electrons (`cyan`, the library's electron without its glow) drifting along the strip at a speed from the
- *   model's current (`flow`); the heat of the model (`heat`) as the colour of the film's surface, never as light
- *   (VISUAL §1 principle 3, §4.8); burnt (`burnt`), the film broken through in the middle under a charred belt.
+ *   model's current (`flow`); the heat of the model (`heat`) as the colour of the film, the rod and the caps, never as
+ *   light (VISUAL §1 principle 3, §4.8); burnt (`burnt`), the film broken through in the middle under a charred belt.
  *
  * Honest drawing (`docs/volumes/electronics/chapters/resistor.md`, «Докладніше» of `inside`): the turns of the groove
  * grow with the value (`filmTurns`) — a picture of «a longer, narrower path, more ohms», not a real part's geometry;
  * the electrons' speed says only what current flows (`electronSpeed`), not a real drift speed.
  *
- * Draw calls while open: the rod and the caps, the strip, the grains, the electrons, the two section faces — six; the
- * burnt belt is a seventh. None while the part is whole (the group hidden).
+ * Draw calls while open — the whole view, the part's own meshes with the inside: the lacquer, its painted bands, its
+ * metal bands (a gold or silver one), the legs (the part's), and of the inside four — the rod, the caps, the strip and
+ * (burnt) its belt as one mesh with its colours per vertex, the grains (instanced), the electrons, the two section
+ * faces as one mesh: eight at most (`state().drawCalls`). Burnt, the part shows its own charred belt on the lacquer
+ * too (VISUAL §4.8), a ninth. None of the inside while the part is whole (the group hidden).
  */
 import {
   BufferAttribute,
@@ -33,7 +36,9 @@ import {
   Quaternion,
   Vector3,
   type Material,
+  type Object3D,
 } from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Builder } from '@/kit';
 import { K, col, type KToonMaterial } from '@/style';
 import { ORB_STYLES, createOrbs, type Orbs } from '@/fx';
@@ -131,8 +136,11 @@ export interface FilmState {
   readonly heat: number;
   readonly burnt: boolean;
   readonly surface: Surface;
-  /** Meshes drawn now (an instanced one counted once). */
+  /** Meshes of the whole view drawn now — the part's own (lacquer, bands, legs) and the inside's, an instanced one
+   * counted once: what the camera on the floor `inside` draws of this part. */
   readonly drawCalls: number;
+  /** Of those, the inside's own. */
+  readonly insideCalls: number;
 }
 
 /** The points a callout may point at. */
@@ -180,11 +188,16 @@ const grooveX = (phi: number, pitch: number): number => -SPAN + (phi / (2 * Math
 const onCylinder = (x: number, r: number, theta: number, out: Vector3): Vector3 =>
   out.set(x, AXIAL_Y + r * Math.cos(theta), r * Math.sin(theta));
 
+/** The carbon's colour: the strip's `ink`, its grains a shade lighter. */
+const STRIP_COLOR = col('ink');
+const GRAIN_COLOR = mix('ink', 'slate', 0.55);
+
 /**
  * The carbon strip: its top on the film's radius and its two walls down to the rod where the groove cuts it, wound
- * from a turn before the groove begins to a turn after it ends, held within the rod (the caps hide its ends).
+ * from a turn before the groove begins to a turn after it ends, held within the rod (the caps hide its ends). Its
+ * colour per vertex (`ink`): it joins the rod and the caps in one mesh.
  */
-function stripGeometry(turns: number): BufferGeometry {
+export function stripGeometry(turns: number): BufferGeometry {
   const { pitch, g } = groove(turns);
   const pos: number[] = [];
   const nor: number[] = [];
@@ -231,9 +244,34 @@ function stripGeometry(turns: number): BufferGeometry {
   const geo = new BufferGeometry();
   geo.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3));
   geo.setAttribute('normal', new BufferAttribute(new Float32Array(nor), 3));
+  const colors = new Float32Array(pos.length);
+  for (let i = 0; i < colors.length; i += 3) colors.set([STRIP_COLOR.r, STRIP_COLOR.g, STRIP_COLOR.b], i);
+  geo.setAttribute('color', new BufferAttribute(colors, 3));
   geo.computeBoundingBox();
   geo.computeBoundingSphere();
   return geo;
+}
+
+/** What the inside's one mesh takes of a geometry: its positions, normals and colours, without an index. */
+function plain(geo: BufferGeometry): BufferGeometry {
+  const g = geo.index ? geo.toNonIndexed() : geo.clone();
+  for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'color') g.deleteAttribute(name);
+  return g;
+}
+
+/** The meshes of a built kit model, their geometries made plain (the model's own are disposed). */
+function plainOf(group: Object3D): BufferGeometry[] {
+  const out: BufferGeometry[] = [];
+  group.traverse((o) => {
+    const m = o as Mesh;
+    if (!m.isMesh) return;
+    m.updateMatrix();
+    const g = plain(m.geometry).applyMatrix4(m.matrix);
+    out.push(g);
+    m.geometry.dispose();
+    for (const x of Array.isArray(m.material) ? m.material : [m.material]) x.dispose();
+  });
+  return out;
 }
 
 /** The section faces' layers: the lacquer with the bands' paint all along, and near leg 0 the cut down to the axis. */
@@ -305,7 +343,7 @@ export function createFilm(part: PartModel, opts: FilmOptions = {}): Film {
     return m;
   };
 
-  // the rod and the caps: one mesh, its colours per vertex
+  // the rod and the caps (their colours per vertex), which the strip and its belt join in one mesh
   const b = new Builder(`${part.key}:film-core`);
   const along = { axis: 'x' as const, at: [-HALF, AXIAL_Y, 0] as const };
   b.lathe(
@@ -342,18 +380,19 @@ export function createFilm(part: PartModel, opts: FilmOptions = {}): Film {
         ];
     b.lathe(prof, { ...along, seg: 36, c: 'mist' });
   }
-  const coreModel = b.build();
-  const core = coreModel.group.children[0] as Mesh;
-  core.name = 'film:core';
-  clipInner(tame(core.material as KToonMaterial));
+  const coreGeometry = mergeGeometries(plainOf(b.build().group));
 
-  // the carbon strip and its grains: one dark material each, both taking the heat as a colour (`createSurfaceLook`)
-  const stripMat = clipInner(tame(K.toon({ color: 'ink', highlight: 0.2, rim: 0.35, softness: 0.1 })));
-  const grainMat = clipInner(tame(K.toon({ color: mix('ink', 'slate', 0.55), highlight: 0.3, rim: 0.3 })));
-  stripMat.name = 'film.strip';
+  // the inside: the rod, the caps, the carbon strip and (burnt) its belt in one mesh — one material, their colours
+  // per vertex, taking the heat of the model as a colour (`createSurfaceLook`), as the grains do: the heat is the
+  // part's, and the ceramic and the caps the film lies on are as warm as the film
+  const insideMat = clipInner(
+    tame(K.toon({ color: 'white', vertexColors: true, highlight: 0.2, rim: 0.35, softness: 0.1 })),
+  );
+  const grainMat = clipInner(tame(K.toon({ color: GRAIN_COLOR, highlight: 0.3, rim: 0.3 })));
+  insideMat.name = 'film.inside';
   grainMat.name = 'film.grains';
-  const strip = new Mesh(new BufferGeometry(), stripMat);
-  strip.name = 'film:strip';
+  const inside = new Mesh(new BufferGeometry(), insideMat);
+  inside.name = 'film:inside';
   const grains = new InstancedMesh(new IcosahedronGeometry(1, 0), grainMat, FILM.grains.count);
   grains.name = 'film:grains';
   grains.frustumCulled = false;
@@ -379,13 +418,7 @@ export function createFilm(part: PartModel, opts: FilmOptions = {}): Film {
     ],
     { ...along, seg: 36, c: CRACK_COLOR },
   );
-  const burnModel = bb.build();
-  const burn = new Group();
-  burn.name = 'film:burn';
-  for (const m of burnModel.group.children as Mesh[]) {
-    clipInner(tame(m.material as KToonMaterial));
-    burn.add(m);
-  }
+  const beltGeometry = mergeGeometries(plainOf(bb.build().group));
 
   // the electrons: the library's electron, without its glow (VISUAL §1: only the LEDs and the lamp glow)
   const orbs: Orbs = createOrbs({
@@ -396,31 +429,53 @@ export function createFilm(part: PartModel, opts: FilmOptions = {}): Film {
     name: 'film:electrons',
   });
 
-  // the section faces: the body's own material (its heat with it), clipping nothing; colours per vertex
+  // the section faces, both in one mesh: the body's own material (its heat with it), clipping nothing; colours per
+  // vertex. The mesh turns about the axis to the wedge's middle (`alpha`); its two faces stand `half` either side of
+  // it — their vertices are turned so when the wedge's width changes (while it opens), never as the camera moves
   const skinFrom = part.body[0] as KToonMaterial;
   const skin = skinFrom.clone();
   skin.name = 'film.section';
   skin.uniforms.uKHeat = skinFrom.uniforms.uKHeat!;
   skin.clippingPlanes = [];
   const layers = faceLayers(model);
-  const pivot = new Group();
-  pivot.position.set(0, AXIAL_Y, 0);
-  const faces = [true, false].map((front) => {
-    const face = new Mesh(faceGeometry(layers, L, front ? -INSET : INSET, front), skin);
-    face.name = front ? 'film:face-a' : 'film:face-b';
-    pivot.add(face);
-    return face;
-  });
+  const halves = [faceGeometry(layers, L, -INSET, true), faceGeometry(layers, L, INSET, false)];
+  const facesGeometry = mergeGeometries(halves);
+  const firstFace = halves[0]!.getAttribute('position').count;
+  for (const h of halves) h.dispose();
+  const flatPos = Float32Array.from(facesGeometry.getAttribute('position').array);
+  const flatNor = Float32Array.from(facesGeometry.getAttribute('normal').array);
+  const faces = new Mesh(facesGeometry, skin);
+  faces.name = 'film:faces';
+  faces.position.set(0, AXIAL_Y, 0);
+  let facesHalf = Number.NaN;
+  /** Face 0 at −`half` from the wedge's middle, face 1 at +`half` (turns about the axis, +y toward +z). */
+  const poseFaces = (half: number): void => {
+    if (half === facesHalf) return;
+    facesHalf = half;
+    const pos = facesGeometry.getAttribute('position') as BufferAttribute;
+    const nor = facesGeometry.getAttribute('normal') as BufferAttribute;
+    const turn = [-half, half].map((a) => [Math.cos(a), Math.sin(a)] as const);
+    for (let i = 0; i < pos.count; i++) {
+      const [c, s] = turn[i < firstFace ? 0 : 1]!;
+      const k = 3 * i;
+      pos.setXYZ(i, flatPos[k]!, flatPos[k + 1]! * c - flatPos[k + 2]! * s, flatPos[k + 1]! * s + flatPos[k + 2]! * c);
+      nor.setXYZ(i, flatNor[k]!, flatNor[k + 1]! * c - flatNor[k + 2]! * s, flatNor[k + 1]! * s + flatNor[k + 2]! * c);
+    }
+    pos.needsUpdate = true;
+    nor.needsUpdate = true;
+    facesGeometry.computeBoundingBox();
+    facesGeometry.computeBoundingSphere();
+  };
 
-  for (const m of [core, strip, grains, orbs, ...faces, ...(burn.children as Mesh[])]) {
+  for (const m of [inside, grains, orbs, faces]) {
     m.castShadow = false;
     m.receiveShadow = m !== orbs;
   }
-  group.add(core, strip, grains, burn, orbs, pivot);
+  group.add(inside, grains, orbs, faces);
   part.bodyGroup.add(group);
 
-  // the heat of the model on the film's surface (never light), its burnt marks the belt
-  const look = createSurfaceLook([stripMat, grainMat], burn, { scorch: false, char: 0 });
+  // the heat of the model on the inside's surface (never light); burnt, the belt is in the inside's mesh (`build`)
+  const look = createSurfaceLook([insideMat, grainMat], null, { scorch: false, char: 0 });
 
   /* ------------------------------------------------------------------------------------- the state */
 
@@ -448,8 +503,12 @@ export function createFilm(part: PartModel, opts: FilmOptions = {}): Film {
   let lane = way();
 
   const build = (): void => {
-    strip.geometry.dispose();
-    strip.geometry = stripGeometry(nTurns);
+    // the rod and the caps, the strip for the turns, and the belt while burnt: one geometry
+    const strip = stripGeometry(nTurns);
+    inside.geometry.dispose();
+    inside.geometry = mergeGeometries(isBurnt ? [coreGeometry, strip, beltGeometry] : [coreGeometry, strip]);
+    inside.geometry.computeBoundingBox();
+    strip.dispose();
     // the grains on the strip between the caps, away from its edges
     const m = new Matrix4();
     const q = new Quaternion();
@@ -536,8 +595,8 @@ export function createFilm(part: PartModel, opts: FilmOptions = {}): Film {
       setPlanes();
       group.visible = open();
       if (!open()) return;
-      faces[0]!.rotation.x = wedge.alpha - wedge.half;
-      faces[1]!.rotation.x = wedge.alpha + wedge.half;
+      faces.rotation.x = wedge.alpha;
+      poseFaces(wedge.half);
       place();
     },
     cut(t) {
@@ -608,14 +667,18 @@ export function createFilm(part: PartModel, opts: FilmOptions = {}): Film {
       return Array.from({ length: FILM.electrons.count }, (_, i) => electronAt(i, new Vector3()));
     },
     state() {
+      // what the camera draws of the part: every mesh shown under its body frame with a visible material (the box of
+      // gesture 1 is never drawn), the electrons only while any is on the strip
       let calls = 0;
-      if (group.visible)
-        group.traverseVisible((o) => {
-          const m = o as Mesh;
-          if (!m.isMesh) return;
-          if (m === orbs && shown === 0) return;
-          calls++;
-        });
+      let insideCalls = 0;
+      part.bodyGroup.traverseVisible((o) => {
+        const m = o as Mesh;
+        if (!m.isMesh || (m === orbs && shown === 0)) return;
+        const mat = m.material as Material | Material[];
+        if (!(Array.isArray(mat) ? mat : [mat]).some((x) => x.visible)) return;
+        calls++;
+        for (let p: Object3D | null = m; p; p = p.parent) if (p === group) insideCalls++;
+      });
       return {
         ohms,
         turns: nTurns,
@@ -632,17 +695,16 @@ export function createFilm(part: PartModel, opts: FilmOptions = {}): Film {
         burnt: isBurnt,
         surface: look.surface,
         drawCalls: calls,
+        insideCalls,
       };
     },
     dispose() {
       wedge.dispose();
       group.removeFromParent();
-      strip.geometry.dispose();
+      for (const g of [inside.geometry, coreGeometry, beltGeometry, facesGeometry]) g.dispose();
       grains.geometry.dispose();
       grains.dispose();
-      for (const m of [core, ...faces, ...(burn.children as Mesh[])]) m.geometry.dispose();
-      for (const m of [stripMat, grainMat, skin, core.material as Material, ...(burn.children as Mesh[]).map((x) => x.material as Material)])
-        m.dispose();
+      for (const m of [insideMat, grainMat, skin]) m.dispose();
       orbs.geometry.dispose();
       orbs.material.dispose();
     },

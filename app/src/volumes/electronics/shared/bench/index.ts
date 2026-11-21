@@ -74,6 +74,7 @@ export { holderPose, overPose, worldDirToBoard, worldToBoard, type BenchTools, t
 // what the sandbox (`_dev`, which may import only `shared/**`) needs of the board as data
 export {
   AMPLIFIER_IDS,
+  AMPLIFIER_PRESET,
   BOARD_SPEC,
   LED_LOOP,
   createLayout,

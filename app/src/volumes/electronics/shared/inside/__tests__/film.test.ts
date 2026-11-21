@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { PARTS } from '@electronics/sim/core';
 import { AXIAL_Y, RESISTOR, buildPart, resistorRadius, type PartModel } from '../../parts';
 import { CLOSED } from '../wedge';
-import { FILM, createFilm, electronSpeed, filmTurns } from '../film';
+import { FILM, createFilm, electronSpeed, filmTurns, stripGeometry } from '../film';
 
 const make = (key = 'resistor-330'): PartModel => {
   const m = buildPart(key)!;
@@ -158,24 +158,55 @@ describe('the film inside a resistor (createFilm)', () => {
     }
   });
 
-  it('costs at most eight draw calls for the whole view, burnt and with every electron', () => {
+  it('costs at most eight draw calls for the whole view — the part’s lacquer, bands and legs with the inside — at any heat', () => {
+    // every resistor of the catalog: with a gold or silver band (the part draws its metal bands apart) and without
+    const keys = Object.entries(PARTS).flatMap(([key, s]) => (s.kind === 'resistor' ? [key] : []));
+    expect(keys.length).toBeGreaterThan(10);
+    let metal = 0;
+    for (const key of keys) {
+      const m = make(key);
+      const film = createFilm(m);
+      film.set(1, UP);
+      film.flow(0.03);
+      film.heat(0.9);
+      m.setLook({ heat: 0.9, load: 0.9, status: 'hot' }, 1 / 60);
+      film.update(1 / 60, 0);
+      const calls = drawn(m.bodyGroup);
+      const names = calls.map((c) => c.name).join(', ');
+      expect(calls.length, `${key}: ${names}`).toBeLessThanOrEqual(8);
+      // the reader counts the same meshes
+      expect(film.state().drawCalls, key).toBe(calls.length);
+      // of them the inside's own: the rod, caps and strip in one; the grains; the electrons; both section faces in one
+      const own = drawn(film.group);
+      expect(own.map((c) => c.name).sort(), key).toEqual(['film:electrons', 'film:faces', 'film:grains', 'film:inside']);
+      expect(film.state().insideCalls, key).toBe(4);
+      // the grains are instances: one call for all of them (the electrons, the library's orbs, are one call too)
+      expect((own.find((c) => c.name === 'film:grains') as InstancedMesh).isInstancedMesh, key).toBe(true);
+      // and the part's own: its lacquer, its painted bands, its metal bands where it has a gold or silver one, its legs
+      expect(calls.length - own.length, `${key}: ${names}`).toBeLessThanOrEqual(4);
+      expect(calls).toContain(m.legs);
+      if (calls.length - own.length === 4) metal++;
+    }
+    expect(metal).toBeGreaterThan(0);
+  });
+
+  it('burnt, adds only the part’s own charred belt: the inside’s belt is in its one mesh', () => {
     const m = make();
     const film = createFilm(m);
     film.set(1, UP);
-    film.flow(0.03);
-    film.heat(0.9);
-    film.burnt(true);
     film.update(1 / 60, 0);
-    const calls = drawn(film.group);
-    expect(calls.length, calls.map((c) => c.name).join(', ')).toBeLessThanOrEqual(8);
-    expect(calls.length).toBeGreaterThanOrEqual(5);
-    // the grains and the electrons are one instanced call each
-    expect(calls.filter((c) => (c as InstancedMesh).isInstancedMesh).length).toBeGreaterThanOrEqual(1);
+    const open = drawn(m.bodyGroup).length;
+    film.burnt(true);
+    m.setLook({ heat: 1, load: 3, status: 'burnt' }, 1 / 60);
+    film.update(1 / 60, 1 / 60);
+    // the inside draws the same four meshes; the lacquer shows its charred belt (VISUAL §4.8), one more
+    expect(drawn(film.group).length).toBe(4);
+    expect(drawn(m.bodyGroup).length).toBe(open + 1);
+    expect(film.state().drawCalls).toBe(open + 1);
   });
 
   it('draws its strip from outside: every face wound to face away from the rod, its shading normal the same way', () => {
-    const film = createFilm(make('resistor-4k7'));
-    const strip = film.group.getObjectByName('film:strip') as Mesh;
+    const strip = { geometry: stripGeometry(filmTurns(4700)) };
     const pos = strip.geometry.getAttribute('position');
     const nor = strip.geometry.getAttribute('normal');
     const [a, b, c, n, e1, e2, mid, out] = Array.from({ length: 8 }, () => new Vector3());
@@ -259,10 +290,24 @@ describe('the film inside a resistor (createFilm)', () => {
       if (mat?.emissiveIntensity !== undefined) expect(mat.emissiveIntensity, o.name).toBe(0);
     });
     expect(film.state().burnt).toBe(false);
+    // burnt: the charred belt round the strip's middle joins the inside's mesh, and goes when it is whole again
+    const inside = film.group.getObjectByName('film:inside') as Mesh;
+    const belt = (): number => {
+      const pos = inside.geometry.getAttribute('position');
+      let n = 0;
+      for (let i = 0; i < pos.count; i++) {
+        const r = Math.hypot(pos.getY(i) - AXIAL_Y, pos.getZ(i));
+        if (Math.abs(pos.getX(i)) <= FILM.burn.half + 1e-6 && r > FILM.film + 0.002) n++;
+      }
+      return n;
+    };
+    expect(belt()).toBe(0);
     film.burnt(true);
     film.update(1 / 60, 0);
     expect(film.state().burnt).toBe(true);
-    expect(film.group.getObjectByName('film:burn')!.visible).toBe(true);
+    expect(belt()).toBeGreaterThan(100);
+    film.burnt(false);
+    expect(belt()).toBe(0);
   });
 
   it('gives the callouts their points: on the strip, on the groove, on the rod, each on the camera’s side', () => {

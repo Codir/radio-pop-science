@@ -7,10 +7,12 @@
  *   J1 → 5ae → 330 Ω along the line b → 9ae → the LED → 10ae → J2 → − rail. Their steps take it as it is, or leave a
  *   part of it out.
  * - `AMPLIFIER_IDS` — how the amplifier's ids (`sim/core` `amplifierNetlist`, E1-6) are named on the bench: its
- *   battery, switch, player and speaker are the bench's own fixed parts, its volume control a pot on the board. The
- *   amplifier's layout on the board is not here yet: the one `shared/model/__tests__/driver.test.ts` (E2-M) solved puts
- *   twelve pairs of bodies in one place, and none found in task E3-5 keeps every body, leg, jumper and plug clear of
- *   the others (`shared/README.md`, «Boards of the steps»).
+ *   battery, switch, player and speaker are the bench's own fixed parts, its volume control a pot on the board.
+ * - `AMPLIFIER_PRESET` — the amplifier of E1-6 built on the board (the prologue's, and the board the chapters of the
+ *   path take a part of): its sixteen parts on their sockets, ten jumpers, the player's and the speaker's plugs.
+ *   With the jumpers taken as the wires they stand for its nodes are `amplifierNetlist`'s, one by one; every body,
+ *   leg, jumper and plug stands clear of the others, and every plug within its lead (`shared/README.md`, «Boards of
+ *   the steps»).
  */
 import type { BoardLayout, SocketId } from './layout';
 import type { Orientation } from './footprint';
@@ -115,4 +117,59 @@ export const LED_LOOP: BoardPreset = Object.freeze({
     { id: 'J2', spec: 'jumper', at: 'e10', to: '-10' },
   ] satisfies PresetPart[]),
   leads: Object.freeze({}),
+});
+
+/**
+ * The amplifier of E1-6 (`amplifierNetlist`, the bench's player as its source, the volume control at its middle) on
+ * the board. Where its nodes are (a row is a column's five sockets on one side of the channel: `13ae`):
+ *
+ * - the supply: the + rail, by J10 1ae, the protection diode D1 on the line b to 5ae — the upper transistor Q2's
+ *   collector, the LED's resistor R1 across the channel to 5fj, where the LED «on» stands in front with its cathode in
+ *   the − rail; by J8 2ae: the reservoir C3 across the channel (its minus on 2fj, J9 to the rail) and the driver's
+ *   load R5 on the line a;
+ * - the output stage: Q2 on the line c (collector 5ae, base 6ae — the top of the diodes, where R5 ends —, emitter
+ *   7ae), the lower transistor Q3 on the line g (emitter 7fj, base 8fj, collector 9fj), J7 joins the emitters; D2
+ *   across the channel from the top 6ae to the middle 6fj, D3 on to the driver 10fj, Q1's collector (J6 to Q3's
+ *   base): no jumper carries the diodes' current between the two bases, whose voltages set the pair's bias; the output
+ *   7ae with the output capacitor C2 on the line a to the speaker's row 10ae, where `spk+` goes;
+ * - the driver Q1 on the line g (collector 10fj, base 11fj, emitter 12fj): its base with the feedback R3 from the
+ *   output 7fj, R4 to the ground 15fj and the input resistor R2 across the channel from 11ae, where the input capacitor
+ *   C1 stands on the line a with its minus on 12ae, which J2 joins to the wiper's row 15ae; the volume control P1 on
+ *   the line b at the far right by the player (ground 17ae, wiper 15ae, the player's 13ae, where `pl+` goes), nothing
+ *   tall in front of its knob;
+ * - the ground: the − rail, and by jumpers the rows 17ae (J1: the pot, `pl-`, `spk-`), 12fj (J3: Q1's emitter, and by
+ *   J5 Q3's collector on 9fj), 15fj (J4: R4) and 2fj (J9: C3).
+ *
+ * The tall cans stand at the back: C1 and C2 on the line a, C3 across the channel at the left.
+ */
+export const AMPLIFIER_PRESET: BoardPreset = Object.freeze({
+  parts: Object.freeze([
+    { id: 'D1', spec: 'diode-1n4007', at: 'b1' },
+    { id: 'C3', spec: 'electrolytic-470u-16v', at: 'e2', o: 1 },
+    { id: 'R1', spec: 'resistor-2k2', at: 'e5', o: 1 },
+    { id: 'LED1', spec: 'led-red', at: 'j5', o: 1 },
+    { id: 'P1', spec: 'pot-10k', at: 'b17', o: 2, setting: 0.5 },
+    { id: 'C1', spec: 'electrolytic-10u-16v', at: 'a11' },
+    { id: 'R2', spec: 'resistor-1k5', at: 'b11', o: 1 },
+    { id: 'R3', spec: 'resistor-47k', at: 'j7' },
+    { id: 'R4', spec: 'resistor-18k', at: 'i11' },
+    { id: 'Q1', spec: 'transistor-bc547b', at: 'g10' },
+    { id: 'R5', spec: 'resistor-470', at: 'a2' },
+    { id: 'D2', spec: 'diode-1n4007', at: 'd6', o: 1 },
+    { id: 'D3', spec: 'diode-1n4007', at: 'i6' },
+    { id: 'Q2', spec: 'transistor-bc337-25', at: 'c5' },
+    { id: 'Q3', spec: 'transistor-bc327-25', at: 'g9', o: 2 },
+    { id: 'C2', spec: 'electrolytic-470u-16v', at: 'a7', to: 'a10' },
+    { id: 'J1', spec: 'jumper', at: 'e17', to: '-17' },
+    { id: 'J2', spec: 'jumper', at: 'e12', to: 'e15' },
+    { id: 'J3', spec: 'jumper', at: 'j12', to: '-12' },
+    { id: 'J4', spec: 'jumper', at: 'j15', to: '-15' },
+    { id: 'J5', spec: 'jumper', at: 'h9', to: 'h12' },
+    { id: 'J6', spec: 'jumper', at: 'f8', to: 'f10' },
+    { id: 'J7', spec: 'jumper', at: 'd7', to: 'f7' },
+    { id: 'J8', spec: 'jumper', at: 'd2', to: 'd5' },
+    { id: 'J9', spec: 'jumper', at: 'j2', to: '-2' },
+    { id: 'J10', spec: 'jumper', at: '+1', to: 'a1' },
+  ] satisfies PresetPart[]),
+  leads: Object.freeze({ 'pl+': 'c13', 'pl-': 'c17', 'spk+': 'c10', 'spk-': 'a17' }),
 });
