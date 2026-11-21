@@ -6,7 +6,7 @@
  * with its rated voltage, and every label no wider than its slot.
  */
 import { readFileSync } from 'node:fs';
-import { Box3, Vector3 } from 'three';
+import { Box3, Vector3, type BufferGeometry, type Mesh } from 'three';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { NBSP } from '@/content';
 import { setFontData, type FontJson, type Text3D } from '@/text';
@@ -209,5 +209,24 @@ describe('the labels in the font (VISUAL §6)', () => {
     expect(widest.key).toMatch(/^ceramic-100[pn]$/);
     expect(widest.width).toBeCloseTo(1.12, 2);
     tray.dispose();
+  });
+});
+
+describe('the tray leaves nothing behind', () => {
+  it('disposes every geometry it drew — the block and its foam too — when the bench goes (task E3-7)', () => {
+    const tray = createTray();
+    tray.set(['resistor-330', 'led-red']);
+    const geometries = new Set<BufferGeometry>();
+    tray.group.traverse((o) => {
+      const g = (o as Mesh).geometry as BufferGeometry | undefined;
+      if (g) geometries.add(g);
+    });
+    expect(geometries.size).toBeGreaterThan(0);
+    const disposed = new Set<BufferGeometry>();
+    for (const g of geometries) g.addEventListener('dispose', () => disposed.add(g));
+    tray.dispose();
+    // the chapter's own disposal runs before the engine's sweep of the scene: a geometry the tray took off the scene
+    // without disposing it would stay on the GPU, one more with every bench (the leak check of `chapter-check`)
+    expect([...geometries].filter((g) => !disposed.has(g)).map((g) => g.name || g.type)).toEqual([]);
   });
 });
