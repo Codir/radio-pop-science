@@ -12,14 +12,14 @@
 // resistor carried out of the loop and three resistors read; the slider «Глибина» dragged down into the resistor and
 // the value switched to 10 kΩ; three resistors from the tray, one at a time, on the ammeter; three voltages on «V»;
 // the amplifier: the meter on «A» across the supply burns the protection diode, «Нові деталі» puts it back, then the
-// voltage on 2,2 kΩ and, the jumper taken out, its current. After each goal the panel shows the takeaway and the
-// reader numbers are the model's; «Докладніше» opens; every recall link of every step is followed: one inside the
-// chapter (or into a built chapter) leads there and «назад» back, one into a chapter not built yet leaves the reader
-// where they are with no console error; the 330 Ω of `ohm` let go off the board comes back into its loop; every
-// step is arrived at with «Далі» and its camera sampled frame by frame for jumps; the closing card has three lines and
-// the bridge, and «Далі» on it is enabled only if `resistor-pick` is built. Goal snapshots `<step>-goal-<size>.jpg`
-// in --out; the console must stay free of errors. Last line: `PASS electronics/resistor — <n> checks (<size>)` or
-// `FAIL electronics/resistor — <k> of <n> checks (<size>)` (exit 1).
+// voltage on 470 Ω and, its jumper J8 taken out, the current in the gap. After each goal the panel shows the
+// takeaway and the reader numbers are the model's; «Докладніше» opens; every recall link of every step is followed:
+// one inside the chapter (or into a built chapter) leads there and «назад» back, one into a chapter not built yet
+// leaves the reader where they are with no console error; the 330 Ω of `ohm` let go off the board comes back into its
+// loop; every step is arrived at with «Далі» and its camera sampled frame by frame for jumps; the closing card has
+// three lines and the bridge, and «Далі» on it is enabled only if `resistor-pick` is built. Goal snapshots
+// `<step>-goal-<size>.jpg` in --out; the console must stay free of errors. Last line: `PASS electronics/resistor —
+// <n> checks (<size>)` or `FAIL electronics/resistor — <k> of <n> checks (<size>)` (exit 1).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -122,9 +122,10 @@ async function tapControl(id) {
  * lag; a finger carries the thing above it), then let go and let it arrive. With a socket as the target the drag ends
  * once the hand would put the thing there: a part's preview starts with that socket (leg 0), an end's `near` is it.
  * `thing` may be a function of what the hand holds after the press (a new part from the tray gets its id then).
+ * `grab` is a probe's name or a screen point on the thing (a part partly hidden behind another is taken where it shows).
  */
 async function bring(grab, thing, target, { settleTime = 0.45 } = {}) {
-  const g = await scr(grab);
+  const g = typeof grab === 'string' ? await scr(grab) : grab;
   const socket = typeof target === 'string' && target.startsWith('socket:') ? target.slice('socket:'.length) : null;
   const goal = typeof target === 'string' ? () => scr(target) : async () => target;
   await p.down(g.x, g.y);
@@ -134,7 +135,8 @@ async function bring(grab, thing, target, { settleTime = 0.45 } = {}) {
   await p.move(at.x, at.y);
   await page.evaluate(() => window.__app.step(1 / 60, 24));
   const grabbed = await held();
-  if (!grabbed && !grab.startsWith('part:')) check(`the hand takes ${grab}`, false, JSON.stringify(g));
+  if (!grabbed && typeof grab === 'string' && !grab.startsWith('part:'))
+    check(`the hand takes ${grab}`, false, JSON.stringify(g));
   const thingName = typeof thing === 'function' ? await thing() : thing;
   const t0 = await goal();
   const e0 = await scr(thingName);
@@ -475,7 +477,11 @@ const steps = {
     await next('amp');
     await recalls();
     const entry = await read(page, 'amp');
-    check('on entry: «V», the gap closed, the LED «on» lit', entry.mode === 'V' && entry.gapClosed && entry.led > 0.0029, JSON.stringify(entry));
+    check(
+      'on entry: «V», the gap closed, R5 fed, the LED «on» lit',
+      entry.mode === 'V' && entry.gapClosed && entry.r5 > 0.008 && entry.led > 0.0029,
+      JSON.stringify(entry),
+    );
     // the interaction check of the bench (not the goal): «A» across the supply and the − rail burns D1
     await tapControl('meter-mode:A');
     await probes('d5', '-8');
@@ -496,23 +502,39 @@ const steps = {
         !(await shown(page, '[data-ui="ctl-fresh"]')),
       JSON.stringify({ key: fresh.key === entry.key, damaged: fresh.damaged, mode: m.mode, red: m.red, black: m.black }),
     );
-    // (a) the voltage on R1: on its leg in the supply's row and in the free socket of its other row
-    await probes('e5', 'j5');
+    // (a) the voltage on R5: on its legs, in the row 2ae fed by J8 and in the top's row 6ae
+    await probes('a2', 'a6');
     await advance(page, 1.3);
     const a = await read(page, 'amp');
     const ma = await meterNow();
-    check('(a) «6,587 V» on R1, counted', a.a && ma.text === '6,587 V' && ma.panel === '6,587 V', JSON.stringify({ a: a.a, text: ma.text }));
-    // (b) the jumper out (whole, off the board: to the tray), the probes into its rows, then «A»
-    await bring('part:J11', 'tip:J11:0', await offBoard());
+    check('(a) «3,931 V» on R5, counted', a.a && ma.text === '3,931 V' && ma.panel === '3,931 V', JSON.stringify({ a: a.a, text: ma.text }));
+    // (b) J8 out (whole, off the board: to the tray), the probes into its rows, then «A». On a desk the reservoir's can
+    // stands in front of J8's left half: the hand takes the wire on its right half, where it shows.
+    const mid = await scr('part:J8');
+    const end = await scr('tip:J8:1');
+    await bring({ x: mid.x + (end.x - mid.x) * 0.3, y: mid.y + (end.y - mid.y) * 0.3 }, 'tip:J8:0', await offBoard());
     await advance(page, 0.6);
     const open = await read(page, 'amp');
-    check('the gap open: J11 gone, the LED dark', !open.gapClosed && !(open.led > 1e-6), JSON.stringify(open));
-    await probes('i1', 'i5');
+    const j8 = (await read(page, 'electronics-board')).parts.J8 ?? null;
+    check(
+      'the gap open: J8 gone (or an end of it out), R5 off the supply, the LED «on» still lit',
+      !open.gapClosed && (j8 === null || j8.legs.includes(null)) && !(Math.abs(open.r5) > 1e-6) && open.led > 0.0029,
+      JSON.stringify({ ...open, key: undefined, J8: j8 }),
+    );
+    // the probes into J8's rows: its socket in 5ae and R5's leg in 2ae (on a desk the can stands in front of d2)
+    await probes('d5', 'a2');
     await tapControl('meter-mode:A');
     await advance(page, 1.3);
     const b = await read(page, 'amp');
     const mb = await meterNow();
-    check('(b) «2,994 mA» in the gap, the meter’s current the LED’s', b.b && plain(mb.text).replace('−', '') === '2,994 mA' && Math.abs(Math.abs(b.meter) / b.led - 1) < 1e-3, JSON.stringify({ b: b.b, text: mb.text, meter: b.meter, led: b.led }));
+    // what J8 carried: R5's current and the reservoir's leak — 0,11 % above R5's alone (the takeaway says so)
+    check(
+      '(b) «8,373 mA» in the gap: R5’s current and C3’s leak, 0,11 % above R5’s',
+      b.b && plain(mb.text).replace('−', '') === '8,373 mA' && plain(mb.panel).replace('−', '') === '8,373 mA' &&
+        Math.abs(Math.abs(b.meter) / (Math.abs(b.r5) + Math.abs(b.c3)) - 1) < 1e-3 &&
+        Math.abs(Math.abs(b.meter) / Math.abs(b.r5) - 1.00112) < 2e-4,
+      JSON.stringify({ b: b.b, text: mb.text, meter: b.meter, r5: b.r5, c3: b.c3 }),
+    );
     await goal('both halves');
     await more();
     // the closing card: three lines, the bridge; «Далі» enabled only if `resistor-pick` is built

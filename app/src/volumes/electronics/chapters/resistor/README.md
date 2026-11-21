@@ -4,7 +4,8 @@ Script: `docs/volumes/electronics/chapters/resistor.md` (all reader text from `c
 captions by position — `__tests__/manifest.test.ts`). World: the volume's bench (`@electronics/shared/**`: the room,
 the board, the parts, the hand, the multimeter, the model of the circuit, the magnifier's dive, the resistor's carbon
 film inside). First frame: the shot `stand`, three jumpers on the board, the red LED in the tray, the switch open;
-last frame: the shot `meter`, the amplifier on the board with the meter in the gap of its LED's branch.
+last frame: the step's own steep shot (`amp`), the amplifier on the board with the meter in the gap of its jumper J8,
+which feeds the 470 Ω.
 
 ## Files
 
@@ -30,7 +31,7 @@ last frame: the shot `meter`, the amplifier on the board with the meter in the g
 | `inside` | drags «Глибина» to its end (the lens onto R1, the camera through the ring: floor `inside`), switches «Резистор» 330 Ω / 10 kΩ → 1 s with each value down inside | the film (`shared/inside`): turns 3,54 → 6,5, the electrons' speed from the model's current (29 × slower); three callouts at `film.anchor` points; the switch puts a new R1 under the same id (`bench.preset`), the door follows it |
 | `law` | three resistors from the tray, one at a time, into the gap → «8,986 mA», «4,497 mA», «2,998 mA» each 1 s | the meter on «A» with its probes put by the step (e9, −9) once it stands in its place; the formula card `I = U / R` (a dock note) with the takeaway |
 | `share` | «V» (dock), the probes on the LED, the resistor, the rails → «1,960 V», «7,008 V», «8,968 V» each 1 s | three callouts name the places and go when their reading counted |
-| `amp` | (a) «V» on R1 (2,2 kΩ) → 6,582 … 6,592 V 1 s; (b) J11 out, «A» in its rows → 2,990 … 2,998 mA 1 s and the meter's current the LED's | «Нові деталі» (a dock button) while a part is burnt or bulged puts the step's board back; callout «резистор 2,2 kΩ» over R1 until both halves |
+| `amp` | (a) «V» on R5 (470 Ω) → 3,926 … 3,936 V 1 s; (b) the amplifier's own J8 out, «A» in its rows → 8,370 … 8,377 mA 1 s and the meter's current R5's and C3's together | the board is `AMPLIFIER_PRESET` as it stands; «Нові деталі» (a dock button) while a part is burnt or bulged puts it back; callout «резистор 470 Ω» over R5 until both halves |
 
 Every step puts its own board on entry with fresh parts (`bench.preset`: what it takes off is forgotten), sets the
 switch, the tray, the meter's dial and probes, the hand's policy and the names; a deep link (`?freeze`) lands on that
@@ -38,21 +39,23 @@ state, and `flash` starts with no LED and the switch open, so nothing burns befo
 
 ## Simplified / differs from the script
 
-- **`amp` measures the LED's resistor 2,2 kΩ, not 470 Ω.** The script planned a gap at R5 (470 Ω) with its top leg in
-  a free row X and a jumper to `top`, provisional on the layout of `AMPLIFIER_PRESET`. On the bench no such place
-  exists: a search over every straight place of R5 with one leg on its node and the other in a free row, with one or
-  two jumpers (straight or not), found none clear of the bodies of C3, C2, D1, Q2 and the neighbours' legs; and J8,
-  which feeds R5's row, also carries the reservoir C3's leak (9,4 μA), so in its gap the meter would read 8,373 mA, 0,11 %
-  above R5's current. The LED's branch has a clean gap: R1 from `e5` to `h5`, the violet J11 from `i5` to `i1`, the LED
-  from `j1` to the − rail (at the board's left end, so its tall body hides at most J11's far end) — every part of
-  the amplifier within 1e-4 of `AMPLIFIER_PRESET`'s point, no body, leg, jumper or plug where another part is
-  (`__tests__/boards.test.ts`). The script's step `amp` (Текст, Висновок, Ціль, Підписи, Підказки, Докладніше,
-  Бачимо, the fact notes) was rewritten for 2,2 kΩ: 6,587 V and 2,994 mA (the oracle `amplifier-op.json`: 6,59 V
-  on 2,2 kΩ); `PATH.md` records it among the scripts' deviations, the ledger's run note says so. The gap jumper's id is
-  `J11` (the amplifier has `J1` … `J10`), not the script's earlier `J1`. **Open (review of E3-6):** `resistor-pick/on`
-  measures the same R1 (6,59 V, ≈ 3 mA) and asks why 2,2 kΩ, which `amp`'s «Докладніше» already answers; the
-  controller or the owner chooses before E3-7 — `amp` back to 470 Ω (a gap in J8, the leak allowed for) or another
-  resistor, or `resistor-pick/on` rewritten to build on the current measured here (`PATH.md`, the deviation line).
+- **`amp`: the gap is the amplifier's own J8, not a jumper for R5 alone.** The script of E3-3 planned R5's (470 Ω)
+  top leg in a free row X and a new jumper from X to `top`, provisional on the layout of `AMPLIFIER_PRESET`. On the
+  bench no such place exists: a search (fix round 2 of E3-6) over all 644 layouts of R5 with one leg on its node
+  (the supply's 2ae or 5ae, or the top's 6ae), the other in a free row and one jumper from there to the other node
+  found none clear of the bodies and legs of C2, C3, D1, D2, Q2, J7 and J8; the three that met one part only stayed
+  blocked in all seven places of that part within its own nodes. So the board is the amplifier as it stands, and the
+  gap is J8 (`d2` … `d5`), the violet jumper from the supply's row to the row of R5's leg — the script's «його струм
+  іде крізь фіолетову перемичку поруч». J8 also feeds the reservoir C3, whose leak (9,4 μA) passes through it: in
+  the gap the meter reads 8,373 mA, Ohm's law on R5 gives 3,931 V / 470 Ω = 8,364 mA (0,11 % less). The takeaway says
+  «≈ 8,4 mA … майже стільки ж, 8,37 mA» and «Докладніше» says where the 0,009 mA go; the goal's window is the meter's
+  8,370 … 8,377 mA. An earlier build (E3-6 before its fix round 2) measured the LED's resistor R1 2,2 kΩ in a gap of
+  its own; that took the measurement of `resistor-pick/on` one chapter early (review of E3-6), so the step is back on
+  the script's 470 Ω and `resistor-pick/on` keeps R1 to itself.
+- **`amp` has its own shot on a desk** (`steps/07-amp.ts` `SHOT`, registered under the name `amp` and kept the
+  bench's `phone` on a phone, as the bench re-registers its shots on a resize): the `stand` shot seen steeper, ≈ 56° to
+  the table. In `stand` and in the script's `meter` the reservoir's tall can by column 2 stands in front of R5's leg in
+  `a2`, the row 2ae and J8's left half; the hand could not take J8 where it shows (review of E3-6, fix round 2).
 - **Names under the pointer of things the step keeps in place** (the script's «назви за наведенням» of jumpers, the
   LED in `limit`, the amplifier's parts, the multimeter): the bench's hand names only what it may take, so the chapter
   adds invisible twins of those parts' `hit` boxes (`parts/names.ts`). Only where a pointer hovers: on a touch screen a
@@ -61,7 +64,8 @@ state, and `flash` starts with no LED and the switch open, so nothing burns befo
   change with tests, plan E3 decision 5 as the controller ruled), since the merged E2-6 measured with the sources out.
 - `inside`: the value switch is in the step (`bench.preset` of the loop with another R1 under the same id), not a
   `parts/value.ts`; the slider's marks are «стенд» and «усередині резистора» only (the script's captions).
-- `amp` (b) reads the meter's current against the LED's (they are R1's): with the gap open nothing else flows there.
+- `amp` (b) reads the meter's current against R5's and the reservoir C3's together: with J8 out the meter is all that
+  feeds the row 2ae, so that sum is exact, while R5's alone is 0,11 % less.
 - `ohm`: the 330 Ω let go off the board (a phone: anywhere off it) would go to a tray the step does not have and be
   gone, the only 330 Ω with it; the step puts it back into the loop (`b5` … `b9`, new and whole: the step's board
   again, the other parts never move), so «330,0 Ω» stays within reach (review of E3-6; the script's «Бачимо» says so).

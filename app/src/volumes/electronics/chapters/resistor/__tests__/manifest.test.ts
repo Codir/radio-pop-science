@@ -64,7 +64,7 @@ describe('resistor captions', () => {
     ['amp', 5, 'Резистор'],
     ['amp', 6, 'Світлодіод'],
     ['amp', 7, 'Деталь'],
-    ['amp', 8, 'резистор 2,2 kΩ'],
+    ['amp', 8, 'резистор 470 Ω'],
     ['amp', 9, 'Нові деталі'],
   ] as const)('%s #%i is «%s»', (step, i, text) => {
     expect(caption(step, i).split(NBSP).join(' ')).toBe(text);

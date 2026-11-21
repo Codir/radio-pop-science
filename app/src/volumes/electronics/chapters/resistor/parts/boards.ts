@@ -50,31 +50,22 @@ export const ROWS = Object.freeze({
 });
 
 /**
- * `amp`: the amplifier of E1-6 (`AMPLIFIER_PRESET`) with a gap for the meter in the branch of its LED «on»: the LED's
- * resistor R1 (2,2 kΩ) from the supply's 5ae across the channel to `h5` (5fj), J11 along the line i from `i5` to `i1`
- * (1fj), and the LED from `j1` to the − rail — at the board's left end, so that its tall body hides no more than the
- * jumper's far end from the shots `meter` and `phone`. With J11 in place the board is the amplifier's, node by node; the meter
- * on «A» in J11's rows carries the LED's current alone. The amplifier's own layout has no free row by R5 or in its
- * supply's rows (the reservoir C3 and the output can C2 stand there; the chapter's README), so the gap is here.
+ * `amp`: the amplifier of E1-6 on the board as the volume puts it (`AMPLIFIER_PRESET`, not a socket changed), with the
+ * gap for the meter in its own jumper J8 (`d2` … `d5`): J8 joins the supply's row 5ae (after the protection diode) to
+ * the row 2ae of R5's (470 Ω) leg and the reservoir C3's plus. Out of the board it leaves R5 and C3 without the
+ * supply; the meter on «A» in its rows carries what J8 carried — R5's current and C3's leak (9,4 μA, 0,11 % of R5's),
+ * which the script's takeaway and its more-detail note say. A gap of R5's current alone has no place in this layout (no free
+ * row by R5 clear of C3, C2, D1, Q2 and the neighbours' legs: the chapter's README), and a relayout would part the
+ * chapter's amplifier from the prologue's.
  */
-export const AMP: BoardPreset = Object.freeze({
-  parts: Object.freeze([
-    ...AMPLIFIER_PRESET.parts.map((p): PresetPart => {
-      if (p.id === 'R1') return { id: 'R1', spec: p.spec, at: 'e5', to: 'h5' };
-      if (p.id === 'LED1') return { id: 'LED1', spec: p.spec, at: 'j1', o: 1 };
-      return p;
-    }),
-    { id: 'J11', spec: 'jumper', at: 'i5', to: 'i1' },
-  ]),
-  leads: AMPLIFIER_PRESET.leads,
-});
-/** The gap jumper of `amp` and the rows of its ends; the rows of R1's legs (the supply's 5ae, the LED's side 5fj). */
+export const AMP: BoardPreset = AMPLIFIER_PRESET;
+/** The gap jumper of `amp` and the rows of its ends; the rows of R5's legs: the supply's side (2ae, and 5ae through
+ * J8) and the top's (6ae: the upper output transistor's base and the two diodes). */
 export const AMP_ROWS = Object.freeze({
-  jumper: 'J11',
-  gap: ['1fj', '5fj'] as readonly RowId[],
-  /** The rows of the supply (R1's leg 0; J8 joins 2ae to 5ae) and of R1's other end with the gap closed. */
+  jumper: 'J8',
+  gap: ['2ae', '5ae'] as readonly RowId[],
   supply: ['2ae', '5ae'] as readonly RowId[],
-  load: ['1fj', '5fj'] as readonly RowId[],
+  top: ['6ae'] as readonly RowId[],
 });
 
 type Window = readonly [lo: number, hi: number];
@@ -100,6 +91,6 @@ export const WINDOWS = Object.freeze({
   },
   /** `share`: |V| on the LED, on the resistor, from rail to rail (the model's 1,9605, 7,0076, 8,9681 V). */
   share: { led: [1.955, 1.965] as Window, res: [7.003, 7.013] as Window, bat: [8.963, 8.973] as Window },
-  /** `amp`: |U| on R1 and |I| in the gap (the model's 6,5872 V and 2,9942 mA). */
-  amp: { volts: [6.582, 6.592] as Window, amps: [0.00299, 0.002998] as Window },
+  /** `amp`: |U| on R5 and |I| in J8's gap (the model's 3,9311 V and 8,3734 mA: R5's 8,3640 and C3's leak 0,0094). */
+  amp: { volts: [3.926, 3.936] as Window, amps: [0.00837, 0.008377] as Window },
 });

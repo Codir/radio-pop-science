@@ -2,8 +2,8 @@
  * The steps' boards (`parts/boards.ts`) as the bench's model solves them, and the windows of the goals around the
  * model's numbers (the script's «Ціль», `docs/volumes/electronics/chapters/resistor.md`): every board seats, the LED
  * straight on the battery burns within a few frames, the 330 Ω saves it, the three resistors of `law` give their
- * currents, the voltages of `share` add up, and the amplifier of `amp` with its gap is the amplifier — node by node
- * with the jumper in, the same current through the meter in the gap. On the bench (real part models, a stub context)
+ * currents, the voltages of `share` add up, and the amplifier of `amp` is the volume's own, its J8 the gap: J8 and the
+ * meter in its place carry R5's current and the reservoir's leak, 0,11 % above R5's. On the bench (real part models, a stub context)
  * no two bodies take one place, and nothing of the amplifier's board stands where another part is.
  */
 import { Box3, Group, Matrix4, PerspectiveCamera, Vector3, type Object3D } from 'three';
@@ -132,51 +132,64 @@ describe('the steps’ boards in the model', () => {
   });
 });
 
-describe('the amplifier with the gap of `amp`', () => {
-  const amplifier = () => board(AMPLIFIER_PRESET.parts, AMPLIFIER_PRESET.leads);
+describe('the amplifier of `amp`, the gap in its own J8', () => {
   const gapped = () => board(AMP.parts, AMP.leads);
 
-  it('is the amplifier: every part of AMPLIFIER_PRESET at its reading within 1e-4, J11 carrying the LED’s current', () => {
-    const ref = solve(amplifier());
-    const mine = solve(gapped());
-    for (const p of AMPLIFIER_PRESET.parts) {
-      const a = ref.reading(p.id)!;
-      const b = mine.reading(p.id)!;
-      // a jumper's 1 mΩ under the LED's 3 mA moves the rest by far less than the amplifier's own jumpers do
-      expect(Math.abs(b.i - a.i), `${p.id} i`).toBeLessThanOrEqual(1e-4 * Math.abs(a.i) + 1e-9);
-      expect(Math.abs(b.u - a.u), `${p.id} u`).toBeLessThanOrEqual(1e-4 * Math.abs(a.u) + 1e-6);
-    }
-    expect(Math.abs(mine.reading(AMP_ROWS.jumper)!.i)).toBeCloseTo(mine.reading('LED1')!.i, 12);
+  it('is the volume’s amplifier as it stands; J8 carries R5’s current and the reservoir’s leak', () => {
+    expect(AMP).toBe(AMPLIFIER_PRESET);
+    const s = gapped();
+    const j = s.parts.get(AMP_ROWS.jumper)!;
+    expect(j.spec).toBe('jumper');
+    expect(j.legs.map((x) => layout.socket(x!)!.row).sort()).toEqual([...AMP_ROWS.gap].sort());
+    // the row 2ae holds R5's leg, C3's plus and J8's end, nothing else: J8 is all that feeds it
+    const in2ae = [...s.parts.values()].flatMap((p) =>
+      p.legs.flatMap((x, k) => (x !== null && layout.socket(x)!.row === '2ae' ? [`${p.id}.${k}`] : [])),
+    );
+    expect(in2ae.sort()).toEqual(['C3.0', 'J8.0', 'R5.0']);
+    const model = solve(s);
+    const r5 = model.reading('R5')!.i;
+    const c3 = model.reading('C3')!.i;
+    expect(r5).toBeCloseTo(0.008364, 6);
+    expect(c3).toBeCloseTo(9.4e-6, 7);
+    expect(Math.abs(model.reading(AMP_ROWS.jumper)!.i)).toBeCloseTo(r5 + c3, 10);
   });
 
-  it('(a) the voltage on R1 across its rows is inside the window, the gap closed — the supply’s row and either end', () => {
+  it('(a) the voltage on R5 across its rows is inside the window, the gap closed — either supply row and the top', () => {
     const model = solve(gapped());
     for (const supply of AMP_ROWS.supply)
-      for (const load of AMP_ROWS.load) {
-        const u = Math.abs(model.rowVolts(supply)! - model.rowVolts(load)!);
-        expect(inside(u, WINDOWS.amp.volts), `${supply}…${load}: ${u}`).toBe(true);
+      for (const top of AMP_ROWS.top) {
+        const u = Math.abs(model.rowVolts(supply)! - model.rowVolts(top)!);
+        expect(inside(u, WINDOWS.amp.volts), `${supply}…${top}: ${u}`).toBe(true);
       }
-    expect(model.reading('R1')!.u).toBeCloseTo(6.58716, 4);
+    expect(model.reading('R5')!.u).toBeCloseTo(3.93106, 4);
   });
 
-  it('(b) J11 out, the meter on «A» in its rows: the LED’s current, inside the window, either way round', () => {
+  it('(b) J8 out, the meter on «A» in its rows: R5’s current and the leak, inside the window, either way round', () => {
     const s = gapped();
     remove(s, AMP_ROWS.jumper);
     for (const probes of [
-      { red: 'i5', black: 'i1' },
-      { red: 'g1', black: 'j5' },
+      { red: 'd5', black: 'd2' },
+      { red: 'c2', black: 'a5' },
     ] as ProbeSockets[]) {
       const model = solve(s, { mode: 'A', probes });
-      const meter = model.reading(METER_ID)!.i;
-      expect(inside(Math.abs(meter), WINDOWS.amp.amps), JSON.stringify(probes)).toBe(true);
-      expect(Math.abs(Math.abs(meter) / model.reading('LED1')!.i - 1)).toBeLessThan(1e-3);
+      const meter = Math.abs(model.reading(METER_ID)!.i);
+      const r5 = model.reading('R5')!.i;
+      const c3 = model.reading('C3')!.i;
+      expect(meter).toBeCloseTo(0.0083734, 7);
+      expect(inside(meter, WINDOWS.amp.amps), JSON.stringify(probes)).toBe(true);
+      expect(Math.abs(meter / (Math.abs(r5) + Math.abs(c3)) - 1)).toBeLessThan(1e-3);
+      // the 0,11 % the takeaway owns up to: Ohm's law on R5 alone gives 8,364 mA, the meter 8,373 mA
+      expect(meter / r5 - 1).toBeCloseTo(0.00112, 4);
+      expect(Math.abs(model.reading('R5')!.u / 470 - r5)).toBeLessThan(1e-12);
     }
-    // without the meter the gap is open: the LED is dark, R1 takes nothing
+    // without the meter the gap is open: R5 and the reservoir are off the supply, the output falls to 0 V
     const open = solve(s);
-    expect(open.reading('LED1')!.i).toBeLessThan(1e-9);
+    expect(Math.abs(open.reading('R5')!.i)).toBeLessThan(1e-9);
+    expect(Math.abs(open.rowVolts('7ae')! - open.rowVolts('-')!)).toBeLessThan(1e-6);
+    expect(open.reading('LED1')!.i).toBeCloseTo(0.0030324, 6);
     // and the jumper in place with the meter beside it: two wires side by side, half each — outside the window
-    const both = solve(gapped(), { mode: 'A', probes: { red: 'j5', black: 'g1' } });
-    expect(Math.abs(both.reading(METER_ID)!.i)).toBeCloseTo(both.reading('LED1')!.i / 2, 6);
+    const both = solve(gapped(), { mode: 'A', probes: { red: 'c2', black: 'a5' } });
+    expect(Math.abs(both.reading(METER_ID)!.i)).toBeCloseTo(0.0083734 / 2, 6);
     expect(inside(Math.abs(both.reading(METER_ID)!.i), WINDOWS.amp.amps)).toBe(false);
   });
 
@@ -192,7 +205,7 @@ describe('the amplifier with the gap of `amp`', () => {
     expect(t).toBeLessThan(1.5);
   });
 
-  it('a leg moved by the hand keeps the step’s shape check honest: the gap’s rows are J11’s', () => {
+  it('a leg moved by the hand keeps the step’s shape check honest: the gap’s rows are J8’s', () => {
     const s = gapped();
     const j = s.parts.get(AMP_ROWS.jumper)!;
     expect(j.legs.map((x) => layout.socket(x!)!.row).sort()).toEqual([...AMP_ROWS.gap].sort());
