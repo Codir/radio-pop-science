@@ -1,0 +1,28 @@
+# Latin-script words of the electronics volume, in addition to tools/content/terms_allowlist.tsv (read by tools/content/terms_check.py).
+# Columns (TAB-separated): word, kind (abbr | mark | name | symbol), explanation, reason. Explanation is «—» unless kind is abbr.
+# A word may be listed only once across both files: LED, MOSFET, THD, IEC, AA are global; units (V, mA, kΩ, μF, eV, nm, lm),
+# single letters, E12/E24 and part numbers that start with a digit (1N4148, 2N3904) are exempt.
+# Rows: every Latin word PATH.md puts into a step (on-screen fields and «Д»), plus NPN and PNP for «Докладніше» (batch E3 plan).
+BC547	mark	—	друк на корпусі транзистора стенда: «Докладніше» `transistor/legs`; дія й «Докладніше» гілки `mosfet/compare`
+BC547B	mark	—	повна назва транзистора стенда з паспорта: «Докладніше» `transistor/gain`, `amplifier/feedback`
+BC337	mark	—	вихідний транзистор підсилювача (BC337-25): «Докладніше» `transistor/push`
+NPN	mark	—	тип транзистора так, як його пишуть паспорти; лише «Докладніше» (реєстр: «Слова лише для „Докладніше“», n-p-n)
+PNP	mark	—	тип транзистора так, як його пишуть паспорти; лише «Докладніше» (реєстр: «Слова лише для „Докладніше“», p-n-p)
+ESR	abbr	еквівалентний послідовний опір	лише «Докладніше» `capacitor-kinds/electrolytic`, після українського пояснення
+SMD	abbr	поверхневий монтаж	лише «Докладніше» гілки `smd/size`, після українського терміна
+SPICE	name	—	родина програм розрахунку схем, якою перевірено модель стенда: «Докладніше» `diode/silicon`, `transistor/inside`
+nA	symbol	—	наноампер: струм діода навпаки, «Докладніше» `diode/oneway`, `diode/protect`
+pA	symbol	—	пікоампер: струм світлодіода навпаки й закритого транзистора, «Докладніше» `led/colors`, `transistor/switch`
+Energizer	name	—	виробник «Крони», з чиєї таблиці розряду пораховано 44 години: «Докладніше» `meter/amps`
+Bourns	name	—	виробник змінного резистора, за паспортом якого взято межу 0,2 W: «Докладніше» `divider/pot`
+PDB181	mark	—	серія змінного резистора Bourns: «Докладніше» `divider/pot`
+WIMA	name	—	виробник плівкових конденсаторів: «Докладніше» `capacitor-kinds/film`
+MKS	mark	—	серія плівкових конденсаторів WIMA MKS 2: «Докладніше» `capacitor-kinds/film`
+Nichicon	name	—	виробник електролітичних конденсаторів: «Докладніше» `capacitor-kinds/electrolytic`
+VR	mark	—	серія електролітичних конденсаторів Nichicon: «Докладніше» `capacitor-kinds/electrolytic`
+Vishay	name	—	виробник діода 1N4007 і електролітів 048 RML: «Докладніше» `diode/drop`, `capacitor-kinds/electrolytic`, `capacitor-kinds/reverse`
+RML	mark	—	серія електролітичних конденсаторів Vishay 048 RML: «Докладніше» `capacitor-kinds/electrolytic`, `capacitor-kinds/reverse`
+Nexperia	name	—	виробник діода 1N4148: «Докладніше» `diode/drop`
+Kingbright	name	—	виробник світлодіодів, за паспортами якого підібрано модель: «Докладніше» `led/chip`, `led/bright`, `led/on`
+WP7113	mark	—	серія світлодіодів Kingbright: «Докладніше» `led/chip`
+Philips	name	—	виробник, чий паспорт BC547B дає коефіцієнт 200–450: «Докладніше» `transistor/gain`
