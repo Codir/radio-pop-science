@@ -124,11 +124,19 @@
 //           probes in j17 and j13) on two held pages — the same `electronics-scope.hash` (the window `model.still`
 //           computes at once: deterministic), a sweep triggered on channel 1, ≤ 600 points a channel, the chart and the
 //           instrument's screen of the same sweep (the screen's extremes the chart's on its scale), the board chart on
-//           screen, ≤ 350 draw calls; the filter's resistor 1 → 4.7 → 10 kΩ (`__ui.set('filter', …)`, held pages):
-//           the amplitude of channel 2 after the filter falls, channel 1's stays; step `rc` (10 kΩ, 100 μF, a roll) — the
-//           switch closed by a real pointer (a phone: the dock's toggle), 1.5 s of frames: channel 2 at the model's
-//           moment `since` + 1 s is 62.95 % ± 0.5 % of 9 V (R·C = 1 s with the scope's own input of 1 MΩ on the
-//           capacitor, E3-8; E1-5's tolerance), channel 1 at 9 V; a live page of
+//           screen, the crests the held window's (E4-S: `crest` = `still.crest`, not the stream's), ≤ 350 draw calls;
+//           the filter's resistor 1 → 4.7 → 10 kΩ (`__ui.set('filter', …)`, held pages): the amplitude of channel 2
+//           after the filter falls, channel 1's stays; step `rc` (10 kΩ, 100 μF, a roll) — the switch closed by a real
+//           pointer (a phone: the dock's toggle), 1.5 s of frames: channel 2 at the model's moment `since` + 1 s is
+//           62.95 % ± 0.5 % of 9 V (R·C = 1 s with the scope's own input of 1 MΩ on the capacitor, E3-8; E1-5's
+//           tolerance), channel 1 at 9 V, and the cursor's crossing of 63 % of 9 V (E4-S) at `since` + 1.010 s ± 10 ms,
+//           left of the roll's newest sample; step `offset` (E4-S: the amplifier's supply, 0.05 V a division, 0 V 165
+//           divisions down) on a held page — the trace inside the band 8.05 … 8.45 V and inside the instrument's
+//           screen, the − rail on its bottom edge, the crests the held window's; step `shot` (E4-S: `filter/block`'s
+//           board, one sweep, a division before its edge) on a held page — before the switch the window at rest (two
+//           flat lines), the switch closed by a real pointer (a phone: the dock's toggle) and 0.25 s of frames: the
+//           jump caught (≥ 8.5 V, ≤ 0.5 V at its end, the division before it at rest, its edge at 0), then held frames
+//           and the switch opened again keep it — the same hash, no new window; a live page of
 //           `scope` (no `freeze`): the model in the background thread (`mode` worker), the first sweep ≤ 5 s after the
 //           page settled, sweeps and blocks keep coming; the console; snapshots `scope-<what>-<size>.jpg`.
 //   sound — the speaker in sound (E2-10), step `sound` (the player → a 10 kΩ pot as the volume control → the speaker)
@@ -2355,6 +2363,17 @@ const FIRST_SWEEP = 5;
 /** The filter's resistors of the step `scope`, in the order the dock's switch offers them. */
 const FILTERS = ['resistor-1k', 'resistor-4k7', 'resistor-10k'];
 
+/**
+ * `rc`'s cursor (E4-S): 63 % of 9 V on channel 2, which the charge through 10 kΩ ∥ the scope's 1 MΩ into 100 μF crosses
+ * 1.0103 s after the switch (the script of `capacitor`, step `slow`: the model's run with the probe on the capacitor).
+ */
+const RC_CROSS = { volts: 0.632 * 9, after: 1.0103, tolerance: 0.01 };
+/** Both channels' crests on a held page are its window's: `peak` over 0.5 s, the window shorter than that (E4-S). */
+const heldCrests = (sc) =>
+  Array.isArray(sc?.crest) &&
+  Array.isArray(sc?.still?.crest) &&
+  [0, 1].every((c) => sc.on[c] !== true || (sc.crest[c] !== null && Math.abs(sc.crest[c] - sc.still.crest[c]) < 1e-6));
+
 /** The value of a channel's points at the model's moment `t` (s): straight between the points round it. */
 function traceAt(scope, channel, t) {
   const { x, v } = scope.points[channel];
@@ -2416,6 +2435,11 @@ async function scope(context) {
       'scope: the instrument’s screen shows the chart’s sweep (its extremes the same on the screen’s scale)',
       same,
       `ch1 ${round(sc?.min?.[0], 4)} … ${round(sc?.max?.[0], 4)} V → ${round(sc?.screen?.[0]?.min, 4)} … ${round(sc?.screen?.[0]?.max, 4)}; ch2 ${round(sc?.min?.[1], 4)} … ${round(sc?.max?.[1], 4)} V → ${round(sc?.screen?.[1]?.min, 4)} … ${round(sc?.screen?.[1]?.max, 4)}`,
+    );
+    check(
+      'scope: the crests on the held page are the held window’s (E4-S), not the stream’s before it',
+      heldCrests(sc),
+      `crest ${JSON.stringify(sc?.crest?.map((v) => round(v, 5)))}, the window's ${JSON.stringify(sc?.still?.crest?.map((v) => round(v, 5)))}`,
     );
     if (touch) await page.evaluate(() => window.__ui.setSheet?.({ tab: 'board' }));
     const chart = await page.evaluate(() => window.__ui.locate('ctl-scope-scope'));
@@ -2492,6 +2516,19 @@ async function scope(context) {
         v !== null && Math.abs(v / RC63.volts - RC63.share) <= RC63.tolerance && Math.abs(v1 - 9) < 0.02,
         `${round(v, 4)} V = ${round((v / RC63.volts) * 100, 3)} %; channel 1 ${round(v1, 4)} V`,
       );
+      // E4-S: the cursor at 63 % of 9 V on channel 2 and where the trace crossed it, left of the newest sample
+      const cross = s1.crossing;
+      n.rc.cursor = s1.cursor;
+      n.rc.crossing = cross ? { x: round(cross.x, 4), after: round(cross.t - s1.since, 5) } : null;
+      check(
+        'rc: the cursor at 63 % of 9 V on channel 2; the trace crossed it 1.010 s ± 10 ms after the switch, left of now',
+        s1.cursor?.channel === 1 &&
+          Math.abs(s1.cursor.volts - RC_CROSS.volts) < 1e-9 &&
+          cross !== null &&
+          Math.abs(cross.t - s1.since - RC_CROSS.after) <= RC_CROSS.tolerance &&
+          cross.x < 0,
+        `cursor ${JSON.stringify(s1.cursor)}; crossing ${cross ? `${round(cross.t - s1.since, 5)} s after the switch, x ${round(cross.x, 4)} s` : 'none'}`,
+      );
       const calls = await drawCalls(page);
       check('rc: draw calls ≤ 350', calls.engine > 0 && calls.engine <= DRAW_CALLS.gate, `${calls.engine}`);
       await screenshot(page, snap('rc'));
@@ -2501,7 +2538,158 @@ async function scope(context) {
     await page.close();
   }
 
-  // 4. a live page: the model in the background thread, sweeps that come and keep coming
+  // 4. step `offset` (E4-S): the amplifier's supply in a band of 0.4 V, 0 V 165 divisions below the middle
+  {
+    const page = await context.newPage();
+    const pos = await open(page, 'offset').catch((err) => ({ error: String(err) }));
+    if (check('offset: opened', at(pos, 'offset'), where(pos))) {
+      await held(page);
+      const s = await scopeNow(page);
+      const lo = (-4 - s.ground) * s.voltsPerDiv;
+      const hi = (4 - s.ground) * s.voltsPerDiv;
+      const onScreen = (v) => Math.max(-1, Math.min(1, (v / s.voltsPerDiv + s.ground) / 4));
+      n.offset = {
+        band: [round(lo, 4), round(hi, 4)],
+        supply: [round(s.min[0], 4), round(s.max[0], 4)],
+        screen: s.screen,
+        level: round(s.trigger.used, 4),
+        crest: s.crest?.map((v) => round(v, 5)),
+        window: s.still?.crest?.map((v) => round(v, 5)),
+        warmup: s.still?.warmup,
+      };
+      check(
+        'offset: 0.05 V a division with 0 V 165 divisions below the middle — the screen 8.05 … 8.45 V',
+        s.voltsPerDiv === 0.05 && s.ground === -165 && Math.abs(lo - 8.05) < 1e-9 && Math.abs(hi - 8.45) < 1e-9,
+        `${s.voltsPerDiv} V a division, ground ${s.ground}: ${round(lo, 4)} … ${round(hi, 4)} V`,
+      );
+      check(
+        'offset: the supply (channel 1 in e5) inside the band and inside the instrument’s screen, triggered on its middle',
+        s.ch1 === 'e5' &&
+          s.trigger.found === true &&
+          s.trigger.used > lo &&
+          s.trigger.used < hi &&
+          s.min[0] > lo &&
+          s.max[0] < hi &&
+          s.screen[0] !== null &&
+          s.screen[0].min > -1 &&
+          s.screen[0].max < 1 &&
+          Math.abs(s.screen[0].min - onScreen(s.min[0])) < 1e-6 &&
+          Math.abs(s.screen[0].max - onScreen(s.max[0])) < 1e-6,
+        `${round(s.min[0], 4)} … ${round(s.max[0], 4)} V → screen ${round(s.screen[0]?.min, 3)} … ${round(s.screen[0]?.max, 3)}; level ${round(s.trigger.used, 4)} V`,
+      );
+      check(
+        'offset: the − rail (channel 2 in −5, 0 V) cut at the screen’s bottom edge',
+        s.ch2 === '-5' && Math.abs(s.max[1]) < 1e-9 && s.screen[1]?.min === -1 && s.screen[1]?.max === -1,
+        `channel 2 ${round(s.max[1], 6)} V → screen ${JSON.stringify(s.screen[1])}`,
+      );
+      check(
+        'offset: the crests on the held page are the held window’s',
+        heldCrests(s),
+        `crest ${JSON.stringify(n.offset.crest)}, the window's ${JSON.stringify(n.offset.window)}`,
+      );
+      if (touch) await page.evaluate(() => window.__ui.setSheet?.({ tab: 'board' }));
+      const chart = await page.evaluate(() => window.__ui.locate('ctl-scope-offset'));
+      check('offset: the board chart on screen', chart !== null && chart.w > 50, JSON.stringify(chart));
+      await screenshot(page, snap('offset'));
+      const errors = await appErrors(page);
+      check('offset: console', errors.length === 0, consoleText(errors));
+    }
+    await page.close();
+  }
+
+  // 5. step `shot` (E4-S): one sweep, a division before its edge, caught and kept on the held page
+  {
+    const page = await context.newPage();
+    const pos = await open(page, 'shot').catch((err) => ({ error: String(err) }));
+    if (check('shot: opened', at(pos, 'shot'), where(pos))) {
+      const s0 = await scopeNow(page);
+      check(
+        'shot: before the switch, the held window at rest — two flat lines at 0 V, nothing caught',
+        s0?.display === 'sweep' &&
+          s0.pretrigger === 1 &&
+          s0.trigger.auto === false &&
+          s0.holds >= 1 &&
+          s0.caught === false &&
+          s0.trigger.found === false &&
+          s0.n.every((m) => m > 0) &&
+          [0, 1].every((c) => Math.abs(s0.max[c]) < 1e-3 && Math.abs(s0.min[c]) < 1e-3),
+        `holds ${s0?.holds}, caught ${s0?.caught}, found ${s0?.trigger?.found}, ch1 ${round(s0?.max?.[0], 5)} V, ch2 ${round(s0?.max?.[1], 5)} V`,
+      );
+      const phone = (await read(page, 'electronics-bench'))?.phone === true;
+      const p = await pointer(page, touch);
+      if (phone) await page.evaluate(() => window.__ui.setSheet?.({ tab: 'controls' }));
+      const tapSwitch = async () => {
+        await held(page);
+        const sw = phone
+          ? await page.evaluate(() => window.__ui.locate('ctl-battery-switch'))
+          : await page.evaluate(() => window.__app.locate('switch'));
+        if (sw) await p.tap(sw.x, sw.y);
+        return (await read(page, 'electronics-board'))?.settings?.SW;
+      };
+      const closed = await tapSwitch();
+      check(`shot: a tap on ${phone ? 'the dock’s toggle' : 'the slider'} closes the switch`, closed === 1, `SW ${closed}`);
+      await page.evaluate(() => window.__app.step(1 / 60, 15));
+      await held(page);
+      const s1 = await scopeNow(page);
+      const [rail, r] = s1.points;
+      const before = r.v.filter((_, k) => r.x[k] < 0);
+      const at0 = r.x.findIndex((x) => x >= 0);
+      const on = rail.v.filter((_, k) => rail.x[k] >= 0);
+      n.shot = {
+        sweeps: s1.sweeps,
+        found: s1.trigger.found,
+        caught: s1.caught,
+        at: round(s1.trigger.at - s1.since, 5),
+        max: round(s1.max[1], 4),
+        end: round(r.v.at(-1), 4),
+        first: round(r.x[0], 4),
+        before: before.length,
+        rail: [round(Math.min(...on), 4), round(Math.max(...on), 4)],
+      };
+      check(
+        'shot: the jump caught — channel 2 to ≥ 8.5 V at the edge and ≤ 0.5 V at the sweep’s end, a division at rest before the edge at 0, channel 1 at 9 V from it',
+        s1.caught === true &&
+          s1.trigger.found === true &&
+          s1.sweeps > s0.sweeps &&
+          s1.max[1] >= 8.5 &&
+          r.v.at(-1) <= 0.5 &&
+          Math.abs(r.x[0] + 5) < 1e-6 &&
+          before.length > 0 &&
+          before.every((v) => Math.abs(v) < 1e-3) &&
+          Math.abs(r.x[at0]) < 1e-6 &&
+          r.v[at0] >= 8.5 &&
+          on.length > 0 &&
+          on.every((v) => v > 8.9),
+        JSON.stringify(n.shot),
+      );
+      await screenshot(page, snap('shot'));
+      // held frames: the shot stays — no window from the operating point in its place
+      for (let k = 0; k < 3; k++) await held(page);
+      const s2 = await scopeNow(page);
+      check(
+        'shot: held frames keep it — the same hash, no new window',
+        s2.hash === s1.hash && s2.holds === s1.holds && s2.stills === s1.stills && s2.caught === true,
+        `hash ${s1.hash} → ${s2.hash}, holds ${s1.holds} → ${s2.holds}, stills ${s1.stills} → ${s2.stills}`,
+      );
+      // the switch opened again on the held page: no new edge, the shot still stays
+      const opened = await tapSwitch();
+      await held(page);
+      await held(page);
+      const s3 = await scopeNow(page);
+      check(
+        'shot: the switch opened again on the held page — the shot stays',
+        opened === 0 && s3.hash === s1.hash && s3.holds === s1.holds && s3.caught === true,
+        `SW ${opened}, hash ${s3.hash}, holds ${s3.holds}`,
+      );
+      const calls = await drawCalls(page);
+      check('shot: draw calls ≤ 350', calls.engine > 0 && calls.engine <= DRAW_CALLS.gate, `${calls.engine}`);
+      const errors = await appErrors(page);
+      check('shot: console', errors.length === 0, consoleText(errors));
+    }
+    await page.close();
+  }
+
+  // 6. a live page: the model in the background thread, sweeps that come and keep coming
   {
     const page = await context.newPage();
     const url = appUrl(base, { route: route('scope'), q });

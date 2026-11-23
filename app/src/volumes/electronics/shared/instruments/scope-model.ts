@@ -21,11 +21,18 @@
  * ground line `ground` divisions from the middle, `timePerDiv` over ten; what is beyond the screen is cut at its edge.
  * A channel may have a scale of its own (`channelVolts`, E3-8), on the chart the right axis of channel 1. A held page
  * (`?freeze`) shows `hold`: one span after the first edge of the window the model computed at once. `peak` is a
- * channel's crest over the last seconds shown (E3-8), kept per chunk of `PEAK_CHUNK` samples as they are fed.
+ * channel's crest over the last seconds shown (E3-8), kept per chunk of `PEAK_CHUNK` samples as they are fed — on a
+ * held page, of its window's samples (E4-S).
+ *
+ * For the chapters on the capacitor (task E4-S): 0 V may stand off the screen (`ground` beyond ±4), so that it holds
+ * a narrow band round a steady voltage, as a real scope's offset does; a sweep may show whole divisions before its
+ * edge (`pretrigger`), the chart's time then running from the edge; a sweep an edge started is `caught` — with `auto`
+ * off a single shot, which a held page keeps; and a step may mark a level on the board's chart (`cursor`: a dashed
+ * line, and a marker where the trace last crossed it, `crossing`).
  */
 import { fmtNumber } from '@/content/format';
 import type { ChartSpec } from '@/hud';
-import type { ChartApi } from '@/ui3d';
+import type { ChartApi, MarkerSpec } from '@/ui3d';
 import { fnv1a } from '../model/hash';
 import { decimateMinMax, findTrigger } from './sweep';
 
@@ -43,6 +50,14 @@ export interface ScopeTrigger {
   readonly auto: boolean;
 }
 
+/** A level a step marks on the board's chart (a real scope's horizontal cursor; E4-S, `capacitor/time`). */
+export interface ScopeCursor {
+  /** The level (V), on its channel's scale. */
+  readonly volts: number;
+  /** The channel whose trace's crossing of it is marked: 0 (the first) or 1. */
+  readonly channel: 0 | 1;
+}
+
 export interface ScopeSettings {
   readonly display: ScopeDisplay;
   /** s a division (ten across the screen). */
@@ -55,17 +70,33 @@ export interface ScopeSettings {
    * chart made with `ScopeWords.y2`; without it every channel is drawn there at `voltsPerDiv`.
    */
   readonly channelVolts: readonly [number | null, number | null];
-  /** Where 0 V is: divisions from the middle of the screen (−4 its bottom … 4 its top). */
+  /**
+   * Where 0 V is: divisions from the middle of the screen (−4 its bottom … 4 its top), any finite number. Beyond ±4
+   * 0 V is off the screen, which then holds a narrow band round a steady voltage, as a real scope's offset does
+   * (E4-S: `capacitor/reservoir`'s supply at 0,05 V a division with `ground` −165, the screen 8,05 … 8,45 V): the
+   * chart's axis ticks the real volts, and what is beyond the band is cut at the screen's edge.
+   */
   readonly ground: number;
   readonly trigger: ScopeTrigger;
+  /**
+   * Whole divisions of a sweep before its edge, 0 … 9 (E4-S, `filter/block`): the sweep starts that much before the
+   * sample its trigger found, so that the edge shows whole; the chart's time runs from the edge — 0 there, before it
+   * below 0. A sweep that runs free has its 0 as far in. A roll has none.
+   */
+  readonly pretrigger: number;
+  /** A level marked on the board's chart (its word `ScopeWords.cursor`), or none. */
+  readonly cursor: ScopeCursor | null;
   /** s after a sweep before the next may start. */
   readonly holdoff: number;
   /** The unit of time on the chart's axis (by default ms while the screen spans less than a second). */
   readonly unit: ScopeUnit;
 }
 
-/** What a step gives; the rest is `SCOPE_DEFAULTS`. */
-export type ScopeSetup = Partial<Omit<ScopeSettings, 'trigger'>> & { readonly trigger?: Partial<ScopeTrigger> };
+/** What a step gives; the rest is `SCOPE_DEFAULTS` (a cursor's channel: the first). */
+export type ScopeSetup = Partial<Omit<ScopeSettings, 'trigger' | 'cursor'>> & {
+  readonly trigger?: Partial<ScopeTrigger>;
+  readonly cursor?: { readonly volts: number; readonly channel?: 0 | 1 } | null;
+};
 
 /** The screen's divisions (VISUAL §5.2). */
 export const SCOPE_GRID = { x: 10, y: 8 } as const;
@@ -92,6 +123,8 @@ export const SCOPE_DEFAULTS: ScopeSettings = Object.freeze({
   channelVolts: Object.freeze([null, null] as const),
   ground: 0,
   trigger: Object.freeze({ channel: 0, level: null, slope: 1, auto: true }),
+  pretrigger: 0,
+  cursor: null,
   holdoff: 0,
   unit: 'ms',
 });
@@ -105,13 +138,24 @@ export function scopeSettings(setup: ScopeSetup = {}): ScopeSettings {
   const [own1 = null, own2 = null] = setup.channelVolts ?? SCOPE_DEFAULTS.channelVolts;
   for (const v of [own1, own2])
     if (v !== null && !(v > 0 && Number.isFinite(v))) throw new RangeError(`scope: a channel's volts a division above 0: ${v}`);
+  const ground = setup.ground ?? SCOPE_DEFAULTS.ground;
+  if (!Number.isFinite(ground)) throw new RangeError(`scope: the ground a finite number of divisions: ${ground}`);
+  const pretrigger = setup.pretrigger ?? SCOPE_DEFAULTS.pretrigger;
+  if (!(Number.isInteger(pretrigger) && pretrigger >= 0 && pretrigger < SCOPE_GRID.x))
+    throw new RangeError(`scope: whole divisions before the edge, 0 … ${SCOPE_GRID.x - 1}: ${pretrigger}`);
+  const c = setup.cursor ?? null;
+  const cursor = c === null ? null : { volts: c.volts, channel: c.channel ?? 0 };
+  if (cursor && !(Number.isFinite(cursor.volts) && (cursor.channel === 0 || cursor.channel === 1)))
+    throw new RangeError(`scope: a cursor's finite volts on channel 0 or 1: ${cursor.volts}, ${cursor.channel}`);
   return {
     display: setup.display ?? SCOPE_DEFAULTS.display,
     timePerDiv,
     voltsPerDiv,
     channelVolts: [own1, own2],
-    ground: setup.ground ?? SCOPE_DEFAULTS.ground,
+    ground,
     trigger: { ...SCOPE_DEFAULTS.trigger, ...setup.trigger },
+    pretrigger,
+    cursor,
     holdoff: setup.holdoff ?? SCOPE_DEFAULTS.holdoff,
     unit: setup.unit ?? (SCOPE_GRID.x * timePerDiv < 1 ? 'ms' : 's'),
   };
@@ -141,8 +185,16 @@ export interface ScopeState {
   readonly volts: readonly number[];
   readonly ground: number;
   /** The last sweep's trigger: its level (V; NaN when it ran free with its channel off), whether an edge started it,
-   * the model's moment of its start (s). */
+   * the model's moment of that edge (s; `pretrigger` divisions after the sweep's start). */
   readonly trigger: ScopeTrigger & { readonly used: number; readonly found: boolean; readonly at: number };
+  readonly pretrigger: number;
+  /** The trace now is a sweep an edge started on the samples that came (with `auto` off: a single shot caught). */
+  readonly caught: boolean;
+  readonly cursor: ScopeCursor | null;
+  /** Where the cursor's channel's trace last crossed its level (`crossing()`), or null. */
+  readonly crossing: { readonly x: number; readonly t: number } | null;
+  /** Each channel's crest over the last half second, as the steps' readouts show it (`peak(c, 0.5)`; null: none). */
+  readonly crest: readonly (number | null)[];
   readonly version: number;
   readonly sweeps: number;
   readonly holds: number;
@@ -169,7 +221,14 @@ export interface ScopeWords {
   readonly y2?: string | ((s: ScopeSettings) => string);
   readonly ch1: string;
   readonly ch2: string;
+  /** The name of the cursor's dashed line in the legend (the settings' `cursor`); without it the chart has none. */
+  readonly cursor?: string;
 }
+
+/** The crest window of the checks' reader (`ScopeState.crest`): the steps' readouts take half a second. */
+const STATE_CREST = 0.5;
+/** The cursor's line on the board's chart (VISUAL §5.2): dashed, `mist` — no hue of its own. */
+const CURSOR_LINE = { color: 'mist', width: 1.5 } as const;
 
 const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
 
@@ -228,6 +287,13 @@ export class ScopeModel {
   private readonly pkV: Float32Array[];
   /** The stream's index of the sample shown now (`update`); −1 before. */
   private shown = -1;
+  /** The trace now is a sweep an edge started on the samples that came. */
+  private caught_ = false;
+  /**
+   * A held page's window while it is what is shown (`hold`, until a later sample is shown): its length and each
+   * channel's largest |v| of every chunk of `PEAK_CHUNK` of its samples, from its first; `at` — the sample shown then.
+   */
+  private window: { readonly n: number; readonly peaks: readonly Float32Array[]; readonly at: number } | null = null;
 
   constructor(fs: number, setup: ScopeSetup = {}, lookahead = 0) {
     if (!(fs > 0 && Number.isFinite(fs))) throw new RangeError(`scope: a rate above 0: ${fs}`);
@@ -266,6 +332,15 @@ export class ScopeModel {
   get version(): number {
     return this.version_;
   }
+  /**
+   * The trace now is a sweep an edge started on the samples that came — not one that ran free, nor a held page's
+   * window. With `auto` off it is a single shot caught, which stays until the next edge (a new scale or a new board
+   * clears it); the bench keeps it on a held page instead of the window from the operating point (E4-S,
+   * `filter/block`).
+   */
+  get caught(): boolean {
+    return this.caught_;
+  }
   get on(): readonly boolean[] {
     return this.live;
   }
@@ -279,6 +354,10 @@ export class ScopeModel {
   /** Samples a span of the screen. */
   get spanSamples(): number {
     return Math.max(2, Math.round(SCOPE_GRID.x * this.s.timePerDiv * this.fs));
+  }
+  /** Samples of a sweep before its edge (`pretrigger` divisions). */
+  private get preSamples(): number {
+    return Math.round((this.s.pretrigger / SCOPE_GRID.x) * this.spanSamples);
   }
 
   /**
@@ -300,6 +379,8 @@ export class ScopeModel {
   private clear(): void {
     this.tn[0] = this.tn[1] = 0;
     this.trig = { used: Number.NaN, found: false, at: Number.NaN };
+    this.caught_ = false;
+    this.window = null;
     this.version_++;
   }
 
@@ -352,6 +433,8 @@ export class ScopeModel {
   update(now: number): boolean {
     if (this.held === 0 || !Number.isFinite(now)) return false;
     const at = Math.min(Math.floor(now), this.head);
+    // a held page's window is what is shown until a later sample is (a frame with time)
+    if (this.window !== null && at !== this.window.at) this.window = null;
     this.shown = at;
     return this.s.display === 'sweep' ? this.sweep(at) : this.roll(at);
   }
@@ -359,15 +442,26 @@ export class ScopeModel {
   /**
    * A channel's largest |v| over the last `seconds` of the samples shown (up to the one `update` showed last; the
    * samples that came ahead of it do not count yet), within a chunk of `PEAK_CHUNK` samples at either end: a step's
-   * readout of a wave's crest (E3-8). Null while the channel is off, or before any of its samples was shown.
+   * readout of a wave's crest (E3-8). On a held page, while its window is shown, the last `seconds` of the window's
+   * samples — all of them when it is shorter (E4-S: the two spans `still` computed, `divider/volume`'s 0,1 s), not
+   * those the stream gave before the page held. Null while the channel is off, or before any of its samples was shown.
    */
   peak(channel: number, seconds: number): number | null {
-    if (!this.live[channel] || this.shown < 0 || !(seconds > 0)) return null;
+    if (!this.live[channel] || !(seconds > 0)) return null;
+    if (this.window !== null) {
+      const pk = this.window.peaks[channel]!;
+      let best = -1;
+      for (let k = Math.max(0, Math.floor((this.window.n - seconds * this.fs) / PEAK_CHUNK)); k < pk.length; k++)
+        if (pk[k]! > best) best = pk[k]!;
+      return best < 0 ? null : best;
+    }
+    if (this.shown < 0) return null;
     const ids = this.pkId[channel]!;
     const pk = this.pkV[channel]!;
-    // the chunks wholly shown, whose end lies within the window
+    // the chunks wholly shown, whose end lies within the window (the samples are numbered from 0: no chunk before 0,
+    // whose slot's mark would be the empty one's)
     const last = Math.floor(this.shown / PEAK_CHUNK) - 1;
-    const first = Math.max(Math.floor((this.shown - seconds * this.fs) / PEAK_CHUNK), last - PEAK_CHUNKS + 1);
+    const first = Math.max(Math.floor((this.shown - seconds * this.fs) / PEAK_CHUNK), last - PEAK_CHUNKS + 1, 0);
     let best = -1;
     for (let chunk = first; chunk <= last; chunk++) {
       const slot = ((chunk % PEAK_CHUNKS) + PEAK_CHUNKS) % PEAK_CHUNKS;
@@ -391,11 +485,13 @@ export class ScopeModel {
 
   private sweep(now: number): boolean {
     const S = this.spanSamples;
+    const pre = this.preSamples;
     const oldest = this.head - this.held;
     if (this.next < oldest) this.next = oldest;
-    // the candidates: a full span must follow; only the recent ones (a scope shows the present, not a backlog)
-    const latest = now - S;
-    const from = Math.max(this.next, now - 2 * S, oldest + 1);
+    // the candidates: the sweep of an edge — `pre` samples before it, a span in all — must have come whole and start
+    // after the last one's end; only the recent ones (a scope shows the present, not a backlog)
+    const latest = now - S + pre;
+    const from = Math.max(Math.max(this.next, now - 2 * S, oldest) + pre, oldest + 1);
     if (latest < from) return false;
     const { channel, slope, auto } = this.s.trigger;
     let at = -1;
@@ -407,52 +503,78 @@ export class ScopeModel {
     const found = at >= 0;
     if (!found) {
       // no edge: wait for one, or with `auto` after a whole span of none run free with the last full span
-      if (!auto || latest - this.next < S) return false;
+      if (!auto || latest - pre - this.next < S) return false;
       at = latest;
     }
-    this.draw(this.ring, at, S, at / this.fs);
+    this.draw(this.ring, at, pre, S, at / this.fs);
     this.trig = { used, found, at: at / this.fs };
-    this.next = at + S + Math.round(this.s.holdoff * this.fs);
+    this.caught_ = found;
+    // the stream's samples on the screen again: the crests are theirs
+    this.window = null;
+    this.next = at - pre + S + Math.round(this.s.holdoff * this.fs);
     this.sweeps_++;
     return true;
   }
 
   /**
-   * A held page's window (`BenchModel.still`): one span after its first edge — or from its start when there is none —
-   * the samples a channel each, the first of them at the model's moment `start` (s). A roll keeps what it shows.
+   * A held page's window (`BenchModel.still`): one span with its first edge `pretrigger` divisions in — or from its
+   * start when there is none —, the samples a channel each, the first of them at the model's moment `start` (s). The
+   * crests (`peak`) are then the window's, until a later sample is shown. A roll keeps what it shows.
    */
   hold(samples: readonly ArrayLike<number>[], start = 0): boolean {
     if (this.s.display !== 'sweep') return false;
     const n = samples[0]?.length ?? 0;
     const S = this.spanSamples;
     if (n < S) return false;
+    const pre = this.preSamples;
     const { channel, slope } = this.s.trigger;
     const src = samples[channel];
     let at = -1;
     let used = Number.NaN;
     if (this.live[channel] && src) {
       used = this.s.trigger.level ?? this.middle(src, 0, Math.min(n, 2 * S));
-      at = findTrigger(src, n, n, used, slope, 1, n - S);
+      at = findTrigger(src, n, n, used, slope, Math.max(1, pre), n - S + pre);
     }
     const found = at >= 0;
-    if (!found) at = 0;
-    this.draw(samples, at, S, start + at / this.fs);
+    if (!found) at = pre;
+    this.draw(samples, at, pre, S, start + at / this.fs);
     this.trig = { used, found, at: start + at / this.fs };
+    this.caught_ = false;
+    this.keep(samples, n);
     this.holds_++;
     return true;
   }
 
-  /** One sweep from the samples [at, at + S) of `src` (rings by index, or a held window's arrays). */
-  private draw(src: readonly ArrayLike<number>[], at: number, S: number, t0: number): void {
-    const scale = UNIT_SCALE[this.s.unit];
+  /** The crests of a held page's window: each channel's largest |v| of every chunk of `PEAK_CHUNK` from its first. */
+  private keep(samples: readonly ArrayLike<number>[], n: number): void {
+    const chunks = Math.ceil(n / PEAK_CHUNK);
+    const peaks = Array.from({ length: SCOPE_CHANNELS }, (_, c) => {
+      const out = new Float32Array(chunks);
+      const s = samples[c];
+      for (let k = 0; s && k < n; k++) {
+        const j = Math.floor(k / PEAK_CHUNK);
+        const a = Math.abs(s[k]!);
+        if (a > out[j]!) out[j] = a;
+      }
+      return out;
+    });
+    this.window = { n, peaks, at: this.shown };
+  }
+
+  /**
+   * One sweep of the samples [at − pre, at − pre + S) of `src` (rings by index, or a held window's arrays), the
+   * chart's time from the sample `at` (its edge), the model's moment of which is `t0`.
+   */
+  private draw(src: readonly ArrayLike<number>[], at: number, pre: number, S: number, t0: number): void {
+    const dt = UNIT_SCALE[this.s.unit] / this.fs;
     for (let c = 0; c < SCOPE_CHANNELS; c++) {
       const s = src[c];
       if (!this.live[c] || !s || s.length === 0) {
         this.tn[c] = 0;
         continue;
       }
-      this.tn[c] = decimateMinMax(s, at, S, SWEEP_BUCKETS, this.tx[c]!, this.tv[c]!, 0, scale / this.fs);
-      const m = decimateMinMax(s, at, S, SCREEN_BUCKETS, this.sx[c]!, this.sv[c]!, 0, 1);
+      this.tn[c] = decimateMinMax(s, at - pre, S, SWEEP_BUCKETS, this.tx[c]!, this.tv[c]!, -pre * dt, dt);
+      const m = decimateMinMax(s, at - pre, S, SCREEN_BUCKETS, this.sx[c]!, this.sv[c]!, 0, 1);
       this.toScreen(c, this.sv[c]!, m);
     }
     this.t0 = t0;
@@ -560,9 +682,32 @@ export class ScopeModel {
   }
 
   /**
+   * Where the trace of the cursor's channel last crossed the cursor's level, either way (E4-S): the time on the
+   * chart's axis (`x`, straight between the two points either side of the level) and the model's moment (`t`, s) —
+   * a roll's mark moves left with its trace. Null with no cursor, its channel off, or no crossing in the trace now.
+   */
+  crossing(): { readonly x: number; readonly t: number } | null {
+    const cursor = this.s.cursor;
+    if (cursor === null || !this.live[cursor.channel]) return null;
+    const { n, x, v } = this.trace(cursor.channel);
+    const level = cursor.volts;
+    for (let k = n - 1; k >= 1; k--) {
+      const a = v[k - 1]!;
+      const b = v[k]!;
+      if ((a < level && b >= level) || (a > level && b <= level)) {
+        const at = x[k - 1]! + ((level - a) / (b - a)) * (x[k]! - x[k - 1]!);
+        return { x: at, t: this.t0 + at / UNIT_SCALE[this.s.unit] };
+      }
+    }
+    return null;
+  }
+
+  /**
    * The step's board chart (VISUAL §5.2): time across, volts up, ten and eight divisions, the step's scale, the
    * channels `lime` and `magenta`. `init` (every entry of a step: its charts are made again) draws the last sweep;
-   * `update` draws again only when there is a new one.
+   * `update` draws again only when there is a new one. With the word `cursor` a third series: the settings' cursor,
+   * a dashed `mist` line across at its level (none while the level is off the screen or there is no cursor), and a
+   * marker where its channel's trace last crossed it (`crossing`), a white dot ringed in the channel's colour.
    */
   chart(id: string, words: ScopeWords, height = 220): ChartSpec {
     const seen = new WeakMap<ChartApi, { version: number; settings: number }>();
@@ -570,6 +715,29 @@ export class ScopeModel {
     // with a right axis channel 1 is drawn on it at its own scale, channel 2 on the left one at its own
     const two = words.y2 !== undefined;
     const scaleOf = (ch: number): number | undefined => (two ? ch : undefined);
+    /** The cursor's line on the left axis (a level of channel 1 with `y2`: at its height there) and its marker. */
+    const level = (c: ChartApi): void => {
+      const cursor = this.s.cursor;
+      const [lo, hi] = cursor ? scopeRange(this.s, scaleOf(cursor.channel)) : [0, 0];
+      if (cursor === null || !(cursor.volts >= lo && cursor.volts <= hi)) {
+        c.setData('cursor', [], []);
+        c.setMarker('crossing', null);
+        return;
+      }
+      const right = two && cursor.channel === 0;
+      const y = right ? (cursor.volts * voltsOf(this.s, 1)) / voltsOf(this.s, 0) : cursor.volts;
+      const { x } = this.axes(two);
+      c.setData('cursor', [x.min, x.max], [y, y]);
+      const at = this.crossing();
+      const marker: MarkerSpec | null = at && {
+        x: at.x,
+        y: cursor.volts,
+        ...(two ? { axis: right ? ('y2' as const) : ('y' as const) } : {}),
+        color: SCOPE_COLORS[cursor.channel],
+        guides: false,
+      };
+      c.setMarker('crossing', marker);
+    };
     const axes = (c: ChartApi): void => {
       const { x, y, y2 } = this.axes(two);
       c.setAxis('x', { ...x, label: text(words.x) });
@@ -584,6 +752,7 @@ export class ScopeModel {
         for (let k = 0; k < shown; k++) this.cut[k] = clamp(v[k]!, lo, hi);
         c.setData(`ch${ch + 1}`, x.subarray(0, shown), this.cut.subarray(0, shown));
       }
+      if (words.cursor !== undefined) level(c);
     };
     const { x, y, y2 } = this.axes(two);
     return {
@@ -597,6 +766,7 @@ export class ScopeModel {
         series: [
           { id: 'ch1', label: words.ch1, color: SCOPE_COLORS[0], width: 2, ...(two ? { axis: 'y2' as const } : {}) },
           { id: 'ch2', label: words.ch2, color: SCOPE_COLORS[1], width: 2 },
+          ...(words.cursor !== undefined ? [{ id: 'cursor', label: words.cursor, ...CURSOR_LINE, dash: true }] : []),
         ],
         legend: true,
       },
@@ -616,23 +786,22 @@ export class ScopeModel {
   }
 
   /**
-   * The chart's axes for the settings now: a tick every division, a label every other on the time's. With `two`
-   * the left one is channel 2's scale and the right one channel 1's; without, the left one is the common scale.
+   * The chart's axes for the settings now: a tick every division, a label every other on the time's (from its 0: a
+   * sweep's edge, a roll's newest sample). With `two` the left one is channel 2's scale and the right one channel
+   * 1's; without, the left one is the common scale. The volts' ticks are the real volts wherever 0 V is (`ground`).
    */
   private axes(two = false) {
-    const { timePerDiv, unit, display, voltsPerDiv, ground } = this.s;
+    const { timePerDiv, unit, display, voltsPerDiv, ground, pretrigger } = this.s;
     const scale = UNIT_SCALE[unit];
-    const shift = display === 'roll' ? SCOPE_GRID.x : 0;
+    // the time's 0 that many divisions from the left edge: a roll's at the right one, a sweep's at its edge
+    const shift = display === 'roll' ? SCOPE_GRID.x : pretrigger;
     const xt = Array.from({ length: SCOPE_GRID.x + 1 }, (_, k) => (k - shift) * timePerDiv * scale);
     const half = SCOPE_GRID.y / 2;
     const volts = (v: number) => {
       const t = Array.from({ length: SCOPE_GRID.y + 1 }, (_, k) => (k - half - ground) * v);
       return { min: t[0]!, max: t[SCOPE_GRID.y]!, ticks: t, format: fmtTick };
     };
-    const label = (v: number): string => {
-      const k = Math.round(v / (timePerDiv * scale)) + shift;
-      return k % 2 === 0 ? fmtTick(v) : '';
-    };
+    const label = (v: number): string => (Math.round(v / (timePerDiv * scale)) % 2 === 0 ? fmtTick(v) : '');
     return {
       x: { min: xt[0]!, max: xt[SCOPE_GRID.x]!, ticks: xt, format: label },
       y: volts(two ? voltsOf(this.s, 1) : voltsPerDiv),
@@ -669,6 +838,11 @@ export class ScopeModel {
       volts: [voltsOf(this.s, 0), voltsOf(this.s, 1)],
       ground: this.s.ground,
       trigger: { ...this.s.trigger, ...this.trig },
+      pretrigger: this.s.pretrigger,
+      caught: this.caught_,
+      cursor: this.s.cursor,
+      crossing: this.crossing(),
+      crest: [0, 1].map((c) => this.peak(c, STATE_CREST)),
       version: this.version_,
       sweeps: this.sweeps_,
       holds: this.holds_,

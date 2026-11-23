@@ -23,7 +23,7 @@ Each module has its public face in `shared/<module>/index.ts`; there is no `shar
 | `parts` | every kind of part with the marks of the real one; the permanent things; the look of heat, the burn, the bulge | `part`, `resistor`, `capacitors`, `diode`, `led`, `transistor`, `pot`, `jumper`, `speaker`, `battery9v`, `player`, `bulb`, `code`, `look`, `heat-scale` | E2 · E2-4; the look E2-7; the catalog's marks E2-M; the bands' reader E3-5 |
 | `hand` | the two gestures, the grips and cues, the tray, the legs, the ground a lead lies on, the scripted swap | `hands`, `tray`, `leg`, `grips`, `cue`, `curves`, `glide`, `terrain`, `swap` | E2 · E2-5 |
 | `model` | the only caller of the circuit model (`driver`, and the board in time it drives); the model in time for the scope and the speaker (`live`); the board in time for the bench's looks (`timed`); the checks' hashes | `driver`, `live`, `timed`, `hash` | E2 · E2-6; the model's time E2-7; `live`, `still` E2-9; the speaker's pace E2-10; `timed` E4-T |
-| `instruments` | the multimeter and its probes; the oscilloscope; the speaker in sound | `meter`, `meter-model`, `probe`; `scope`, `scope-model`, `sweep`; `speaker` | E2 · E2-6; E2-9; E2-10; the speaker's crest E3-9 |
+| `instruments` | the multimeter and its probes; the oscilloscope; the speaker in sound | `meter`, `meter-model`, `probe`; `scope`, `scope-model`, `sweep`; `speaker` | E2 · E2-6; E2-9; E2-10; the speaker's crest E3-9; the scope's offset, divisions before the edge, single shot on a held page, held crests and level line E4-S |
 | `dive` | the magnifier as the door from the step's shot to a part and into it; the ladder «де ми» | `door`, `camera-rail`, `rail-math`, `poses`, `levels`, `lens-keeper`, `ladder`, `cutaway` | E2 · E2-8 |
 | `inside` | a resistor's carbon film, opened by the door | `film`, `wedge` | E3 · E3-5 |
 | `sound` | the volume's own sound output and the model playing in blocks (its own README) | `output`, `plan`, `stream`, `handler`, `protocol`, `model.worker`, `tape`, `board` | E1 · E1-9; probes, restart, damage E2-9 |
@@ -550,6 +550,27 @@ ui.define({ scope: { board: { title, size: 'md', children: [
   (`channelVolts`, E3-8: `meter/twice` shows the amplifier's small input at 0,02 V a division beside its speaker at
   0,25 V): its trace on the screen at it, and on the board's chart channel 1 on the right axis — a chart made with
   `ScopeWords.y2`; without it every channel is drawn on the chart at `voltsPerDiv`.
+- **0 V off the screen** (`ground` beyond ±4, E4-S): `ground` is any finite number of divisions, and beyond ±4 the
+  screen holds a narrow band round a steady voltage, as a real scope's offset does — small changes of a big voltage:
+  `capacitor/reservoir`'s supply at 0,05 V a division with `ground` −165 shows 8,05 … 8,45 V (0,1 V with −83: 7,9 …
+  8,7 V). The chart's axis ticks the real volts («8,05», «8,1» …), the trigger's own level is the band's middle, and
+  a trace beyond the band — the − rail, 165 divisions down — lies on the screen's edge, on the instrument and on the
+  chart.
+- **Divisions before the edge** (`pretrigger`, E4-S: 0 … 9 whole divisions, 0 by default): a sweep starts that much
+  before the sample its trigger found, so that the edge shows whole (`filter/block`: one division, the jump on the
+  first division from the left); the chart's time runs from the edge — 0 there, «−5» … «45» ms at 5 ms a division —,
+  a label every other division from 0. `trigger.at` and `t0` are the edge's moment. A sweep that runs free has its 0
+  as far in; a held window too. A roll has none.
+- **A single shot** (`trigger.auto` false, an explicit `level`): the sweep an edge started stays drawn until the next
+  edge (`model.caught` — a sweep of the samples that came, started by an edge; a new scale or a new board clears it),
+  on a held page too (below).
+- **A level on the chart** (`cursor: { volts, channel? }`, E4-S; its word `ScopeWords.cursor`): a dashed line across
+  the board's chart at the level, `mist` (no hue of its own), named in the legend by the step's word, and a marker
+  where the channel's trace last crossed it, either way (`model.crossing()`: its x on the chart and the model's
+  moment; a white dot ringed in the channel's colour, no guides). On a roll the marker moves left with its trace. No
+  line while the level is off the screen; none on the instrument's screen. `capacitor/time`: 5,688 V, 63 % of 9 V.
+  `steps/scope.ts` `scopeBoard` passes no cursor word (E4-B's file): a step with a cursor makes its board with
+  `bench.oscilloscope.chart(id, { ...scopeWords(words), cursor })`.
 - **The input** (`SCOPE_INPUT`, E3-8): each probe in a socket off the − rail puts 1 MΩ from its row to the − rail
   into the circuit (`oscilloscope.extra()`, beside the meter's own part in the driver's `extra`), as a real scope's
   input does: the model's row is loaded as on a real bench — a rail behind an open switch falls to its diode's
@@ -557,7 +578,11 @@ ui.define({ scope: { board: { title, size: 'md', children: [
   thousand (the divider's 5,997 V reads 5,993 V with a probe on it). The input leaves with the probe.
 - **A channel's crest** (`model.peak(channel, seconds)`, E3-8): the largest |v| of the samples shown over the last
   seconds (kept per chunk of `PEAK_CHUNK` 240 samples, 10 ms; the samples ahead of the one shown do not count yet),
-  null while the channel is off — a step's readout of a wave's crest (`meter/twice`). **Sweep** (`display: 'sweep'`): a sweep starts where the trigger's channel
+  null while the channel is off — a step's readout of a wave's crest (`meter/twice`). On a held page, while its
+  window is shown, the window's (E4-S): the last seconds of its samples, all of them when it is shorter — `divider/
+  volume`'s two spans of 50 ms from 1 s, `filter`'s 480 samples —, not those the stream gave in the seconds before the
+  page held (an RC charging then read 3,02 V against the window's 8,88 V); a later sample shown (a frame with time) or
+  a sweep of the stream's samples gives the stream's again. **Sweep** (`display: 'sweep'`): a sweep starts where the trigger's channel
   crosses its level the way its slope says (the level: the step's, or the middle of the last span of that channel;
   `sweep.ts` `findTrigger`), within the last span of candidates and not before the end of the last sweep and its
   `holdoff`; with `auto` and no edge for a whole span it runs free; at most one a frame, only of samples that came.
@@ -575,19 +600,24 @@ ui.define({ scope: { board: { title, size: 'md', children: [
   glow, no bloom. The grid's tint is `steel` at 0.6 (the platform's screen draws its rim in it too).
 - **A held page** (`?freeze`): the bench's stream runs on the main thread (frames of fixed time give the same samples)
   and, on a frame with no time after anything changed — the board, a setting, a probe, the scale, time that passed —,
-  the scope shows `model.still` of two spans (once per change, as the radio's held frames): one span after the first
-  edge within the first span, or from its start without one. A roll keeps what it rolled.
+  the scope shows `model.still` of two spans (once per change, as the radio's held frames): one span with the first
+  edge `pretrigger` divisions in, or from its start without one. A roll keeps what it rolled, and so does a single
+  shot caught (`auto` off, `model.caught`, E4-S): the window from the operating point could never show the edge
+  (`filter/block`), so the shot stays on the held page until a new scale or a new board — then the window again.
 - **The probes** are ends of the hand like the multimeter's (`probe:ch1`, `probe:ch2`; `end:ch1`, `end:ch2` their tips),
   any socket but the other one's; they rest on the table in front of the scope, on a phone on the base in front of the
   board where the multimeter's rest (VISUAL §9: a step with both instruments on a phone puts one pair in sockets).
   On a phone the chart is in the panel's tab «Графіки» and the instrument out of the shot.
 
 For checks: `__app.read('electronics-scope')` → `{ mode, blocks, ms, since, now, display, fs, span, unit, timePerDiv,
-voltsPerDiv, channelVolts, volts, ground, trigger: { channel, level, slope, auto, used, found, at }, version, sweeps, holds, on, n, min,
-max, screen, t0, hash, points, frozen, stills, still: { warmup, tau, ms }, ch1, ch2, shown, ready }` (`mode` — where the
-model runs in time: `worker`, `sync`, `off`; `volts` — the V a division each channel is shown at; `points` — each channel's trace, its times on the chart's axis from `t0`;
-`screen` — the instrument's extremes, −1 … 1; `hash` — FNV-1a of the points: two pages that show the same, the same
-hash). The sandbox's steps `scope` and `rc` and `qa/measure.mjs --only scope` drive it.
+voltsPerDiv, channelVolts, volts, ground, trigger: { channel, level, slope, auto, used, found, at }, pretrigger, caught,
+cursor, crossing, crest, version, sweeps, holds, on, n, min, max, screen, t0, hash, points, frozen, stills, still: {
+warmup, tau, crest, ms }, ch1, ch2, shown, ready }` (`mode` — where the model runs in time: `worker`, `sync`, `off`;
+`volts` — the V a division each channel is shown at; `points` — each channel's trace, its times on the chart's axis
+from `t0`; `screen` — the instrument's extremes, −1 … 1; `hash` — FNV-1a of the points: two pages that show the same,
+the same hash; `crossing` — `{ x, t }` of `model.crossing()`; `crest` — each channel's `peak` over 0,5 s, the steps'
+readouts; `still.crest` — each tap's largest |v| over the last held window). The sandbox's steps `scope`, `rc`,
+`offset` and `shot` and `qa/measure.mjs --only scope` drive it.
 
 ## `instruments` — the speaker in sound (E2-10)
 

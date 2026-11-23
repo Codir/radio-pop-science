@@ -604,19 +604,26 @@ export function mountBench(ctx: ChapterContext, options: BenchOptions = {}): Ben
    * A held page (`?freeze`, plan decision 16): on a frame with no time (dt 0) after anything changed — the board, a
    * setting, a probe, the scale, or time that passed — the scope shows the window `model.still` computes at once: from
    * the operating point, warmed up, then two spans (the first edge within the first). Once per change, as the radio's
-   * held frames (`radio/shared/world/index.ts`).
+   * held frames (`radio/shared/world/index.ts`). A single shot caught on the samples that came (`auto` off, an edge
+   * found: `model.caught`) stays instead, as on a real scope — the window from the operating point could never show
+   * the edge (E4-S, `filter/block`) — until a new scale or a new board clears it.
    */
   let moved = true;
   let heldFor = '';
   let stills = 0;
   let stillMs = 0;
-  let lastStill = { warmup: Number.NaN, tau: Number.NaN };
+  let lastStill: { warmup: number; tau: number; crest: readonly number[] } = {
+    warmup: Number.NaN,
+    tau: Number.NaN,
+    crest: [],
+  };
   const held = (dt: number): void => {
     if (dt > 0) {
       moved = true;
       return;
     }
     if (bench.scope <= 0 || oscilloscope.settings.display !== 'sweep' || !model.ok) return;
+    if (!oscilloscope.settings.trigger.auto && oscilloscope.model.caught) return;
     const taps = oscilloscope.taps();
     const key = JSON.stringify([model.version, taps, oscilloscope.settings, oscilloscope.model.on]);
     if (!moved && key === heldFor) return;
@@ -629,7 +636,9 @@ export function mountBench(ctx: ChapterContext, options: BenchOptions = {}): Ben
     if (!w) return;
     stills++;
     oscilloscope.hold(w.samples, w.warmup);
-    lastStill = { warmup: w.warmup, tau: w.tau };
+    // each tap's largest |v| over the window: what the steps' crests read on the held page (checks)
+    const crest = w.samples.map((s) => s.reduce((m, v) => Math.max(m, Math.abs(v)), 0));
+    lastStill = { warmup: w.warmup, tau: w.tau, crest };
   };
 
   /**
@@ -892,9 +901,10 @@ export function mountBench(ctx: ChapterContext, options: BenchOptions = {}): Ben
   }));
   // `__app.read('electronics-scope')` — the oscilloscope: where the model runs in time (`mode`: worker, sync, off), its
   // blocks and their cost, the moment the board and probes now were taken (`since`, s), the sample shown now (s); the
-  // scope's display, scale and trigger, its sweeps and holds, every channel's points and their hash (two pages that
-  // show the same, the same hash); a held page's windows (how many, their warm-up and τmax, the last one's ms); its
-  // probes' sockets; how far it is on its place
+  // scope's display, scale and trigger, its sweeps and holds, a single shot caught, the cursor and the crossing, the
+  // crests, every channel's points and their hash (two pages that show the same, the same hash); a held page's windows
+  // (how many, their warm-up and τmax, the last one's ms and each tap's crest over it); its probes' sockets; how far it
+  // is on its place
   ctx.qa.expose('electronics-scope', () => ({
     mode: live.mode,
     blocks: live.blocks,

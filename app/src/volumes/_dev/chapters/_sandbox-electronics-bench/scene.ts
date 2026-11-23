@@ -15,7 +15,18 @@
  *   rc    — a capacitor charging (E2-9), shot `scope`: + rail → J1 → 3ae → 10 kΩ → 7ae → 100 μF → J2 → − rail (`RC`),
  *           the switch open; channel 1 in e3 (before the resistor), channel 2 in e7 (on the capacitor); a roll of
  *           0.5 s and 2 V a division with 0 V three divisions below the middle; the reader closes the switch (a tap on
- *           the slider, on a phone the dock's toggle) and τ = R·C = 1 s shows on channel 2 (the board chart `scope-rc`);
+ *           the slider, on a phone the dock's toggle) and τ = R·C = 1 s shows on channel 2 (the board chart `scope-rc`),
+ *           with the scope's cursor at 63 % of 9 V on channel 2 (E4-S): its dashed line, and a marker where the trace
+ *           crossed it that moves left with the roll;
+ *   offset — the oscilloscope's offset (E4-S), shot `scope`: the amplifier (`AMPLIFIER_PRESET`), the switch closed;
+ *           channel 1 in e5 (the supply behind the guard diode), channel 2 in −5 (the − rail, 0 V); a sweep of 50 ms
+ *           and 0.05 V a division with 0 V 165 divisions below the middle: the screen 8.05 … 8.45 V, the − rail on its
+ *           bottom edge (the board chart `scope-offset`);
+ *   shot  — a single shot (E4-S), shot `scope`: + rail → J1 → 13ae → film 1 μF → 15ae → 10 kΩ across the channel →
+ *           J2 → − rail (`SHOT`, the board of `filter/block`), the switch open; channel 1 in e13, channel 2 in e15; a
+ *           sweep of 5 ms and 2 V a division, a division before the edge, triggered once on channel 2 rising through
+ *           1 V (`auto` off): the reader closes the switch, and the jump caught stays — on a held page too (the board
+ *           chart `scope-shot`);
  *   parts — one part of every kind of the model's catalog on the board and a row of resistors 1 Ω … 1 MΩ (`PARTS`),
  *           shot `board`: the tall parts at the far half — the LEDs, the pot, the three capacitors and the transistor —,
  *           the low ones at the near half, a jumper across the near half; every one a part of the circuit (the switch
@@ -239,6 +250,18 @@ const RC: readonly PresetPart[] = [
   { id: 'C1', spec: 'electrolytic-100u-16v', at: 'c7' },
   { id: 'J2', spec: 'jumper', at: 'e8', to: '-8' },
 ];
+/** `rc`'s cursor (E4-S): 63 % of 9 V, the level `capacitor/time` marks. */
+const RC_LEVEL = 0.632 * 9;
+/**
+ * Step `shot` (E4-S), the board of `filter/block`: + rail → J1 → 13ae → the film 1 μF (c13, c15) → 15ae → 10 kΩ across
+ * the channel (e15 … i15) → J2 → − rail.
+ */
+const SHOT: readonly PresetPart[] = [
+  { id: 'J1', spec: 'jumper', at: '+13', to: 'a13' },
+  { id: 'C1', spec: 'film-1u', at: 'c13' },
+  { id: 'R1', spec: 'resistor-10k', at: 'e15', o: 1 },
+  { id: 'J2', spec: 'jumper', at: 'j15', to: '-15' },
+];
 
 /**
  * Step `sound`: the player → a 10 kΩ pot as the volume control → the speaker, at the far right by the player and the
@@ -265,7 +288,27 @@ const SCOPES: Readonly<Record<string, { setup: ScopeSetup; probes: Record<ScopeP
     setup: { display: 'sweep', timePerDiv: 0.002, voltsPerDiv: 0.1, trigger: { channel: 0, level: null, slope: 1 } },
     probes: { ch1: 'j17', ch2: 'j13' },
   },
-  rc: { setup: { display: 'roll', timePerDiv: 0.5, voltsPerDiv: 2, ground: -3 }, probes: { ch1: 'e3', ch2: 'e7' } },
+  rc: {
+    setup: { display: 'roll', timePerDiv: 0.5, voltsPerDiv: 2, ground: -3, cursor: { volts: RC_LEVEL, channel: 1 } },
+    probes: { ch1: 'e3', ch2: 'e7' },
+  },
+  // E4-S: the screen 8.05 … 8.45 V (`capacitor/reservoir`'s supply), the − rail far below it
+  offset: {
+    setup: { display: 'sweep', timePerDiv: 0.05, voltsPerDiv: 0.05, ground: -165, trigger: { channel: 0, level: null } },
+    probes: { ch1: 'e5', ch2: '-5' },
+  },
+  // E4-S: `filter/block`'s single shot, a division before its edge
+  shot: {
+    setup: {
+      display: 'sweep',
+      timePerDiv: 0.005,
+      voltsPerDiv: 2,
+      ground: -2,
+      pretrigger: 1,
+      trigger: { channel: 1, level: 1, slope: 1, auto: false },
+    },
+    probes: { ch1: 'e13', ch2: 'e15' },
+  },
 };
 /** Every plug the bench has, out: a step names those it puts in. */
 const NO_LEADS: Readonly<Record<string, null>> = Object.freeze(
@@ -322,6 +365,7 @@ const LIVE: ReadonlySet<string> = new Set([
   'plates',
   'timed',
   'scope',
+  'offset',
   'bulged',
 ]);
 /** The steps where the reader may take everything (with a door only while the camera is on the board's shot). */
@@ -339,6 +383,8 @@ const FREE: ReadonlySet<string> = new Set([
   'timed',
   'scope',
   'rc',
+  'offset',
+  'shot',
   'bulged',
   'sound',
 ]);
@@ -356,6 +402,8 @@ const PRESETS: Readonly<Record<string, readonly PresetPart[]>> = {
   timed: timedBoard('electrolytic-470u-16v'),
   scope: filterParts(FILTER_VALUES[0]),
   rc: RC,
+  offset: AMPLIFIER_PRESET.parts,
+  shot: SHOT,
   bulged: REVERSED,
   sound: VOLUME,
 };
@@ -363,6 +411,7 @@ const PRESETS: Readonly<Record<string, readonly PresetPart[]>> = {
 const LEADS: Readonly<Record<string, Readonly<Record<string, SocketId>>>> = {
   lamp: LAMP_LEADS,
   scope: FILTER_LEADS,
+  offset: AMPLIFIER_PRESET.leads,
   sound: VOLUME_LEADS,
 };
 /** Each step's shot (the bench's names). */
@@ -372,6 +421,8 @@ const CAMERAS: Readonly<Record<string, BenchShot>> = {
   meter: 'meter',
   scope: 'scope',
   rc: 'scope',
+  offset: 'scope',
+  shot: 'scope',
   parts: 'board',
   hand: 'stand',
   divider: 'meter',
@@ -453,7 +504,7 @@ export default defineScene((ctx) => {
   // the oscilloscope's board: its chart, the axes' titles with the scale on them (VISUAL §5.2), the step's channels
   const W = SANDBOX.scope;
   const scale = (value: number, unit: string): string => `${fmtSI(value, unit)}/${W.division}`;
-  const scopeBoard = (step: 'scope' | 'rc') => ({
+  const scopeBoard = (step: keyof typeof W.channels) => ({
     title: W.board,
     size: 'md' as const,
     children: [
@@ -461,6 +512,8 @@ export default defineScene((ctx) => {
         x: (s: ScopeSettings) => `t, ${s.unit} · ${scale(s.timePerDiv, 's')}`,
         y: (s: ScopeSettings) => `U, V · ${scale(s.voltsPerDiv, 'V')}`,
         ...W.channels[step],
+        // `rc`: the dashed level of the scope's cursor (E4-S)
+        ...(step === 'rc' ? { cursor: W.cursor } : {}),
       }),
     ],
   });
@@ -474,6 +527,8 @@ export default defineScene((ctx) => {
     lamp: dock([]),
     bulged: dock([]),
     rc: { ...dock([]), board: scopeBoard('rc') },
+    offset: { ...dock([]), board: scopeBoard('offset') },
+    shot: { ...dock([]), board: scopeBoard('shot') },
     scope: {
       controls: [
         ...dock([]).controls,
@@ -530,6 +585,8 @@ export default defineScene((ctx) => {
     meter: { meter: 1 },
     scope: { scope: 1 },
     rc: { scope: 1 },
+    offset: { scope: 1 },
+    shot: { scope: 1 },
     divider: { meter: 1 },
     timed: { meter: 1 },
   };
