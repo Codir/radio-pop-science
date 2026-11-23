@@ -47,10 +47,13 @@ export interface PrologueStand {
   phone(): boolean;
   /**
    * The dock's «Хвиля на динаміку» (V): the largest voltage on the speaker over the last 0,5 s heard, from the first
-   * sample of the step's own board on (0 until it is heard).
+   * whole chunk of the step's own board on (0 until one is heard).
    */
   crest(): number;
-  /** The stream's index of the first sample of the step's own board, null until its first block came. */
+  /**
+   * The stream's index of the first sample of the step's own board — the first block after the model started again
+   * with it (`live.begun` once `live.starts` has passed the step's mark) — null until that block came.
+   */
   readonly from: number | null;
   /** The volume's sound is silent not by the circuit's will (the dock's line «Звук вимкнено…»). */
   soundOff(): boolean;
@@ -65,10 +68,10 @@ export function createPrologueStand(ctx: ChapterContext): PrologueStand {
   const hover = (): boolean => ctx.device.hover !== false;
   const call = createCall(bench);
   let taps = 0;
-  // the first sample of the step's own board: the first block whose `since` is new after the step's preset
+  // the first sample of the step's own board: the first block after the start that follows the step's preset (a block
+  // of the board before may still come between the preset and that start: it moves `since`, not `begun`)
   let from: number | null = null;
-  let waiting = false;
-  let sinceAt = Number.NaN;
+  let startsAt = 0;
   const stand: PrologueStand = {
     bench,
     naming: SILENT,
@@ -77,8 +80,7 @@ export function createPrologueStand(ctx: ChapterContext): PrologueStand {
       bench.clear();
       bench.preset(parts, leads);
       from = null;
-      waiting = true;
-      sinceAt = bench.live.since;
+      startsAt = bench.live.starts;
     },
     playing: () => (bench.state.settings.get(IDS.player) ?? PLAYING) > 0,
     play(on) {
@@ -91,7 +93,7 @@ export function createPrologueStand(ctx: ChapterContext): PrologueStand {
     phone: () => ctx.device.formFactor === 'phone',
     crest() {
       const sp = bench.speaker;
-      return sp === null ? 0 : stepCrest(sp.heard(), from, bench.live.rate, CREST_SECONDS, (s) => sp.peak(s));
+      return sp === null ? 0 : stepCrest(sp.heard(), from, CREST_SECONDS, (s, start) => sp.peak(s, start));
     },
     get from() {
       return from;
@@ -103,11 +105,8 @@ export function createPrologueStand(ctx: ChapterContext): PrologueStand {
     },
     update(dt, t) {
       bench.update(dt, t);
-      const since = bench.live.since;
-      if (waiting && Number.isFinite(since) && !Object.is(since, sinceAt)) {
-        from = Math.round(since * bench.live.rate);
-        waiting = false;
-      }
+      const { live } = bench;
+      if (from === null && live.starts > startsAt && live.begun !== null) from = live.begun;
     },
   };
   // the player: a tap starts or stops the melody where the step lets it (the engine's first gesture with it: the

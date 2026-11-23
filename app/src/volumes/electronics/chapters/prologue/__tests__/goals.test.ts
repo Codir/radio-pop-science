@@ -1,10 +1,14 @@
 /**
  * The goals' pure maths (`parts/goals.ts`) and the dock's (`parts/dock.ts`): the run of `quiet` and its crest, the
- * visits of `stand` with the half of the goal it calls, the step's crest from the first sample of its board, and when
- * the line «Звук вимкнено…» shows.
+ * visits of `stand` with the half of the goal it calls, the step's crest from the first sample of its board — on the
+ * bench's own speaker too, two boards back to back with the step's starting mid-chunk — and when the line «Звук
+ * вимкнено…» shows.
  */
 import { describe, expect, it } from 'vitest';
-import { HOLD, IDS, WINDOWS } from '../parts/boards';
+import type { AppState, ChapterContext } from '@/engine/api';
+import { createSpeaker } from '@electronics/shared/instruments';
+import { LIVE } from '@electronics/shared/model';
+import { CREST_SECONDS, HOLD, IDS, WINDOWS } from '../parts/boards';
 import { soundOff, stepCrest } from '../parts/dock';
 import { createRun, createTally, createVisits, type StandFrame } from '../parts/goals';
 
@@ -109,15 +113,61 @@ describe('riddle: the tally of three rows', () => {
 
 describe('the dock: the step’s crest and the line about the sound', () => {
   it('the crest from the first sample of the step’s board on, at most 0,5 s back; 0 before', () => {
-    const asked: number[] = [];
-    const peak = (s: number) => (asked.push(s), 0.9);
-    expect(stepCrest(null, 0, 24000, 0.5, peak)).toBe(0);
-    expect(stepCrest(48000, null, 24000, 0.5, peak)).toBe(0);
-    expect(stepCrest(48000, 48000, 24000, 0.5, peak)).toBe(0);
-    expect(stepCrest(48000 + 2400, 48000, 24000, 0.5, peak)).toBe(0.9);
-    expect(stepCrest(96000, 48000, 24000, 0.5, peak)).toBe(0.9);
-    expect(asked).toEqual([0.1, 0.5]);
-    expect(stepCrest(96000, 0, 24000, 0.5, () => null)).toBe(0);
+    const asked: [number, number][] = [];
+    const peak = (s: number, start: number) => (asked.push([s, start]), 0.9);
+    expect(stepCrest(null, 0, 0.5, peak)).toBe(0);
+    expect(stepCrest(48000, null, 0.5, peak)).toBe(0);
+    expect(stepCrest(48000, 48000, 0.5, peak)).toBe(0);
+    expect(stepCrest(48000 + 2400, 48000, 0.5, peak)).toBe(0.9);
+    expect(stepCrest(96000, 48000, 0.5, peak)).toBe(0.9);
+    expect(asked).toEqual([
+      [0.5, 48000],
+      [0.5, 48000],
+    ]);
+    expect(stepCrest(96000, 0, 0.5, () => null)).toBe(0);
+  });
+
+  it('on the bench’s speaker: two boards back to back, the step’s from mid-chunk — nothing of the board before', () => {
+    // the speaker as the bench makes it (8 Ω, the volume's rate), silent on the engine's clock (`noaudio`)
+    const clock = { time: 0 };
+    const state = { settings: { audio: true, volume: 0.8 } } as unknown as AppState;
+    const ctx = {
+      clock,
+      store: { get: () => state, subscribe: () => () => {} },
+      gesture: new Promise<void>(() => {}),
+      onDispose: () => {},
+    } as unknown as ChapterContext;
+    const sp = createSpeaker(ctx, { rate: LIVE.rate, ohms: 8, output: { noaudio: true }, mood: () => {} });
+    // `loud` at the knob's 0,85 (≈ 1,8 V on the speaker) for five blocks; then `quiet`'s board, the player stopped:
+    // the stream's numbering runs on, so the new board starts at 5 × 1536 + … — here 7 × 1536 = 10752, 192 samples
+    // into its chunk of 240 (four of five block edges are not on a chunk's)
+    const from = 7 * LIVE.block;
+    expect(from % 240).toBe(192);
+    const music = Float32Array.from({ length: LIVE.block }, (_, k) => 0.225 * Math.sin((2 * Math.PI * k) / 48));
+    const still = new Float32Array(LIVE.block);
+    let next = 0;
+    let shown = 0;
+    let seen = 0;
+    let tail = 0;
+    for (let k = 0; k < 2 * 600; k++) {
+      while (sp.wants()) {
+        sp.play(next, next < from ? music : still, LIVE.block);
+        next += LIVE.block;
+      }
+      clock.time += 1 / 600;
+      const heard = sp.heard();
+      if (heard === null) continue;
+      const crest = stepCrest(heard, from, CREST_SECONDS, (s, start) => sp.peak(s, start));
+      if (heard < from) continue;
+      seen++;
+      shown = Math.max(shown, crest);
+      // the last 0,5 s heard, the step's start aside: the board before is in it for 0,5 s
+      if (heard < from + 0.4 * LIVE.rate) tail = Math.max(tail, sp.peak(CREST_SECONDS) ?? 0);
+    }
+    // the board before sounded ≈ 1,8 V; the step's bar reads «0,00 V» from its first sample on, never the tail of it
+    expect(tail).toBeGreaterThan(1.7);
+    expect(seen).toBeGreaterThan(600);
+    expect(shown).toBe(0);
   });
 
   it('shows while the output is off or waits for the gesture, or the engine’s sound is off or at 0', () => {

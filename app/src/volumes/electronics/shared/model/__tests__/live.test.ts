@@ -2,7 +2,9 @@
  * The model in time on the bench (`live.ts`) follows the bench's model driver in what is burnt: the driver is the one
  * that burns a part (`advance`), and the stream plays its word — at its first start, at a start after a pause, and
  * from the next block on when a part burns while it plays; its own heat burns nothing. On the main thread (a held
- * page's path; the same handler as the thread's), paced by the plan on the frames' own time.
+ * page's path; the same handler as the thread's), paced by the plan on the frames' own time. And where the board of
+ * the last start begins (`starts`, `begun`), on the main thread and on a thread whose reply of the board before comes
+ * between a step's `restart()` and the start.
  */
 import { describe, expect, it } from 'vitest';
 import type { ChapterContext } from '@/engine/api';
@@ -15,6 +17,9 @@ import {
   setSetting,
   type BoardState,
 } from '@electronics/sim/board';
+import { createHandler } from '../../sound/handler';
+import type { FromWorker, ToWorker } from '../../sound/protocol';
+import type { WorkerLike } from '../../sound/stream';
 import { createBenchModel } from '../driver';
 import { benchDamage, createLive } from '../live';
 
@@ -118,5 +123,100 @@ describe('the model in time follows the bench’s damage (E2-9)', () => {
     expect(after.length).toBeGreaterThan(2);
     for (const b of after) expect(gap(b.i), `block at ${b.first / live.rate} s`).toBe(true);
     expect(live.since).toBeCloseTo(after[0]!.first / live.rate, 9);
+  });
+});
+
+/** A background thread on the same handler as the real one, whose replies go back in order when the test says. */
+class FakeWorker implements WorkerLike {
+  onmessage: ((e: { data: FromWorker }) => void) | null = null;
+  onerror: ((e: unknown) => void) | null = null;
+  private readonly handler = createHandler(() => 0);
+  private readonly waiting: FromWorker[] = [];
+  get pending(): number {
+    return this.waiting.length;
+  }
+  postMessage(msg: ToWorker): void {
+    this.waiting.push(this.handler.handle(structuredClone(msg))!.reply);
+  }
+  terminate(): void {}
+  /** At most `n` replies go back now, in order (a reply may lead to another request: it waits for the next call). */
+  answer(n = Infinity): void {
+    const now = this.waiting.splice(0, Math.min(n, this.waiting.length));
+    for (const data of now) this.onmessage?.({ data });
+  }
+}
+
+describe('where the board of the last start begins (E3-9): `starts`, `begun`', () => {
+  it('on the main thread: the first sample of the first block of every start', () => {
+    const { live, blocks, frames } = rig();
+    expect([live.starts, live.begun]).toEqual([0, null]);
+    frames(0.3);
+    expect([live.starts, live.begun]).toEqual([1, 0]);
+    // a step's own new board: the model starts again, and its first block is where that board begins
+    live.restart();
+    const before = blocks.length;
+    frames(0.3);
+    expect(live.starts).toBe(2);
+    expect(blocks.length).toBeGreaterThan(before);
+    expect(live.begun).toBe(blocks[before]!.first);
+    expect(live.begun).toBeGreaterThan(0);
+  });
+
+  it('a reply of the board before that comes between a step’s restart and the start moves `since`, never `begun`', () => {
+    const board = overload();
+    const model = createBenchModel({ layout, board });
+    model.sync();
+    const w = new FakeWorker();
+    const blocks: { first: number; i: number[] }[] = [];
+    const live = createLive(ctx, model, {
+      frozen: false,
+      onBlock: (first, samples, steps) => blocks.push({ first, i: Array.from(samples[0]!.subarray(0, steps)) }),
+      makeWorker: () => w,
+    });
+    live.taps([{ part: 'R1' }]);
+    const frame = (): void => {
+      model.sync();
+      live.update(DT, true);
+    };
+    for (let k = 0; k < 30; k++) {
+      frame();
+      w.answer();
+    }
+    expect(live.mode).toBe('worker');
+    expect([live.starts, live.begun]).toEqual([1, 0]);
+    expect(blocks.length).toBeGreaterThan(2);
+    // the switch opened just before the step goes on: a request of that new board is on its way…
+    setSetting(board, 'SW', 0);
+    for (let k = 0; k < 30 && w.pending === 0; k++) frame();
+    expect(w.pending).toBe(1);
+    // …when the next step puts its own board (the switch closed again) and its reply comes before the next frame
+    live.restart();
+    setSetting(board, 'SW', 1);
+    const before = blocks.length;
+    w.answer(1);
+    expect(blocks.length).toBe(before + 1);
+    const stale = blocks[before]!;
+    expect(gap(stale.i)).toBe(true);
+    expect(live.since).toBeCloseTo(stale.first / live.rate, 9);
+    expect([live.starts, live.begun]).toEqual([1, 0]);
+    // the start: the request on its way is dropped, and the board of this moment plays from `begun` on
+    frame();
+    expect([live.starts, live.begun]).toEqual([2, null]);
+    for (let k = 0; k < 30 && live.begun === null; k++) {
+      w.answer();
+      frame();
+    }
+    for (let k = 0; k < 20; k++) {
+      w.answer();
+      frame();
+    }
+    const begun = live.begun!;
+    expect(begun).toBeGreaterThan(stale.first);
+    const after = blocks.filter((b) => b.first >= begun);
+    expect(after.length).toBeGreaterThan(2);
+    expect(after[0]!.first).toBe(begun);
+    for (const b of after) expect(carries(b.i), `block at ${b.first}`).toBe(true);
+    // every block taken after the stale one is of the step's board: the second reply on its way was dropped
+    for (const b of blocks.slice(before + 1)) expect(b.first, `block at ${b.first}`).toBeGreaterThanOrEqual(begun);
   });
 });

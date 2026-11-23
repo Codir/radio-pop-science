@@ -9,11 +9,13 @@
 // finger with --touch: real touch events, the carried part riding above it): a tap on the player's box plays the
 // melody straight on the speaker past the amplifier — the bar «Хвиля на динаміку» at 0,05 … 0,06 V for 3 s; the
 // switch closed (a phone: the dock's toggle) — the closing's knock on the bar, then the music at the knob's 0,1, the
-// knob to 0,85 — the battery's 13,31 mA, the bar over 1,26 V; the LED «on» held out of the board 1,7 s and let go
+// knob to 0,85 — the battery's 13,31 mA, the bar over 1,26 V — and back to `quiet` from that music: the bar is quiet's
+// own board from its first frame (0,00 V, not loud's tail); the LED «on» held out of the board 1,7 s and let go
 // over it (its light goes, the music plays on), then the volume knob P1 — the speaker silent — let go off the board
 // and put straight back by the step; D2 not taken; the scope's probe 2 s each on the + rail, the player's row and the
-// speaker's (a flat line at 8,9 V, ±0,3 V, a wave reaching 0,79 V); three stops of the map. After each goal the panel
-// shows the takeaway and the reader numbers are the model's; «Докладніше» opens; every recall link is followed;
+// speaker's (a flat line at 8,9 V, ±0,3 V, a wave reaching 0,79 V); three stops of the map (on a desk the stand behind
+// the board out of focus; on a touch screen, where the board is in the sheet, the bench's own post). After each goal
+// the panel shows the takeaway and the reader numbers are the model's; «Докладніше» opens; every recall link is followed;
 // every step is arrived at with «Далі» and its camera sampled frame by frame for jumps; the closing card has the bridge
 // and «Далі» on it leads on when `meter` is built. Then a live page (the real clock, no `?freeze`): the model in time
 // runs in its background thread (`mode` `worker`, plan decision 12 of batch E3) and every request of the page
@@ -341,6 +343,28 @@ const steps = {
     );
     await goal('loud music');
     await more();
+    // back to `quiet` from the loud music: the bar is quiet's own board (the player stopped) from its first frame —
+    // 0,00 V, never the tail of loud's (its board starts mid-chunk of the speaker's crest in four cases of five)
+    const was = (await read(page, 'loud')).crest;
+    await page.evaluate(() => document.querySelector('[data-ui="nav-prev"]')?.click());
+    let tail = 0;
+    let quiet = null;
+    for (let k = 0; k < 50; k++) {
+      await page.evaluate(() => window.__app.step(1 / 60, 1));
+      const r = await read(page, 'prologue');
+      if (r.step !== 'quiet') continue;
+      tail = Math.max(tail, r.crest);
+      quiet = r;
+    }
+    check(
+      'back to quiet from the music at 0,85: the bar is quiet’s own board at once — 0,00 V, not loud’s tail',
+      was > 1 && quiet !== null && !quiet.playing && quiet.from !== null && tail < 0.005,
+      JSON.stringify({ was, tail, from: quiet?.from, playing: quiet?.playing }),
+    );
+    await press(page, '[data-ui="nav-next"]');
+    await advance(page, 2);
+    const again = await page.evaluate(() => window.__app.position());
+    check('and «Далі» to loud again', again.chapterId === 'prologue' && again.stepId === 'loud', `${again.chapterId}/${again.stepId}`);
   },
   async stand() {
     await next('stand');
@@ -457,6 +481,13 @@ const steps = {
     }
     const m = await read(page, 'map');
     check('three stops opened', m.opened.length === 3 && m.reached, JSON.stringify(m));
+    // the stand behind the board: out of focus where the board is over the scene (a desk); on a touch screen the board
+    // is in the sheet and the scene beside it keeps the bench's shot and its own post (dofAperture 1,5), no blur of the step's
+    check(
+      touch ? 'the board in the sheet: the stand beside it not blurred by the step' : 'the board over the scene: the stand behind it out of focus',
+      touch ? !m.canvas && Math.abs(m.dof - 4.6) > 1 : m.canvas && Math.abs(m.dof - 4.6) < 1e-6,
+      JSON.stringify({ canvas: m.canvas, dof: m.dof }),
+    );
     await goal('three stops');
     await more();
     // the closing card: the bridge to `meter`; «Далі» on it leads on when `meter` is built

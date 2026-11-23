@@ -26,6 +26,11 @@
  *
  * `since` is the model's moment (s, the stream's numbering) from which the samples are of the board and the probes
  * now: the first sample of the first block asked with them. The checks read the trace from there.
+ *
+ * `begun` is the first sample of the first block since the model last started again (`starts` counts the starts): a
+ * start drops the request on its way, so every block from `begun` on is of the board the start was given. A step that
+ * changes the board reads it after its own start — a block of the board before that came between the step's
+ * `restart()` and the start (a knob's new board, a reply already on its way) moves `since`, but never `begun`.
  */
 import type { ChapterContext } from '@/engine/api';
 import {
@@ -86,6 +91,13 @@ export interface Live {
   readonly ms: number;
   /** The model's moment (s) from which the blocks are of the board and probes now (NaN before the first block). */
   readonly since: number;
+  /** How many times the model started (again): the first start, a step's new board, a start after a pause. */
+  readonly starts: number;
+  /**
+   * The stream's index of the first sample of the first block since the model last started (again), null until that
+   * block came: every block from it on is of the board of that start.
+   */
+  readonly begun: number | null;
   /** The sample shown at this moment (the stream's index; with the speaker, the one heard), or null before any block. */
   readonly now: number | null;
   /** How far the samples may come ahead of `now` (the plan and the block on its way). */
@@ -121,6 +133,8 @@ export function createLive(ctx: ChapterContext, model: BenchModel, opts: LiveOpt
   let sentVersion = -1;
   let taps: readonly ProbeSpec[] = [];
   let since = Number.NaN;
+  let starts = 0;
+  let begun: number | null = null;
   let lastRevision = -1;
   /** The board the stream was last given: the speaker's tap is its current only while it is in that board. */
   let given: Netlist | null = null;
@@ -134,6 +148,7 @@ export function createLive(ctx: ChapterContext, model: BenchModel, opts: LiveOpt
 
   const onBlock = (b: BlockReply): void => {
     if (sound === null) plan.add(clock, block, b.first);
+    if (begun === null) begun = b.first;
     if (b.revision !== lastRevision) {
       lastRevision = b.revision;
       since = b.first / rate;
@@ -151,6 +166,9 @@ export function createLive(ctx: ChapterContext, model: BenchModel, opts: LiveOpt
     sentVersion = model.version;
     given = net;
     plan.reset(false);
+    // the blocks from here on are of this board (the stream drops the request on its way)
+    starts++;
+    begun = null;
     if (stream === null) {
       stream = createStream(
         ctx,
@@ -184,6 +202,12 @@ export function createLive(ctx: ChapterContext, model: BenchModel, opts: LiveOpt
     },
     get since() {
       return since;
+    },
+    get starts() {
+      return starts;
+    },
+    get begun() {
+      return begun;
     },
     get now() {
       if (stream === null) return null;

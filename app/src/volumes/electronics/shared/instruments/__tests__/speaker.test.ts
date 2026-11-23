@@ -334,6 +334,41 @@ describe('the speaker’s crest (E3-9): the largest voltage on it over the last 
     expect(r.speaker.peak(0)).toBeNull();
   });
 
+  it('from a start mid-chunk: nothing of the board before counts, the window begins at the first whole chunk after it', () => {
+    // two boards back to back as the stream numbers them: a loud one (1,6 V) for three blocks, then a quiet one (0,08 V)
+    // from the sample 3 × 1536 = 4608, 48 samples into its chunk (4608 = 19 × 240 + 48)
+    const speaker = createSpeaker(ctx, { rate: RATE, ohms: 8, output: { makeContext, noaudio: true }, mood: () => {} });
+    const loud = new Float32Array(BLOCK).fill(0.2);
+    const quiet = new Float32Array(BLOCK).fill(0.01);
+    const start = 3 * BLOCK;
+    expect(start % 240).toBe(48);
+    let next = 0;
+    let firstWhole: number | null = null;
+    let before = 0;
+    for (let k = 0; k < Math.round(1.2 * 2400); k++) {
+      while (speaker.wants()) {
+        speaker.play(next, next < start ? loud : quiet, BLOCK);
+        next += BLOCK;
+      }
+      clock.time += 1 / 2400;
+      const heard = speaker.heard();
+      if (heard === null || heard <= start) continue;
+      const v = speaker.peak(0.5, start);
+      // the chunk that holds the sample 4608 ends at 4800: until the next one is wholly heard, nothing of the quiet board
+      if (heard < 21 * 240) expect(v, `heard ${heard}`).toBeNull();
+      else {
+        firstWhole ??= heard;
+        expect(v, `heard ${heard}`).toBeCloseTo(0.08, 6);
+      }
+      // without a start the loud board's last chunk stays in the window for 0,5 s
+      if (heard < start + 0.4 * RATE) before = Math.max(before, speaker.peak(0.5)!);
+    }
+    expect(firstWhole).not.toBeNull();
+    expect(before).toBeCloseTo(1.6, 6);
+    // once the window has passed the board before, the two agree
+    expect(speaker.peak(0.5)).toBeCloseTo(speaker.peak(0.5, start)!, 9);
+  });
+
   it('the speaker out of the circuit: silence, 0 V once its window has passed; the knob at 0 next to nothing', () => {
     const r = rig({ setting: 1 });
     run(r, 1);

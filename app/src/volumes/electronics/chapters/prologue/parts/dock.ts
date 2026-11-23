@@ -30,20 +30,20 @@ export function soundOff(
 }
 
 /**
- * The step's crest on the speaker (V): the largest voltage over the last `seconds` heard, but nothing heard before
- * `from` (the first sample of the step's own board: a step's preset starts the model again, and what the speaker
- * still sounds of the board before is not the step's). 0 while nothing of the step's board is heard yet. Pure over
- * the speaker's numbers.
+ * The step's crest on the speaker (V): the largest voltage over the last `seconds` heard, but nothing before `from`
+ * (the first sample of the step's own board: a step's preset starts the model again, and what the speaker still
+ * sounds of the board before is not the step's) — `peak` starts at the first whole chunk at or after it, so a chunk
+ * that holds the last samples of the board before never counts. 0 while nothing of the step's board is heard yet.
+ * Pure over the speaker's numbers.
  */
 export function stepCrest(
   heard: number | null,
   from: number | null,
-  rate: number,
   seconds: number,
-  peak: (seconds: number) => number | null,
+  peak: (seconds: number, start: number) => number | null,
 ): number {
   if (heard === null || from === null || heard <= from) return 0;
-  return peak(Math.min(seconds, (heard - from) / rate)) ?? 0;
+  return peak(seconds, from) ?? 0;
 }
 
 export function waveGauge(label: string, get: () => number): GaugeSpec {

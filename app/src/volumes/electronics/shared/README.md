@@ -407,7 +407,11 @@ model.part('R1'); // { condition, load, heat, kelvin? } as the bench shows it; n
   and the bench never part on what is burnt (`model/__tests__/live.test.ts`: a part burnt before the start, during a
   pause, while it plays, and a run longer than its own time to burn). The scope's probes are its taps: the node of each
   probe's row (`Stream.probes`, the next request carries them; the model plays on). `live.since` is the model's moment
-  (s, by the stream's numbering) from which the blocks are of the board, the damage and the probes now.
+  (s, by the stream's numbering) from which the blocks are of the board, the damage and the probes now. `live.starts`
+  counts the model's starts and `live.begun` is the first sample of the first block since the last one (null until it
+  came; E3-9): a start drops the request on its way, so from `begun` on every block is of the board that start was
+  given — a step that puts its own board reads `begun` once `starts` has passed the count at its preset, since a
+  reply of the board before can still come between the preset and the start and move `since`.
 - **`still(window)` — a held page's window** (`?freeze`, plan decision 16): the board now from its operating point,
   computed at once on the main thread, the bench's damage in a state of its own (nothing of the bench's written, and
   nothing fails in the window on its own heat, as in the stream): warmed up for `STILL.warmup(tauMax())`, then `count`
@@ -562,11 +566,14 @@ bench.speaker!.inCircuit; // both plugs in rows the circuit has: the speaker sou
 - **The mood**: while the speaker is in the circuit the chapter's ambient pad (`audio.mood`) is silent; it comes back
   — the chapter's theme's mood — when the speaker leaves. The bench says it every frame (`speaker.circuit(on)`); the
   speaker tells the platform only on a change.
-- **The crest** (`speaker.peak(seconds)`, E3-9): the largest voltage on the speaker — |I| × its 8 Ω of the model's
-  current, not the output's steps nor held to its full scale (a knock of 6,5 V reads 6,5 V) — over the last `seconds`
-  of the samples heard (up to `heard()`; the blocks planned ahead do not count yet), kept per chunk of `CREST_CHUNK`
-  240 samples (10 ms) as the blocks come, 2,56 s of them; null before any block. The prologue's bar «Хвиля на
-  динаміку» reads it from the first sample of its step's own board on (`bench.live.since` after the step's preset).
+- **The crest** (`speaker.peak(seconds, start?)`, E3-9): the largest voltage on the speaker — |I| × its 8 Ω of the
+  model's current, not the output's steps nor held to its full scale (a knock of 6,5 V reads 6,5 V) — over the last
+  `seconds` of the samples heard (up to `heard()`; the blocks planned ahead do not count yet), kept per chunk of
+  `CREST_CHUNK` 240 samples (10 ms) as the blocks come, 2,56 s of them; null before any block. With `start` nothing
+  before that sample counts: the window begins at the first chunk wholly at or after it (a block of 1536 samples ends
+  mid-chunk in four cases of five, and that chunk holds the board before). The prologue's bar «Хвиля на динаміку»
+  reads it from the first sample of its step's own board on (`bench.live.begun` after the start of the step's
+  preset).
 - The output is made with the speaker and goes with the chapter (`ctx.onDispose`): its context closes, the background
   thread ends.
 

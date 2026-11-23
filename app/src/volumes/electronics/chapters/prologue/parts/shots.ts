@@ -1,11 +1,14 @@
 /**
  * The chapter's own shots. `quiet` is the bench's `stand` on a desk and a tablet; on a phone the bench's `phone` shows
  * the field of sockets alone (VISUAL §9), and the step's one gesture is a tap on the player's box — so the phone's
- * `quiet` holds the field, the player and the speaker. `map` is the stand pulled back, small and low behind the board
- * with the map, out of focus (after the circuit's prologue, `circuit/shared/world/away.ts`: docs/volumes/electronics/
- * REUSE.md, «Копії»): its depth of field focuses in front of the stand, where the board is.
+ * `quiet` holds the field, the player and the speaker. `map` on the desktop shell, where its board is drawn over the
+ * scene, is the stand pulled back behind that board, out of focus (after the circuit's prologue,
+ * `circuit/shared/world/away.ts`: docs/volumes/electronics/REUSE.md, «Копії»): its depth of field focuses in front of
+ * the stand, where the board is; the board, the size `fill`, covers it all but a blur at its right edge. On a phone or
+ * a tablet the board is in the sheet's board tab and the scene is what the reader sees beside it: the bench's own
+ * shot and post, no blur of the step's.
  */
-import type { PostOverrides, Shot } from '@/engine/api';
+import type { FormFactor, PostOverrides, Shot } from '@/engine/api';
 import { STAGE_FOV, STAGE_SHOTS, boardToWorld } from '@electronics/shared/bench';
 
 const v3 = (x: number, y: number, z: number): [number, number, number] => {
@@ -48,9 +51,19 @@ export const MAP_SHOT: Shot = {
   orbit: { azimuth: 0.12, polar: 0.08, zoom: [0.95, 1.1] },
 };
 
-/** `map` as the page is now: pulled back on a desk and a tablet; a phone keeps the bench's `phone` (the map is in its
- * sheet, and its quality has no depth of field). */
-export const mapShot = (phone: boolean): Shot => (phone ? STAGE_SHOTS.phone : MAP_SHOT);
+/**
+ * Whether the step's board is drawn over the scene: the desktop shell only (`ctx.device` reads `desktop` there, a
+ * tablet under the reader's desktop shell, `Settings.deskShell`, too); on a phone or a tablet the board goes into the
+ * sheet's board tab.
+ */
+export const boardOnCanvas = (form: FormFactor): boolean => form === 'desktop';
+
+/**
+ * `map` as the page is now: pulled back behind the board where the board is over the scene; where it is in the sheet,
+ * the bench's own shot — `stand` on a tablet (the chapter's first shot there), `phone` on a phone.
+ */
+export const mapShot = (form: FormFactor): Shot =>
+  boardOnCanvas(form) ? MAP_SHOT : form === 'phone' ? STAGE_SHOTS.phone : STAGE_SHOTS.stand;
 /** The flight into `map` (s): the engine's 1,8 s took ≈ 0,33 a frame from the scope's shot, at the QA's limit. */
 export const MAP_FLIGHT = 2.4;
 
@@ -62,3 +75,6 @@ export const MAP_POST: PostOverrides = {
   vignette: 0.85,
   bloomIntensity: 0.7,
 };
+
+/** `map`'s post as the page is now: `MAP_POST` behind the board over the scene; beside the sheet the bench's own. */
+export const mapPost = (form: FormFactor): PostOverrides => (boardOnCanvas(form) ? MAP_POST : {});

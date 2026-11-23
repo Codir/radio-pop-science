@@ -18,8 +18,8 @@
  *   comes back when the speaker leaves (VISUAL §1, principle 3: from the circuit one hears only the speaker).
  * - **The crest** (`peak`, E3-9): the largest voltage on the speaker, |I| × R of the model's current (not of the
  *   output's steps, nor held to its full scale), over the last seconds of the samples heard — kept per chunk of
- *   `CREST_CHUNK` samples as the blocks come, looked back from the sample heard now: the prologue's «Хвиля на
- *   динаміку», the same blocks that sound.
+ *   `CREST_CHUNK` samples as the blocks come, looked back from the sample heard now, and from a given first sample on
+ *   only (whole chunks after it): the prologue's «Хвиля на динаміку», the same blocks that sound, of its step's board.
  *
  * The output is made with the speaker and freed with the chapter (`createSoundOut` puts its `dispose` into
  * `ctx.onDispose`).
@@ -115,9 +115,12 @@ export interface Speaker extends LiveSound {
   /**
    * The largest voltage on the speaker (V: |I| × its resistance, the model's current) over the last `seconds` of the
    * samples heard (up to the one heard now; the samples planned ahead of it do not count yet), within a chunk of
-   * `CREST_CHUNK` samples at either end. Null before any block was heard, or for a window of nothing.
+   * `CREST_CHUNK` samples at either end. With `start` (the stream's index of a sample) nothing before it counts: the
+   * window begins at the first chunk that lies wholly at or after it — a chunk that holds the last samples of a board
+   * before (a step's new board starts mid-chunk) is not the new board's. Null before any block was heard, or for a
+   * window of nothing.
    */
-  peak(seconds: number): number | null;
+  peak(seconds: number, start?: number): number | null;
   /** The bench says, every frame, whether the speaker is in the circuit now (its mood follows a change). */
   circuit(on: boolean): void;
 }
@@ -194,12 +197,16 @@ export function createSpeaker(ctx: ChapterContext, opts: SpeakerOptions): Speake
       inCircuit = on;
       mood(on);
     },
-    peak(seconds) {
+    peak(seconds, start) {
       const heard = output.heard();
       if (heard === null || !(seconds > 0)) return null;
-      // the chunks wholly heard, whose end lies within the window
+      // the chunks wholly heard, whose end lies within the window — and, with a start, wholly at or after it
       const last = Math.floor(heard / CREST_CHUNK) - 1;
-      const from = Math.max(Math.floor((heard - seconds * opts.rate) / CREST_CHUNK), last - CREST_CHUNKS + 1);
+      const from = Math.max(
+        Math.floor((heard - seconds * opts.rate) / CREST_CHUNK),
+        last - CREST_CHUNKS + 1,
+        start === undefined ? -Infinity : Math.ceil(start / CREST_CHUNK),
+      );
       let best = -1;
       for (let chunk = from; chunk <= last; chunk++) {
         const slot = ((chunk % CREST_CHUNKS) + CREST_CHUNKS) % CREST_CHUNKS;
