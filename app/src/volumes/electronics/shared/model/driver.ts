@@ -177,19 +177,23 @@ export interface Still {
 }
 
 /**
- * The warm-up of a held page's window (plan decision 16: max(0.2 s, 5 τmax)), rounded up to a whole beat of the
- * volume's melody (0.5 s at 120 beats a minute: two boards of one step that differ in a part show the same stretch of
+ * The warm-up of a held page's window (plan decision 16: max(0.2 s, 5 τmax)), rounded up to a half bar of the
+ * volume's melody (1 s at 120 beats a minute: two boards of one step that differ in a part show the same stretch of
  * the music) and held to `max` — an RC behind an open switch has τ of minutes (its capacitor's own leak), and a
- * circuit of direct currents is at rest from its operating point on anyway.
+ * circuit of direct currents is at rest from its operating point on anyway. A half bar, not a beat: every half bar of
+ * the loop opens with a bass note and the kick (`sim/core/music.ts`, the slots 0 and 8 of every bar), so a window of
+ * music shows its bass; the second beat (0.5 s), where the windows of a quick circuit started before, is the bass's
+ * rest — 1.3 mV rms of the player's 0.3 V below 150 Hz over the 0.2 s after it, against 76 mV after 1 s and 83 mV
+ * after 2 s (review of E3-8; `chapters/meter/__tests__/boards.test.ts`, «notes»).
  */
 export const STILL = {
   least: 0.2,
   taus: 5,
-  beat: 0.5,
+  halfBar: 1,
   max: 2,
   warmup(tau: number): number {
     const want = Math.max(STILL.least, STILL.taus * (Number.isFinite(tau) ? tau : Infinity));
-    return Math.min(STILL.max, Math.ceil(want / STILL.beat - 1e-9) * STILL.beat);
+    return Math.min(STILL.max, Math.ceil(want / STILL.halfBar - 1e-9) * STILL.halfBar);
   },
 } as const;
 

@@ -2,12 +2,12 @@
  * `meter/twice` — «Більша хвиля». The player plays, the switch closed, the knob at its middle; both of the scope's
  * probes at rest, the hand takes them alone. Sweeps of 1 ms a division triggered by channel 1, one scale of 0,25 V a
  * division for both channels on entry (±1 V); the dock: the slider «Гучність» (the volume control's knob, «тихо» at 0
- * and «гучно» at 1), the switch «Масштаб першого щупа» (0,25 or 0,02 V a division for channel 1 alone, drawn on the
- * chart's right axis) and two readouts, the largest |v| of each channel over the last 0,5 s. Over the board «вхід
- * підсилювача» stands over the wiper's row 15ae and «динамік» over the speaker's row 10ae, each gone while a probe is
- * in its row, and both while a probe is in the hand. Goal, while channel 1 is on 15ae and channel 2 on 10ae (3 s together at least): the knob at 0,25 or
- * lower for 1 s, at 0,5 or higher for 1 s, and channel 1 at 0,02 V a division for 1 s while the knob stands within
- * 0,25 … 0,5 (both lines on the screen then).
+ * and «гучно» at 1), right under it the two crests, the largest |v| of each channel over the last 0,5 s, then the switch
+ * «Масштаб першого щупа» (0,25 or 0,02 V a division for channel 1 alone, drawn on the chart's right axis). Over the
+ * board «вхід підсилювача» stands over the wiper's row 15ae and «динамік» over the speaker's row 10ae, each gone while
+ * a probe is in its row, and both while a probe is in the hand. Goal, while channel 1 is on 15ae and channel 2 on 10ae
+ * (3 s together at least): the knob at 0,25 or lower for 1 s, at 0,5 or higher for 1 s, and channel 1 at 0,02 V a
+ * division for 1 s while the knob stands within 0,25 … 0,5 (both lines on the screen then).
  */
 import { fmtPercent } from '@/content/format';
 import { setSetting } from '@electronics/shared/bench';
@@ -17,12 +17,13 @@ import { AMP, HOLD, KNOB, ROWS, TWICE_MARKS, WINDOWS } from '../parts/boards';
 import { createHold, rowOf } from '../parts/goals';
 import { overSocket } from '../parts/marks';
 import { handPolicy } from '../parts/policy';
-import { TWICE, TWICE_ZOOM, crestReadout, perDivision, scopeBoard, voltsText } from '../parts/scope';
+import { TWICE, TWICE_ZOOM, crestStats, perDivision, scopeBoard, voltsText } from '../parts/scope';
 
 const S = 'twice';
 /** The dock's ids. */
 export const VOLUME_ID = 'volume';
 export const SCALE_ID = 'ch1-scale';
+export const CRESTS_ID = 'crests';
 const [ZOOM_LO, ZOOM_HI] = WINDOWS.twice.zoom;
 
 export const twiceStep: StepFactory = ({ ctx, ui, stand, reached, reach, here }) => {
@@ -85,6 +86,8 @@ export const twiceStep: StepFactory = ({ ctx, ui, stand, reached, reach, here })
           onInput: (v: number) => void setSetting(bench.state, 'P1', v),
           onChange: (v: number) => void setSetting(bench.state, 'P1', v),
         },
+        // the crests right under the knob that moves them (a block keeps its place in the dock; review of E3-8)
+        crestStats(bench, CRESTS_ID, [word(4), word(5)]),
         {
           type: 'segmented',
           id: SCALE_ID,
@@ -93,8 +96,6 @@ export const twiceStep: StepFactory = ({ ctx, ui, stand, reached, reach, here })
           value: String(scales[0]),
           onChange: setScale,
         },
-        crestReadout(bench, 'crest-in', word(4), 0),
-        crestReadout(bench, 'crest-out', word(5), 1),
       ],
       board: scopeBoard(bench, 'scope-twice', word(6), {
         volts: word(9),

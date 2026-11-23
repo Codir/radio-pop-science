@@ -178,6 +178,42 @@ describe('the chapter’s board in the model', () => {
     expect(verdict).toBe('done');
   });
 
+  it('notes: a held page’s window on the player’s row opens on a bass note — 8…22 waves below 150 Hz at 20 ms, 2…8 at 5 ms', () => {
+    // the window the shots of a held page show (`model.still`, warmed up to a half bar of the melody, where a bass note
+    // and the kick start and the notes before have ended); at 0,5 s, where it opened before, the bass rests (review of
+    // E3-8)
+    const model = solve(amp(), { closed: 1, player: PLAYING, scope: [scopeOn(ROWS.player)] });
+    const w = model.still({ fs: FS, count: Math.round(2 * 0.2 * FS), taps: [{ node: node(ROWS.player) }] })!;
+    expect(w.warmup).toBe(1);
+    // the part below 150 Hz: two second-order Butterworth sections from rest (the row is near 0 V at the half bar)
+    const k = Math.tan((Math.PI * 150) / FS);
+    const n = 1 / (1 + Math.SQRT2 * k + k * k);
+    const [b0, b1, b2, a1, a2] = [k * k * n, 2 * k * k * n, k * k * n, 2 * (k * k - 1) * n, (1 - Math.SQRT2 * k + k * k) * n];
+    let low = Array.from(w.samples[0]!);
+    for (let pass = 0; pass < 2; pass++) {
+      const out: number[] = [];
+      let [x1, x2, y1, y2] = [0, 0, 0, 0];
+      for (const v of low) {
+        const o = b0 * v + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+        [x2, x1, y2, y1] = [x1, v, y1, o];
+        out.push(o);
+      }
+      low = out;
+    }
+    for (const [span, fewest, most] of [
+      [0.2, 8, 22],
+      [0.05, 2, 8],
+    ] as const) {
+      const part = low.slice(0, Math.round(span * FS));
+      let waves = 0;
+      for (let i = 1; i < part.length; i++) if (part[i - 1]! < 0 && part[i]! >= 0) waves++;
+      const rms = Math.sqrt(part.reduce((a, v) => a + v * v, 0) / part.length);
+      expect(waves).toBeGreaterThanOrEqual(fewest);
+      expect(waves).toBeLessThanOrEqual(most);
+      expect(rms).toBeGreaterThan(0.04);
+    }
+  });
+
   it('the sockets the steps put probes in and mark are free of legs and plugs, in the rows the goals read', () => {
     const s = amp();
     const rowOf = (id: string) => layout.socket(id)!.row;

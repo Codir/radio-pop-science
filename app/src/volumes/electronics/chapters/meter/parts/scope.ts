@@ -2,10 +2,10 @@
  * The oscilloscope in the chapter's steps (VISUAL §5.2; the script's «Бачимо»): every step's scale and display, the
  * words of the board's chart — an axis' title is a caption («напруга, V», «час, ms») with its division beside it, the
  * number and the unit from the code and the words «на поділку» a caption («2,5 V на поділку», «5 ms на поділку») —, and
- * the crest readouts of `twice`. Pure but for the chart, which the bench's scope makes.
+ * the crests of `twice`. Pure but for the chart, which the bench's scope makes.
  */
 import { fmtNumber, fmtSI, fmtUnit, NBSP } from '@/content/format';
-import type { ReadoutSpec } from '@/hud';
+import type { StatsSpec } from '@/hud';
 import type { Bench } from '@electronics/shared/bench';
 import type { ScopeSettings, ScopeSetup, ScopeWords } from '@electronics/shared/instruments';
 import { voltsOf } from '@electronics/shared/instruments';
@@ -89,7 +89,20 @@ export function crestText(v: number | null): string {
   return v === null ? '—' : `${fmtNumber(v, { digits: 3 })}${NBSP}V`;
 }
 
-/** The readout of a channel's crest over the last `CREST_SECONDS` (`twice`): «—» while its probe is out. */
-export function crestReadout(bench: Bench, id: string, label: string, channel: 0 | 1): ReadoutSpec {
-  return { type: 'readout', id, label, text: () => crestText(bench.oscilloscope.model.peak(channel, CREST_SECONDS)) };
+/**
+ * Both channels' crests over the last `CREST_SECONDS` (`twice`), side by side, «—» while a probe is out: one block of
+ * two numbers (`stats`), not two readouts. The dock puts its readouts after every block, so the scale's switch stood
+ * between the slider and them, and on a phone's sheet at its height on entry their numbers fell under the bottom
+ * navigation (review of E3-8); a block keeps the place it is declared at — right under the slider that moves them.
+ */
+export function crestStats(bench: Bench, id: string, labels: readonly [string, string]): StatsSpec {
+  return {
+    type: 'stats',
+    id,
+    columns: 2,
+    items: labels.map((label, channel) => ({
+      label,
+      get: () => crestText(bench.oscilloscope.model.peak(channel, CREST_SECONDS)),
+    })),
+  };
 }

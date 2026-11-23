@@ -414,10 +414,12 @@ model.part('R1'); // { condition, load, heat, kelvin? } as the bench shows it; n
   samples of each tap. `tauMax()` is the longest time constant of its capacitors — the capacitance times the
   resistance the circuit at its operating point shows between its
   pins (a test current of 0.5 μA through them): 9 V through 10 kΩ into 100 μF 0.997 s, the amplifier with the
-  filter of the sandbox's step `scope` 0.045–0.055 s. The warm-up is max(0.2 s, 5 τmax) rounded up to a whole beat
-  of the melody (0.5 s), so that two boards of one step show the same stretch of the music, and held to 2 s: an RC
+  filter of the sandbox's step `scope` 0.045–0.055 s. The warm-up is max(0.2 s, 5 τmax) rounded up to a half bar
+  of the melody (1 s), so that two boards of one step show the same stretch of the music, and held to 2 s: an RC
   behind an open switch has τ of minutes (its capacitor's own leak), and a circuit of direct currents is at rest from its
-  operating point anyway. The same board gives the same samples (the checks hash them).
+  operating point anyway. A half bar, not a beat (0.5 s until E3-8's review): every half bar of the loop opens with a
+  bass note and the kick, while the second beat of the first bar is the bass's rest — a held window of music from
+  0.5 s showed one high note and no bass. The same board gives the same samples (the checks hash them).
 
 For checks: `__app.read('electronics-model')` → `{ key, version, compiles, ok, failure, dcMs, iterations, issues,
 pending, parts: { id: { u, i, p } }, rows: { row: volts } }` (the rows a part uses; nothing of a failed solve).

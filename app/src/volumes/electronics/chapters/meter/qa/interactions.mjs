@@ -121,6 +121,31 @@ async function slideTo(id, fx) {
   await p.tap(x0 + (x1 - x0) * fx, r.y + r.h * 0.18);
   await advance(page, 0.4);
 }
+/**
+ * The crests of `twice` as the panel shows them (`ctl-crests`, a block of two numbers), and whether both numbers stand
+ * on screen above the bottom navigation (a phone: the sheet as it opens on the step; review of E3-8).
+ */
+async function crests() {
+  await controls();
+  return page.evaluate(() => {
+    const shown = (e) => {
+      const r = e.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && !e.closest('[hidden]');
+    };
+    const block = [...document.querySelectorAll('[data-ui="ctl-crests"]')].find(shown);
+    const cells = block ? [...block.querySelectorAll('.dk-stat-num')] : [];
+    const nav = [...document.querySelectorAll('[data-ui="nav-next"]')].find(shown)?.getBoundingClientRect();
+    return {
+      texts: cells.map((e) => e.textContent.replace(/\u00a0/g, ' ')),
+      seen:
+        cells.length === 2 &&
+        cells.every((e) => {
+          const r = e.getBoundingClientRect();
+          return r.height > 0 && r.top >= 0 && r.bottom <= (nav ? nav.top : window.innerHeight);
+        }),
+    };
+  });
+}
 /** The text a panel's readout shows (`ctl-<id>`). */
 async function panelText(id) {
   await controls();
@@ -175,9 +200,14 @@ async function offBoard() {
   const line = await scr('socket:j9');
   return { x: rail.x + (rail.x - line.x) * 2.5, y: rail.y + (rail.y - line.y) * 2.5 };
 }
+/** Whether the dock shows a control (a phone's toggles: a tablet's shot has the switch and the player in it). */
+async function docked(id) {
+  await controls();
+  return (await control(id)) !== null;
+}
 /** The battery's switch: a tap on its slider (a phone: the dock's toggle, the shot leaves the switch out). */
 async function flipSwitch() {
-  if (touch) return tapControl('battery-switch');
+  if (touch && (await docked('battery-switch'))) return tapControl('battery-switch');
   const s = await scr('switch');
   await p.tap(s.x, s.y);
   await advance(page, 0.3);
@@ -185,7 +215,7 @@ async function flipSwitch() {
 }
 /** The player: a tap on its box (a phone: the dock's toggle, the shot leaves the player out). */
 async function tapPlayer() {
-  if (touch) return tapControl('player');
+  if (touch && (await docked('player'))) return tapControl('player');
   const s = await scr('player');
   await p.tap(s.x, s.y);
   await advance(page, 0.3);
@@ -318,7 +348,11 @@ const steps = {
     await next('amps');
     await recalls();
     const entry = await read(page, 'amps');
-    check('on entry: «V», J10 closes the gap, the LED «on» lit, the battery 13,31 mA', entry.mode === 'V' && entry.gapClosed && entry.led > 0.0029 && Math.abs(entry.battery) > 0.0132, JSON.stringify(entry));
+    check('on entry: «V», J10 closes the gap (the callout «Перемичка» over it), the LED «on» lit, the battery 13,31 mA', entry.mode === 'V' && entry.gapClosed && entry.supplyIn && entry.led > 0.0029 && Math.abs(entry.battery) > 0.0132, JSON.stringify(entry));
+    // the step's own shot: J10's ends and the gap's sockets on screen (the reservoir's can no longer stands before them)
+    const seen = [];
+    for (const n of ['part:J10', 'socket:+1', 'socket:a1', 'socket:c1']) seen.push([n, (await scr(n)).visible]);
+    check('J10 and the gap’s sockets on screen', seen.every(([, v]) => v), JSON.stringify(seen));
     // the interaction check of the bench (not the goal): «A» from the supply after the diode to the − rail burns it
     await tapControl('meter-mode:A');
     await probes('c5', '-8');
@@ -339,12 +373,19 @@ const steps = {
         !(await shown(page, '[data-ui="ctl-fresh"]')),
       JSON.stringify({ key: fresh.key === entry.key, damaged: fresh.damaged, mode: m.mode, red: m.red, black: m.black }),
     );
-    // the supply jumper whole off the board (to the tray): the amplifier goes dark
+    // the supply jumper whole off the board (to the tray): the amplifier goes dark; a press on J10 takes it whole, the
+    // step takes no end of it (an end let go off the board lay stretched across the board: review of E3-8)
     await bring('part:J10', 'tip:J10:0', await offBoard());
     await advance(page, 0.6);
     const open = await read(page, 'amps');
+    const gone = await read(page, 'electronics-board');
     check('the gap open: J10 gone, the LED dark, the battery at rest', !open.gapClosed && !(open.led > 1e-6) && !(Math.abs(open.battery) > 1e-6), JSON.stringify(open));
-    await probes('+2', 'd1');
+    check(
+      'J10 went to the tray: on the board neither whole nor with an end in the air; the callout gone',
+      !('J10' in gone.parts) && !gone.pending.includes('J10') && !open.supplyIn,
+      JSON.stringify({ J10: gone.parts.J10 ?? null, pending: gone.pending }),
+    );
+    await probes('+2', 'a1');
     await tapControl('meter-mode:A');
     await advance(page, 1.4);
     const a = await read(page, 'amps');
@@ -442,7 +483,9 @@ const steps = {
     const s0 = await read(page, 'twice');
     check('on entry: both probes at rest, the knob at 0,5, one scale', s0.ch1 === null && s0.ch2 === null && Math.abs(s0.knob - 0.5) < 1e-9 && !s0.zoomed, JSON.stringify(s0));
     check('«вхід підсилювача» and «динамік» stand over their rows', s0.marks.input && s0.marks.speaker, JSON.stringify(s0.marks));
-    check('the crests say «—» with the probes out', (await panelText('crest-in')) === '—' && (await panelText('crest-out')) === '—');
+    const c0 = await crests();
+    check('the crests say «—» with the probes out', c0.texts.length === 2 && c0.texts.every((t) => t === '—'), JSON.stringify(c0.texts));
+    if (touch) check('on a phone the crests’ numbers show above the bottom navigation, the sheet as it opens', c0.seen, JSON.stringify(c0));
     await scopeProbe('ch1', 'a15');
     await scopeProbe('ch2', 'b10');
     const s1 = await read(page, 'twice');
@@ -456,8 +499,7 @@ const steps = {
     const high = await read(page, 'twice');
     check('the knob high (≥ 0,5) a second: counted', high.knob >= 0.5 && high.high, JSON.stringify(high));
     await slideTo('volume', 0.4);
-    const crestIn = await panelText('crest-in');
-    const crestOut = await panelText('crest-out');
+    const [crestIn = '', crestOut = ''] = (await crests()).texts;
     const cr = (await read(page, 'twice')).crests;
     check(
       'the crests in the panel: the input’s sixteen times or so smaller than the speaker’s',

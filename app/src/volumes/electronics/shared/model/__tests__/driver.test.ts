@@ -847,9 +847,9 @@ describe('the longest time constant and a held page’s window (E2-9)', () => {
     expect(d.tauMax()).toBe(0);
   });
 
-  it('the warm-up: max(0.2 s, 5 τ) on a whole beat of the melody, at most 2 s', () => {
-    expect([0, 0.05, 0.1, 0.15, 0.3, 1, Infinity, Number.NaN].map((t) => STILL.warmup(t))).toEqual([
-      0.5, 0.5, 0.5, 1, 1.5, 2, 2, 2,
+  it('the warm-up: max(0.2 s, 5 τ) on a half bar of the melody (where its bass and kick start), at most 2 s', () => {
+    expect([0, 0.05, 0.1, 0.15, 0.2, 0.21, 1, Infinity, Number.NaN].map((t) => STILL.warmup(t))).toEqual([
+      1, 1, 1, 1, 1, 2, 2, 2, 2,
     ]);
   });
 
@@ -878,7 +878,7 @@ describe('the longest time constant and a held page’s window (E2-9)', () => {
     memoryOf(model.state, 'R1').heat = 0.999;
     expect(model.part('R1')!.condition).toBe('hot');
     const w = model.still({ fs: 24000, count: 240, taps: [{ part: 'R1' }] })!;
-    expect(w.warmup).toBe(0.5);
+    expect(w.warmup).toBe(1);
     const i = 9 / (101.5 + 3 * WIRE_OHMS);
     expect(Math.abs(w.samples[0]![0]!)).toBeCloseTo(i, 6);
     expect(Math.abs(w.samples[0]![239]!)).toBeCloseTo(i, 6);

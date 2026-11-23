@@ -16,6 +16,7 @@ import { createHold, rowOf, within } from '../parts/goals';
 import { overSwitch, overTrace } from '../parts/marks';
 import { handPolicy } from '../parts/policy';
 import { FLAT, scopeBoard } from '../parts/scope';
+import { CAMERA_FLIGHT } from '../parts/shots';
 
 const S = 'flat';
 const [LO, HI] = WINDOWS.flat;
@@ -58,7 +59,8 @@ export const flatStep: StepFactory = ({ ctx, stand, reached, reach, here }) => {
   }));
 
   return {
-    spec: { camera: 'scope', params: { meter: 0, scope: 1 } },
+    // from `amps`'s shot on the left the camera crosses the bench: the same longer flight
+    spec: { camera: 'scope', cameraMove: { duration: CAMERA_FLIGHT }, params: { meter: 0, scope: 1 } },
     ui: {
       reset: true,
       controls: [switchToggle(bench, word(5), stand.phone)],

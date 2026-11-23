@@ -1,8 +1,8 @@
 /**
  * Where the chapter's callouts stand (world points, every frame): over the oscilloscope's screen (the word a step's
  * takeaway names: «постійна напруга», «змінна напруга», «частота»; on a phone, where the scope is out of the shot, over
- * the tip of channel 1's probe), over a socket of a row (`twice`) and over the battery's switch (`flat`). Far below the
- * bench while there is nothing to point at.
+ * the tip of channel 1's probe), over a socket of a row (`twice`), over a part on the board (`amps`: the supply jumper)
+ * and over the battery's switch (`flat`). Far below the bench while there is nothing to point at.
  */
 import { Vector3 } from 'three';
 import { PLACES, type Bench, type SocketId } from '@electronics/shared/bench';
@@ -31,6 +31,22 @@ export function overSocket(bench: Bench, socket: SocketId, lift = 0.3, out = new
   if (!s) return NOWHERE(out);
   bench.board.group.updateWorldMatrix(true, false);
   return bench.board.group.localToWorld(out.set(s.x, lift, s.z));
+}
+
+/** Over the middle of a part's legs on the board, `lift` above the sockets; nowhere while a leg is out of a socket. */
+export function overPart(bench: Bench, id: string, lift = 0.3, out = new Vector3()): Vector3 {
+  const legs = bench.state.parts.get(id)?.legs ?? [];
+  let x = 0;
+  let z = 0;
+  for (const leg of legs) {
+    const s = leg === null ? undefined : bench.layout.socket(leg);
+    if (!s) return NOWHERE(out);
+    x += s.x / legs.length;
+    z += s.z / legs.length;
+  }
+  if (legs.length === 0) return NOWHERE(out);
+  bench.board.group.updateWorldMatrix(true, false);
+  return bench.board.group.localToWorld(out.set(x, lift, z));
 }
 
 /** Over the battery's switch (its slider). */

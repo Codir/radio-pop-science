@@ -1899,7 +1899,7 @@ async function scope(context) {
       amps.map((a) => `${a.spec.slice(9)}: ch2 ${round(a.ch2 * 1000, 1)} mV, ch1 ${round(a.ch1 * 1000, 1)} mV`).join('; '),
     );
     check(
-      'scope: the three windows the same stretch of the melody (the warm-up on a whole beat, the same trigger)',
+      'scope: the three windows the same stretch of the melody (the warm-up on a half bar, the same trigger)',
       amps.every((a) => a.warmup === amps[0].warmup && Math.abs(a.at - amps[0].at) < 1e-9),
       amps.map((a) => `${a.warmup} s, ${round(a.at, 5)} s`).join('; '),
     );
