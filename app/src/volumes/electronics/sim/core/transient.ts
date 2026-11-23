@@ -107,6 +107,12 @@ export interface TransientOptions {
   state?: ModelState;
   /** Newton's iterations at most in one step (MAX_ITERATIONS when absent). */
   maxIterations?: number;
+  /**
+   * Whether a part that reaches its limit fails here and then (true when absent). False for a stand whose own model
+   * tells the damage through the state, which `start` and `rebuild` read (the bench's stream follows the bench's
+   * driver, E2-9): the heat gathers all the same, and no part fails on it.
+   */
+  fails?: boolean;
 }
 
 /** A waveform to record while `run` steps: the voltage of a node, or the current into the first pin of a part. Its
@@ -167,6 +173,8 @@ export class Transient {
   /** The memory of the stand: heat, damage, charges, temperatures, node voltages; written after every step. */
   readonly state: ModelState;
   readonly maxIterations: number;
+  /** Whether a part at its limit fails here (`TransientOptions.fails`). */
+  readonly fails: boolean;
   /** Whether the last step (or the start) succeeded. */
   ok = true;
   /** Why the last step failed: 'singular' (no single solution) or 'no-convergence' (not even in 64 steps). */
@@ -204,6 +212,7 @@ export class Transient {
     this.h = options.dt / substeps;
     this.state = options.state ?? createModelState();
     this.maxIterations = options.maxIterations ?? MAX_ITERATIONS;
+    this.fails = options.fails ?? true;
     this.board = this.build(net);
   }
 
@@ -584,11 +593,12 @@ export class Transient {
     return true;
   }
 
-  /** The heat of every part moves toward its load over the step, and a part at its limit fails; every part's level
-   * goes to the state. Whether a part failed now. */
+  /** The heat of every part moves toward its load over the step, and a part at its limit fails (unless the stand
+   * tells the damage: `fails`); every part's level goes to the state. Whether a part failed now. */
   private gatherHeat(): boolean {
     const b = this.board;
     const { elements } = b.circuit;
+    const fails = this.fails;
     let failed = false;
     for (let k = 0; k < elements.length; k++) {
       const e = elements[k]!;
@@ -602,7 +612,7 @@ export class Transient {
       const decay = b.decay[k]!;
       if (Number.isNaN(decay)) continue;
       memory.heat = now + (memory.heat - now) * decay;
-      if (memory.heat >= 1 && b.burnable[k]) {
+      if (memory.heat >= 1 && b.burnable[k] && fails) {
         const failure = failureOf(e.spec);
         fail(memory, failure);
         if (e.spec.kind === 'lamp') memory.kelvin = ROOM_KELVIN; // a broken filament is dark

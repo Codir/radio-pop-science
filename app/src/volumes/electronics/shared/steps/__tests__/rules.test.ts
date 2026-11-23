@@ -1,12 +1,13 @@
 /**
- * The steps' rules over a stub bench (no WebGL): the hand's policy by kind (`policy.ts`), the phone's dock buttons for
- * the tray and the switch (`dock.ts`) and the multimeter's switch and number in the panel (`meter.ts`).
+ * The steps' rules over a stub bench (no WebGL): the hand's policy by kind and the probes by name (`policy.ts`), the
+ * phone's dock buttons for the tray, the switch and the player (`dock.ts`) and the multimeter's switch and number in
+ * the panel (`meter.ts`).
  */
 import { describe, expect, it } from 'vitest';
 import type { Bench, HandPolicy } from '../../bench';
 import type { MeterMode } from '../../instruments';
 import { handPolicy, kindOf } from '../policy';
-import { SWITCH_ID, switchToggle, trayButtonId, trayButtons } from '../dock';
+import { PLAYER_ID, SWITCH_ID, playerToggle, switchToggle, trayButtonId, trayButtons } from '../dock';
 import { MODE_ID, READOUT_ID, meterReadout, meterSwitch } from '../meter';
 
 /** A bench with only what the rules read: the board's parts, the hand's policy, the switch and the multimeter. */
@@ -66,6 +67,32 @@ describe('the hand’s rules by kind', () => {
     expect(p.tooltip?.('lead:spk+')).toBe('');
   });
 
+  it('takes the probes a step names, the oscilloscope’s too, and names each by its own name; `true` is the meter’s two', () => {
+    const { as } = stubBench();
+    const name = (w: { probe?: string }): string => (w.probe ? `probe ${w.probe}` : '');
+    const scope = handPolicy(as, { probes: ['ch1'], name });
+    expect(scope.take('probe:ch1')).toBe(true);
+    for (const k of ['probe:ch2', 'probe:red', 'probe:black', 'probe:other'] as const) expect(scope.take(k)).toBe(false);
+    expect(scope.tooltip?.('probe:ch1')).toBe('probe ch1');
+    expect(scope.tooltip?.('probe:ch2')).toBe('probe ch2');
+    expect(scope.tooltip?.('probe:other')).toBe('');
+    const both = handPolicy(as, { probes: ['ch1', 'ch2', 'red'], name });
+    expect((['probe:ch1', 'probe:ch2', 'probe:red', 'probe:black'] as const).map((k) => both.take(k))).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ]);
+    const meter = handPolicy(as, { probes: true, name });
+    expect((['probe:red', 'probe:black', 'probe:ch1', 'probe:ch2'] as const).map((k) => meter.take(k))).toEqual([
+      true,
+      true,
+      false,
+      false,
+    ]);
+    expect(handPolicy(as, { probes: false, name }).take('probe:red')).toBe(false);
+  });
+
   it('takes nothing the rules leave out', () => {
     const { as } = stubBench({ R1: 'resistor-330' });
     const p = handPolicy(as, { name: () => '' });
@@ -111,6 +138,27 @@ describe('the phone’s dock', () => {
     expect(bench.closed).toBe(1);
     t.onChange?.(false);
     expect(bench.closed).toBe(0);
+  });
+});
+
+describe('the player in the dock', () => {
+  it('is a toggle on a phone only that plays or stops it', () => {
+    let phone = false;
+    const played: boolean[] = [];
+    const t = playerToggle(
+      'player',
+      () => phone,
+      (on) => void played.push(on),
+    );
+    expect(t.id).toBe(PLAYER_ID);
+    expect(t.label).toBe('player');
+    expect(t.value).toBe(false);
+    expect((t.visible as () => boolean)()).toBe(false);
+    phone = true;
+    expect((t.visible as () => boolean)()).toBe(true);
+    t.onChange?.(true);
+    t.onChange?.(false);
+    expect(played).toEqual([true, false]);
   });
 });
 

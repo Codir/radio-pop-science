@@ -9,7 +9,8 @@
  *   is wrapped over the top's edge as a rim 0.05 wide and the stripe runs over the rim too, so it shows from above at
  *   any turn; inside the rim the aluminium top with its cross-shaped vent; value and voltage up its side
  *   («470 μF 16 V»). The size is the real can's three times over; legs 1 P, the same length. Under the state `bulged`
- *   (VISUAL §4.8; E1-5 gives it, E2-9 binds it) the top domes up 0.05 and its vent opens, the sleeve a little wider.
+ *   (VISUAL §4.8; E1-5's model gives it, the bench shows it: E2-9) the top domes up 0.05 and its vent opens, the sleeve
+ *   a little wider.
  *
  * Draw calls: ceramic and film — the body, the legs, the print; electrolytic — the sleeve, the top, the legs, the print
  * (bulged: the domed top and the dark inside instead of the flat top).
@@ -274,7 +275,7 @@ export function createElectrolytic(farads: number, volts: number, key = 'electro
     bodyMaterials: slots(model, 'gloss'),
     prints,
     look: (state) => {
-      // it stays bulged as long as the state says so: until it is taken out (E2-9 binds the state to the model)
+      // it stays bulged as long as the model's state says so: until it is taken out (the bench gives it the state)
       const on = state.status === 'bulged';
       bulged.visible = on;
       flatTop.visible = !on;

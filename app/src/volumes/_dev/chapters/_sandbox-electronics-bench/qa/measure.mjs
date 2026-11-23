@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-/* global process, console, window, document */
+/* global process, console, window, document, performance, requestAnimationFrame, URL */
 // Browser check and measurements of the sandbox `_dev/_sandbox-electronics-bench` (a dev or preview server up; the
 // skeleton — arguments, `report` / `check` / verdict, `open`, `held` — is copied from the radio sandbox's
 // `qa/measure.mjs`, docs/volumes/electronics/REUSE.md «Копії»; the sections are the bench's own):
 //
 //   node app/src/volumes/_dev/chapters/_sandbox-electronics-bench/qa/measure.mjs --port 5480 --out <dir>
-//        [--only room,…,film,plates,roll] [--size 1280x720] [--touch]
+//        [--only room,…,film,plates,roll,scope,sound,repeat,leaks] [--size 1280x720] [--touch]
 //
 // Sections (`--only`, default all):
 //   room  — step `room` on a held page (`?freeze`): the bench's reader `electronics-bench` (204 sockets, 36 rows),
@@ -15,9 +15,8 @@
 //           (VISUAL §2), the frame ≤ 8 ms on a desktop (`__app.measure`; a phone's is reported), the console;
 //           snapshot `room-<size>.jpg`. With `--touch` the page is a phone's and the bench shows the shot `phone`.
 //   shots — steps `board`, `meter`, `scope` on held pages: draw calls, the pitch, the board's print (all 12 texts on
-//           `board` and every world text ≥ 16 px-equivalent; none on a phone), the instrument's stand-in inside the
-//           free area of its shot (not on a phone, where every shot is `phone`), the console; snapshots
-//           `<step>-<size>.jpg`.
+//           `board` and every world text ≥ 16 px-equivalent; none on a phone), the instrument inside the free area of
+//           its shot (not on a phone, where every shot is `phone`), the console; snapshots `<step>-<size>.jpg`.
 //   parts — step `parts` on a held page (E2-4, E2-M): `electronics-board` lists every part placed with the sockets of
 //           its legs — one of every kind of the model's catalog, the capacitors and the transistor too — and nothing
 //           shown outside the circuit; each one has a model; the model solves the board with all of them (`ok`, every
@@ -59,9 +58,12 @@
 //           LED's current the model's (± 1e-9) and its light > 0, the red one's its 330 Ω's by Ohm's law, three
 //           lights on the board, the 330 Ω of red and green warm (after a minute h ≈ 0.6, barely tinted), of blue
 //           ok, the hue families ≤ 4; step `lamp` — the filament at the model's ≈ 1 875 °C lights the room
-//           (`light.output` > 0); step `bulged-look` — the look alone, nothing let out (no model event behind it);
-//           the console everywhere; snapshots `heat-<state>[-close]-<size>.jpg` of «ok», «тепла», «гаряча», the
-//           wisp, «згоріла», the new part, the LEDs, the lamp and «здутий».
+//           (`light.output` > 0); step `bulged` (E2-9) — 100 μF / 6.3 V the wrong way round across the battery: «гаряча»
+//           by its load of 9, «здутий» in E1-5's window (τ·ln((L − H) / (L − 1)) from the open page, within a frame),
+//           told once as bulged, one puff of steam and no wisp of smoke, its top domed, its leak of 1 kΩ (9 mA), still
+//           bulged and nothing more let out 2 s later; the console everywhere; snapshots
+//           `heat-<state>[-close]-<size>.jpg` of «ok», «тепла», «гаряча», the wisp, «згоріла», the new part, the LEDs, the
+//           lamp, the steam and «здутий».
 //   loupe — the magnifier as the door (E2-8) on a held page, step `loupe` (a 4.7 kΩ in a5 … a9, shot `board`): on the
 //           board's shot the door is ready, no ladder, the lens in its holder, and a real press takes R1 (laid back);
 //           the slider set to the dive's stops (`__ui.set`, the flight waited out) — rail 0: the lens at work, its ring
@@ -103,6 +105,36 @@
 //           draw calls and the inside's 2, the callouts' points (`roll:metal`, `roll:film`) on screen in the free area;
 //           back at 0 the box whole; the hue families ≤ 4; the console; snapshots
 //           `roll-<board|part|inside>-<size>.jpg`.
+//   scope — the oscilloscope (E2-9): step `scope` (the amplifier with a low-pass before its volume control, the
+//           probes in j17 and j13) on two held pages — the same `electronics-scope.hash` (the window `model.still`
+//           computes at once: deterministic), a sweep triggered on channel 1, ≤ 600 points a channel, the chart and the
+//           instrument's screen of the same sweep (the screen's extremes the chart's on its scale), the board chart on
+//           screen, ≤ 350 draw calls; the filter's resistor 1 → 4.7 → 10 kΩ (`__ui.set('filter', …)`, held pages):
+//           the amplitude of channel 2 after the filter falls, channel 1's stays; step `rc` (10 kΩ, 100 μF, a roll) — the
+//           switch closed by a real pointer (a phone: the dock's toggle), 1.5 s of frames: channel 2 at the model's
+//           moment `since` + 1 s is 62.95 % ± 0.5 % of 9 V (R·C = 1 s with the scope's own input of 1 MΩ on the
+//           capacitor, E3-8; E1-5's tolerance), channel 1 at 9 V; a live page of
+//           `scope` (no `freeze`): the model in the background thread (`mode` worker), the first sweep ≤ 5 s after the
+//           page settled, sweeps and blocks keep coming; the console; snapshots `scope-<what>-<size>.jpg`.
+//   sound — the speaker in sound (E2-10), step `sound` (the player → a 10 kΩ pot as the volume control → the speaker)
+//           on a live page WITHOUT `noaudio` (the QA helpers add it: the address is built here, G31): before the
+//           gesture the output waits and the model plays silently on the engine's clock; a real click on the scene
+//           where the canvas is on top and no part is (G1: `ctx.gesture`; the board unchanged by it) — the output on
+//           the context's clock at 24 kHz, the model in its thread; 10 s of sound: no underrun, ≥ 90 % of the blocks of
+//           10 s played, the latency ≤ 0.25 s, two contexts (the engine's and the bench's); the sound off in the
+//           engine's settings → the gain 0 (asked and applied), on at volume 0.5 → 0.5² × 0.55; the volume slider at 0
+//           (`__ui.set`) → every block the model computed after the knob turned has the level 0 at the output (its
+//           samples, not a microphone), at 1 → the level back; the console; then a page WITH `?noaudio` and a click:
+//           no `AudioContext` made at all (an init script counts every one, `window.__qaAudio`), the output `off` on
+//           the engine's clock, the model playing on in its thread; snapshot `sound-<size>.jpg`.
+//   repeat — step `sound` on two held pages (`?freeze`, one after the other; 1 s held, then 60 steps): the speaker's
+//           blocks on the main thread are the same — the same count and the same `electronics-sound.hash` of every
+//           sample given to the output, the melody in them; the console.
+//   leaks — step `sound` on a live page without `noaudio`, clicked: three visits to `_dev/_sandbox-ui` and back —
+//           while away no background thread and no live context of the bench (the engine's own one stays); after each
+//           return one thread and the sound running again; geometries, textures and programs after the 3rd return not
+//           above the 1st; five contexts made (the engine's and four of the bench), two live; the console (but the
+//           one known warning of `_sandbox-ui`).
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-electronics-bench — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -973,6 +1005,8 @@ async function meter(context) {
 
 /** E1-4's resistor: τ 10 s, 0.25 W (sim/core/README.md, «Limits»). */
 const RESISTOR_TAU = 10;
+/** The heat's time constant of a capacitor (E1-5, `HEAT_SECONDS.capacitor`): an electrolytic bulges at H = 1. */
+const CAPACITOR_TAU = 10;
 /** The red LED with 330 Ω from the 9 V battery against ngspice (sim/core/README.md: 21.24 mA). */
 const RED_LED_A = 0.02124;
 /** Close-ups for the reader of the look: the part's sphere filling a narrow frame from the front and above. */
@@ -1295,34 +1329,77 @@ async function heat(context) {
     await page.close();
   }
 
-  /* ---- step `bulged-look`: the look under the state's name alone, for the reader (E2-9 binds it to the model) */
+  /* ---- step `bulged`: an electrolytic the wrong way round — the model bulges it (E1-5), the bench lets out steam */
   {
     const page = await context.newPage();
-    const pos = await open(page, 'bulged-look').catch((err) => ({ error: String(err) }));
-    if (!check('bulged-look: opened', at(pos, 'bulged-look'), where(pos))) {
+    const pos = await open(page, 'bulged').catch((err) => ({ error: String(err) }));
+    if (!check('bulged: opened', at(pos, 'bulged'), where(pos))) {
       await page.close();
       return;
     }
-    const b = await read(page, 'electronics-board');
-    const h = await heatNow(page);
+    const h0 = await heatNow(page);
+    const c0 = h0?.parts?.C1;
+    n.bulgedOpen = c0;
     check(
-      'bulged-look: the two cans shown outside the circuit, and nothing let out — no model event behind the look',
-      ['C-whole', 'C-bulged'].every((id) => b?.shown?.includes(id)) &&
-        Object.keys(b?.parts ?? {}).length === 0 &&
-        h?.smoke?.fired === 0 &&
-        h.smoke.active === 0 &&
-        h.burns?.length === 0,
-      `shown ${JSON.stringify(b?.shown)}, parts ${JSON.stringify(Object.keys(b?.parts ?? {}))}; smoke ${JSON.stringify(h?.smoke)}; burns ${JSON.stringify(h?.burns)}`,
+      'bulged: C1 «гаряча» by its load — 9 V the wrong way round against its 1 V: 9 — whole to the eye',
+      c0?.condition === 'hot' && Math.abs(c0.load - 9) < 0.05 && c0.bulged === false && h0.smoke?.fired === 0,
+      `condition ${c0?.condition}, load ${round(c0?.load, 3)}, heat ${round(c0?.heat, 3)}, bulged ${c0?.bulged}`,
     );
-    await screenshot(page, snap('bulged'));
+    // when it must bulge from here (E1-5: the heat of a capacitor with τ 10 s, bulged at H = 1)
+    const left = CAPACITOR_TAU * Math.log((c0.load - c0.heat) / (c0.load - 1));
+    let frames = 0;
+    let state = c0;
+    while (state?.condition !== 'bulged' && frames < 60 * 4) {
+      await page.evaluate(() => window.__app.step(1 / 60, 1));
+      frames++;
+      state = (await heatNow(page))?.parts?.C1;
+    }
+    const t = frames / 60;
+    const h1 = await heatNow(page);
+    n.bulged = { after: round(t, 4), expected: round(left, 4), C1: h1?.parts?.C1, burns: h1?.burns, smoke: h1?.smoke };
+    check(
+      'bulged: «здутий» in E1-5’s window, τ·ln((L − H) / (L − 1)) from the open page, within a frame',
+      state?.condition === 'bulged' && t >= left - 1e-9 && t < left + 1 / 60 + 1e-9,
+      `bulged after ${round(t, 3)} s; E1-5 says ${round(left, 3)} s`,
+    );
+    check(
+      'bulged: told once as bulged, one puff in the air; its top domed; its leak of 1 kΩ: 9 mA',
+      h1?.burns?.length === 1 &&
+        h1.burns[0].id === 'C1' &&
+        h1.burns[0].what === 'bulged' &&
+        h1.smoke?.fired === 1 &&
+        h1.smoke?.active === 1 &&
+        h1.parts.C1.bulged === true &&
+        h1.parts.C1.marks === false &&
+        Math.abs(Math.abs(h1.parts.C1.i) - 9e-3) < 2e-4,
+      `burns ${JSON.stringify(h1?.burns)}; smoke ${JSON.stringify(h1?.smoke)}; bulged ${h1?.parts?.C1?.bulged}, i ${h1?.parts?.C1?.i}`,
+    );
+    // the steam in the air (a third of its 1.5 s)
+    await page.evaluate(() => window.__app.step(1 / 60, 30));
+    await screenshot(page, snap('steam'));
     const parts = await read(page, 'electronics-parts');
-    const can = parts?.['C-bulged'];
+    const can = parts?.C1;
+    if (!touch && can) {
+      await close(page, can.center, Math.max(can.radius, NEAR.least) * NEAR.fill * 1.4);
+      await screenshot(page, snap('steam-close'));
+      await back(page, 'board');
+    }
+    await page.evaluate(() => window.__app.step(1 / 60, 120));
+    const h2 = await heatNow(page);
+    check(
+      'bulged: 2 s later still bulged, the steam gone, nothing more let out',
+      h2?.parts?.C1?.condition === 'bulged' && h2.parts.C1.bulged === true && h2.smoke?.fired === 1 && h2.smoke.active === 0 && h2.burns?.length === 1,
+      `${h2?.parts?.C1?.condition}; smoke ${JSON.stringify(h2?.smoke)}; burns ${h2?.burns?.length}`,
+    );
+    const calls = await drawCalls(page);
+    check('bulged: draw calls ≤ 350', calls.engine > 0 && calls.engine <= DRAW_CALLS.gate, `${calls.engine}`);
+    await screenshot(page, snap('bulged'));
     if (!touch && can) {
       await close(page, can.center, Math.max(can.radius, NEAR.least) * NEAR.fill * 1.4);
       await screenshot(page, snap('bulged-close'));
     }
     const errors = await appErrors(page);
-    check('bulged-look: console', errors.length === 0, consoleText(errors));
+    check('bulged: console', errors.length === 0, consoleText(errors));
     await page.close();
   }
 }
@@ -1986,9 +2063,543 @@ async function roll(context) {
   await page.close();
 }
 
+/* -------------------------------------------------------------------------------------- section scope */
+
+/** The model's rate in time (`shared/model/live.ts` `LIVE`). */
+const RATE = 24000;
+/**
+ * E1-5's RC: 9 V through 10 kΩ into 100 μF reaches 63.2 % ± 0.5 % of 9 V after R·C = 1 s (sim/core transient.test.ts) —
+ * here with the scope's input of 1 MΩ on the capacitor (E3-8, `SCOPE_INPUT`): toward 9 V · 1 M / 1,01 M with τ of
+ * 10 kΩ ∥ 1 MΩ, 62.95 % of 9 V after 1 s.
+ */
+const RC63 = (() => {
+  const r = 10e3;
+  const input = 1e6;
+  const tau = ((r * input) / (r + input)) * 100e-6;
+  return { share: (input / (r + input)) * (1 - Math.exp(-1 / tau)), tolerance: 0.005, tau: 1, volts: 9 };
+})();
+/** A live page: its first sweep within this many seconds after it settled (the brief). */
+const FIRST_SWEEP = 5;
+/** The filter's resistors of the step `scope`, in the order the dock's switch offers them. */
+const FILTERS = ['resistor-1k', 'resistor-4k7', 'resistor-10k'];
+
+/** The value of a channel's points at the model's moment `t` (s): straight between the points round it. */
+function traceAt(scope, channel, t) {
+  const { x, v } = scope.points[channel];
+  const k = scope.unit === 'ms' ? 1000 : 1;
+  let prev = null;
+  for (let i = 0; i < x.length; i++) {
+    const ti = scope.t0 + x[i] / k;
+    if (ti >= t) {
+      if (prev === null) return null;
+      const [tp, vp] = prev;
+      return ti === tp ? v[i] : vp + ((v[i] - vp) * (t - tp)) / (ti - tp);
+    }
+    prev = [ti, v[i]];
+  }
+  return null;
+}
+
+async function scope(context) {
+  const n = (report.sections.scope = {});
+  const scopeNow = (page) => read(page, 'electronics-scope');
+  const snap = (what) => join(out, `scope-${what}-${tag}.jpg`);
+
+  // 1. step `scope` on two held pages: the same window, the same hash
+  const hashes = [];
+  for (const k of [0, 1]) {
+    const page = await context.newPage();
+    const pos = await open(page, 'scope').catch((err) => ({ error: String(err) }));
+    if (!check(`scope: opened (page ${k + 1})`, at(pos, 'scope'), where(pos))) {
+      await page.close();
+      return;
+    }
+    await held(page);
+    const sc = await scopeNow(page);
+    hashes.push(sc?.hash);
+    if (k === 1) {
+      await page.close();
+      break;
+    }
+    n.held = { ...sc, points: undefined };
+    check(
+      'scope: a held page shows the window computed at once (main thread), triggered on channel 1',
+      sc?.frozen === true && sc.mode === 'sync' && sc.display === 'sweep' && sc.stills >= 1 && sc.holds >= 1 && sc.trigger?.found === true,
+      `mode ${sc?.mode}, stills ${sc?.stills}, holds ${sc?.holds}, warm-up ${sc?.still?.warmup} s (τmax ${round(sc?.still?.tau, 4)} s, ${round(sc?.still?.ms, 0)} ms), trigger at ${round(sc?.trigger?.at, 5)} s, level ${round(sc?.trigger?.used, 5)} V`,
+    );
+    check(
+      'scope: the probes in j17 (before the filter) and j13 (after it); ≤ 600 points a channel, both drawn',
+      sc?.ch1 === 'j17' && sc.ch2 === 'j13' && sc.n.every((m) => m > 0 && m <= 600) && sc.on.every(Boolean),
+      `ch1 ${sc?.ch1}, ch2 ${sc?.ch2}, points ${JSON.stringify(sc?.n)}`,
+    );
+    // the instrument's 160 points are the same sweep: their extremes are the chart's on the screen's scale
+    const onScreen = (v) => Math.max(-1, Math.min(1, (v / sc.voltsPerDiv + sc.ground) / 4));
+    const same = [0, 1].every(
+      (c) =>
+        sc.screen[c] &&
+        Math.abs(sc.screen[c].max - onScreen(sc.max[c])) < 1e-6 &&
+        Math.abs(sc.screen[c].min - onScreen(sc.min[c])) < 1e-6,
+    );
+    check(
+      'scope: the instrument’s screen shows the chart’s sweep (its extremes the same on the screen’s scale)',
+      same,
+      `ch1 ${round(sc?.min?.[0], 4)} … ${round(sc?.max?.[0], 4)} V → ${round(sc?.screen?.[0]?.min, 4)} … ${round(sc?.screen?.[0]?.max, 4)}; ch2 ${round(sc?.min?.[1], 4)} … ${round(sc?.max?.[1], 4)} V → ${round(sc?.screen?.[1]?.min, 4)} … ${round(sc?.screen?.[1]?.max, 4)}`,
+    );
+    if (touch) await page.evaluate(() => window.__ui.setSheet?.({ tab: 'board' }));
+    const chart = await page.evaluate(() => window.__ui.locate('ctl-scope-scope'));
+    check('scope: the board chart on screen', chart !== null && chart.w > 50, JSON.stringify(chart));
+    const calls = await drawCalls(page);
+    n.drawCalls = calls.engine;
+    check('scope: draw calls ≤ 350 with the amplifier, the scope and its probes', calls.engine > 0 && calls.engine <= DRAW_CALLS.gate, `${calls.engine}; ${calls.triangles} triangles`);
+    await screenshot(page, snap('held'));
+
+    // 2. the filter's resistor grows: channel 2 after the filter falls, channel 1 before it stays
+    const amps = [];
+    for (const spec of FILTERS) {
+      await page.evaluate((id) => window.__ui.set('filter', id, true), spec);
+      await held(page);
+      await held(page);
+      const f = await scopeNow(page);
+      amps.push({ spec, ch1: f.max[0] - f.min[0], ch2: f.max[1] - f.min[1], warmup: f.still?.warmup, at: f.trigger?.at });
+      await screenshot(page, snap(spec.replace('resistor-', '')));
+    }
+    n.filter = amps.map((a) => ({ ...a, ch1: round(a.ch1, 5), ch2: round(a.ch2, 5) }));
+    check(
+      'scope: the amplitude of channel 2 after the filter falls as R grows 1 → 4.7 → 10 kΩ; channel 1’s stays',
+      amps[0].ch2 > amps[1].ch2 && amps[1].ch2 > amps[2].ch2 && amps.every((a) => Math.abs(a.ch1 / amps[0].ch1 - 1) < 0.1),
+      amps.map((a) => `${a.spec.slice(9)}: ch2 ${round(a.ch2 * 1000, 1)} mV, ch1 ${round(a.ch1 * 1000, 1)} mV`).join('; '),
+    );
+    check(
+      'scope: the three windows the same stretch of the melody (the warm-up on a half bar, the same trigger)',
+      amps.every((a) => a.warmup === amps[0].warmup && Math.abs(a.at - amps[0].at) < 1e-9),
+      amps.map((a) => `${a.warmup} s, ${round(a.at, 5)} s`).join('; '),
+    );
+    const errors = await appErrors(page);
+    check('scope: console', errors.length === 0, consoleText(errors));
+    await page.close();
+  }
+  n.hashes = hashes;
+  check('scope: two held pages, the same electronics-scope.hash', hashes.length === 2 && hashes[0] === hashes[1] && hashes[0] !== '811c9dc5', hashes.join(' = '));
+
+  // 3. step `rc`: the switch closed, channel 2 at τ = 1 s after the model took it
+  {
+    const page = await context.newPage();
+    const pos = await open(page, 'rc').catch((err) => ({ error: String(err) }));
+    if (check('rc: opened', at(pos, 'rc'), where(pos))) {
+      const s0 = await scopeNow(page);
+      check(
+        'rc: a roll, both channels at 0 V with the switch open',
+        s0?.display === 'roll' && s0.ch1 === 'e3' && s0.ch2 === 'e7' && s0.n.every((m) => m > 0) && [0, 1].every((c) => Math.abs(s0.max[c]) < 1e-6 && Math.abs(s0.min[c]) < 1e-6),
+        `display ${s0?.display}, ch1 ${s0?.ch1} ${round(s0?.max?.[0], 6)} V, ch2 ${s0?.ch2} ${round(s0?.max?.[1], 6)} V`,
+      );
+      const before = s0?.since;
+      const phone = (await read(page, 'electronics-bench'))?.phone === true;
+      const p = await pointer(page, touch);
+      if (phone) await page.evaluate(() => window.__ui.setSheet?.({ tab: 'controls' }));
+      await held(page);
+      const sw = phone
+        ? await page.evaluate(() => window.__ui.locate('ctl-battery-switch'))
+        : await page.evaluate(() => window.__app.locate('switch'));
+      if (sw) await p.tap(sw.x, sw.y);
+      const closed = (await read(page, 'electronics-board'))?.settings?.SW;
+      check(`rc: a tap on ${phone ? 'the dock’s toggle' : 'the slider'} closes the switch`, closed === 1, `SW ${closed}`);
+      await page.evaluate(() => window.__app.step(1 / 60, 90));
+      await held(page);
+      const s1 = await scopeNow(page);
+      const v = traceAt(s1, 1, s1.since + RC63.tau);
+      const v1 = traceAt(s1, 0, s1.since + RC63.tau);
+      const v0 = traceAt(s1, 1, s1.since - 0.05);
+      n.rc = { since: s1?.since, before, at: round(v, 5), share: round(v / RC63.volts, 5), ch1: round(v1, 4), now: s1?.now };
+      check(
+        'rc: the switch taken by the model at a moment of its own (`since`); channel 2 at 0 V before it',
+        s1.since > (before ?? 0) && Math.abs(v0) < 1e-3,
+        `since ${round(s1.since, 4)} s (was ${round(before, 4)}), channel 2 before it ${round(v0, 6)} V`,
+      );
+      check(
+        'rc: channel 2 at R·C = 1 s after it: 62.95 % ± 0.5 % of 9 V (the scope’s 1 MΩ on it; E1-5’s tolerance); channel 1 at 9 V',
+        v !== null && Math.abs(v / RC63.volts - RC63.share) <= RC63.tolerance && Math.abs(v1 - 9) < 0.02,
+        `${round(v, 4)} V = ${round((v / RC63.volts) * 100, 3)} %; channel 1 ${round(v1, 4)} V`,
+      );
+      const calls = await drawCalls(page);
+      check('rc: draw calls ≤ 350', calls.engine > 0 && calls.engine <= DRAW_CALLS.gate, `${calls.engine}`);
+      await screenshot(page, snap('rc'));
+      const errors = await appErrors(page);
+      check('rc: console', errors.length === 0, consoleText(errors));
+    }
+    await page.close();
+  }
+
+  // 4. a live page: the model in the background thread, sweeps that come and keep coming
+  {
+    const page = await context.newPage();
+    const url = appUrl(base, { route: route('scope'), q });
+    let ok = true;
+    let first = null;
+    try {
+      // from the page's navigation on: when the first sweep is there (the page's own clock, s), polled every 50 ms
+      await page.goto(url, { waitUntil: 'commit', timeout: OPEN_TIMEOUT_MS });
+      await page.waitForFunction(
+        () => {
+          try {
+            return window.__app.read('electronics-scope').sweeps > 0;
+          } catch {
+            return false; // the engine not ready yet, or the step's scene not mounted
+          }
+        },
+        null,
+        { polling: 50, timeout: OPEN_TIMEOUT_MS },
+      );
+      first = await page.evaluate(() => {
+        const r = window.__app.read('electronics-scope');
+        const shown = performance.getEntriesByType('navigation')[0];
+        return { t: performance.now() / 1000, load: (shown?.loadEventEnd ?? 0) / 1000, mode: r.mode, sweeps: r.sweeps, blocks: r.blocks };
+      });
+    } catch (err) {
+      ok = check('live: opened', false, String(err));
+    }
+    if (ok) {
+      await sleep(2000);
+      const later = await scopeNow(page);
+      n.live = { first, later: { mode: later?.mode, sweeps: later?.sweeps, blocks: later?.blocks, ms: round(later?.ms, 2), frozen: later?.frozen } };
+      check('live: the model in the background thread', later?.mode === 'worker' && later.frozen === false, `mode ${later?.mode}`);
+      check(
+        `live: the first sweep within ${FIRST_SWEEP} s of the page's navigation`,
+        first.sweeps > 0 && first.t <= FIRST_SWEEP,
+        `${round(first.t, 2)} s from the navigation (the page loaded at ${round(first.load, 2)} s), ${first.blocks} blocks`,
+      );
+      check(
+        'live: sweeps and blocks keep coming',
+        later?.sweeps > first.sweeps + 10 && later.blocks > first.blocks + 10,
+        `2 s later: ${later?.sweeps} sweeps (were ${first.sweeps}), ${later?.blocks} blocks (were ${first.blocks}), ${round(later?.ms, 1)} ms a block of ${round((1536 / RATE) * 1000, 0)} ms`,
+      );
+      await screenshot(page, snap('live'));
+      const errors = await appErrors(page);
+      check('live: console', errors.length === 0, consoleText(errors));
+    }
+    await page.close();
+  }
+}
+
+/* ------------------------------------------------------------------------------- sections sound, repeat, leaks */
+
+/** The chapter the visits of `leaks` go to and come back from (as the radio sandbox's). */
+const ELSEWHERE = '_sandbox-ui';
+/**
+ * The one console message `leaks` leaves out: `_dev/_sandbox-ui` shows a WebGL-only custom control on purpose
+ * (`_sandbox-ui/parts/dom-widgets.ts`, id 'legacy') and the DOM interface warns about it on every visit.
+ */
+const VISIT_WARNING = "hud-dom: custom control 'legacy' has no 'dom' widget";
+const visitWarning = (m) => m.level === 'warn' && m.message.startsWith(VISIT_WARNING);
+/** How long the sound may take to start after the click, a thread to stop after an exit (ms). */
+const SOUND_WITHIN_MS = 8000;
+const LISTEN_S = 10;
+/** The share of the blocks of LISTEN_S that must have played, and the latency's limit (E1-9's check). */
+const MIN_PLAYED = 0.9;
+const MAX_LATENCY_S = 0.25;
+/** The engine's master level: the output's gain is volume² × 0.55 (`OUTPUT_LEVEL`). */
+const OUTPUT_LEVEL = 0.55;
+/** The blocks of a board looked at for its level. */
+const LEVEL_BLOCKS = 8;
+
+const soundNow = (page) => read(page, 'electronics-sound');
+const audioCount = (page) =>
+  page.evaluate(() => ({ made: window.__qaAudio.made(), live: window.__qaAudio.live(), rates: window.__qaAudio.rates() }));
+
+/** Waits (real time) until `test(value)` holds for `get()`, at most `limit` ms; returns the last value. */
+async function until(get, test, limit) {
+  const t0 = Date.now();
+  let v = await get();
+  while (!test(v) && Date.now() - t0 < limit) {
+    await sleep(100);
+    v = await get();
+  }
+  return v;
+}
+
+/** A page of step `sound` on the live clock, with or without `?noaudio` (the QA helpers always add it). */
+async function openLive(page, noaudio) {
+  const url = new URL(appUrl(base, { route: route('sound'), q }));
+  if (!noaudio) url.searchParams.delete('noaudio');
+  const gpu = await Promise.race([
+    openApp(page, url.toString(), { timeout: OPEN_TIMEOUT_MS }),
+    sleep(OPEN_TIMEOUT_MS).then(() => {
+      throw new Error(`no answer from ${url} within ${OPEN_TIMEOUT_MS / 1000} s`);
+    }),
+  ]);
+  report.gpu ??= gpu;
+  await page.evaluate(() => window.__app.settled());
+  return position(page);
+}
+
+/**
+ * A real click (or tap) on the scene for the engine's gesture: the first point of a grid over the top of the frame —
+ * the dark room — where the canvas is on top and no part, plug or probe of the bench is under it.
+ */
+async function clickScene(page) {
+  const point = await page.evaluate(() => {
+    for (const fy of [0.12, 0.18, 0.08, 0.25])
+      for (const fx of [0.5, 0.4, 0.6, 0.3, 0.7]) {
+        const x = Math.round(window.innerWidth * fx);
+        const y = Math.round(window.innerHeight * fy);
+        if (document.elementFromPoint(x, y)?.tagName === 'CANVAS') return { x, y };
+      }
+    return null;
+  });
+  if (point === null) throw new Error('no point of the scene where the canvas is on top');
+  // a trusted input event on the live clock (the helpers' pointer steps a held clock)
+  if (touch) await page.touchscreen.tap(point.x, point.y);
+  else await page.mouse.click(point.x, point.y);
+  return point;
+}
+
+/** The bench's sound running on the context's clock, its model in a thread. */
+const running = (r) => r?.on === true && r.state === 'running' && r.clock === 'audio' && r.mode === 'worker' && r.blocks > 3;
+
+/** Animation frames of the page (real time). */
+const frames = (page, n) =>
+  page.evaluate(
+    (count) =>
+      new Promise((resolve) => {
+        let left = count;
+        const tick = () => (--left <= 0 ? resolve() : requestAnimationFrame(tick));
+        requestAnimationFrame(tick);
+      }),
+    n,
+  );
+
+async function sound(context) {
+  const n = (report.sections.sound = {});
+  {
+    const page = await context.newPage();
+    const pos = await openLive(page, false).catch((err) => ({ error: String(err) }));
+    if (!check('sound: opened (no noaudio)', at(pos, 'sound'), where(pos))) {
+      await page.close();
+      return;
+    }
+    // before the gesture: the output waits, the model plays silently on the engine's clock
+    const before = await until(() => soundNow(page), (r) => r?.blocks > 3, SOUND_WITHIN_MS);
+    const key = (await read(page, 'electronics-board'))?.key;
+    check(
+      'sound: before the gesture the output waits; the model plays silently on the engine’s clock, the speaker in the circuit',
+      before?.on === true && before.state === 'waiting' && before.clock === 'engine' && before.speaker === true && before.blocks > 3,
+      `${before?.state}/${before?.clock}, speaker ${before?.speaker}, ${before?.blocks} blocks, mode ${before?.mode}`,
+    );
+    const click = await clickScene(page);
+    const r = await until(() => soundNow(page), running, SOUND_WITHIN_MS);
+    const after = (await read(page, 'electronics-board'))?.key;
+    const audio0 = await audioCount(page);
+    check(
+      'sound: a real click on the scene starts it — the context’s clock at 24 kHz, the model in its thread; the board as it was',
+      running(r) && after === key && audio0.rates.includes(24000),
+      `click at (${click.x}, ${click.y}): ${r?.state}/${r?.clock}, mode ${r?.mode}, ${r?.blocks} blocks; contexts at ${audio0.rates.join(', ')} Hz; board ${after === key ? 'unchanged' : 'CHANGED'}`,
+    );
+    // ten seconds of sound
+    const a = await soundNow(page);
+    const t0 = Date.now();
+    const latencies = [];
+    while (Date.now() - t0 < LISTEN_S * 1000) {
+      await sleep(250);
+      latencies.push((await soundNow(page)).latency);
+    }
+    const b = await soundNow(page);
+    const seconds = (Date.now() - t0) / 1000;
+    const blockMs = (1000 * b.block) / b.rate;
+    Object.assign(n, {
+      seconds: round(seconds, 2),
+      blockMs: round(blockMs, 1),
+      expected: Math.floor((seconds * 1000) / blockMs),
+      played: b.played - a.played,
+      underruns: b.underruns - a.underruns,
+      underrunsTotal: b.underruns,
+      blocks: b.blocks - a.blocks,
+      modelMs: round(b.ms, 2),
+      latency: { min: round(Math.min(...latencies), 3), max: round(Math.max(...latencies), 3) },
+      audio: await audioCount(page),
+      gpu: report.gpu?.renderer ?? null,
+    });
+    check(
+      `sound: ${LISTEN_S} s — no underrun, the blocks played`,
+      n.underruns === 0 && n.underrunsTotal === 0 && n.played >= MIN_PLAYED * n.expected && b.state === 'running' && b.mode === 'worker',
+      `${n.played} blocks played in ${n.seconds} s (${n.expected} fit in it), ${n.underruns} underruns (${n.underrunsTotal} since the start), the model ${n.modelMs} ms a block of ${n.blockMs} ms`,
+    );
+    check(
+      'sound: the latency — the sound planned ahead and the context’s own',
+      n.latency.max <= MAX_LATENCY_S && n.latency.min > 0,
+      `${n.latency.min} … ${n.latency.max} s (limit ${MAX_LATENCY_S})`,
+    );
+    check(
+      'sound: two contexts — the engine’s and the bench’s',
+      n.audio.made === 2 && n.audio.live === 2,
+      `${n.audio.made} made, ${n.audio.live} live, at ${n.audio.rates.join(' and ')} Hz`,
+    );
+    // the engine's settings: the sound off → silence (the gain asked and applied), on at volume 0.5
+    const set = (patch) => page.evaluate((x) => window.__app.engine.store.updateSettings(x), patch);
+    const original = await page.evaluate(() => window.__app.engine.store.get().settings);
+    await set({ audio: false });
+    const off = await until(() => soundNow(page), (x) => x.gain === 0 && Math.abs(x.gainNow) < 1e-3, 3000);
+    n.off = { gain: off.gain, gainNow: round(off.gainNow, 6), state: off.state };
+    check('sound: the sound off in the settings → silence: the gain 0', off.gain === 0 && Math.abs(off.gainNow) < 1e-3, `gain ${off.gain}, applied ${n.off.gainNow}`);
+    await set({ audio: true, volume: 0.5 });
+    const want = 0.25 * OUTPUT_LEVEL;
+    const half = await until(() => soundNow(page), (x) => Math.abs(x.gainNow - want) < 1e-3, 3000);
+    n.half = { gain: round(half.gain, 6), gainNow: round(half.gainNow, 6) };
+    check(
+      'sound: on again at volume 0.5 → 0.5² × 0.55',
+      Math.abs(half.gain - want) < 1e-9 && Math.abs(half.gainNow - want) < 1e-3,
+      `gain ${n.half.gain}, applied ${n.half.gainNow} (want ${want})`,
+    );
+    await set({ audio: original.audio, volume: original.volume });
+    // the volume knob: the level of the blocks the model computed with each setting (the output's samples)
+    const levelAt = async (value) => {
+      const s0 = (await soundNow(page)).since;
+      await page.evaluate((v) => window.__ui.set('volume', v, true), value);
+      const x = await until(
+        () => soundNow(page),
+        (s) => s.since > s0 && s.levels.filter((l) => l.first >= s.since * s.rate).length >= LEVEL_BLOCKS,
+        SOUND_WITHIN_MS,
+      );
+      const after = x.levels.filter((l) => l.first >= x.since * x.rate);
+      return {
+        value,
+        since: round(x.since, 3),
+        blocks: after.length,
+        peak: Math.max(...after.map((l) => l.peak)),
+        rms: Math.max(...after.map((l) => l.rms)),
+        setting: (await read(page, 'electronics-board'))?.settings?.P1,
+      };
+    };
+    const zero = await levelAt(0);
+    const top = await levelAt(1);
+    n.volume = { zero, top };
+    check(
+      'sound: the volume at 0 → every block after the knob turned has the level 0 at the output; at 1 the level is back',
+      zero.setting === 0 && zero.blocks >= LEVEL_BLOCKS && zero.peak === 0 && zero.rms === 0 && top.setting === 1 && top.peak > 1e-3,
+      `0: P1 ${zero.setting}, ${zero.blocks} blocks from ${zero.since} s, peak ${zero.peak}; 1: P1 ${top.setting}, peak ${round(top.peak, 5)} of full scale, RMS ${round(top.rms, 5)}`,
+    );
+    const end = await soundNow(page);
+    check('sound: still no underrun', end.underruns === 0, `${end.underruns} underruns, ${end.played} blocks played`);
+    await screenshot(page, join(out, `sound-${tag}.jpg`));
+    const errors = await appErrors(page);
+    check('sound: console', errors.length === 0, consoleText(errors));
+    await page.close();
+  }
+  // `?noaudio` and a click: no context at all, the model plays on silently
+  {
+    const page = await context.newPage();
+    const pos = await openLive(page, true).catch((err) => ({ error: String(err) }));
+    if (check('noaudio: opened', at(pos, 'sound'), where(pos))) {
+      await clickScene(page);
+      const r = await until(() => soundNow(page), (x) => x?.blocks > 20, SOUND_WITHIN_MS);
+      await sleep(1000);
+      const audio = await audioCount(page);
+      const flag = await page.evaluate(() => window.__app.engine.flags.noaudio);
+      n.noaudio = { audio, state: r?.state, clock: r?.clock, blocks: r?.blocks, mode: r?.mode, flag };
+      check(
+        'noaudio: no AudioContext made after a click; the output off on the engine’s clock',
+        flag === true && audio.made === 0 && r?.state === 'off' && r.clock === 'engine',
+        `?noaudio ${flag}: ${audio.made} AudioContext made; output ${r?.state} on the ${r?.clock} clock`,
+      );
+      check('noaudio: the model plays on silently in its thread', r?.blocks > 20 && r.mode === 'worker', `${r?.blocks} blocks, ${r?.mode}`);
+      const errors = await appErrors(page);
+      check('noaudio: console', errors.length === 0, consoleText(errors));
+    }
+    await page.close();
+  }
+}
+
+async function repeat(context) {
+  const n = (report.sections.repeat = {});
+  const visit = async () => {
+    const page = await context.newPage();
+    const pos = await open(page, 'sound', 1).catch((err) => ({ error: String(err) }));
+    if (!at(pos, 'sound')) {
+      await page.close();
+      return { pos };
+    }
+    await page.evaluate(() => window.__app.step(1 / 60, 60));
+    await held(page);
+    const s = await soundNow(page);
+    const errors = await appErrors(page);
+    await page.close();
+    return { pos, s, errors };
+  };
+  const a = await visit();
+  const b = await visit();
+  if (!check('repeat: opened (two held pages)', at(a.pos, 'sound') && at(b.pos, 'sound'), `1 ${where(a.pos)}, 2 ${where(b.pos)}`))
+    return;
+  const pick = (s) => ({ mode: s.mode, blocks: s.blocks, hash: s.hash, peak: Math.max(...s.levels.map((l) => l.peak)) });
+  n.pages = [pick(a.s), pick(b.s)];
+  const [p, r] = n.pages;
+  check(
+    'repeat: the speaker’s blocks the same on both — their count and the hash of every sample, the melody in them',
+    p.mode === 'sync' && p.blocks > 10 && p.blocks === r.blocks && p.hash === r.hash && p.hash !== '811c9dc5' && p.peak > 1e-3,
+    `${p.mode}: ${p.blocks} / ${r.blocks} blocks, hash ${p.hash} / ${r.hash}, peak ${round(p.peak, 5)}`,
+  );
+  const errors = [...a.errors, ...b.errors];
+  check('repeat: console', errors.length === 0, consoleText(errors));
+}
+
+async function leaks(context) {
+  const n = (report.sections.leaks = { trips: [] });
+  const page = await context.newPage();
+  const pos = await openLive(page, false).catch((err) => ({ error: String(err) }));
+  if (!check('leaks: opened (no noaudio)', at(pos, 'sound'), where(pos))) {
+    await page.close();
+    return;
+  }
+  await clickScene(page);
+  const first = await until(() => soundNow(page), running, SOUND_WITHIN_MS);
+  check('leaks: the sound running', running(first), `${first?.state}/${first?.clock}, ${first?.mode}`);
+  for (let i = 0; i < 3; i++) {
+    await page.evaluate((c) => window.__app.goto(c), ELSEWHERE);
+    const away = await until(
+      async () => ({ workers: page.workers().length, ...(await audioCount(page)) }),
+      (x) => x.workers === 0 && x.live === 1,
+      SOUND_WITHIN_MS,
+    );
+    await page.evaluate(([c, s]) => window.__app.goto(c, s), [CHAPTER, 'sound']);
+    const back = await until(
+      async () => ({ workers: page.workers().length, r: await soundNow(page).catch(() => null) }),
+      (x) => x.workers === 1 && running(x.r),
+      SOUND_WITHIN_MS,
+    );
+    await frames(page, 10);
+    const s = await stats(page);
+    n.trips.push({
+      away: { workers: away.workers, live: away.live },
+      back: { workers: back.workers, state: back.r?.state, mode: back.r?.mode },
+      memory: { geometries: s.geometries, textures: s.textures, programs: s.programs },
+    });
+  }
+  const audio = await audioCount(page);
+  n.audio = audio;
+  check(
+    'leaks: after each exit no thread and no live context of the bench (the engine’s own one stays)',
+    n.trips.every((t) => t.away.workers === 0 && t.away.live === 1),
+    n.trips.map((t) => `${t.away.workers} threads, ${t.away.live} live context`).join('; '),
+  );
+  check(
+    'leaks: after each return one thread and the sound running; five contexts made, two live',
+    n.trips.every((t) => t.back.workers === 1 && t.back.state === 'running') && at(await position(page), 'sound') && audio.made === 5 && audio.live === 2,
+    `${n.trips.map((t) => `${t.back.workers} thread, ${t.back.state}`).join('; ')}; contexts ${audio.made} made (the engine’s and four of the bench), ${audio.live} live`,
+  );
+  const memory = n.trips.map((t) => t.memory);
+  const grew = ['geometries', 'textures', 'programs'].filter((k) => memory[2][k] > memory[0][k]);
+  check(
+    'leaks: geometries, textures and programs do not grow',
+    grew.length === 0,
+    `after the 1st return ${JSON.stringify(memory[0])}, after the 3rd ${JSON.stringify(memory[2])}`,
+  );
+  const log = await appErrors(page);
+  n.visitMessages = log.filter(visitWarning).length;
+  const errors = log.filter((m) => !visitWarning(m));
+  check('leaks: console', errors.length === 0, `${consoleText(errors)}; left out: ${n.visitMessages} × the known '${ELSEWHERE}' warning`);
+  await page.close();
+}
+
 /* ---------------------------------------------------------------------------------------------- run */
 
-const SECTIONS = { room, shots, parts, hand, meter, heat, loupe, film, plates, roll };
+const SECTIONS = { room, shots, parts, hand, meter, heat, loupe, film, plates, roll, scope, sound, repeat, leaks };
 const only =
   typeof args.only === 'string'
     ? args.only
@@ -2006,6 +2617,23 @@ if (unknown.length) {
 
 const { browser, context, page } = await launch({ width, height, dpr: touch ? 3 : 1, touch });
 await page.close(); // every section opens the pages it needs and closes them
+// every AudioContext a page makes, the engine's and the bench's (section `sound`, `leaks`)
+await context.addInitScript(() => {
+  const Base = window.AudioContext;
+  if (!Base) return;
+  const made = [];
+  window.AudioContext = class extends Base {
+    constructor(...a) {
+      super(...a);
+      made.push(this);
+    }
+  };
+  window.__qaAudio = {
+    made: () => made.length,
+    live: () => made.filter((c) => c.state !== 'closed').length,
+    rates: () => made.map((c) => c.sampleRate),
+  };
+});
 try {
   for (const name of only) {
     section = name;

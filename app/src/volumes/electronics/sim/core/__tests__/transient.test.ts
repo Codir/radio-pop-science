@@ -374,6 +374,30 @@ describe('the lamp and the limits in time', () => {
     expect(t.step()).toBe(true);
     expect(t.parts.D!.i).toBe(0);
   });
+
+  it('a stand that tells the damage itself (fails: false): the heat gathers, nothing fails on it; the state’s damage holds', () => {
+    const board = net(2, part('B', 'battery-9v', [1, 0]), part('R', 'resistor-75', [1, 0]));
+    const dt = 1e-3;
+    const t = new Transient(board, { dt, fails: false });
+    expect(t.fails).toBe(false);
+    expect(new Transient(board, { dt }).fails).toBe(true);
+    expect(t.start('dc')).toBe(true);
+    const load = t.parts.R!.p / 0.25;
+    const i = t.parts.R!.i;
+    // twice the time it takes to burn on its own: it gathers its heat toward the load, and goes on carrying
+    const steps = Math.ceil((2 * burnSeconds(load, 10)) / dt);
+    expect(t.run(steps)).toBe(steps);
+    expect(t.status.R!.condition).toBe('hot');
+    expect(t.parts.R!.i).toBeCloseTo(i, 9);
+    expect(t.state.parts.get('R')!.heat).toBeGreaterThan(1);
+    expect(t.state.parts.get('R')!.burnt).toBe(false);
+    // the stand says it burnt: a gap from the next board on
+    memoryOf(t.state, 'R').burnt = true;
+    t.rebuild(board);
+    expect(t.step()).toBe(true);
+    expect(t.parts.R).toEqual({ u: t.v[1], i: 0, p: 0 });
+    expect(t.status.R!.condition).toBe('burnt');
+  });
 });
 
 describe('the worked example of sim/core/README.md, as written there', () => {

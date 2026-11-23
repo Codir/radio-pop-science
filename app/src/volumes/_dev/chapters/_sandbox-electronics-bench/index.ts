@@ -8,11 +8,15 @@ import { defineChapter } from '@/engine/api';
  * marks on the board (step `parts`; E2-M: one of every kind of the model's catalog, all in the circuit); E2-5: the hand,
  * the tray, the plug leads and the switch (step `hand`); E2-6: the circuit model on the bench and the multimeter with its
  * probes (steps `meter`, `divider`); E2-7: the light, the heat and the burn from the model's state (steps `led`,
- * `overload`, `lamp`) and the bulged electrolytic's look alone (`bulged-look`; E2-9 binds the state to the model in its
- * own step `bulged` and takes this one away); E2-8: the magnifier as the door from the board to a resistor and into it,
- * with the ladder «де ми» (step `loupe`); E3-5: inside the resistor — the carbon film, its groove for the value, the
- * electrons at the model's current (step `film`); E4-I: inside the capacitors — an electrolytic's two plates with the
- * model's charges (step `plates`), a film capacitor's roll (step `roll`).
+ * `overload`, `lamp`); E2-8: the magnifier as the door from the board to a resistor and into it, with the ladder «де
+ * ми» (step `loupe`); E3-5: inside the resistor — the carbon film, its groove for the value, the electrons at the
+ * model's current (step `film`); E2-9: the oscilloscope — the player's music before and after a low-pass in front of
+ * the amplifier (step `scope`), a capacitor charging through 10 kΩ on a rolling trace (step `rc`) — and an
+ * electrolytic the wrong way round, which the model bulges (step `bulged`); E2-10: the speaker in sound — the player
+ * through a 10 kΩ pot as the volume control into the speaker, the volume slider in the panel (step `sound`; the bench
+ * is mounted with its option `sound`, so the speaker plays wherever it is in the circuit); E4-I: inside the
+ * capacitors — an electrolytic's two plates with the model's charges (step `plates`), a film capacitor's roll (step
+ * `roll`).
  * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
@@ -32,8 +36,14 @@ export const SANDBOX = {
         'Мультиметр виїжджає ліворуч від основи, щупи лежать біля нього вільно. Плата порожня, тож показ — «—». Щуп беруть за ручку й ставлять у будь-яке гніздо; режим і число — у панелі.',
     },
     scope: {
-      title: 'Осцилограф на столі',
-      blurb: 'Заготовка осцилографа виїжджає праворуч позаду; у кадрі її лице й уся плата.',
+      title: 'Осцилограф: музика до й після фільтра',
+      blurb:
+        'Підсилювач на платі, а між плеєром і регулятором гучності — фільтр: резистор і 100 nF до землі. Щуп каналу 1 — на дроті плеєра, до фільтра; щуп каналу 2 — після фільтра. Перемикач «Резистор фільтра» ставить 1, 4,7 чи 10 kΩ: що більший опір, то менший і гладкіший слід каналу 2. Графік на дошці й екран приладу показують ті самі відліки моделі.',
+    },
+    rc: {
+      title: 'Осцилограф: заряд конденсатора',
+      blurb:
+        'Від шини «+» перемичка, резистор 10 kΩ і конденсатор 100 μF до шини «−»; вимикач розімкнено. Слід іде прокруткою, новий праворуч. Замкніть вимикач: канал 1 одразу стрибає до 9 V, а канал 2 — напруга на конденсаторі — росте плавно й за секунду, сталу часу 10 kΩ на 100 μF, доходить до 63 % від 9 V.',
     },
     parts: {
       title: 'Деталі на платі',
@@ -65,10 +75,10 @@ export const SANDBOX = {
       blurb:
         'Лампа 6 V від батареї 9 V через два резистори по 15 Ω: на ній ≈ 5,9 V. Нитка розжарюється до температури, яку дає модель, і лампа освітлює стенд; вимикач її гасить.',
     },
-    'bulged-look': {
-      title: 'Здутий електроліт: лише вигляд',
+    bulged: {
+      title: 'Електроліт навиворіт',
       blurb:
-        'Лише вигляд стану «здутий», поза схемою: праворуч верх випнутий, насічка розійшлася, плівка трохи роздалася; ліворуч — цілий конденсатор. Модель цього стану ще не дає.',
+        'Конденсатор 100 μF на 6,3 V стоїть просто між шинами навиворіт: його «−» на плюсі батареї. Вимикач замкнено, і модель за секунду з чимось його здуває: верх випинається, насічка розходиться, з неї раз виходить клубок пари. Він лишається здутим, доки його не вийнято.',
     },
     loupe: {
       title: 'Лупа: до деталі й усередину',
@@ -89,6 +99,11 @@ export const SANDBOX = {
       title: 'Усередині плівкового конденсатора',
       blurb:
         'Плівковий конденсатор 1 μF сам на платі, вимикач розімкнено. Повзунок «Глибина» веде лупу на брусок і камеру всередину: брусок розрізано навпіл, і видно рулон із двох смужок плівки з шаром металу на кожній, торці, вкриті металом, і ніжки, що до них доходять. Біля другої ніжки лишено куток бруска, і на його косому зрізі видно витки рулону, а над ним — як ця ніжка входить у свій торець. Вигляд статичний: брусок поза колом.',
+    },
+    sound: {
+      title: 'Звук із динаміка',
+      blurb:
+        'Плеєр грає мелодію в динамік через змінний резистор 10 kΩ — регулятор гучності: сигнал плеєра на одному кінці доріжки, земля на другому, движок веде до «+» динаміка. Повзунок «Гучність» повертає ручку; на нулі движок стоїть на землі, і динамік мовчить. Без підсилювача музику ледь чути: динамік грає лише те, що модель дала на ньому. Звук вмикається першим дотиком до сцени чи клавішею — дотик до панелі не рахується.',
     },
   },
   /** The names under the pointer (tooltips) and on the dock's buttons of the tray (a phone). */
@@ -112,7 +127,7 @@ export const SANDBOX = {
       lamp2: 'Дріт лампи',
     },
     switch: 'Вимикач батареї',
-    probes: { red: 'Червоний щуп', black: 'Чорний щуп' },
+    probes: { red: 'Червоний щуп', black: 'Чорний щуп', ch1: 'Щуп каналу 1', ch2: 'Щуп каналу 2' },
   },
   /** The multimeter in the panel: its number, the dial's switch (V, A, Ω are symbols; «off» is a word). */
   meter: { readout: 'Мультиметр', mode: 'Режим', off: 'Вимкнено' },
@@ -120,6 +135,21 @@ export const SANDBOX = {
   film: { value: 'Резистор' },
   /** Step `plates`: the switch of the can in C1's sockets (its values are the tray's labels); the can turned round. */
   plates: { can: 'Конденсатор', flip: 'Навпаки' },
+  /**
+   * The oscilloscope's board (steps `scope`, `rc`): its title, the axes' quantities and the word of a division (the
+   * symbols, units and numbers are the code's), the channels of each step, the switch of the filter's resistor.
+   */
+  scope: {
+    board: 'Осцилограф',
+    division: 'под.',
+    channels: {
+      scope: { ch1: 'Канал 1 — до фільтра', ch2: 'Канал 2 — після фільтра' },
+      rc: { ch1: 'Канал 1 — до резистора', ch2: 'Канал 2 — на конденсаторі' },
+    },
+    resistor: 'Резистор фільтра',
+  },
+  /** Step `sound`: the volume slider (its value the code's per cent). */
+  sound: { volume: 'Гучність' },
   /** The dive (step `loupe`): the depth slider, its marks — the floors where they begin — and the magnifier's name. */
   loupe: {
     depth: 'Глибина',

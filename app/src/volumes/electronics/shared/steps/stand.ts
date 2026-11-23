@@ -1,28 +1,51 @@
 /**
  * A chapter's facade over the bench of the volume (`createStepStand`), for the chapters whose steps put their own
  * boards: the bench mounted once, the magnifier's door into a part, its lens keeper and the ladder «де ми», and the
- * names under the pointer of the things a step keeps in place (`names.ts`). Steps put their own boards (`board`:
- * cleared, then `bench.preset`) and say what the hand may take. A chapter's own `stand.ts` makes it once. With
- * `keepDoor`, a door the step before left open into the same part stays (two dive steps in a row: going from one to the
- * other the camera stays where it is); without it every `openDoor` makes a new door.
+ * names under the pointer of the things a step keeps in place (`names.ts`) and of the instruments' cases. Steps put their
+ * own boards (`board`: cleared, then `bench.preset`) and say what the hand may take. A chapter's own `stand.ts` makes it
+ * once. With `keepDoor`, a door the step before left open into the same part stays (two dive steps in a row: going from
+ * one to the other the camera stays where it is); without it every `openDoor` makes a new door. With `sound`, the
+ * bench's speaker is in sound (the amplifier on the board plays what the player gives it) and the player is under a tap
+ * where a step lets it (`Naming.tap`): its level is the model's setting of the bench's `PLAYER`, 0 stopped, and stays
+ * as it is across a step's new board — every step sets it on entry (`play`).
  */
+import { Vector3 } from 'three';
+import { audio } from '@/audio';
 import type { ChapterContext, StepInfo } from '@/engine/api';
 import type { FloorLadder } from '@/hud-dom/journey';
-import { mountBench, type Bench, type BenchShot, type PresetPart, type SocketId } from '../bench';
+import { PARTS } from '@electronics/sim/core';
+import { mountBench, setSetting, type Bench, type BenchShot, type PresetPart, type SocketId } from '../bench';
 import { benchLadder, lensKeeper, partDoor, type Door, type LensKeeper } from '../dive';
 import { partNames, type Names } from './names';
 
-/** What the names under the pointer say in the step on screen ('' — none). */
+/** What the names under the pointer say in the step on screen ('' or absent — none); whether a tap plays the player. */
 export interface Naming {
-  part(id: string): string;
+  /** A part the step keeps in place, by its id. */
+  part?(id: string): string;
+  /** The multimeter's case. */
   meter: string;
+  /** The oscilloscope's case. */
+  scope?: string;
+  /** The player's box (with `sound`). */
+  player?: string;
+  /** A tap on the player's box starts or stops it (with `sound`). */
+  tap?: boolean;
 }
 
-const SILENT: Naming = { part: () => '', meter: '' };
+const SILENT: Naming = { meter: '' };
+/** The bench's player: the fixed part whose setting is its level. */
+const PLAYER = 'PLAYER';
+/** The player's level when it plays: the catalog's amplitude, 0,3 V. */
+const PLAYING = (() => {
+  const p = PARTS.player;
+  return p?.kind === 'player' ? p.amplitude : 0.3;
+})();
 
 export interface StepStandOptions {
   /** A door into the part the door still open goes into stays, with its rail where it is (not on a deep link). */
   keepDoor?: boolean;
+  /** The bench's speaker in sound (`mountBench`'s option) and the player under a tap. */
+  sound?: boolean;
 }
 
 export interface StepStand {
@@ -37,10 +60,16 @@ export interface StepStand {
    * A step's own board: everything off first — the parts and the plugs of the bench's things (a plug a preset does
    * not name stays where it is, and `bench.preset` seats the parts before the plugs: after the amplifier's board the
    * speaker's plug in c10 would stand where the LED's loop needs its cathode) — then these parts and plugs, new and
-   * whole.
+   * whole. The switch and the player's level stay as they are.
    */
   board(parts: readonly PresetPart[], leads?: Readonly<Record<string, SocketId>>): void;
-  /** The page is a phone's (the bench shows the shot `phone`; the tray and the switch are in the dock). */
+  /** The player plays (its level above 0; the catalog's 0,3 V while no level is set). */
+  playing(): boolean;
+  /** Start or stop the player: the model's setting, the next solve plays it. */
+  play(on: boolean): void;
+  /** How many times the reader started or stopped the player with a tap (QA). */
+  readonly taps: number;
+  /** The page is a phone's (the bench shows the shot `phone`; the tray, the switch and the player are in the dock). */
   phone(): boolean;
   /**
    * A door into `partId` from the shot `lead`, its lens to the holder's pose; the old one given up. With `keepDoor`
@@ -55,11 +84,13 @@ export interface StepStand {
 }
 
 export function createStepStand(ctx: ChapterContext, opts: StepStandOptions = {}): StepStand {
-  const bench = mountBench(ctx);
+  const bench = mountBench(ctx, { sound: opts.sound === true });
   const keeper = lensKeeper(bench.tools);
+  const hover = (): boolean => ctx.device.hover !== false;
   let door: Door | null = null;
   /** The door stays only while one of its steps is on screen or its rail still has the camera. */
   let doorStep: string | null = null;
+  let taps = 0;
   const ladder = benchLadder(ctx, () => door?.floor ?? null);
   const stand: StepStand = {
     bench,
@@ -72,6 +103,13 @@ export function createStepStand(ctx: ChapterContext, opts: StepStandOptions = {}
     board(parts, leads) {
       bench.clear();
       bench.preset(parts, leads);
+    },
+    playing: () => (bench.state.settings.get(PLAYER) ?? PLAYING) > 0,
+    play(on) {
+      setSetting(bench.state, PLAYER, on ? PLAYING : 0);
+    },
+    get taps() {
+      return taps;
     },
     phone: () => ctx.device.formFactor === 'phone',
     openDoor(partId, info, lead = 'board') {
@@ -119,8 +157,32 @@ export function createStepStand(ctx: ChapterContext, opts: StepStandOptions = {}
   const names: Names = partNames(
     ctx,
     bench,
-    (id) => stand.naming.part(id),
+    (id) => stand.naming.part?.(id) ?? '',
     () => stand.naming.meter,
   );
+  // the oscilloscope's case: its name under a pointer that hovers (on a touch screen a twin would take the taps meant
+  // for the probes' grips beside it; the names there are the dock's and the board's)
+  ctx.input.register(bench.oscilloscope.body, {
+    cursor: 'default',
+    tooltip: () => stand.naming.scope ?? '',
+    enabled: () => hover() && !bench.flying && bench.scope > 0.99 && (stand.naming.scope ?? '') !== '',
+  });
+  if (opts.sound) {
+    // the player: a tap starts or stops the melody where the step lets it (the engine's first gesture with it: the
+    // volume's sound output starts on it); its name under the pointer
+    ctx.input.register(bench.props.things.player.group, {
+      cursor: 'pointer',
+      tooltip: () => stand.naming.player ?? '',
+      enabled: () => !bench.flying && stand.naming.tap === true,
+      click: () => {
+        if (bench.flying || stand.naming.tap !== true) return;
+        stand.play(!stand.playing());
+        audio.play('toggle');
+        taps++;
+      },
+    });
+    // QA: the player's box (a tap plays it)
+    ctx.qa.probe('player', () => bench.props.things.player.group.getWorldPosition(new Vector3()));
+  }
   return stand;
 }

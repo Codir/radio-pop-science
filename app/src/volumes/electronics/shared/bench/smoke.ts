@@ -3,7 +3,7 @@
  * puffs of `mist`, at most 0.35 opaque, rising 0.6 over the hottest place in 1.2 s and gone. Once, on the model's event
  * (the driver's `advance` gave the part's id), never a loop; no flame, no sparks, no flash, no sound. A bulged
  * electrolytic lets one soft puff of steam out of its vent the same way, on the model's event too (1.5 s; the state is
- * E1-5's, E2-9 fires it from that event). Nothing else: no recipe of smoke. Only the bench calls `puff` (`mountBench`,
+ * E1-5's: the driver's `advance` gave the id of a can whose condition is `bulged`). Nothing else: no recipe of smoke. Only the bench calls `puff` (`mountBench`,
  * from the model's events); a chapter sees `SmokeView` alone — what is in the air, for the checks — and cannot let a
  * wisp out.
  *
@@ -48,7 +48,7 @@ export interface SmokeView {
 /** The bench's own: only `mountBench` lets a wisp out, on the model's event. */
 export interface Smoke extends SmokeView {
   readonly group: Group;
-  /** One wisp over `at` (world): the place a part burnt (the model's burn), or a can's vent (its `bulged`, E2-9). */
+  /** One wisp over `at` (world): the place a part burnt (the model's burn), or a can's vent (its `bulged`: `steam`). */
   puff(at: Vector3, kind?: Wisp): void;
   /** Every frame (dt may be 0: the wisp holds). */
   update(dt: number): void;

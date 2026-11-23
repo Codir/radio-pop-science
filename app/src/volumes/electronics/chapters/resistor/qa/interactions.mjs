@@ -287,6 +287,10 @@ async function recalls() {
       check(`the recall leads to ${target}`, there.chapterId === chapter && there.stepId === stepId, `${there.chapterId}/${there.stepId}`);
       await press(page, '[data-ui="path-back"]');
       await advance(page, 2);
+      // back on a chapter's first step whose goal is not reached yet, the panel opens on the chapter's opening card
+      // again (the platform's `step-panel.ts`): the reader goes on to the step as at the start
+      await textTab();
+      if (await shown(page, '[data-ui="path-opening"]')) await press(page, '[data-ui="path-opening"] button');
       const back = await page.evaluate(() => window.__app.position());
       check('«назад» returns to the step', back.chapterId === 'resistor' && back.stepId === step, `${back.chapterId}/${back.stepId}`);
     } else {

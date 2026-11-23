@@ -629,11 +629,12 @@ t.status.R1; // { condition: 'ok', load: 0.0297 }
 state.parts.get('C1')!.volts; // 0.3757 V across the capacitance, kept for the next board
 ```
 
-`new Transient(net, { dt, substeps?, state?, maxIterations? })` compiles the board (a malformed netlist is the same
-`RangeError` as for `solveDC`; a step that is not a finite number above 0 is one too, and so are `substeps` that are
-not a whole number from 1). `dt` is the time between two samples; each step of `dt` is `substeps` steps of integration
-of `dt / substeps` (1 when absent: one step of integration a sample; why a stand may want more — «What the trapezoid
-answers» below). Then:
+`new Transient(net, { dt, substeps?, state?, maxIterations?, fails? })` compiles the board (a malformed netlist is the
+same `RangeError` as for `solveDC`; a step that is not a finite number above 0 is one too, and so are `substeps` that
+are not a whole number from 1). `dt` is the time between two samples; each step of `dt` is `substeps` steps of
+integration of `dt / substeps` (1 when absent: one step of integration a sample; why a stand may want more — «What
+the trapezoid answers» below); `fails` — whether a part at its limit fails here (true when absent; Heat in time,
+below). Then:
 
 | Member | What it does |
 |---|---|
@@ -643,7 +644,7 @@ answers» below). Then:
 | `set(id, setting)` | a knob, a switch, a sine's frequency: writes the setting into the netlist (a stand may write `part.setting` itself too); the next step takes it |
 | `rebuild(net)` | a new board (a part put in or taken out): compiles it and carries over, by node number and by id, the node voltages, every capacitor's charge and filament's temperature, heat and damage (all from the state), and the guess of Newton's iterations; time runs on; the readings are those of the next step. A new part in place of a burnt one: delete the old entry from the state (`state.parts.delete(id)`), then `rebuild` (or `start`) |
 | `time`, `v`, `parts`, `status`, `issues` | the moment of the last step (s), the node voltages, `{ id: { u, i, p } }`, `{ id: { condition, load } }`, the shape of the board — the same objects at every step, updated in place (new ones after `rebuild`) |
-| `dt`, `substeps` | the step and how many steps of integration make it, as given |
+| `dt`, `substeps`, `fails` | the step, how many steps of integration make it and whether a part at its limit fails here, as given |
 | `state`, `memory(id)` | the stand's memory — heat, damage, `volts` of a capacitor, `kelvin` of a lamp, node voltages — written after every step; `memory(id)` is the entry of one part (every part on the board has one) |
 | `ok`, `reason` | how the last step (or the start) went |
 
@@ -695,6 +696,10 @@ its load of that moment by the exact step of `limits.ts` (with e^(−dt/τ) comp
 fails at that step: 1 W in a 0.25 W resistor
 (75 Ω on the 9 V battery) burns it at 2.756 s, as `burnSeconds` says to the millisecond; the red LED on the battery
 burns after 0.066 s; an electrolytic bulges as in Capacitors. The next steps know it (a change on the board: Euler).
+A stand whose own model tells the damage (`fails: false`, E2-9: the bench's oscilloscope plays what the bench's
+driver burns) has the heat gather the same and no part fail on it; a burnt part or a bulged can is what the state says,
+which `start` and `rebuild` read (the test: 75 Ω on the battery carries its current for twice its time to burn, and is
+a gap from the `rebuild` after the state says it burnt).
 
 **Moments fast** (E1-7; the numbers of speed: Speed, below). Three things keep a moment cheap, and none changes what
 the model computes beyond the last nanovolts:
@@ -1186,7 +1191,7 @@ R·C; the LED fed by 470 μF within 2 %; the rectifier's output, mean and ripple
 1/48000 s in four steps of integration within 1 % of `.ac` at 100 Hz, 1 kHz and 10 kHz, and in one step against
 `.ac` where the trapezoid answers, within 1e-5 — the low-pass at 10 kHz then 14.4 % low, tested as such; halving the
 step, under 0.1 %; the trapezoid's second order; no ringing after a stiff jump; the lamp's inrush; parts that burn in
-time; the worked example above; start, run, set, rebuild, a failed step, `substeps` as the shorter step bit for bit
+time, and none with `fails: false`; the worked example above; start, run, set, rebuild, a failed step, `substeps` as the shorter step bit for bit
 and a step that fails in its second step of integration undone whole; a linear board keeping the factors of its
 matrix, and the amplifier playing the melody in fewer than three iterations a moment), `music` (the melody: two
 renders bit for bit and blocks as one render, within ±1 from 24 to 192 kHz with its peak at 0.98, its bass below

@@ -154,8 +154,8 @@ function block(): Group {
 export function createTray(): Tray {
   const group = new Group();
   group.name = 'tray';
-  const stepped = block();
-  group.add(stepped);
+  const body = block();
+  group.add(body);
   const hitGeometry = new BoxGeometry(1, 1, 1);
   const hitMaterial = new MeshBasicMaterial({ visible: false });
   let slots: Slot[] = [];
@@ -259,7 +259,7 @@ export function createTray(): Tray {
       hitMaterial.dispose();
       // the block and its foam: taken off the scene here, so the engine's sweep of the scene after the chapter's own
       // disposal would never reach them (one geometry more on the GPU with every bench: the leak check)
-      disposeTree(stepped);
+      disposeTree(body);
       group.removeFromParent();
     },
   };

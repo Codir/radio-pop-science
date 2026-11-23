@@ -7,20 +7,30 @@
  * scale, needle and number are not taken: the bench's meter is digital and its number is in the step's panel.
  *
  * A probe takes no socket of the board: its socket is its own (`socket`), and it goes into any socket — one a leg or a
- * plug is in too, touching the top of what is there — but the other probe's. Red (`coral`) and black (`ink`) as a
- * real meter's (plan decision 9); its grip is the hand's `cyan` capsule on the handle (`hand/grips.ts`).
+ * plug is in too, touching the top of what is there — but the other probe's. The multimeter's are red (`coral`) and
+ * black (`ink`) as a real meter's (plan decision 9); the oscilloscope's have an `ink` handle with a ring of their
+ * channel's colour (`lime`, `magenta`: VISUAL §5.2) and an `ink` lead. Its grip is the hand's `cyan` capsule on the
+ * handle (`hand/grips.ts`).
  *
  * Board frame: the tip, the body and the lead live in the breadboard's group; the meter tells it every frame where its
  * jack is, which way is up and where its rest is.
+ *
+ * An instrument's two probes are a pair (`createProbePair`): the multimeter's and the oscilloscope's take the same one
+ * with their own table of places — where each lead leaves the case, where each probe rests on the table and on a
+ * phone — so the way a pair follows its case, leaves with it and is put by a step is written once.
  */
-import { Mesh, Quaternion, Vector3, type Group } from 'three';
+import { Group, Mesh, Quaternion, Vector3, type Object3D } from 'three';
 import { damp } from '@/engine/api';
 import { Builder, G } from '@/kit';
 import { K, type ColorLike } from '@/style';
-import type { SocketId } from '@electronics/sim/board';
+import type { BoardLayout, SocketId } from '@electronics/sim/board';
 import { DynTube, resample } from '../bench/dyn-tube';
 import { Leg, type LegWorld, type Place, type ProbeEnd } from '../hand';
-import type { ProbeName } from './meter-model';
+
+/** A probe's colours: its handle (and lead) and the guard's ring by the needle; one colour is both. */
+export type ProbeColors = ColorLike | { readonly handle: ColorLike; readonly ring: ColorLike };
+const colorsOf = (c: ProbeColors): { handle: ColorLike; ring: ColorLike } =>
+  typeof c === 'object' && c !== null && 'handle' in c ? c : { handle: c, ring: c };
 
 /** The probe along its axis from the tip (VISUAL §5.1): the needle, the guard, the handle, the cap. */
 export const PROBE = {
@@ -49,8 +59,8 @@ const TOUCH = new Vector3(0, 0.07, 0.07);
 
 const UP = new Vector3(0, 1, 0);
 
-export interface Probe extends ProbeEnd {
-  readonly name: ProbeName;
+export interface Probe<N extends string = string> extends ProbeEnd {
+  readonly name: N;
   /** The needle, the guard, the handle and the cap (board frame). */
   readonly body: Group;
   /** The lead from the jack. */
@@ -91,12 +101,12 @@ export interface ProbeWorld extends LegWorld {
 }
 
 /** The probe's body along +y from the tip at the origin (copied in its shape from the gauge's `buildProbe`). */
-function buildProbe(name: ProbeName, color: ColorLike): Group {
+function buildProbe(name: string, colors: { handle: ColorLike; ring: ColorLike }): Group {
   const b = new Builder(`probe-${name}`);
   const { needle, needleRadius, guard, guardRadius, handle, radius, cap } = PROBE;
   b.cyl(needleRadius, needle, { at: [0, 0, 0], axis: 'y', seg: 10, slot: 'metal', c: ['steel', 'mist'], bevel: 0.006 });
-  b.cyl(guardRadius, guard, { at: [0, needle, 0], axis: 'y', seg: 16, c: color, bevel: 0.012 });
-  b.cyl(radius, handle, { at: [0, needle + guard, 0], axis: 'y', seg: 16, slot: 'gloss', c: color, bevel: 0.02 });
+  b.cyl(guardRadius, guard, { at: [0, needle, 0], axis: 'y', seg: 16, c: colors.ring, bevel: 0.012 });
+  b.cyl(radius, handle, { at: [0, needle + guard, 0], axis: 'y', seg: 16, slot: 'gloss', c: colors.handle, bevel: 0.02 });
   b.cyl(radius * 0.8, cap, { at: [0, needle + guard + handle, 0], axis: 'y', seg: 12, c: 'ink', bevel: 0.015 });
   const group = b.build().group;
   group.name = `probe:${name}`;
@@ -104,7 +114,14 @@ function buildProbe(name: ProbeName, color: ColorLike): Group {
   return group;
 }
 
-export function createProbe(name: ProbeName, color: ColorLike, world: ProbeWorld): Probe {
+/** A probe `name` of its instrument, its tip reaching `reach` from its jack in plan (the multimeter's by default). */
+export function createProbe<N extends string>(
+  name: N,
+  color: ProbeColors,
+  world: ProbeWorld,
+  reach: number = PROBE_LEAD.reach,
+): Probe<N> {
+  const colors = colorsOf(color);
   const restAt = new Vector3();
   const restAxis = new Vector3(0, 0, 1);
   const rest: Place = { kind: 'rest', at: restAt };
@@ -117,9 +134,9 @@ export function createProbe(name: ProbeName, color: ColorLike, world: ProbeWorld
     ground: (x, z) => world.ground(x, z),
   };
   const leg = new Leg(tipWorld, rest);
-  const body = buildProbe(name, color);
+  const body = buildProbe(name, colors);
   const tube = new DynTube(30, 8);
-  const wire = new Mesh(tube.geometry, K.toon({ color, gloss: 0.4, highlight: 0.4 }));
+  const wire = new Mesh(tube.geometry, K.toon({ color: colors.handle, gloss: 0.4, highlight: 0.4 }));
   wire.name = `probe-lead:${name}`;
   wire.castShadow = false;
   wire.receiveShadow = true;
@@ -148,11 +165,11 @@ export function createProbe(name: ProbeName, color: ColorLike, world: ProbeWorld
     return out.copy(lying).lerp(STANDING, up).normalize();
   };
 
-  const probe: Probe = {
+  const probe: Probe<N> = {
     name,
     leg,
     from,
-    reach: PROBE_LEAD.reach,
+    reach,
     body,
     wire,
     rest,
@@ -236,4 +253,175 @@ export function createProbe(name: ProbeName, color: ColorLike, world: ProbeWorld
     },
   };
   return probe;
+}
+
+/** Where an instrument's probes meet the bench. */
+export interface ProbePairWorld {
+  /** The breadboard's group: the probes' frame. */
+  readonly frame: Object3D;
+  readonly layout: BoardLayout;
+  /** A socket's mouth (board frame). */
+  socket(id: SocketId, out: Vector3): Vector3;
+  /** A leg or a plug is in the socket. */
+  taken(id: SocketId): boolean;
+  /** The ground a lead lies on (board frame). */
+  ground(x: number, z: number): number;
+  /** The base's face under this plan point of the board frame (a probe let go there lies there). */
+  onBase(x: number, z: number): boolean;
+  /** The base frame → the board frame (a phone's rest). */
+  fromBase(x: number, y: number, z: number, out: Vector3): Vector3;
+  phone(): boolean;
+}
+
+/**
+ * An instrument's places for its probes: where each lead leaves the case and where each probe rests on the table —
+ * the tip, and the way it lies (x, z) — in the case's frame (the origin on the table under the middle of the case,
+ * +z toward the reader); on a phone, where each tip rests on the base in front of the board (base frame), the probe
+ * lying along the board with its handle to the left (VISUAL §9).
+ */
+export interface ProbePlaces<N extends string> {
+  readonly jack: Readonly<Record<N, readonly [number, number, number]>>;
+  readonly rest: Readonly<
+    Record<N, { readonly x: number; readonly z: number; readonly axis: readonly [number, number] }>
+  >;
+  readonly phoneRest: Readonly<Record<N, { readonly x: number; readonly z: number }>>;
+}
+
+export interface ProbePairOptions<N extends string> {
+  /** The instrument's name, for its leads' group and its errors (`meter`, `scope`). */
+  readonly what: string;
+  /** Its two probes: each never takes the other's socket. */
+  readonly names: readonly N[];
+  readonly colors: Readonly<Record<N, ProbeColors>>;
+  readonly places: ProbePlaces<N>;
+  /** How far a tip reaches from its jack in plan (the multimeter's by default). */
+  readonly reach?: number;
+}
+
+/** An instrument's two probes and their leads (board frame), and where their tips are. */
+export interface ProbePair<N extends string> {
+  /** The probes' bodies and leads, in the board's group; an instrument may add its own leads to it. */
+  readonly leads: Group;
+  readonly probes: ReadonlyMap<N, Probe<N>>;
+  /** Where each tip is: the instrument's record, written by a probe as it arrives in a socket or leaves it. */
+  readonly sockets: Readonly<Record<N, SocketId | null>>;
+  /** A step puts the tips into sockets at once, or back to rest (null); a socket the board has not is a RangeError. */
+  put(at: Partial<Record<N, SocketId | null>>): void;
+  /**
+   * Every frame, before the hand: the probes follow the case `body` (`shown` 0 away … 1 on its place). A probe the
+   * hand does not hold (`busy`) goes to rest when the hand let it go of mid-way (a step reset the hand) or when the
+   * case leaves; each is told where its jack and rest are in the board's frame — on a phone, its rest on the base,
+   * where it comes with the case. Returns whether the case stands on its place.
+   */
+  follow(dt: number, body: Object3D, shown: number, busy: (name: N) => boolean): boolean;
+  /** Jump: the tips where they belong. */
+  snap(): void;
+  dispose(): void;
+}
+
+/** A pair of probes of an instrument (the multimeter's, the oscilloscope's), with its own places. */
+export function createProbePair<N extends string>(
+  world: ProbePairWorld,
+  opts: ProbePairOptions<N>,
+): ProbePair<N> {
+  const { what, names, colors, places } = opts;
+  const leads = new Group();
+  leads.name = `${what}-leads`;
+  world.frame.add(leads);
+  if (names.length !== 2 || names[0] === names[1])
+    throw new RangeError(`${what}: a pair of probes, not ${names.join(', ')}`);
+  const sockets = Object.fromEntries(names.map((n) => [n, null])) as Record<N, SocketId | null>;
+  const probes = new Map<N, Probe<N>>();
+  for (const [k, name] of names.entries()) {
+    const other = names[1 - k]!;
+    const pw: ProbeWorld = {
+      socket: (id, out) => world.socket(id, out),
+      ground: (x, z) => world.ground(x, z),
+      taken: (id) => world.taken(id),
+      lies: (x, z) => world.onBase(x, z),
+      other: () => sockets[other],
+      // the probe's socket is the instrument's record: what it reads, and what it records, use it
+      seated: (s) => (sockets[name] = s),
+    };
+    const p = createProbe(name, colors[name], pw, opts.reach);
+    leads.add(p.body, p.wire);
+    probes.set(name, p);
+  }
+
+  let shownWas = 0;
+  const jackWorld = new Vector3();
+  const restWorld = new Vector3();
+  const phoneRest = new Vector3();
+  const unFrame = new Quaternion();
+  /** A phone's probes lie along the board, the handles toward the left (board frame). */
+  const ALONG = new Vector3(-1, 0, 0);
+  const pose = {
+    jack: new Vector3(),
+    jackUp: new Vector3(),
+    restAt: new Vector3(),
+    restAxis: new Vector3(),
+    ready: false,
+    shown: false,
+  };
+  const smooth = (x: number): number => x * x * (3 - 2 * x);
+
+  return {
+    leads,
+    probes,
+    sockets,
+    put(at) {
+      for (const [name, s] of Object.entries(at) as [N, SocketId | null | undefined][]) {
+        if (s === undefined || !probes.has(name)) continue;
+        if (s !== null && world.layout.socket(s) === undefined) {
+          throw new RangeError(`${what}.put: the board has no socket ${s}`);
+        }
+        probes.get(name)!.put(s);
+      }
+    },
+    follow(dt, body, shown, busy) {
+      const k = Math.min(Math.max(shown, 0), 1);
+      // leaving: the tips the hand does not hold come out of their sockets and go with the case
+      const leaving = k < shownWas - 1e-6;
+      shownWas = k;
+      body.updateWorldMatrix(true, true);
+      world.frame.updateWorldMatrix(true, false);
+      const phone = world.phone();
+      pose.ready = k >= 1 - 1e-3;
+      pose.shown = k > 1e-3;
+      // world directions into the board's frame: its turn undone (a case on the table is never turned)
+      world.frame.getWorldQuaternion(unFrame).invert();
+      pose.jackUp.set(0, 1, 0).applyQuaternion(unFrame);
+      for (const [name, p] of probes) {
+        // a probe the hand let go of mid-way (a step reset the hand) or which leaves with the case: to rest
+        if (!busy(name) && (p.leg.place.kind === 'hand' || (leaving && p.leg.place.kind !== 'rest'))) {
+          p.seat(null);
+          p.leg.go(p.rest, 0.3, 0.3);
+        }
+        const j = places.jack[name];
+        body.localToWorld(jackWorld.set(j[0], j[1], j[2]));
+        world.frame.worldToLocal(pose.jack.copy(jackWorld));
+        const r = places.rest[name];
+        body.localToWorld(restWorld.set(r.x, PROBE.radius, r.z));
+        world.frame.worldToLocal(pose.restAt.copy(restWorld));
+        // the lying direction on the table (world), in the board's frame
+        pose.restAxis.set(r.axis[0], 0, r.axis[1]).normalize().applyQuaternion(unFrame);
+        if (phone) {
+          // on the base in front of the board, the handle to the left; it comes there with the case
+          const pr = places.phoneRest[name];
+          world.fromBase(pr.x, PROBE.radius, pr.z, phoneRest);
+          pose.restAt.lerp(phoneRest, smooth(k));
+          pose.restAxis.lerp(ALONG, smooth(k)).normalize();
+        }
+        p.update(dt, pose);
+      }
+      return pose.ready;
+    },
+    snap() {
+      for (const p of probes.values()) p.leg.snap();
+    },
+    dispose() {
+      for (const p of probes.values()) p.dispose();
+      leads.removeFromParent();
+    },
+  };
 }

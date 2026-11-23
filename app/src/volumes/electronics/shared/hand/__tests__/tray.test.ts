@@ -212,7 +212,25 @@ describe('the labels in the font (VISUAL §6)', () => {
   });
 });
 
-describe('the tray leaves nothing behind', () => {
+describe('the tray freed with the chapter', () => {
+  it('frees its block’s geometry and materials too: once its group leaves the tree, the teardown cannot reach them', () => {
+    const tray = createTray();
+    tray.set(['resistor-1k']);
+    const block = tray.group.getObjectByName('tray-block')!;
+    const freed = new Set<object>();
+    const own: { addEventListener(type: 'dispose', fn: () => void): void }[] = [];
+    block.traverse((o) => {
+      const mesh = o as Mesh;
+      if (!mesh.isMesh) return;
+      own.push(mesh.geometry, ...(Array.isArray(mesh.material) ? mesh.material : [mesh.material]));
+    });
+    expect(own.length).toBeGreaterThan(1);
+    for (const r of own) r.addEventListener('dispose', () => freed.add(r));
+    tray.dispose();
+    expect(tray.group.parent).toBeNull();
+    expect(freed.size).toBe(new Set(own).size);
+  });
+
   it('disposes every geometry it drew — the block and its foam too — when the bench goes (task E3-7)', () => {
     const tray = createTray();
     tray.set(['resistor-330', 'led-red']);

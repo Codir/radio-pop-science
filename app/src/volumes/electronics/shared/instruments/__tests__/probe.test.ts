@@ -9,10 +9,11 @@ import { Group, PerspectiveCamera, Ray, Vector2, Vector3, type Object3D } from '
 import { describe, expect, it } from 'vitest';
 import type { ChapterContext, DragInfo, InteractionHandlers } from '@/engine/api';
 import { seatLeg } from '@electronics/sim/board';
-import { memoryOf } from '@electronics/sim/core';
+import { memoryOf, resistorKey } from '@electronics/sim/core';
 import { STAGE_SHOTS, mountBench, type PresetPart } from '../../bench';
 import { SEAT_SECONDS, type HandKey } from '../../hand';
 import { METER_REFRESH } from '../meter-model';
+import { SCOPE_INPUT } from '../scope';
 
 function stubContext() {
   const handlers = new Map<Object3D, InteractionHandlers>();
@@ -257,5 +258,65 @@ describe('the multimeter’s probes in the hand', () => {
     frames(0.5);
     expect(bench.multimeter.probes.get('black')!.leg.place.kind).toBe('rest');
     expect(bench.multimeter.probes.get('black')!.body.visible).toBe(false);
+  });
+
+  it('the oscilloscope’s are the same pair (createProbePair): put by a step, its taps, gone with the scope', () => {
+    const { bench, frames, grip, handlers } = setup();
+    expect(() => bench.multimeter.put({ red: 'z99' })).toThrow('meter.put: the board has no socket z99');
+    expect(() => bench.oscilloscope.put({ ch1: 'z99' })).toThrow('scope.put: the board has no socket z99');
+    bench.scope = 1;
+    frames(0.05);
+    expect(bench.oscilloscope.probes.get('ch1')!.ready()).toBe(true);
+    bench.oscilloscope.put({ ch1: 'a7', ch2: 'c11' });
+    frames(0.05);
+    expect(bench.oscilloscope.sockets).toEqual({ ch1: 'a7', ch2: 'c11' });
+    expect(bench.oscilloscope.taps()).toEqual([
+      { node: bench.layout.socket('a7')!.node },
+      { node: bench.layout.socket('c11')!.node },
+    ]);
+    // the meter's pair is its own: its probes stay at rest
+    expect(bench.multimeter.sockets).toEqual({ red: null, black: null });
+    bench.scope = 0.5;
+    frames(1 / 60);
+    expect(bench.oscilloscope.sockets).toEqual({ ch1: null, ch2: null });
+    expect(handlers.get(grip('probe:ch1'))!.enabled!()).toBe(false);
+    bench.scope = 0;
+    frames(0.5);
+    expect(bench.oscilloscope.probes.get('ch2')!.leg.place.kind).toBe('rest');
+    expect(bench.oscilloscope.probes.get('ch2')!.body.visible).toBe(false);
+  });
+
+  it('the oscilloscope’s inputs take current as a real one’s do: 1 MΩ from each probe’s row to the − rail (E3-8)', () => {
+    const { bench, frames, text } = setup();
+    bench.multimeter.put({ red: 'a7', black: '-3' });
+    bench.scope = 1;
+    frames(METER_REFRESH + 0.05);
+    expect(text()).toBe('5,997 V');
+    expect(bench.oscilloscope.extra()).toEqual([]);
+    // channel 1 on the divider's middle: its 2 kΩ with the scope's 1 MΩ beside it — 9 V · 1996,0 / (1,5 + 1000 + 1996,0)
+    // (the wires' milliohms aside)
+    bench.oscilloscope.put({ ch1: 'b7' });
+    frames(METER_REFRESH + 0.05);
+    const node = bench.layout.socket('b7')!.node;
+    expect(bench.oscilloscope.extra()).toEqual([{ id: 'SCOPE1', spec: resistorKey(1e6), pins: [node, 0] }]);
+    expect(SCOPE_INPUT.ohms).toBe(1e6);
+    const lower = (2000 * 1e6) / (2000 + 1e6);
+    const v = (9 * lower) / (1.5 + 1000 + lower);
+    expect(bench.model.rowVolts('7ae')).toBeCloseTo(v, 5);
+    expect(bench.model.reading('SCOPE1')!.i).toBeCloseTo(bench.model.rowVolts('7ae')! / 1e6, 15);
+    expect(text()).toBe('5,993 V');
+    // both probes: two inputs; a probe on the − rail has nothing to take a current across
+    bench.oscilloscope.put({ ch1: 'b7', ch2: '-5' });
+    frames(1 / 60);
+    expect(bench.oscilloscope.extra().map((p) => p.id)).toEqual(['SCOPE1']);
+    bench.oscilloscope.put({ ch2: 'c3' });
+    frames(1 / 60);
+    expect(bench.oscilloscope.extra().map((p) => p.id)).toEqual(['SCOPE1', 'SCOPE2']);
+    // gone with the scope: its probes out, the divider as it was
+    bench.scope = 0;
+    frames(METER_REFRESH + 0.05);
+    expect(bench.oscilloscope.extra()).toEqual([]);
+    expect(bench.model.circuit!.net.parts.map((p) => p.id)).not.toContain('SCOPE1');
+    expect(text()).toBe('5,997 V');
   });
 });

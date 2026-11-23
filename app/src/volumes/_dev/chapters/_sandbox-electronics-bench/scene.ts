@@ -5,7 +5,17 @@
  *   meter — the multimeter comes in from the left of the frame, shot `meter`; an empty board, the probes lying free
  *           by the meter (E2-6): they may be taken, the meter reads «—» until both are in sockets; the dial's switch
  *           `meter-mode` and the number `meter` are in the panel;
- *   scope — the oscilloscope's stand-in comes in from behind on the right, shot `scope`;
+ *   scope — the oscilloscope (E2-9), shot `scope`: the amplifier of E1-6 (`AMPLIFIER_PRESET`) with a low-pass between
+ *           the player and its volume control (`filterParts`: the player's plug in 17fj, R6 along the line h to 13fj,
+ *           100 nF C4 to the ground row 15fj, J11 across the channel to the volume control's top 13ae; J2 moved to the
+ *           line d and J1 to the ground row 15fj to make room), the switch closed; the probe of channel 1 in j17 (the player's signal, before the
+ *           filter), of channel 2 in j13 (after it); a sweep of 2 ms and 0.1 V a division, triggered on channel 1; the
+ *           panel's switch `filter` puts 1, 4.7 or 10 kΩ in R6 (a new board: the model starts again); the board chart
+ *           `scope-scope` and the instrument's screen show the same samples;
+ *   rc    — a capacitor charging (E2-9), shot `scope`: + rail → J1 → 3ae → 10 kΩ → 7ae → 100 μF → J2 → − rail (`RC`),
+ *           the switch open; channel 1 in e3 (before the resistor), channel 2 in e7 (on the capacitor); a roll of
+ *           0.5 s and 2 V a division with 0 V three divisions below the middle; the reader closes the switch (a tap on
+ *           the slider, on a phone the dock's toggle) and τ = R·C = 1 s shows on channel 2 (the board chart `scope-rc`);
  *   parts — one part of every kind of the model's catalog on the board and a row of resistors 1 Ω … 1 MΩ (`PARTS`),
  *           shot `board`: the tall parts at the far half — the LEDs, the pot, the three capacitors and the transistor —,
  *           the low ones at the near half, a jumper across the near half; every one a part of the circuit (the switch
@@ -26,10 +36,10 @@
  *           100 Ω in the tray (on a phone the dock's button `tray-resistor-100`), set down in b9, closes the circuit again;
  *   lamp  — the lamp from the battery through 15 Ω + 15 Ω (`LAMP`), shot `stand`, the switch closed: ≈ 5.9 V on it,
  *           its filament's temperature from the model lights the room;
- *   bulged-look — only the look of an electrolytic's state `bulged` for the reader's snapshot, shot `board`: a whole can
- *           and one under that look, outside the circuit, no model behind it and so nothing let out of its vent. E1-5
- *           gives the state; E2-9 binds it to the model with its own step `bulged` (a can in the circuit the wrong way
- *           round, the steam on the model's event) and takes this one away;
+ *   bulged — an electrolytic the wrong way round (E2-9), shot `board`: + rail → J1 → 3ae → 100 μF / 6.3 V with its
+ *           minus in 3ae and its plus in 4ae → J2 → − rail (`REVERSED`), the switch closed: 9 V against its 1 V the
+ *           wrong way round, a load of 9 — the model bulges it after ≈ 1.2 s (E1-5), the bench lets one puff of steam
+ *           out of its vent on that event, and it stays bulged until it is taken out;
  *   loupe — the magnifier as the door (E2-8, `shared/dive`), shot `board`: a 4.7 kΩ in a5 … a9 (`LOUPE`); the dock's
  *           slider `depth` 0 … 1 + LENS_LEG is the door's rail + LENS_LEG — a drag scrubs it, a click or a key glides
  *           in the flight's time (shorter with reduced motion), a tap on the resting lens lays it over the part; the
@@ -41,7 +51,7 @@
  *           into R1, whose floor `inside` is its carbon film — the groove cut for the value, the electrons at the model's
  *           current, the film's colour from the model's heat; the dock's switch `film-value` puts a 330 Ω or a 10 kΩ in
  *           R1's sockets (a new part under the same id, whole: the door follows it). Probes `film:film`, `film:groove`,
- *           `film:rod` — the callouts' points of the film.
+ *           `film:rod` — the callouts' points of the film;
  *   plates — inside an electrolytic (E4-I, `shared/inside/plates.ts`), shot `board`: the board of `capacitor/store`
  *           (the LED's loop, J3 + rail → 12ae, J4 13ae → − rail, C1 470 μF in c12/c13), the switch closed; the same door
  *           and slider lead into C1, cut in half: two plates, the insulator, the charges from the model's voltage across
@@ -53,29 +63,40 @@
  *   roll  — inside a film capacitor (E4-I, `shared/inside/roll.ts`), shot `board`: C1 1 μF in e8/e10 alone (the board of
  *           `capacitor-kinds/film`), the switch open; the door into C1, cut in half but for the corner by leg 1,
  *           whose face across the winding shows the turns: the roll of metallised film, its sprayed ends and the
- *           leads. Probes `roll:metal`, `roll:film` — the callouts' points.
+ *           leads. Probes `roll:metal`, `roll:film` — the callouts' points;
+ *   sound — the speaker in sound (E2-10), shot `stand`: the player → a 10 kΩ pot as the volume control → the speaker
+ *           (`VOLUME`: P1 in b17 … b13 — `ccw` on the ground row 17ae, J1 from it to the − rail, the wiper 15ae, `cw`
+ *           13ae; the plugs `pl+` in c13, `pl-` in c17, `spk+` in c15, `spk-` in a17); the panel's slider `volume`
+ *           is P1's setting, the knob follows it; at 0 the wiper is on the ground and the speaker silent. The bench is
+ *           mounted with its option `sound`: the speaker plays in every step where it is in the circuit (`scope` too).
  * Every other step has an empty board and an empty tray, and the probes at rest. Readers: the bench's own
  * `electronics-bench` (sockets, rows, draw calls, the print shown), `electronics-board` (the parts and their legs, the
  * plugs, the settings, the netlist's key), `electronics-parts` (every model: where, draw calls, its print),
  * `electronics-hand` (what the hand holds, the preview, the lit rows), `electronics-motion` (the camera, what the hand
  * moves, the plugs — every frame), `electronics-model` (the circuit model: its key, solves, dcMs, readings) and
- * `electronics-meter` (the dial, the probes' sockets, the reading and the display's text) and, in the step `loupe`,
+ * `electronics-meter` (the dial, the probes' sockets, the reading and the display's text), `electronics-scope` (the
+ * model in time, the sweep, its points and hash, a held page's windows), `electronics-sound` (the sound output, the
+ * speaker in the circuit, its blocks' levels and hash) and, in the step `loupe`,
  * `electronics-dive` (the door's rail, the floor, whether it flies, the cut); probes `socket:<id>` for every socket of
  * the board (`a1` … `j17`, `+1` … `+17`, `-1` … `-17`), the hand's `part:<id>`, `leg:<id>:<k>`, `tip:<id>:<k>`,
- * `lead:<name>`, `end:<name>`, `probe:<red|black>` (the grip on a probe's handle; its tip `end:red`, `end:black`),
+ * `lead:<name>`, `end:<name>`, `probe:<red|black|ch1|ch2>` (the grip on a probe's handle; its tip `end:<name>`),
  * `tray:<key>`, `switch`, and the door's `dive:end0`, `dive:end1`, `dive:ring-top`, `dive:ring-bottom`.
  */
 import { Vector3 } from 'three';
+import { fmtSI } from '@/content';
 import { defineScene } from '@/engine/api';
 import { stepUi } from '@/hud';
 import {
+  AMPLIFIER_PRESET,
   LED_LOOP,
   PARTS as CATALOG,
   mountBench,
+  setSetting,
   trayLabel,
   type BenchShot,
   type HandKey,
   type PresetPart,
+  type SocketId,
 } from '@electronics/shared/bench';
 import {
   LENS_LEG,
@@ -94,8 +115,13 @@ import {
   type RollAnchor,
 } from '@electronics/shared/inside';
 import { SANDBOX } from './index';
-import { METER_MODES, type MeterMode } from '@electronics/shared/instruments';
-import { buildPart } from '@electronics/shared/parts';
+import {
+  METER_MODES,
+  type MeterMode,
+  type ScopeProbeName,
+  type ScopeSettings,
+  type ScopeSetup,
+} from '@electronics/shared/instruments';
 
 /** Step `parts`: one part of every kind of the model's catalog that stands on the board. */
 const PARTS: readonly PresetPart[] = [
@@ -175,9 +201,66 @@ const LAMP: readonly PresetPart[] = [
 ];
 const LAMP_LEADS = { lamp1: '+2', lamp2: 'a3' } as const;
 
-/** Step `bulged-look`: two electrolytics outside the circuit, a whole one and one under the look of the state `bulged`. */
-const CANS = { whole: ['a5', 'a6'], bulged: ['a10', 'a11'] } as const;
-const CAN = 'electrolytic-470u-16v';
+/**
+ * Step `scope`: the amplifier on the board with a low-pass between the player and its volume control — the step
+ * `filter/lows` of PATH.md, E1-9's `filterBoard` (shared/sound/README.md, «The board»: a filter straight on the 8 Ω
+ * speaker would not filter, and here, in front of the volume control, it does). The player's plug moves from the
+ * volume control's top (13ae) to 17fj; R6 along the line h from 13fj to 17fj; C4, 100 nF, from 13fj to the ground row
+ * 15fj (R4's, J4 to the − rail); J11 across the channel joins 13fj to 13ae. To make room, J2 (12ae to the wiper's 15ae)
+ * moves to the line d, so that J11 has the line e (its arch passes 0.005 under the edge of the pot's case, which a
+ * check of the boxes calls a touch), and J1 (17ae to the ground) goes across the channel to the ground row 15fj
+ * instead of down the column 17 to the − rail, which would lie over the player's plug and R6's leg.
+ */
+const FILTER_VALUES = ['resistor-1k', 'resistor-4k7', 'resistor-10k'] as const;
+const filterParts = (spec: string): readonly PresetPart[] => [
+  ...AMPLIFIER_PRESET.parts.map((p) =>
+    p.id === 'J2' ? { ...p, at: 'd12', to: 'd15' } : p.id === 'J1' ? { ...p, at: 'e17', to: 'f15' } : p,
+  ),
+  { id: 'J11', spec: 'jumper', at: 'e13', to: 'f13' },
+  { id: 'R6', spec, at: 'h13' },
+  { id: 'C4', spec: 'ceramic-100n', at: 'g13' },
+];
+const FILTER_LEADS: Readonly<Record<string, SocketId>> = { ...AMPLIFIER_PRESET.leads, 'pl+': 'g17' };
+
+/** Step `rc`: + rail → J1 → 3ae → 10 kΩ along the line b → 7ae → 100 μF (plus c7, minus c8) → J2 → − rail. */
+const RC: readonly PresetPart[] = [
+  { id: 'J1', spec: 'jumper', at: '+3', to: 'a3' },
+  { id: 'R1', spec: 'resistor-10k', at: 'b3' },
+  { id: 'C1', spec: 'electrolytic-100u-16v', at: 'c7' },
+  { id: 'J2', spec: 'jumper', at: 'e8', to: '-8' },
+];
+
+/**
+ * Step `sound`: the player → a 10 kΩ pot as the volume control → the speaker, at the far right by the player and the
+ * speaker (as the amplifier's volume control stands): P1 turned (`o` 2) in b17 (`ccw`), b15 (the wiper), b13 (`cw`);
+ * the player's signal on `cw` (c13), its common, the speaker's minus and the pot's `ccw` on the ground row 17ae, which
+ * J1 ties to the − rail; the speaker's plus on the wiper (c15). The knob at its top: 0.3 V behind 32 Ω into 8 Ω.
+ */
+const VOLUME: readonly PresetPart[] = [
+  { id: 'P1', spec: 'pot-10k', at: 'b17', o: 2, setting: 1 },
+  { id: 'J1', spec: 'jumper', at: 'e17', to: '-17' },
+];
+const VOLUME_LEADS = { 'pl+': 'c13', 'pl-': 'c17', 'spk+': 'c15', 'spk-': 'a17' } as const;
+
+/** Step `bulged`: + rail → J1 → 3ae → 100 μF / 6.3 V the wrong way round (plus c4, minus c3: `o` 2) → J2 → − rail. */
+const REVERSED: readonly PresetPart[] = [
+  { id: 'J1', spec: 'jumper', at: '+3', to: 'a3' },
+  { id: 'C1', spec: 'electrolytic-100u-6v3', at: 'c4', o: 2 },
+  { id: 'J2', spec: 'jumper', at: 'e4', to: '-4' },
+];
+
+/** The oscilloscope's scale and probes of its steps (VISUAL §5.2: the step's, never picked by the scope). */
+const SCOPES: Readonly<Record<string, { setup: ScopeSetup; probes: Record<ScopeProbeName, SocketId> }>> = {
+  scope: {
+    setup: { display: 'sweep', timePerDiv: 0.002, voltsPerDiv: 0.1, trigger: { channel: 0, level: null, slope: 1 } },
+    probes: { ch1: 'j17', ch2: 'j13' },
+  },
+  rc: { setup: { display: 'roll', timePerDiv: 0.5, voltsPerDiv: 2, ground: -3 }, probes: { ch1: 'e3', ch2: 'e7' } },
+};
+/** Every plug the bench has, out: a step names those it puts in. */
+const NO_LEADS: Readonly<Record<string, null>> = Object.freeze(
+  Object.fromEntries(['spk+', 'spk-', 'pl+', 'pl-', 'lamp1', 'lamp2'].map((name) => [name, null])),
+);
 
 /** Step `loupe`: the part the magnifier leads into, a 4.7 kΩ in a5 … a9. */
 const LOUPE: readonly PresetPart[] = [{ id: 'R1', spec: 'resistor-4k7', at: 'a5' }];
@@ -209,7 +292,7 @@ const DOOR_PARTS: Readonly<Record<string, string>> = { loupe: 'R1', film: 'R1', 
 const DOOR_STEPS: ReadonlySet<string> = new Set(Object.keys(DOOR_PARTS));
 
 /** The steps whose circuit is on: the battery's switch closed. */
-const LIVE: ReadonlySet<string> = new Set(['divider', 'led', 'overload', 'lamp', 'film', 'plates']);
+const LIVE: ReadonlySet<string> = new Set(['divider', 'led', 'overload', 'lamp', 'film', 'plates', 'scope', 'bulged']);
 /** The steps where the reader may take everything (with a door only while the camera is on the board's shot). */
 const FREE: ReadonlySet<string> = new Set([
   'hand',
@@ -222,6 +305,10 @@ const FREE: ReadonlySet<string> = new Set([
   'film',
   'plates',
   'roll',
+  'scope',
+  'rc',
+  'bulged',
+  'sound',
 ]);
 /** Each step's circuit (every other step: an empty board) and its tray. */
 const PRESETS: Readonly<Record<string, readonly PresetPart[]>> = {
@@ -234,6 +321,16 @@ const PRESETS: Readonly<Record<string, readonly PresetPart[]>> = {
   film: filmBoard(FILM_VALUES[0]),
   plates: platesBoard('electrolytic-470u-16v'),
   roll: ROLL_BOARD,
+  scope: filterParts(FILTER_VALUES[0]),
+  rc: RC,
+  bulged: REVERSED,
+  sound: VOLUME,
+};
+/** The plugs each step puts in (every other plug out). */
+const LEADS: Readonly<Record<string, Readonly<Record<string, SocketId>>>> = {
+  lamp: LAMP_LEADS,
+  scope: FILTER_LEADS,
+  sound: VOLUME_LEADS,
 };
 /** Each step's shot (the bench's names). */
 const CAMERAS: Readonly<Record<string, BenchShot>> = {
@@ -241,6 +338,7 @@ const CAMERAS: Readonly<Record<string, BenchShot>> = {
   board: 'board',
   meter: 'meter',
   scope: 'scope',
+  rc: 'scope',
   parts: 'board',
   hand: 'stand',
   divider: 'meter',
@@ -248,11 +346,12 @@ const CAMERAS: Readonly<Record<string, BenchShot>> = {
   // the tray in the frame: the reader replaces the burnt part
   overload: 'stand',
   lamp: 'stand',
-  'bulged-look': 'board',
+  bulged: 'board',
   loupe: 'board',
   film: 'board',
   plates: 'board',
   roll: 'board',
+  sound: 'stand',
 };
 const TRAYS: Readonly<Record<string, readonly string[]>> = { hand: TRAY, overload: ['resistor-100'] };
 
@@ -275,7 +374,8 @@ function buttonName(spec: string): string {
 }
 
 export default defineScene((ctx) => {
-  const bench = mountBench(ctx);
+  // with the speaker in sound: the model in time plays the board through the volume's own output (E2-10)
+  const bench = mountBench(ctx, { sound: true });
   const ui = stepUi(ctx);
   const phone = (): boolean => ctx.device.formFactor === 'phone';
   // the multimeter in the panel: the dial's switch and the number, a text readout (VISUAL §5.1)
@@ -316,6 +416,20 @@ export default defineScene((ctx) => {
       },
     ],
   });
+  // the oscilloscope's board: its chart, the axes' titles with the scale on them (VISUAL §5.2), the step's channels
+  const W = SANDBOX.scope;
+  const scale = (value: number, unit: string): string => `${fmtSI(value, unit)}/${W.division}`;
+  const scopeBoard = (step: 'scope' | 'rc') => ({
+    title: W.board,
+    size: 'md' as const,
+    children: [
+      bench.oscilloscope.chart(`scope-${step}`, {
+        x: (s: ScopeSettings) => `t, ${s.unit} · ${scale(s.timePerDiv, 's')}`,
+        y: (s: ScopeSettings) => `U, V · ${scale(s.voltsPerDiv, 'V')}`,
+        ...W.channels[step],
+      }),
+    ],
+  });
   ui.define({
     hand: dock(TRAY),
     // the divider: the meter, and the battery's switch in the dock (the checks open it for the Ω mode: a resistance is
@@ -324,6 +438,43 @@ export default defineScene((ctx) => {
     led: dock([]),
     overload: dock(TRAYS.overload ?? []),
     lamp: dock([]),
+    bulged: dock([]),
+    rc: { ...dock([]), board: scopeBoard('rc') },
+    scope: {
+      controls: [
+        ...dock([]).controls,
+        {
+          type: 'segmented' as const,
+          id: 'filter',
+          label: W.resistor,
+          items: FILTER_VALUES.map((spec) => ({ id: spec, label: trayLabel(spec) })),
+          value: FILTER_VALUES[0],
+          onChange: (spec: string) => {
+            bench.preset(filterParts(spec), { ...NO_LEADS, ...FILTER_LEADS });
+            bench.closed = 1;
+          },
+        },
+      ],
+      board: scopeBoard('scope'),
+    },
+    // step `sound`: the volume control's knob is P1's setting; the knob in 3D follows it (plan decision 20)
+    sound: {
+      controls: [
+        ...dock([]).controls,
+        {
+          type: 'slider' as const,
+          id: 'volume',
+          label: SANDBOX.sound.volume,
+          min: 0,
+          max: 1,
+          step: 0.01,
+          value: 1,
+          format: (v: number) => `${Math.round(v * 100)} %`,
+          onInput: (v: number) => void setSetting(bench.state, 'P1', v),
+          onChange: (v: number) => void setSetting(bench.state, 'P1', v),
+        },
+      ],
+    },
   });
   const specOf = (id: string): string => bench.state.parts.get(id)?.spec ?? '';
   /** The sandbox lets the reader take everything; the names under the pointer are its words. */
@@ -344,6 +495,7 @@ export default defineScene((ctx) => {
   const INSTRUMENTS: Readonly<Record<string, Record<string, number>>> = {
     meter: { meter: 1 },
     scope: { scope: 1 },
+    rc: { scope: 1 },
     divider: { meter: 1 },
   };
   ctx.stage.define(
@@ -486,18 +638,13 @@ export default defineScene((ctx) => {
         door.home({ instant: info.instant, then: CAMERAS[id] });
       }
       const preset = PRESETS[id];
-      if (preset) bench.preset(preset, id === 'lamp' ? LAMP_LEADS : undefined);
+      if (preset) bench.preset(preset, { ...NO_LEADS, ...LEADS[id] });
       else bench.clear();
-      for (const [name, sockets] of Object.entries(CANS)) {
-        if (id !== 'bulged-look') {
-          bench.parts.hide(`C-${name}`);
-          continue;
-        }
-        const can = buildPart(CAN)!;
-        bench.parts.show(`C-${name}`, can, sockets);
-        // the look of the state and nothing more (VISUAL §4.8): its steam is the model's event, E2-9's
-        if (name === 'bulged') can.setLook({ status: 'bulged' }, 0);
-      }
+      // the oscilloscope: the step's scale and its probes, or its probes at rest
+      const scope = SCOPES[id];
+      if (scope) bench.oscilloscope.configure(scope.setup);
+      bench.oscilloscope.put(scope?.probes ?? { ch1: null, ch2: null });
+      if (id === 'scope') ui.set('filter', FILTER_VALUES[0]);
       bench.tray.set(TRAYS[id] ?? []);
       bench.closed = LIVE.has(id) ? 1 : 0;
       // every step starts with the probes at rest by the meter and the dial on V
@@ -510,6 +657,7 @@ export default defineScene((ctx) => {
         ui.set('plates-can', 'electrolytic-470u-16v');
         ui.set('plates-flip', false);
       }
+      if (id === 'sound') ui.set('volume', 1);
       if (DOOR_STEPS.has(id)) {
         door = partDoor(ctx, bench, DOOR_PARTS[id]!, { lead: 'board' });
         const d = door;
