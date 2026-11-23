@@ -16,7 +16,7 @@ import { defineChapter } from '@/engine/api';
  * through a 10 kΩ pot as the volume control into the speaker, the volume slider in the panel (step `sound`; the bench
  * is mounted with its option `sound`, so the speaker plays wherever it is in the circuit); E4-I: inside the
  * capacitors — an electrolytic's two plates with the model's charges (step `plates`), a film capacitor's roll (step
- * `roll`).
+ * `roll`); E4-B: a part's print down at the part, a phone's too (step `print`).
  * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
@@ -99,6 +99,11 @@ export const SANDBOX = {
       title: 'Усередині плівкового конденсатора',
       blurb:
         'Плівковий конденсатор 1 μF сам на платі, вимикач розімкнено. Повзунок «Глибина» веде лупу на брусок і камеру всередину: брусок розрізано навпіл, і видно рулон із двох смужок плівки з шаром металу на кожній, торці, вкриті металом, і ніжки, що до них доходять. Біля другої ніжки лишено куток бруска, і на його косому зрізі видно витки рулону, а над ним — як ця ніжка входить у свій торець. Вигляд статичний: брусок поза колом.',
+    },
+    print: {
+      title: 'Друк деталі зблизька',
+      blurb:
+        'Керамічний конденсатор 100 nF сам на платі, вимикач розімкнено. Повзунок «Глибина» веде лупу на диск і камеру до нього: на поверсі «деталь» видно його код «104». На телефоні теж: зблизька друк читають за тим самим правилом, що й на комп’ютері, — лише там, де кожна літера щонайменше 16 px; на звичайному ракурсі телефона друку немає.',
     },
     sound: {
       title: 'Звук із динаміка',

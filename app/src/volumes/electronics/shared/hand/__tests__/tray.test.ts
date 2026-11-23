@@ -10,10 +10,12 @@ import { Box3, Vector3, type BufferGeometry, type Mesh } from 'three';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { NBSP } from '@/content';
 import { setFontData, type FontJson, type Text3D } from '@/text';
+import { CameraDirector } from '@/engine/camera/director';
 import { PARTS } from '@electronics/sim/core';
 import { createBoardState, createLayout, place } from '@electronics/sim/board';
-import { buildPart, type PartModel } from '../../parts';
+import { buildPart, type PartEye, type PartModel } from '../../parts';
 import { PLACES } from '../../bench/layout';
+import { STAGE_SHOTS } from '../../bench/shots';
 import { TRAY, createTray, partSize, trayLabel, trayRow } from '../tray';
 
 const model = (key: string): PartModel => buildPart(key)!;
@@ -73,6 +75,12 @@ describe('the labels: numbers and units made by the code', () => {
     expect(trayLabel('electrolytic-470u-16v')).toBe(`470${NBSP}μF 16${NBSP}V`);
     expect(trayLabel('electrolytic-100u-16v')).toBe(`100${NBSP}μF 16${NBSP}V`);
     expect(trayLabel('electrolytic-100u-6v3')).toBe(`100${NBSP}μF 6,3${NBSP}V`);
+    // an electrolytic in μF however large, as a real can is printed — never «1 mF» (E4-B)
+    expect(trayLabel('electrolytic-1000u-16v')).toBe(`1000${NBSP}μF 16${NBSP}V`);
+    expect(trayLabel('electrolytic-10u-16v')).toBe(`10${NBSP}μF 16${NBSP}V`);
+    expect(trayLabel('electrolytic-1u-16v')).toBe(`1${NBSP}μF 16${NBSP}V`);
+    for (const [key, spec] of Object.entries(PARTS))
+      if (spec.kind === 'capacitor') expect(trayLabel(key), key).not.toMatch(/mF/);
     expect(trayLabel('led-red')).toBe('');
     expect(trayLabel('jumper')).toBe('');
   });
@@ -208,6 +216,39 @@ describe('the labels in the font (VISUAL §6)', () => {
     // the widest is a capacitor's value with its voltage in the front row, as VISUAL §6 says
     expect(widest.key).toMatch(/^ceramic-100[pn]$/);
     expect(widest.width).toBeCloseTo(1.12, 2);
+    tray.dispose();
+  });
+
+  it('shows each row’s labels where that row reads: the front row’s beside back-row cans too small to read', () => {
+    // the engine's camera on 1280 × 720 (the legibility's reference size) with the DOM interface's panels on a desk
+    // (`bench/__tests__/layout.test.ts` `DESKTOP`): the shot pulled back into the free area
+    const eyeOn = (shot: (typeof STAGE_SHOTS)[keyof typeof STAGE_SHOTS]): PartEye => {
+      const d = new CameraDirector();
+      d.setViewport(1280, 720);
+      d.setInsets({ left: 0.0409, right: 0.2803, top: 0.1131, bottom: 0.1175 }, true);
+      d.go(shot, { instant: true });
+      d.camera.updateMatrixWorld(true);
+      return { camera: d.camera, aspect: 1280 / 720, phone: false, room: 1 };
+    };
+    const front = ['ceramic-100n', 'resistor-1k', 'resistor-4k7'];
+    const back = ['electrolytic-10u-16v', 'electrolytic-470u-16v', 'electrolytic-1000u-16v'];
+    const tray = createTray();
+    tray.set([...front, ...back]);
+    tray.group.updateMatrixWorld(true);
+    const shown = (keys: readonly string[]) =>
+      keys.map((k) => (tray.group.getObjectByName(`print:${trayLabel(k)}`) as Text3D).visible);
+    // `stand`: both rows read (the front row's ≈ 18 px-equivalent, the back row's riser ≈ 16)
+    tray.update(0, eyeOn(STAGE_SHOTS.stand));
+    expect(shown(front)).toEqual([true, true, true]);
+    expect(shown(back)).toEqual([true, true, true]);
+    // `meter` (the multimeter's steps beside the tray): the back row's riser under 16 px-equivalent, the front row's
+    // over it — before, one switch for both rows hid every label there, the front ones too (E4-B)
+    tray.update(0, eyeOn(STAGE_SHOTS.meter));
+    expect(shown(front)).toEqual([true, true, true]);
+    expect(shown(back)).toEqual([false, false, false]);
+    // a phone shows none (VISUAL §9)
+    tray.update(0, { ...eyeOn(STAGE_SHOTS.stand), phone: true });
+    expect(shown([...front, ...back]).some(Boolean)).toBe(false);
     tray.dispose();
   });
 });

@@ -7,8 +7,9 @@
  * decision 10): a sample taken, a new one rises from the foam in 0.3 s; a part let go off the board flies back into
  * its slot in 0.4 s and is gone into the sample. A part taken gets the next id of the board's counter (`nextId`):
  * `R1`, `R2` … never twice. On the step in front of each slot its label — numbers and units made by the code («4,7 kΩ»,
- * «100 nF 50 V», «1N4007») — shown only where it reads (≥ 16 px-equivalent); an LED has none (its colour shows), nor
- * has a jumper.
+ * «100 nF 50 V», «1N4007») — shown only where it reads (≥ 16 px-equivalent), each row by its own labels (the back
+ * row's riser reads smaller: on the shot `meter` it hid the front row's labels too while one print held both); an LED
+ * has none (its colour shows), nor has a jumper.
  * On a phone the tray is out of the frame: its slots are buttons of the dock (VISUAL §9), the chapter's.
  *
  * World frame (the table): the tray stands level on the table, its slots' samples level with it.
@@ -25,6 +26,7 @@ import {
   LEG,
   TRANSISTORS,
   buildPart,
+  capacitorPrint,
   electrolyticPrint,
   type PartEye,
   type PartModel,
@@ -70,14 +72,16 @@ export function trayRow(m: PartModel): TrayRow {
 }
 
 /** The label of a slot: the value with its unit, a diode's or transistor's model; '' for an LED, a jumper. A
- * capacitor's is its capacitance and its rated voltage, as an electrolytic's can is printed («100 μF 6,3 V»): two
- * capacitors of one value (the 6.3 V and the 16 V can, the ceramic and the film of 100 nF) never share a label, which
- * on a phone is all the dock's button shows (VISUAL §9). */
+ * capacitor's is its capacitance and its rated voltage, an electrolytic's as its can is printed («100 μF 6,3 V»,
+ * «1000 μF 16 V»), a ceramic's or film's with the value's SI prefix («100 nF 50 V»): two capacitors of one value (the
+ * 6.3 V and the 16 V can, the ceramic and the film of 100 nF) never share a label, which on a phone is all the dock's
+ * button shows (VISUAL §9). */
 export function trayLabel(spec: string): string {
   const s = Object.hasOwn(PARTS, spec) ? PARTS[spec]! : undefined;
   if (s === undefined) return '';
   if (s.kind === 'resistor' || s.kind === 'pot') return fmtSI(s.ohms, 'Ω');
-  if (s.kind === 'capacitor') return electrolyticPrint(s.farads, s.ratedV);
+  if (s.kind === 'capacitor')
+    return s.dielectric === 'electrolytic' ? electrolyticPrint(s.farads, s.ratedV) : capacitorPrint(s.farads, s.ratedV);
   if (Object.hasOwn(DIODES, spec)) return DIODES[spec]!;
   if (Object.hasOwn(TRANSISTORS, spec)) return TRANSISTORS[spec]!.print;
   return '';
@@ -110,7 +114,7 @@ export interface Tray {
   take(spec: string, state: BoardState): string | null;
   /** Where the legs' tips of a part standing in the slot are (world), its sample at rest. */
   tips(spec: string): Vector3[] | null;
-  /** Every frame: the rising samples; the labels where they read. */
+  /** Every frame: the rising samples; each row's labels where that row reads. */
   update(dt: number, eye?: PartEye): void;
   dispose(): void;
 }
@@ -159,7 +163,8 @@ export function createTray(): Tray {
   const hitGeometry = new BoxGeometry(1, 1, 1);
   const hitMaterial = new MeshBasicMaterial({ visible: false });
   let slots: Slot[] = [];
-  let prints = new Prints();
+  /** One print per row: each row's labels show where that row reads (its em and its face's angle are its own). */
+  let prints: Record<TrayRow, Prints> = { front: new Prints(), back: new Prints() };
   const labels = new Group();
   labels.name = 'tray:labels';
   group.add(labels);
@@ -169,11 +174,13 @@ export function createTray(): Tray {
       s.sample?.dispose();
       s.hit.removeFromParent();
     }
-    for (const t of prints.texts) {
-      t.removeFromParent();
-      t.dispose();
+    for (const row of ['front', 'back'] as const) {
+      for (const t of prints[row].texts) {
+        t.removeFromParent();
+        t.dispose();
+      }
     }
-    prints = new Prints();
+    prints = { front: new Prints(), back: new Prints() };
     slots = [];
   };
 
@@ -223,7 +230,7 @@ export function createTray(): Tray {
           // on the step's face in front of the slot: the front row's face to the reader, the back row's riser
           const y = row === 'front' ? T.front.top / 2 : (T.front.top + T.back.top) / 2;
           const z = row === 'front' ? z0 + T.depth : z0 + T.back.depth;
-          prints.add(labels, label, { size: TRAY.label[row], color: 'mist', at: [at.x, y, z + 0.004] });
+          prints[row].add(labels, label, { size: TRAY.label[row], color: 'mist', at: [at.x, y, z + 0.004] });
         }
         slots.push({ spec, row, index, at, hit, sample, label, up: 1, rest });
       }
@@ -251,7 +258,10 @@ export function createTray(): Tray {
         const deep = partSize(s.sample).height + TRAY.foam;
         s.sample.group.position.set(s.rest.x, s.rest.y - deep * (1 - ease(s.up)), s.rest.z);
       }
-      if (eye) prints.view(eye);
+      if (eye) {
+        prints.front.view(eye);
+        prints.back.view(eye);
+      }
     },
     dispose() {
       clear();

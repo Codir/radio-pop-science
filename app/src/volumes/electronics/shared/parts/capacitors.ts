@@ -16,7 +16,7 @@
  * (bulged: the domed top and the dark inside instead of the flat top).
  */
 import { Box3, Group, Vector3, type Mesh } from 'three';
-import { NBSP, fmtNumber, fmtSI } from '@/content';
+import { NBSP, fmtNumber, fmtSI, fmtUnit } from '@/content';
 import { Builder, type G } from '@/kit';
 import { BOARD_SPEC } from '@electronics/sim/board';
 import { capacitorCode } from './code';
@@ -58,9 +58,20 @@ export function electrolyticCan(farads: number, volts: number): { d: number; h: 
   return best;
 }
 
-/** «470 μF 16 V», «6,3 V»: the value and the voltage as the can is printed (code: numbers and units only). */
+/** «16 V», «6,3 V»: a capacitor's rated voltage as it is printed. */
+const voltsPrint = (volts: number): string => `${fmtNumber(volts, { maxDigits: 1 })}${NBSP}V`;
+
+/**
+ * «470 μF 16 V», «1000 μF 16 V», «100 μF 6,3 V»: the value and the voltage as the can is printed — in μF however large,
+ * as a real can is (never «1 mF»); code: numbers and units only.
+ */
 export function electrolyticPrint(farads: number, volts: number): string {
-  return `${fmtSI(farads, 'F')} ${fmtNumber(volts, { maxDigits: 1 })}${NBSP}V`;
+  return `${fmtUnit(farads * 1e6, 'μF', { maxDigits: 2 })} ${voltsPrint(volts)}`;
+}
+
+/** «100 nF 50 V», «100 pF 50 V», «1 μF 63 V»: a ceramic's or film's value with its SI prefix and its rated voltage. */
+export function capacitorPrint(farads: number, volts: number): string {
+  return `${fmtSI(farads, 'F')} ${voltsPrint(volts)}`;
 }
 
 /* -------------------------------------------------------------------------------------------- ceramic */

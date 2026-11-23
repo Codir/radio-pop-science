@@ -13,9 +13,9 @@ on «V» on the LED «on»'s 2,2 kΩ.
 | --- | --- |
 | `scene.ts` · `chapter.ts` | orchestrator: the stand → six step modules → `stage.define` + `stepUi.define`; the param `meter` (the multimeter slides in, 0.6 s); the magnifier's door stays open between `bands` and `series` (`DIVE_STEPS`, the rail's end `DIVE_END` 0.75) and flies home before any other step's shot; the dock's switch toggle follows `bench.closed` |
 | `stand.ts` | the step stand of `@electronics/shared/steps` (`createStepStand` with `keepDoor`): `mountBench` once, the magnifier's door into a part (one for both dive steps: the door of the step before is kept when it leads into the same part) with its lens keeper and the ladder «де ми» (`benchLadder`), the names under the pointer (`naming`, set by each step) |
-| `parts/boards.ts` | every step's board as data (`LOOP`, `loopWith`, `CALC`, `POWER`, `BURN`, `ON` = `AMPLIFIER_PRESET`), the probes the steps put (`METER_PROBES`), the rows of the goals (`ROWS`, `ON_ROWS` — the amplifier's ground and supply through its jumpers, `joinedRows`) and their windows (`WINDOWS`) |
+| `parts/boards.ts` | every step's board as data (`LOOP`, `loopWith`, `CALC`, `POWER`, `BURN`, `ON` = `AMPLIFIER_PRESET`), the probes the steps put (`METER_PROBES`), the rows of the goals (`ROWS`, `ON_ROWS` — the amplifier's ground and supply through its jumpers, `joinedRows` of `sim/board`) and their windows (`WINDOWS`) |
 | `parts/bands.ts` | what each band of the 330 Ω says (the table's rows), the 25 values of E24 from 100 Ω to 1 kΩ, the span a value's 5 % allows (`toleranceSpan`) |
-| `parts/readouts.ts` | the panel's readouts of the resistor in a gap: |u| with four significant digits, p in watts with three decimals, the state by the model's condition; «—» when there is nothing to read |
+| `parts/readouts.ts` | the panel's readouts of the resistor in a gap: |u| with four significant digits, p in watts with three decimals; «—» when there is nothing to read (the state by the model's condition: `conditionText` of `@electronics/shared/steps`) |
 | `parts/picker.ts` | a touch on the resistor's body picks the band nearest along it (`bandAt`): an invisible twin of the part's `hit` box with the step's own click (the hand's own target is that box) |
 | `parts/marker.ts` | the mark of the band picked last: a small `yellow` cone beside the body, past its upper edge on the screen, its tip toward the band's middle |
 | `parts/goals.ts` | how long each goal's state holds (`HOLD`, the script's «Ціль») |
@@ -34,8 +34,8 @@ on «V» on the LED «on»'s 2,2 kΩ.
 | `burn` | the 100 Ω from the tray between the jumpers' ends (9ae/13ae), closes the switch → it burns (the model's event), 1 s after | «0,786 W · гарячий» at once, burnt on the frame at ≈ 3,83 s, one wisp (the bench's), then «0,000 W · згорів» |
 | `on` | «V» (dock), the probes on the LED «on» (5fj and the − rail or a row tied to it) and on its 2,2 kΩ (5ae or 2ae, and 5fj) → «1,750 V» and «6,587 V» each 1 s | the board is `AMPLIFIER_PRESET` as it stands; the dial has no «A»; two callouts, each point on its own part |
 
-Every step puts its own board on entry with fresh parts (`stand.board`: the bench cleared, then `bench.preset`: what it
-takes off is forgotten), sets the switch, the tray, the meter's dial and probes, the hand's policy and the names; a deep
+Every step puts its own board on entry with fresh parts (`stand.board`: `bench.preset`, the step's whole bench — what
+it takes off is forgotten), sets the switch, the tray, the meter's dial and probes, the hand's policy and the names; a deep
 link (`?freeze`) lands on that state. `burn` starts with no resistor and the switch open, so nothing burns before the
 reader acts.
 

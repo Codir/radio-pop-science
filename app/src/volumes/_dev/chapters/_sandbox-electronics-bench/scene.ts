@@ -64,6 +64,10 @@
  *           `capacitor-kinds/film`), the switch open; the door into C1, cut in half but for the corner by leg 1,
  *           whose face across the winding shows the turns: the roll of metallised film, its sprayed ends and the
  *           leads. Probes `roll:metal`, `roll:film` — the callouts' points;
+ *   print — a part's print down at the part (E4-B, VISUAL §9's exception), shot `board`: C1, a ceramic disc of 100 nF,
+ *           alone in e8/e10 (the board of `capacitor-kinds/ceramic`), the switch open; the same door and slider lead
+ *           to it: on the floor `part` its code «104» reads by the desk's rule (≥ 16 px-equivalent) on a phone too —
+ *           the bench's `PartEye.close` while the door has the camera; on the step's shot a phone shows no print;
  *   sound — the speaker in sound (E2-10), shot `stand`: the player → a 10 kΩ pot as the volume control → the speaker
  *           (`VOLUME`: P1 in b17 … b13 — `ccw` on the ground row 17ae, J1 from it to the − rail, the wiper 15ae, `cw`
  *           13ae; the plugs `pl+` in c13, `pl-` in c17, `spk+` in c15, `spk-` in a17); the panel's slider `volume`
@@ -287,8 +291,16 @@ const platesBoard = (spec: string, flipped = false): readonly PresetPart[] => [
 ];
 /** Step `roll`: a film capacitor alone, as `capacitor-kinds/film` seats it. */
 const ROLL_BOARD: readonly PresetPart[] = [{ id: 'C1', spec: 'film-1u', at: 'e8' }];
+/** Step `print`: a ceramic disc of 100 nF alone, its code «104» toward the reader (`capacitor-kinds/ceramic`). */
+const PRINT_BOARD: readonly PresetPart[] = [{ id: 'C1', spec: 'ceramic-100n', at: 'e8' }];
 /** The steps with the magnifier's door, and the part it leads into. */
-const DOOR_PARTS: Readonly<Record<string, string>> = { loupe: 'R1', film: 'R1', plates: 'C1', roll: 'C1' };
+const DOOR_PARTS: Readonly<Record<string, string>> = {
+  loupe: 'R1',
+  film: 'R1',
+  plates: 'C1',
+  roll: 'C1',
+  print: 'C1',
+};
 const DOOR_STEPS: ReadonlySet<string> = new Set(Object.keys(DOOR_PARTS));
 
 /** The steps whose circuit is on: the battery's switch closed. */
@@ -305,6 +317,7 @@ const FREE: ReadonlySet<string> = new Set([
   'film',
   'plates',
   'roll',
+  'print',
   'scope',
   'rc',
   'bulged',
@@ -321,6 +334,7 @@ const PRESETS: Readonly<Record<string, readonly PresetPart[]>> = {
   film: filmBoard(FILM_VALUES[0]),
   plates: platesBoard('electrolytic-470u-16v'),
   roll: ROLL_BOARD,
+  print: PRINT_BOARD,
   scope: filterParts(FILTER_VALUES[0]),
   rc: RC,
   bulged: REVERSED,
@@ -351,6 +365,7 @@ const CAMERAS: Readonly<Record<string, BenchShot>> = {
   film: 'board',
   plates: 'board',
   roll: 'board',
+  print: 'board',
   sound: 'stand',
 };
 const TRAYS: Readonly<Record<string, readonly string[]>> = { hand: TRAY, overload: ['resistor-100'] };
@@ -592,6 +607,7 @@ export default defineScene((ctx) => {
       ],
     },
     roll: { controls: [depth] },
+    print: { controls: [depth] },
   });
   // the callouts' points of the film (checks): far below the bench while there is none
   const filmProbe = (name: FilmAnchor) => {

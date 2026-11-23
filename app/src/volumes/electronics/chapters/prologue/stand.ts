@@ -1,34 +1,24 @@
 /**
- * The chapter's facade over the bench of the volume (`@electronics/shared/**`): the bench mounted once with its
- * speaker in sound (what the board gives the speaker is what one hears), the player under a tap (its level is the
- * model's setting of the bench's `PLAYER`: 0 stopped; the tap is the engine's first gesture, from which the volume's
- * sound starts), the names under the pointer of the player, the speaker and the oscilloscope's case, the step's call
- * (a pulse on the thing it wants touched) and the wave on the speaker as the dock shows it — the largest voltage on it
- * over the last 0,5 s of what it sounded of the step's own board. Steps put their own board (`board`: cleared, then
- * `bench.preset`), set the switch, the player and the knob and say what the hand may take.
+ * The chapter's facade over the bench of the volume: the step stand of `@electronics/shared/steps` with sound
+ * (`createStepStand(ctx, { sound: true })` — the bench mounted once with its speaker in sound, what the board gives
+ * the speaker is what one hears; the player under a tap where a step lets it, its level the model's setting of the
+ * bench's `PLAYER`, 0 stopped, the tap the engine's first gesture from which the volume's sound starts; the names under
+ * the pointer of the player, the speaker and the oscilloscope's case), and the chapter's own: the step's call (a pulse
+ * on the thing it wants touched), the volume knob's setting, and the wave on the speaker as the dock shows it — the
+ * largest voltage on it over the last 0,5 s of what it sounded of the step's own board. Steps put their own board
+ * (`board`: `bench.preset`, the step's whole bench), set the switch, the player and the knob and say what the hand may
+ * take.
  */
-import { Vector3 } from 'three';
-import { audio } from '@/audio';
 import type { ChapterContext } from '@/engine/api';
-import { mountBench, setSetting, type Bench, type PresetPart, type SocketId } from '@electronics/shared/bench';
-import { CREST_SECONDS, IDS, PLAYING } from './parts/boards';
+import type { Bench, PresetPart, SocketId } from '@electronics/shared/bench';
+import { createStepStand, type Naming } from '@electronics/shared/steps';
+import { CREST_SECONDS, IDS } from './parts/boards';
 import { soundOff, stepCrest } from './parts/dock';
 import { createCall, type Call } from './parts/marks';
 
-/** What the names under the pointer say in the step on screen ('' — none); whether a tap plays the player. */
-export interface Naming {
-  player: string;
-  speaker: string;
-  scope: string;
-  /** A tap on the player's box starts or stops it (`quiet`). */
-  tap: boolean;
-}
-
-const SILENT: Naming = { player: '', speaker: '', scope: '', tap: false };
-
 export interface PrologueStand {
   readonly bench: Bench;
-  /** The names of the step on screen (a step sets them on entry). */
+  /** The names of the step on screen (a step sets them on entry; the multimeter never comes here: its name ''). */
   naming: Naming;
   /**
    * A step's own board: everything off first — the parts and the plugs of the bench's things — then these parts and
@@ -64,33 +54,34 @@ export interface PrologueStand {
 }
 
 export function createPrologueStand(ctx: ChapterContext): PrologueStand {
-  const bench = mountBench(ctx, { sound: true });
-  const hover = (): boolean => ctx.device.hover !== false;
+  const stand = createStepStand(ctx, { sound: true });
+  const { bench } = stand;
   const call = createCall(bench);
-  let taps = 0;
   // the first sample of the step's own board: the first block after the start that follows the step's preset (a block
   // of the board before may still come between the preset and that start: it moves `since`, not `begun`)
   let from: number | null = null;
   let startsAt = 0;
-  const stand: PrologueStand = {
+  return {
     bench,
-    naming: SILENT,
+    get naming() {
+      return stand.naming;
+    },
+    set naming(n: Naming) {
+      stand.naming = n;
+    },
     board(parts, leads) {
       call.to(null, 0);
-      bench.clear();
-      bench.preset(parts, leads);
+      stand.board(parts, leads);
       from = null;
       startsAt = bench.live.starts;
     },
-    playing: () => (bench.state.settings.get(IDS.player) ?? PLAYING) > 0,
-    play(on) {
-      setSetting(bench.state, IDS.player, on ? PLAYING : 0);
-    },
+    playing: () => stand.playing(),
+    play: (on) => stand.play(on),
     get taps() {
-      return taps;
+      return stand.taps;
     },
     knob: () => bench.state.settings.get(IDS.pot) ?? 0.5,
-    phone: () => ctx.device.formFactor === 'phone',
+    phone: () => stand.phone(),
     crest() {
       const sp = bench.speaker;
       return sp === null ? 0 : stepCrest(sp.heard(), from, CREST_SECONDS, (s, start) => sp.peak(s, start));
@@ -101,41 +92,12 @@ export function createPrologueStand(ctx: ChapterContext): PrologueStand {
     soundOff: () => soundOff(bench.speaker?.output.state ?? null, ctx.store.get().settings),
     call,
     snap() {
-      bench.snap();
+      stand.snap();
     },
     update(dt, t) {
-      bench.update(dt, t);
+      stand.update(dt, t);
       const { live } = bench;
       if (from === null && live.starts > startsAt && live.begun !== null) from = live.begun;
     },
   };
-  // the player: a tap starts or stops the melody where the step lets it (the engine's first gesture with it: the
-  // volume's sound output starts on it); its name under the pointer
-  ctx.input.register(bench.props.things.player.group, {
-    cursor: 'pointer',
-    tooltip: () => stand.naming.player,
-    enabled: () => !bench.flying && stand.naming.tap,
-    click: () => {
-      if (bench.flying || !stand.naming.tap) return;
-      stand.play(!stand.playing());
-      audio.play('toggle');
-      taps++;
-    },
-  });
-  // QA: the player's box (a tap plays it) and the speaker
-  ctx.qa.probe('player', () => bench.props.things.player.group.getWorldPosition(new Vector3()));
-  ctx.qa.probe('speaker', () => bench.props.things.speaker.group.getWorldPosition(new Vector3()));
-  // the speaker's name (`quiet`, where the hand takes nothing: by a long touch too); the oscilloscope's under a pointer
-  // that hovers (on a touch screen a twin would take the taps meant for the probe's grip beside it)
-  ctx.input.register(bench.props.things.speaker.group, {
-    cursor: 'default',
-    tooltip: () => stand.naming.speaker,
-    enabled: () => !bench.flying && stand.naming.speaker !== '',
-  });
-  ctx.input.register(bench.oscilloscope.body, {
-    cursor: 'default',
-    tooltip: () => stand.naming.scope,
-    enabled: () => hover() && !bench.flying && bench.scope > 0.99 && stand.naming.scope !== '',
-  });
-  return stand;
 }

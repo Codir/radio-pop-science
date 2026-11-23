@@ -50,15 +50,16 @@ state, and `flash` starts with no LED and the switch open, so nothing burns befo
   8,370 … 8,377 mA. An earlier build (E3-6 before its fix round 2) measured the LED's resistor R1 2,2 kΩ in a gap of
   its own; that took the measurement of `resistor-pick/on` one chapter early (review of E3-6), so the step is back on
   the script's 470 Ω and `resistor-pick/on` keeps R1 to itself.
-- **`amp` has its own shot on a desk and a tablet** (`steps/07-amp.ts` `AMP_SHOT`, registered under the name `amp` and
-  kept the bench's `phone` on a phone, as the bench re-registers its shots on a resize): the `stand` shot seen steeper,
-  ≈ 56° to the table. In `stand` and in the script's `meter` the reservoir's tall can by column 2 stands in front of
-  R5's leg in `a2`, the row 2ae and J8's left half; the hand could not take J8 where it shows (review of E3-6, fix
-  round 2). The shot has a `fit` for tablets (desktops ignore it): a sphere just around the multimeter with its probes
-  at rest, R5's legs, J8's ends and the tray's left slot (`__tests__/shot.test.ts`). Without it the engine cropped the
-  shot around its target, and the multimeter was cut by the frame's left edge on 820 × 1180 and out of the frame on
-  1180 × 820; with it both tablets frame the step at ×0.85, the multimeter and both probes in view (review of E3-6, fix
-  round 3).
+- **`amp` has its own shot on a desk and a tablet** (the bench's named shot `amp`, `shared/bench/shots.ts` since
+  E4-B — first this step's `AMP_SHOT`; the bench registers it with its others, the `phone` shot on a phone): the
+  `stand` shot seen steeper, ≈ 56° to the table. In `stand` and in the script's `meter` the reservoir's tall can by
+  column 2 stands in front of R5's leg in `a2`, the row 2ae and J8's left half; the hand could not take J8 where it
+  shows (review of E3-6, fix round 2). The shot has a `fit` for tablets (desktops ignore it): a sphere just around the
+  multimeter with its probes at rest, R5's legs, J8's ends and the tray's left slot
+  (`shared/bench/__tests__/shots.test.ts`, with the sight lines past the can). Without it the engine cropped the shot
+  around its target, and the multimeter was cut by the frame's left edge on 820 × 1180 and out of the frame on
+  1180 × 820; with it both tablets frame the step at ×0.85, the multimeter and both probes in view (review of E3-6,
+  fix round 3).
 - **Names under the pointer of things the step keeps in place** (the script's «назви за наведенням» of jumpers, the
   LED in `limit`, the amplifier's parts, the multimeter): the bench's hand names only what it may take, so the chapter
   adds invisible twins of those parts' `hit` boxes (`shared/steps/names.ts`). Only where a pointer hovers: on a touch

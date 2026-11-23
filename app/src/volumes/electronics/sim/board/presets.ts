@@ -13,8 +13,9 @@
  *   With the jumpers taken as the wires they stand for its nodes are `amplifierNetlist`'s, one by one; every body,
  *   leg, jumper and plug stands clear of the others, and every plug within its lead (`shared/README.md`, «Boards of
  *   the steps»).
+ * - `joinedRows` — the rows a board's jumpers join into one node (moved from `resistor-pick/parts/boards.ts`, E4-B).
  */
-import type { BoardLayout, SocketId } from './layout';
+import type { BoardLayout, RowId, SocketId } from './layout';
 import type { Orientation } from './footprint';
 import { footprintOf } from './footprint';
 import { createBoardState, place, put, seatLead, setSetting, type BoardState } from './seat';
@@ -81,6 +82,28 @@ export function seatPreset(
       throw new RangeError(`preset: the plug ${name} does not go into ${socket}`);
     }
   }
+}
+
+/**
+ * The rows the jumpers of a board join to `row`, the row itself included, through a chain of them too: one node, read
+ * row by row (a step's goal takes a probe in any row of the node — `resistor-pick/on`'s ground: the − rail and the
+ * five rows its jumpers tie to it on the amplifier).
+ */
+export function joinedRows(layout: BoardLayout, preset: BoardPreset, row: RowId): RowId[] {
+  const links = preset.parts
+    .filter((p) => p.spec === 'jumper' && p.to !== undefined)
+    .map((p) => [layout.socket(p.at)!.row, layout.socket(p.to!)!.row] as const);
+  const out = new Set<RowId>([row]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const [a, b] of links) {
+      if (out.has(a) !== out.has(b)) {
+        out.add(out.has(a) ? b : a);
+        grew = true;
+      }
+    }
+  }
+  return [...out];
 }
 
 /** The plugs of the bench's fixed things (`netlist.ts` `BENCH_FIXED`), by name. */

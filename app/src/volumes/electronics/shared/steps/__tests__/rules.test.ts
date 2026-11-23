@@ -4,11 +4,13 @@
  * the panel (`meter.ts`).
  */
 import { describe, expect, it } from 'vitest';
+import { PARTS } from '@electronics/sim/core';
 import type { Bench, HandPolicy } from '../../bench';
 import type { MeterMode } from '../../instruments';
 import { handPolicy, kindOf } from '../policy';
 import { PLAYER_ID, SWITCH_ID, playerToggle, switchToggle, trayButtonId, trayButtons } from '../dock';
 import { MODE_ID, READOUT_ID, meterReadout, meterSwitch } from '../meter';
+import { conditionText } from '../state';
 
 /** A bench with only what the rules read: the board's parts, the hand's policy, the switch and the multimeter. */
 function stubBench(parts: Record<string, string> = {}) {
@@ -35,9 +37,67 @@ describe('the hand’s rules by kind', () => {
     expect(kindOf('led-red')).toBe('led');
     expect(kindOf('jumper')).toBe('jumper');
     expect(kindOf('diode-1n4007')).toBe('other');
+    expect(kindOf('transistor-bc547b')).toBe('other');
+    expect(kindOf('')).toBe('other');
+    // the capacitors by their dielectric (the catalog's): a ceramic disc and a film box, and the electrolytic can apart
+    expect(kindOf('ceramic-100n')).toBe('capacitor');
+    expect(kindOf('ceramic-100p')).toBe('capacitor');
+    expect(kindOf('film-100n')).toBe('capacitor');
+    expect(kindOf('film-1u')).toBe('capacitor');
+    expect(kindOf('pot-10k')).toBe('pot');
+    for (const [key, spec] of Object.entries(PARTS)) {
+      if (spec.kind !== 'capacitor') continue;
+      expect(kindOf(key), key).toBe(spec.dielectric === 'electrolytic' ? 'electrolytic' : 'capacitor');
+    }
+    expect(kindOf('electrolytic-100u-6v3')).toBe('electrolytic');
+    expect(kindOf('electrolytic-470u-16v')).toBe('electrolytic');
   });
 
-  it('takes what the rules allow by key — a part, its leg, a tray slot, the probes, the switch — and never a lead', () => {
+  it('takes a plug lead the step names, and names it by its own name', () => {
+    const { as } = stubBench();
+    const p = handPolicy(as, {
+      lead: (name) => name === 'pl+',
+      name: (w) => (w.lead ? `lead ${w.lead}` : ''),
+    });
+    expect(p.take('lead:pl+')).toBe(true);
+    expect(p.take('lead:pl-')).toBe(false);
+    expect(p.take('lead:spk+')).toBe(false);
+    expect(p.tooltip?.('lead:pl+')).toBe('lead pl+');
+    expect(p.tooltip?.('lead:pl-')).toBe('lead pl-');
+    // without the rule no lead is taken
+    expect(handPolicy(as, { name: () => '' }).take('lead:pl+')).toBe(false);
+  });
+
+  it('lets a carried part come down where the step’s `place` says — a part back into its own sockets — and passes on what arrived', () => {
+    const { as } = stubBench({ C3: 'electrolytic-470u-16v', R5: 'resistor-470' });
+    const home: Record<string, readonly string[]> = { C3: ['e2', 'f2'] };
+    const arrived: string[] = [];
+    const p = handPolicy(as, {
+      part: () => true,
+      // a part that stood on the board goes back only into its own sockets; any other anywhere it finds free ones
+      place: (_spec, id, legs) => home[id] === undefined || home[id].every((s, k) => s === legs[k]),
+      done: (k, where) => void arrived.push(`${k} ${where}`),
+      name: (w) => w.id ?? '',
+    });
+    expect(p.place?.('part:C3', ['e2', 'f2'])).toBe(true);
+    expect(p.place?.('part:C3', ['e3', 'f3'])).toBe(false);
+    expect(p.place?.('part:C3', ['f2', 'e2'])).toBe(false);
+    expect(p.place?.('part:R5', ['a3', 'a7'])).toBe(true);
+    // the spec and the id of the part
+    const seen: string[] = [];
+    handPolicy(as, { place: (spec, id) => (seen.push(`${spec} ${id}`), true), name: () => '' }).place?.('part:C3', []);
+    expect(seen).toEqual(['electrolytic-470u-16v C3']);
+    // no rule: anywhere; a leg or a tray slot is never asked here (the hand asks for a carried part only)
+    expect(handPolicy(as, { name: () => '' }).place?.('part:C3', ['a1', 'a2'])).toBe(true);
+    p.done?.('part:C3', 'tray');
+    p.done?.('probe:red', 'board');
+    expect(arrived).toEqual(['part:C3 tray', 'probe:red board']);
+    // the names under the pointer get the part's id too
+    expect(p.tooltip?.('part:C3')).toBe('C3');
+    expect(p.tooltip?.('leg:R5:0')).toBe('R5');
+  });
+
+  it('takes what the rules allow by key — a part, its leg, a tray slot, the probes, the switch — and no lead without its rule', () => {
     const { as } = stubBench({ R1: 'resistor-330', LED1: 'led-red', J1: 'jumper' });
     const p = handPolicy(as, {
       part: (spec) => kindOf(spec) === 'resistor',
@@ -138,6 +198,26 @@ describe('the phone’s dock', () => {
     expect(bench.closed).toBe(1);
     t.onChange?.(false);
     expect(bench.closed).toBe(0);
+    // on the step's shot only: shown on a phone, off while the camera flies
+    expect((t.visible as () => boolean)()).toBe(true);
+    expect((switchToggle(as, 'switch', () => false).visible as () => boolean)()).toBe(false);
+    bench.flying = true;
+    expect((t.disabled as () => boolean)()).toBe(true);
+  });
+
+  it('with `inside`, is shown on every device and works while the camera is down in the part (the floor `inside`)', () => {
+    const { bench, as } = stubBench();
+    const t = switchToggle(as, 'switch', () => false, { inside: true });
+    expect(t.id).toBe(SWITCH_ID);
+    expect((t.visible as () => boolean)()).toBe(true);
+    bench.hands.policy = { take: (k) => k === 'switch' };
+    bench.flying = true;
+    expect((t.disabled as () => boolean)()).toBe(false);
+    t.onChange?.(true);
+    expect(bench.closed).toBe(1);
+    // still the step's: not while the hand may not take the switch
+    bench.hands.policy = { take: () => false };
+    expect((t.disabled as () => boolean)()).toBe(true);
   });
 });
 
@@ -159,6 +239,25 @@ describe('the player in the dock', () => {
     t.onChange?.(true);
     t.onChange?.(false);
     expect(played).toEqual([true, false]);
+  });
+});
+
+describe('a part’s state in words', () => {
+  it('gives the step’s word for the model’s condition, «—» for none — and a capacitor’s «warm» the word for «ok»', () => {
+    const words = { ok: 'within', warm: 'warm', hot: 'hot', bulged: 'bulged' };
+    expect(conditionText('resistor-330', 'ok', words)).toBe('within');
+    expect(conditionText('resistor-330', 'warm', words)).toBe('warm');
+    expect(conditionText('resistor-330', 'burnt', words)).toBe('—');
+    expect(conditionText('resistor-330', null, words)).toBe('—');
+    expect(conditionText('resistor-330', undefined, words)).toBe('—');
+    // a capacitor's «warm» is its voltage alone (plan decision 2 of batch E4): never a word of warmth
+    for (const can of ['electrolytic-100u-16v', 'electrolytic-100u-6v3', 'ceramic-100n', 'film-1u']) {
+      expect(conditionText(can, 'warm', words), can).toBe('within');
+      expect(conditionText(can, 'hot', words), can).toBe('hot');
+      expect(conditionText(can, 'bulged', words), can).toBe('bulged');
+    }
+    // a step with no word for «ok» shows nothing for a warm can either
+    expect(conditionText('electrolytic-470u-16v', 'warm', { hot: 'hot' })).toBe('—');
   });
 });
 

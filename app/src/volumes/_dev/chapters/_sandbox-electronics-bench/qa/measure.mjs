@@ -5,7 +5,7 @@
 // `qa/measure.mjs`, docs/volumes/electronics/REUSE.md «Копії»; the sections are the bench's own):
 //
 //   node app/src/volumes/_dev/chapters/_sandbox-electronics-bench/qa/measure.mjs --port 5480 --out <dir>
-//        [--only room,…,film,plates,roll,scope,sound,repeat,leaks] [--size 1280x720] [--touch]
+//        [--only room,…,film,plates,roll,print,scope,sound,repeat,leaks] [--size 1280x720] [--touch]
 //
 // Sections (`--only`, default all):
 //   room  — step `room` on a held page (`?freeze`): the bench's reader `electronics-bench` (204 sockets, 36 rows),
@@ -105,6 +105,13 @@
 //           draw calls and the inside's 2, the callouts' points (`roll:metal`, `roll:film`) on screen in the free area;
 //           back at 0 the box whole; the hue families ≤ 4; the console; snapshots
 //           `roll-<board|part|inside>-<size>.jpg`.
+//   print — a part's print down at the part (E4-B, VISUAL §9's exception) on a held page, step `print` (a ceramic disc
+//           of 100 nF alone in e8/e10, shot `board`): on the board's shot a phone shows no print; at the floor `part`
+//           on the rail's 0.75 (`capacitor-kinds`' end of the dive, `resistor-pick`'s `DIVE_END`) the code «104» shown
+//           whole and ≥ 16 px-equivalent per em — on a phone too, by the desk's rule (`PartEye.close`) —, its em in the
+//           world and its px-equivalent reported (VISUAL §9 asks for both); the end of the slider (`inside`: a disc has
+//           no inner view, it stays whole) the same; back at 0 a phone shows none again; the console; snapshots
+//           `print-<board|part|end|home>-<size>.jpg`.
 //   scope — the oscilloscope (E2-9): step `scope` (the amplifier with a low-pass before its volume control, the
 //           probes in j17 and j13) on two held pages — the same `electronics-scope.hash` (the window `model.still`
 //           computes at once: deterministic), a sweep triggered on channel 1, ≤ 600 points a channel, the chart and the
@@ -2063,6 +2070,75 @@ async function roll(context) {
   await page.close();
 }
 
+/* -------------------------------------------------------------------------------------- section print */
+
+/** The rail's stop on the floor `part` where a chapter ends its dive to read a part (`resistor-pick` `DIVE_END`). */
+const PART_END = 0.75;
+
+async function print(context) {
+  const n = (report.sections.print = {});
+  const page = await context.newPage();
+  const pos = await open(page, 'print').catch((err) => ({ error: String(err) }));
+  if (!check('opened', at(pos, 'print'), where(pos))) {
+    await page.close();
+    return;
+  }
+  const { dive, to } = diveKit(page);
+  const snap = (what) => join(out, `print-${what}-${tag}.jpg`);
+  /** C1's print as the bench's reader has it, and the world texts on screen with their px-equivalent. */
+  const seen = async () => {
+    const parts = await read(page, 'electronics-parts');
+    const texts = await page.evaluate(() => window.__app.textSizes());
+    const code = texts.filter((t) => t.text.replace(/\s+/g, '') === '104');
+    return { c1: parts?.C1, texts, code: code.length ? Math.min(...code.map((t) => t.pxEq)) : null };
+  };
+  const d0 = await dive();
+  const s0 = await seen();
+  n.board = { ready: d0?.ready, shown: s0.c1?.printsShown, pxEq: round(s0.code, 1), texts: s0.texts.length };
+  if (touch) check('on the board’s shot a phone shows no print', s0.texts.length === 0, `${s0.texts.length} texts`);
+  else check('on the board’s shot (reported)', true, `«104» ${s0.code === null ? 'hidden' : `${round(s0.code, 1)} px-eq`}`);
+  await screenshot(page, snap('board'));
+  for (const [what, slider] of [
+    ['part', PART_END + LENS_LEG],
+    ['end', DEPTH],
+  ]) {
+    const d = await dive();
+    const at0 = await to(slider);
+    const s = await seen();
+    n[what] = {
+      position: round(at0.position, 3),
+      floor: at0.floor,
+      flying: at0.flying,
+      prints: s.c1?.prints,
+      shown: s.c1?.printsShown,
+      clear: s.c1?.printsClear,
+      printEm: round(s.c1?.printEm, 4),
+      pxEq: round(s.code, 1),
+    };
+    check(
+      `${what}: on the floor ${at0.floor}, «104» shown whole and seen, ≥ 16 px-eq${touch ? ' (a phone: the desk’s rule down at the part)' : ''}`,
+      d.ready !== false &&
+        (what === 'part' ? at0.floor === 'part' && Math.abs(at0.position - PART_END) < 1e-3 : at0.position === 1) &&
+        s.c1?.printsShown === s.c1?.prints &&
+        s.c1?.printsClear === s.c1?.prints &&
+        s.code !== null &&
+        s.code >= 16,
+      `rail ${round(at0.position, 3)}, floor ${at0.floor}, shown ${s.c1?.printsShown}/${s.c1?.prints}, clear ${s.c1?.printsClear}, em ${round(s.c1?.printEm, 4)}, «104» ${round(s.code, 1)} px-eq`,
+    );
+    await screenshot(page, snap(what));
+  }
+  const home = await to(0);
+  const s1 = await seen();
+  n.home = { flying: home.flying, texts: s1.texts.length };
+  if (touch)
+    check('back at 0 a phone shows no print again', !home.flying && s1.texts.length === 0, `flying ${home.flying}, ${s1.texts.length} texts`);
+  await screenshot(page, snap('home'));
+  const errors = await appErrors(page);
+  n.errors = errors;
+  check('console', errors.length === 0, consoleText(errors));
+  await page.close();
+}
+
 /* -------------------------------------------------------------------------------------- section scope */
 
 /** The model's rate in time (`shared/model/live.ts` `LIVE`). */
@@ -2599,7 +2675,9 @@ async function leaks(context) {
 
 /* ---------------------------------------------------------------------------------------------- run */
 
-const SECTIONS = { room, shots, parts, hand, meter, heat, loupe, film, plates, roll, scope, sound, repeat, leaks };
+const SECTIONS = {
+  room, shots, parts, hand, meter, heat, loupe, film, plates, roll, print, scope, sound, repeat, leaks,
+}; // prettier-ignore
 const only =
   typeof args.only === 'string'
     ? args.only

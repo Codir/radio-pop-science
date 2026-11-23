@@ -10,7 +10,9 @@
  * in 9ae/10ae (any order). The formula card (`P = U × I`) comes with the takeaway.
  */
 import { trayLabel } from '@electronics/shared/bench';
+import type { PartStatus } from '@electronics/shared/parts';
 import {
+  conditionText,
   createTally,
   handPolicy,
   kindOf,
@@ -22,7 +24,7 @@ import {
 } from '@electronics/shared/steps';
 import { METER_PROBES, POWER, ROWS, WINDOWS } from '../parts/boards';
 import { HOLD } from '../parts/goals';
-import { conditionText, voltsText, wattsText, type Condition } from '../parts/readouts';
+import { voltsText, wattsText } from '../parts/readouts';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';
 
@@ -67,7 +69,7 @@ export const powerStep: StepFactory = ({ ctx, stand, reached, reach, here }) => 
       spec: r?.spec ?? null,
       u: reading ? Math.abs(reading.u) : null,
       p: reading ? reading.p : null,
-      condition: (state?.condition ?? null) as Condition | null,
+      condition: (state?.condition ?? null) as PartStatus | null,
     };
   };
   const reading = (): Value | null => {
@@ -107,7 +109,12 @@ export const powerStep: StepFactory = ({ ctx, stand, reached, reach, here }) => 
         meterReadout(bench, word(0)),
         { type: 'readout', id: 'r-volts', label: word(1), text: () => voltsText(own().u) },
         { type: 'readout', id: 'r-power', label: word(2), text: () => wattsText(own().p) },
-        { type: 'readout', id: 'r-state', label: word(3), text: () => conditionText(own().condition, states) },
+        {
+          type: 'readout',
+          id: 'r-state',
+          label: word(3),
+          text: () => conditionText(own().spec ?? '', own().condition, states),
+        },
         ...trayButtons(bench, KEYS, trayLabel, stand.phone),
         ...trayButtons(bench, [LED], () => word(8), stand.phone),
         { type: 'note', id: 'power-formula', text: word(10), visible: () => reached(S) },

@@ -9,13 +9,12 @@
  * takeaway.
  */
 import { setSetting } from '@electronics/shared/bench';
+import { createHold, handPolicy, knobSlider, switchToggle } from '@electronics/shared/steps';
 import type { StepFactory } from '../chapter';
 import { caption } from '../content';
 import { AMP, HOLD, IDS, KNOB, WINDOWS } from '../parts/boards';
-import { VOLUME_ID, soundNote, switchToggle, volumeSlider, waveGauge } from '../parts/dock';
-import { createHold } from '../parts/goals';
+import { VOLUME_ID, soundNote, waveGauge } from '../parts/dock';
 import { overBoard } from '../parts/marks';
-import { handPolicy } from '../parts/policy';
 
 const S = 'loud';
 
@@ -44,7 +43,17 @@ export const loudStep: StepFactory = ({ ctx, ui, stand, reached, reach, here }) 
     ui: {
       reset: true,
       controls: [
-        volumeSlider(bench, { label: word(1), low: word(2), high: word(3) }, KNOB.low),
+        knobSlider(
+          bench,
+          VOLUME_ID,
+          IDS.pot,
+          word(1),
+          [
+            { value: 0, label: word(2) },
+            { value: 1, label: word(3) },
+          ],
+          KNOB.low,
+        ),
         switchToggle(bench, word(0), stand.phone),
         waveGauge(word(4), () => stand.crest()),
         soundNote(word(5), () => stand.soundOff()),
@@ -63,7 +72,7 @@ export const loudStep: StepFactory = ({ ctx, ui, stand, reached, reach, here }) 
       bench.multimeter.put({ red: null, black: null });
       bench.oscilloscope.put({ ch1: null, ch2: null });
       bench.hands.policy = handPolicy(bench, { switch: true, name: (w) => (w.switch ? word(0) : '') });
-      stand.naming = { player: '', speaker: '', scope: '', tap: false };
+      stand.naming = { meter: '' };
     },
     late(dt) {
       if (!here(S)) return;

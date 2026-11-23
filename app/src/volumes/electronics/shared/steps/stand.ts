@@ -1,13 +1,14 @@
 /**
  * A chapter's facade over the bench of the volume (`createStepStand`), for the chapters whose steps put their own
  * boards: the bench mounted once, the magnifier's door into a part, its lens keeper and the ladder «де ми», and the
- * names under the pointer of the things a step keeps in place (`names.ts`) and of the instruments' cases. Steps put their
- * own boards (`board`: cleared, then `bench.preset`) and say what the hand may take. A chapter's own `stand.ts` makes it
- * once. With `keepDoor`, a door the step before left open into the same part stays (two dive steps in a row: going from
- * one to the other the camera stays where it is); without it every `openDoor` makes a new door. With `sound`, the
- * bench's speaker is in sound (the amplifier on the board plays what the player gives it) and the player is under a tap
- * where a step lets it (`Naming.tap`): its level is the model's setting of the bench's `PLAYER`, 0 stopped, and stays
- * as it is across a step's new board — every step sets it on entry (`play`).
+ * names under the pointer of the things a step keeps in place (`names.ts`) and of the instruments' cases. Steps put
+ * their own boards (`board`: `bench.preset`, the step's whole bench) and say what the hand may take. A chapter's own
+ * `stand.ts` makes it once. With `keepDoor`, a door the step before left open into the same part stays (two dive
+ * steps in a row: going from one to the other the camera stays where it is); without it every `openDoor` makes a new
+ * door. With `sound`, the bench's speaker is in sound (the amplifier on the board plays what the player gives it) and
+ * the player is under a tap where a step lets it (`Naming.tap`): its level is the model's setting of the bench's
+ * `PLAYER`, 0 stopped, and stays as it is across a step's new board — every step sets it on entry (`play`); the
+ * speaker is named where a step names it (`Naming.speaker`).
  */
 import { Vector3 } from 'three';
 import { audio } from '@/audio';
@@ -28,6 +29,8 @@ export interface Naming {
   scope?: string;
   /** The player's box (with `sound`). */
   player?: string;
+  /** The speaker (with `sound`), by a long touch too: a step that lets the hand take nothing near it names it. */
+  speaker?: string;
   /** A tap on the player's box starts or stops it (with `sound`). */
   tap?: boolean;
 }
@@ -57,10 +60,8 @@ export interface StepStand {
   /** The names of the step on screen (a step sets it on entry). */
   naming: Naming;
   /**
-   * A step's own board: everything off first — the parts and the plugs of the bench's things (a plug a preset does
-   * not name stays where it is, and `bench.preset` seats the parts before the plugs: after the amplifier's board the
-   * speaker's plug in c10 would stand where the LED's loop needs its cathode) — then these parts and plugs, new and
-   * whole. The switch and the player's level stay as they are.
+   * A step's own board (`bench.preset`, the step's whole bench): everything off first — the parts and the plugs of the
+   * bench's things — then these parts and plugs, new and whole. The switch and the player's level stay as they are.
    */
   board(parts: readonly PresetPart[], leads?: Readonly<Record<string, SocketId>>): void;
   /** The player plays (its level above 0; the catalog's 0,3 V while no level is set). */
@@ -101,7 +102,6 @@ export function createStepStand(ctx: ChapterContext, opts: StepStandOptions = {}
     ladder,
     naming: SILENT,
     board(parts, leads) {
-      bench.clear();
       bench.preset(parts, leads);
     },
     playing: () => (bench.state.settings.get(PLAYER) ?? PLAYING) > 0,
@@ -181,8 +181,15 @@ export function createStepStand(ctx: ChapterContext, opts: StepStandOptions = {}
         taps++;
       },
     });
-    // QA: the player's box (a tap plays it)
+    // QA: the player's box (a tap plays it) and the speaker
     ctx.qa.probe('player', () => bench.props.things.player.group.getWorldPosition(new Vector3()));
+    ctx.qa.probe('speaker', () => bench.props.things.speaker.group.getWorldPosition(new Vector3()));
+    // the speaker's name, by a long touch too (a step that names it lets the hand take nothing beside it)
+    ctx.input.register(bench.props.things.speaker.group, {
+      cursor: 'default',
+      tooltip: () => stand.naming.speaker ?? '',
+      enabled: () => !bench.flying && (stand.naming.speaker ?? '') !== '',
+    });
   }
   return stand;
 }

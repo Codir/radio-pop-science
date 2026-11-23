@@ -14,6 +14,7 @@ import {
   LED_DARK,
   LED_FULL_LUMENS,
   SCORCH,
+  buildPart,
   createBulb,
   createElectrolytic,
   createSpeaker,
@@ -24,6 +25,7 @@ import {
   lampGlow,
   ledBrightness,
   mixOf,
+  shownStatus,
   surfaceOf,
   type PartStatus,
 } from '..';
@@ -105,6 +107,49 @@ describe('heat on the surface (VISUAL §4.8)', () => {
     expect(shorted).toMatchObject({ t: 1, tint: HEAT_LOOK.tint, scorch: 0, char: 0 });
     expect(kindLook('resistor-1k')).toBe(KIND_LOOK.resistor);
     expect(kindLook('no-such-part')).toMatchObject({ scorch: true, char: 0.75 });
+  });
+
+  it('a capacitor is tinted only while hot or bulged: its «warm» is its voltage alone, and shows nothing (plan decision 2 of batch E4)', () => {
+    // the catalog's kinds: a capacitor tinted by its state, every other part by its heat
+    expect(KIND_LOOK.capacitor?.tint).toBe('hot');
+    for (const kind of ['resistor', 'pot', 'diode', 'transistor', 'led', 'speaker', 'battery', 'lamp'] as const)
+      expect(KIND_LOOK[kind]?.tint, kind).toBe('heat');
+    expect(kindLook('no-such-part').tint).toBe('heat');
+    const can = kindLook('electrolytic-100u-16v');
+    expect(can).toBe(KIND_LOOK.capacitor);
+    expect(kindLook('ceramic-100n')).toBe(can);
+    for (const h of HEATS) {
+      // ok and warm: no tint, no scorch at any heat (a 16 V can on the 9 V battery is «warm» for ever: h → 0,56)
+      for (const status of ['ok', 'warm'] as const)
+        expect(surfaceOf(h, status, Infinity, can)).toMatchObject({ tint: 0, scorch: 0, char: 0 });
+      const t = heatShare(h);
+      // hot (over its rated voltage, or the wrong way round): the heat's tint and scorch, as any part
+      expect(surfaceOf(h, 'hot', Infinity, can).tint).toBeCloseTo(HEAT_LOOK.tint * t, 12);
+      expect(surfaceOf(h, 'hot', Infinity, can).scorch).toBeCloseTo(HEAT_LOOK.scorch * t, 12);
+      // bulged: the heat's tint, no scorch (as before)
+      expect(surfaceOf(h, 'bulged', Infinity, can)).toMatchObject({ scorch: 0, char: 0 });
+      expect(surfaceOf(h, 'bulged', Infinity, can).tint).toBeCloseTo(HEAT_LOOK.tint * t, 12);
+    }
+    // a resistor «warm» is tinted by its heat, as before
+    const resistor = surfaceOf(0.9, 'warm', Infinity, kindLook('resistor-330'));
+    expect(resistor.tint).toBeCloseTo(HEAT_LOOK.tint * heatShare(0.9), 12);
+    // the switch opened before it bulged: «hot» is gone, the tint goes within `fade` (since: s since it was last hot)
+    const fading = [0, 0.25, 0.5, 0.99, 1, 2].map((s) => surfaceOf(0.9, 'warm', s, can).tint);
+    expect(fading[0]).toBeCloseTo(HEAT_LOOK.tint * heatShare(0.9), 12);
+    expect(fading[2]).toBeCloseTo(HEAT_LOOK.tint * heatShare(0.9) * 0.5, 12);
+    rising([...fading].reverse(), 'the fade');
+    expect(fading[4]).toBe(0);
+    expect(fading[5]).toBe(0);
+    expect(surfaceOf(0.9, 'ok', 0.5, can).tint).toBeCloseTo(HEAT_LOOK.tint * heatShare(0.9) * 0.5, 12);
+  });
+
+  it('the condition a kind shows: a capacitor’s «warm» as «ok», every other part’s as it is', () => {
+    for (const key of ['electrolytic-100u-16v', 'electrolytic-100u-6v3', 'ceramic-100n', 'film-1u']) {
+      expect(shownStatus(key, 'warm'), key).toBe('ok');
+      for (const s of ['ok', 'hot', 'burnt', 'bulged'] as const) expect(shownStatus(key, s), key).toBe(s);
+    }
+    for (const key of ['resistor-330', 'led-red', 'pot-10k', 'lamp-6v', 'no-such-part'])
+      for (const s of ['ok', 'warm', 'hot', 'burnt', 'bulged'] as const) expect(shownStatus(key, s), key).toBe(s);
   });
 
   it('one mix stands for the three in turn, for any colour of the body', () => {
@@ -244,6 +289,39 @@ describe('the hook of the model’s state on a part', () => {
     const done = shown();
     const want = mixOf(surfaceOf(1, 'burnt', Infinity, kindLook('resistor-100')), new Vector4());
     expect(done.sub(want).length()).toBeLessThan(1e-9);
+  });
+
+  it('a can on the bench: warm with no tint; hot tinted; the switch opened before the bulge, the tint goes in 1 s', () => {
+    const c = buildPart('electrolytic-100u-16v')!;
+    const shown = () => ((c.body[0]! as KToonMaterial).uniforms.uKHeat!.value as Vector4).w;
+    // a 16 V can on the 9 V battery: «warm» from the voltage alone, its heat at the load 0,56 — nothing shows
+    for (let i = 0; i < 60; i++) c.setLook({ heat: 0.56, status: 'warm', load: 0.56 }, 1 / 60);
+    expect(c.surface).toMatchObject({ tint: 0, scorch: 0, char: 0 });
+    expect(shown()).toBe(0);
+    // hot (over its rated voltage): the heat's tint
+    c.setLook({ heat: 0.9, status: 'hot', load: 1.43 }, 1 / 60);
+    expect(c.surface.tint).toBeCloseTo(HEAT_LOOK.tint * heatShare(0.9), 12);
+    expect(shown()).toBeGreaterThan(0);
+    // the switch opened: «warm» or «ok» again — the tint fades in 1 s, not at once; a held frame holds it
+    c.setLook({ heat: 0.9, status: 'ok', load: 0 }, 1 / 60);
+    const first = c.surface.tint;
+    expect(first).toBeGreaterThan(0.8 * HEAT_LOOK.tint * heatShare(0.9));
+    c.setLook({ heat: 0.9, status: 'ok', load: 0 }, 0);
+    expect(c.surface.tint).toBe(first);
+    for (let i = 0; i < 7; i++) c.setLook({ heat: 0.9, status: 'ok', load: 0 }, 1 / 15);
+    expect(c.surface.tint).toBeGreaterThan(0);
+    expect(c.surface.tint).toBeLessThan(first);
+    for (let i = 0; i < 8; i++) c.setLook({ heat: 0.9, status: 'ok', load: 0 }, 1 / 15);
+    expect(c.surface.tint).toBe(0);
+    // bulged: the heat's tint again, and it stays while it is bulged
+    c.setLook({ heat: 1, status: 'bulged', load: 9 }, 1 / 60);
+    expect(c.surface.tint).toBeCloseTo(HEAT_LOOK.tint, 12);
+    // a can first seen warm (a step's deep link) shows no tint at all
+    const d = buildPart('electrolytic-470u-16v')!;
+    d.setLook({ heat: 0.9, status: 'warm', load: 0.52 }, 0);
+    expect(d.surface.tint).toBe(0);
+    c.dispose();
+    d.dispose();
   });
 
   it('a burnt speaker shows a dark ring on its cone and nothing charred; a burnt lamp a broken coil and a grey top', () => {

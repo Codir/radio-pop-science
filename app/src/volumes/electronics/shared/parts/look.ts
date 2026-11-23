@@ -12,10 +12,11 @@
  * vertex colours, the three mixes of a state folded into one colour and one amount (`mixOf`). It is written into the
  * shader before the part is first drawn, so a part that burns compiles nothing.
  *
- * **The kinds** of the catalog are bound by a table, partial by kind (never an exhaustive switch): whether a hot body
- * scorches and how far a burnt one chars. A battery only warms (it never burns, the model says so), and a burnt speaker
- * or lamp shows its own marks (a dark ring on the cone; a broken filament and a greyed top of the glass) instead of a
- * charred body.
+ * **The kinds** of the catalog are bound by a table, partial by kind (never an exhaustive switch): when the heat tints
+ * the body, whether a hot body scorches and how far a burnt one chars. A capacitor is tinted only while hot or bulged
+ * (the model's «warm» of a can is its voltage alone; plan decision 2 of batch E4), the tint going within 1 s once it
+ * is neither. A battery only warms (it never burns, the model says so), and a burnt speaker or lamp shows its own
+ * marks (a dark ring on the cone; a broken filament and a greyed top of the glass) instead of a charred body.
  *
  * **Light** comes from the model only: an LED's brightness b = min(1, (Φ / Φ₀)^(1/3)) from its luminous flux Φ
  * (`ledLumens`), Φ₀ the red LED's flux at 20 mA; b < 0.02 is no light at all. The lamp's glow is the place of its
@@ -47,35 +48,55 @@ const INK = col('ink');
 
 /** How a kind of part takes the look of heat. */
 export interface KindLook {
+  /**
+   * When the heat tints the body: `heat` — in every state, by the heat (a part whose load is its power: it warms);
+   * `hot` — only while the state is `hot` or `bulged`, the tint going within `HEAT_LOOK.fade` once it is neither (a
+   * capacitor: the model's load of a can is its voltage over the rated one, so its «warm» — a 16 V can on the 9 V
+   * battery, for ever — is no warmth; over its rated voltage or the wrong way round the leak does heat it).
+   */
+  readonly tint: 'heat' | 'hot';
   /** A hot body darkens toward `SCORCH` (paint scorching). */
   readonly scorch: boolean;
   /** How far a burnt body chars toward `ink` (0: its own marks only). */
   readonly char: number;
 }
 
-const CHARRED: KindLook = { scorch: true, char: HEAT_LOOK.char };
+const CHARRED: KindLook = { tint: 'heat', scorch: true, char: HEAT_LOOK.char };
 
 /** VISUAL §4.8, by kind; a kind not listed takes `CHARRED`. */
 export const KIND_LOOK: Readonly<Partial<Record<PartKind, KindLook>>> = {
   resistor: CHARRED,
   pot: CHARRED,
   diode: CHARRED,
-  capacitor: CHARRED,
+  // tinted only while hot or bulged (plan decision 2 of batch E4)
+  capacitor: { tint: 'hot', scorch: true, char: HEAT_LOOK.char },
   transistor: CHARRED,
   // the dome darkens to mix(colour, ink, 0.6), with a black spot on the crystal
-  led: { scorch: true, char: 0.6 },
+  led: { tint: 'heat', scorch: true, char: 0.6 },
   // a burnt speaker: a dark ring round the middle of the cone, the rest as it is
-  speaker: { scorch: false, char: 0 },
+  speaker: { tint: 'heat', scorch: false, char: 0 },
   // a short only warms the battery: the box takes the tint, nothing else
-  battery: { scorch: false, char: 0 },
+  battery: { tint: 'heat', scorch: false, char: 0 },
   // a burnt lamp: its filament broken and the top of its glass greyed
-  lamp: { scorch: false, char: 0 },
+  lamp: { tint: 'heat', scorch: false, char: 0 },
 };
 
 /** How the part of a key of the catalog takes heat; a key the catalog has not, as a charring body. */
 export function kindLook(key: string): KindLook {
   const spec = Object.hasOwn(PARTS, key) ? PARTS[key] : undefined;
   return (spec && KIND_LOOK[spec.kind]) ?? CHARRED;
+}
+
+/** The states in which a kind tinted `hot` shows its heat. */
+const tints = (status: PartStatus): boolean => status === 'hot' || status === 'bulged';
+
+/**
+ * The model's condition as the part of `key` shows it, for a state's word (`shared/steps` `conditionText`): a
+ * capacitor's «warm» — its voltage over half the rated one, no warmth — is «ok» (no tint, and no word of warmth in a
+ * step's panel); every other condition and every other kind as it is.
+ */
+export function shownStatus(key: string, status: PartStatus): PartStatus {
+  return status === 'warm' && kindLook(key).tint === 'hot' ? 'ok' : status;
 }
 
 /** t of the heat tint: 0 up to half the limit, 1 at the limit and beyond (a shorted battery's heat goes past 1). */
@@ -92,10 +113,16 @@ export interface Surface {
   readonly char: number;
 }
 
+/** What is left of a tint `since` seconds after the state that gave it ended: 1 … 0 within `HEAT_LOOK.fade`. */
+const fadeLeft = (since: number): number => (since >= HEAT_LOOK.fade ? 0 : 1 - Math.max(since, 0) / HEAT_LOOK.fade);
+
 /**
  * The surface for a heat h and a state (VISUAL §4.8): ok, warm and hot tint by 0.3 · t; hot also scorches by 0.3 · t
- * (a kind that scorches); burnt chars by the kind's share at once and its tint goes within `HEAT_LOOK.fade` of the burn
- * (`since`, seconds). A bulged electrolytic takes heat like a warm one. Monotone in h for every state.
+ * (a kind that scorches); burnt chars by the kind's share at once and its tint goes within `HEAT_LOOK.fade` of the
+ * burn. A bulged electrolytic is tinted by its heat as a warm part is, unscorched. A kind tinted `hot` (a capacitor)
+ * shows its heat only while hot or bulged; ok or warm, what is left of that tint goes within `HEAT_LOOK.fade` of the
+ * moment it was last either. `since` (seconds) is the time since the state that tinted ended: the burn (burnt), the
+ * last moment hot or bulged (a kind tinted `hot`); `Infinity` — long ago, or never. Monotone in h for every state.
  */
 export function surfaceOf(
   heat: number,
@@ -103,14 +130,12 @@ export function surfaceOf(
   since = Number.POSITIVE_INFINITY,
   kind: KindLook = CHARRED,
 ): Surface {
-  if (status === 'burnt') {
-    const left = since >= HEAT_LOOK.fade ? 0 : 1 - Math.max(since, 0) / HEAT_LOOK.fade;
-    return { t: 1, tint: HEAT_LOOK.tint * left, scorch: 0, char: kind.char };
-  }
+  if (status === 'burnt') return { t: 1, tint: HEAT_LOOK.tint * fadeLeft(since), scorch: 0, char: kind.char };
   const t = heatShare(heat);
+  const shown = kind.tint === 'heat' || tints(status) ? 1 : fadeLeft(since);
   return {
     t,
-    tint: HEAT_LOOK.tint * t,
+    tint: HEAT_LOOK.tint * t * shown,
     scorch: status === 'hot' && kind.scorch ? HEAT_LOOK.scorch * t : 0,
     char: 0,
   };
@@ -238,6 +263,8 @@ export function createSurfaceLook(
     set(look, dt) {
       const step = Math.max(dt, 0);
       if (look.status === 'burnt') since = was === 'burnt' ? since + step : was === null ? Infinity : 0;
+      // a kind tinted only while hot or bulged: the time since it was last either (the tint's fade); never: none
+      else if (kind.tint === 'hot') since = tints(look.status) ? 0 : was === null ? Infinity : since + step;
       const target = surfaceOf(look.heat, look.status, since, kind);
       // the char takes over at once when it burns; otherwise the scorch follows the state smoothly
       scorch =

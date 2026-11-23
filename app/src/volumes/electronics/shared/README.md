@@ -52,8 +52,9 @@ export default defineScene((ctx) => {
 ```
 
 `mountBench(ctx, options?)` adds the bench to `ctx.root`, sets the room's environment and the depth of field of the
-main shot and registers the shots of `shots.ts` under their names (`stand`, `board`, `meter`, `scope`; on a phone
-each of them is `phone`, the field of sockets only — VISUAL §9 —, registered again when the form factor changes). It
+main shot and registers the shots of `shots.ts` under their names (`stand`, `board`, `meter`, `scope`, `amp` — the
+amplifier's left part with the multimeter, steep, E4-B; on a phone each of them is `phone`, the field of sockets only —
+VISUAL §9 —, registered again when the form factor changes). It
 makes the hand, the model of the board, the multimeter, the oscilloscope and, with `sound`, the speaker, and exposes
 the readers for checks. Every mount builds its own bench, nothing lives at module level, and everything it made — the
 background thread, the sound output, the listeners, the geometries — goes with the chapter (`ctx.onDispose`; the
@@ -114,7 +115,9 @@ same model on the board the driver gives it.
 - **No step logic, no words.** The bench has no step ids and no Ukrainian word; a chapter gives the words (the hand's
   tooltips, the readouts' labels, the chart's axes). The sandbox's words are its `SANDBOX`.
 - **A step's board is new and whole.** `preset` and `clear` take every part off and the model forgets them, the
-  permanent things too; a part put under a used id by other means needs `model.forget(id)` first.
+  permanent things too; a part put under a used id by other means needs `model.forget(id)` first. A preset is the
+  step's whole bench: every plug it does not name lies at rest (E4-B; before, a plug left in a socket by the board
+  before stood where the new parts' legs go, and the preset threw).
 - **Time** is the engine's: tweens and counters in `update(dt)`, never a timer; `dt` 0 (a held frame) and 1/15 s are
   normal frames; chance is `ctx.random`, ids are counters; no state at module level (two copies of a chapter live side
   by side at a border).
@@ -137,7 +140,7 @@ same model on the board the driver gives it.
 |---|---|---|
 | `electronics-bench` | the mouths drawn, the rows, the last frame's draw calls, the print shown, a phone's page | `room`, `shots` and every draw-call check |
 | `electronics-board` | every part with the socket of each leg, the plugs, the settings, the models, the netlist's key, the parts pending | `parts`, `hand`, `meter`, `heat`, `loupe`, `film`, `scope`, `sound` |
-| `electronics-parts` | every part and permanent thing: where, its draw calls, its prints and whether the camera sees them | `parts` |
+| `electronics-parts` | every part and permanent thing: where, its draw calls, its prints and whether the camera sees them | `parts`, `print` |
 | `electronics-hand` | what the hand holds, where a carried end would go, the preview, the lit rows, the switch's flips | `hand` |
 | `electronics-motion` | the camera, the thing moved, its tilt and every plug, every frame | `hand` |
 | `electronics-model` | the netlist's key, solves, compiles, `ok`, `failure`, `dcMs`, every part's reading and the rows' volts | `parts`, `meter`, `heat`, `film` |
@@ -145,7 +148,7 @@ same model on the board the driver gives it.
 | `electronics-meter` | the dial, the probes' sockets, the reading now and the display's text | `meter` |
 | `electronics-scope` | the model in time (where, blocks, `since`, `now`), the sweep, its points and hash, a held page's windows | `scope` |
 | `electronics-sound` | `on` (the option); the output (state, clock, played, underruns, queued, latency, gain), the stream (mode, ms, `since`, the sample heard), the speaker in the circuit, its full scale, blocks, levels and hash | `sound`, `repeat`, `leaks` |
-| `electronics-dive` | the door's rail, the floor, whether it flies, the inner view, the camera and the lens | `loupe`, `film` |
+| `electronics-dive` | the door's rail, the floor, whether it flies, the inner view, the camera and the lens | `loupe`, `film`, `plates`, `roll`, `print` |
 
 Probes (`__app.locate`): `socket:<id>` for all 204 sockets; `bench:lamp`, `bench:lens`, `bench:meter`, `bench:scope`,
 `switch`; the hand's `part:<id>`, `leg:<id>:<k>`, `tip:<id>:<k>`, `lead:<name>`, `end:<name>`, `tray:<key>`,
@@ -193,7 +196,7 @@ const r = buildPart('resistor-4k7'); // null for a key with no model: a fixed th
 board.group.add(r.group);
 r.fit([board.socketLocal('a3'), board.socketLocal('a7')]); // the body between the tips, the legs bent to them
 r.setLook({ light, setting, heat, status, load }, dt); // the hook of the model's state, every frame (dt may be 0)
-r.view({ camera, aspect, phone, room }); // the print only where it reads (≥ 16 px-equivalent), never on a phone
+r.view({ camera, aspect, phone, close, room }); // the print only where it reads (≥ 16 px-equiv.); a phone: close only
 ```
 
 A part is built in its body frame — the origin on the board's face under the middle between its outer legs, +x from
@@ -204,12 +207,16 @@ K materials) and `body` (those that take the look of heat, never a resistor's ba
 state: the heat on the body's surface, the burnt marks, the bulged electrolytic (`look.ts`, «light, heat, burn» below),
 an LED's light (`light` b → glow 1.8 · b and a halo 0.5 · b, none below 0.02) and a pot's knob (`setting`, 300° within
 0.15 s); `surface` is what the body shows now. The prints are Text3D, made only where the fonts are loaded (never in
-unit tests).
+unit tests but where a test loads the fonts' metrics). A phone shows no print but down at a part (VISUAL §9, its
+exception, E4-B): `PartEye.close` — the bench sets it while the dive's door has the camera (`bench.flying`, the floors
+`part` and `inside`) — reads a print by the desk's rule there, so the ceramic's «104» reads through the magnifier
+(29,2 px-equivalent on 390 × 844 at the rail's 0.75; the sandbox's step `print`, `qa/measure.mjs --only print`).
 
 Every mark is read off the key's spec: a `capacitor`'s code, or its value and voltage, from its `dielectric`, `farads`
-and `ratedV` (E1-5), a `transistor`'s name and type from its key and `polarity` (`TRANSISTORS`) and its leads from the
-board's `TO92_LEGS` (E1-6). `printed` is what a model's print says, text by text, also where the fonts are not loaded
-and no Text3D is made (unit tests). Where every key of the catalog stands: «The catalog on the bench» below.
+and `ratedV` (E1-5; an electrolytic's in μF however large, «1000 μF 16 V», as a real can is printed — E4-B), a
+`transistor`'s name and type from its key and `polarity` (`TRANSISTORS`) and its leads from the board's `TO92_LEGS`
+(E1-6). `printed` is what a model's print says, text by text, also where the fonts are not loaded and no Text3D is
+made (unit tests). Where every key of the catalog stands: «The catalog on the bench» below.
 
 On the bench: `bench.state` (the board as data) and `bench.parts` (`bench/on-board.ts`): every frame the 3D parts follow
 the state — a part that came gets its model, a part whose legs moved stands on its new sockets, a leg taken out of its
@@ -217,9 +224,10 @@ socket hangs in the air over where it was while the body keeps its turn, a part 
 the legs of the parts it drives: «hand» below); `bench.parts.show(id, model, sockets)` stands a model the state does not
 hold outside the circuit (a look alone). `bench.preset([{ id: 'R1', spec:
 'resistor-4k7', at: 'a3', o?, setting? }, …], leads?)` makes the board hold exactly a step's parts at once, and the
-named plugs in their sockets (a part or a plug that does not stand there is a RangeError); a part of two legs that
-stands at any span within its reach — a jumper from a rail to the row it feeds — takes `to`, the socket of its leg 1,
-instead of `o` (`{ id: 'J1', spec: 'jumper', at: '+3', to: 'a3' }`); `bench.clear()` takes everything off.
+named plugs in their sockets, every other plug at rest (a part or a plug that does not stand there is a RangeError);
+a part of two legs that stands at any span within its reach — a jumper from a rail to the row it feeds — takes `to`,
+the socket of its leg 1, instead of `o` (`{ id: 'J1', spec: 'jumper', at: '+3', to: 'a3' }`); `bench.clear()` takes
+everything off.
 `props.things` and `props.bulb` are the permanent things; the bench gives the bulb's filament the light rig's glow every
 frame.
 
@@ -283,7 +291,8 @@ the table), `bench.fixed` (the battery's wires and the plug leads of the speaker
 `bench.switch` (the battery's slide switch under a tap). A chapter says what may be taken and names it:
 
 ```ts
-bench.tray.set(['resistor-1k', 'jumper', 'led-red']); // a step's kinds; the row is their size's choice, ≤ 6 a row
+bench.tray.set(['resistor-1k', 'jumper', 'led-red']); // a step's kinds; the row is their size's choice, ≤ 6 a row;
+// each row's labels show where that row reads (E4-B: the back row's riser no longer hides the front row's labels)
 bench.preset([{ id: 'R1', spec: 'resistor-4k7', at: 'a3' }], { 'spk+': 'c17', 'spk-': '-17' }); // parts and plugs
 bench.hands.policy = {
   take: (k) => k !== 'switch', // 'part:R1', 'leg:R1:0', 'lead:spk+', 'tray:resistor-1k', 'switch'
@@ -630,6 +639,14 @@ bench.lamp; // the lamp's filament from the model, read-only
   an LED a black spot on its crystal. An electrolytic under the state `bulged` (E1-5's: over its rated voltage, or more
   than 1 V the wrong way round, its heat to 1 — 100 μF / 6.3 V the wrong way round on the battery after ≈ 1.2 s)
   domes its top up 0.05 with the vent opened and its sleeve a little wider, and stays so until it leaves the bench.
+- **A capacitor is tinted only while hot or bulged** (plan decision 2 of batch E4; `KindLook.tint` `'hot'`, every other
+  kind `'heat'`): the model's load of a can is its voltage over the rated one (`sim/core/limits.ts`), so its «warm» —
+  a 16 V can on the 9 V battery for ever (0.56), the amplifier's C3 (0.52) — is no warmth and shows no tint; over its
+  rated voltage or the wrong way round its leak does heat it, and it tints and scorches as any part. Once it is neither
+  hot nor bulged (the switch opened before the bulge) the tint goes within 1 s (`HEAT_LOOK.fade`), not at once. The
+  words follow the look: `shownStatus(key, condition)` gives a capacitor's «warm» as «ok», and `shared/steps`'
+  `conditionText` never puts a word of warmth under a can (a step shows its word for «ok», or nothing). The model,
+  `advanceHeat` and the bulge's times do not change; a check reads a can's `surface`, never its `warm`, as its heat.
 - **The burn** (`smoke.ts`): at the moment the model tells a part burnt (`model.advance` gave its id) the bench itself
   lets out one wisp — eight soft puffs of `mist`, at most 0.35 opaque, rising 0.6 in 1.2 s over the part's body — once,
   never a loop, no flame, spark, flash or sound. The lamp gives none: its filament breaks inside the sealed glass, so the
@@ -830,27 +847,36 @@ chapters:
   and nothing tall in front of the volume knob, at the far right by the player; the speaker's coral lead lies over
   the knob's case on its way to `c10` (the speaker's row is left of the pot).
 
-## `steps` — what the chapters' steps build from (E3-7, E3-10)
+## `steps` — what the chapters' steps build from (E3-7, E3-10, E4-B)
 
 The small pieces every chapter on the bench repeated, moved here from `chapters/resistor` once `resistor-pick` needed
-them too, and from `chapters/meter` (the probes by name, the player, the oscilloscope's words and crests, the stand
-with sound) once the clone was merged (REUSE.md, «Копії»). A chapter keeps its own words (captions), boards, scales
-and hold times and passes them in.
+them too, from `chapters/meter` (the probes by name, the player, the oscilloscope's words and crests, the stand with
+sound) once the clone was merged, and in E4-B from the chapters that had them first for the chapters about the
+capacitor (the knob, «Нові деталі», the callouts' points, a part's state in words; the prologue's copies gone) —
+REUSE.md, «Копії». A chapter keeps its own words (captions), boards, scales and hold times and passes them in.
 
 ```ts
 const stand = createStepStand(ctx, { keepDoor, sound }); // the chapter's `stand.ts`: the bench, the door, the lens
 // keeper, the ladder «де ми», the names under the pointer (`stand.naming`, set by each step),
-// `stand.board(parts, leads)`; with `sound` the speaker in sound and the player: `stand.play(on)`, `stand.playing()`,
-// a tap where `naming.tap`
+// `stand.board(parts, leads)` (`bench.preset`: the step's whole bench, its plugs too); with `sound` the speaker in
+// sound and the player: `stand.play(on)`, `stand.playing()`, a tap where `naming.tap`; the speaker's name
 const tally = createTally(['a', 'b'], HOLD.reading); // the chapter's `HOLD`; `rowsOf`, `rowOf`, `sameRows`, `across`,
 // `within`; `createHold(need)`: a run of time in a row
-bench.hands.policy = handPolicy(bench, { part, leg, tray, probes, switch, flip, name }); // by kind (`kindOf`);
-// `probes`: `true` (the multimeter's red and black) or the probes by name, ['ch1', 'ch2'] the oscilloscope's
-trayButtons(bench, specs, label, stand.phone); switchToggle(bench, label, stand.phone); // a phone's dock
+bench.hands.policy = handPolicy(bench, { part, leg, place, done, tray, probes, lead, switch, flip, name }); // by kind
+// (`kindOf`: resistor, led, jumper, capacitor, electrolytic, pot); `probes`: `true` (the multimeter's red and black)
+// or the probes by name, ['ch1', 'ch2'] the oscilloscope's; `lead`: the plugs by name (`pl+`, `pl-`); `place`: where a
+// carried part may come down (back into its own sockets)
+trayButtons(bench, specs, label, stand.phone); switchToggle(bench, label, stand.phone, { inside }); // a phone's dock;
+// with `inside` the switch on every device, working while the camera is down in the part
 playerToggle(label, stand.phone, (on) => stand.play(on)); // the player in a phone's dock
+freshButton(bench, label, () => here(S), reseat); // «Нові деталі»: shown while something is burnt or bulged
+knobSlider(bench, 'volume', 'P1', label, [{ value: 0, label: low }, { value: 1, label: high }], 0.5); // a pot's knob
 meterSwitch(bench, label, ['off', 'V'], offWord, 'off'); meterReadout(bench, label); // the multimeter in the panel
+conditionText(spec, bench.model.part(id)?.condition, { ok, hot, bulged }); // a part's state in the step's words
 board: scopeBoard(bench, id, title, { volts, time, division, ch1, ch2, own }); // the oscilloscope's chart and its words
 crestStats(bench, id, [in, out], seconds); // both channels' crests over the last seconds, one block of two numbers
+const dot = onBody(ctx, bench, 'LED1'); firstUnder(ctx, bench, dot()); // a callout's point on the part; the part a
+// ray through it meets first (the checks)
 const depth = depthSlider(ctx, bench, ui, () => stand.door, () => here(S), end, { label, top, bottom });
 // controls: [depth.control, …]; enter: depth.reset(); update: depth.update()
 ```
@@ -859,22 +885,44 @@ const depth = depthSlider(ctx, bench, ui, () => stand.door, () => here(S), end, 
   a part (`openDoor(partId, info, lead)`; `closeDoor(info, then)` flies the rail home, then the step's shot; the door is
   given up once home), its lens keeper over everything, the ladder, the names — of the parts a step keeps in place
   (`naming.part`), of the multimeter's and the oscilloscope's cases (`naming.meter`, `naming.scope`: only once the
-  instrument stands on its place, only where a pointer hovers) and, with `sound`, of the player (`naming.player`).
-  Without `keepDoor` every `openDoor` makes a new door (`resistor`: one dive step); with it a door the step before left
-  open into the same part stays, its rail where it is, except on a deep link (`resistor-pick`: `bands` → `series`).
-  With `sound` the player is the model's setting of the bench's `PLAYER` (0 stopped; with none set it plays the
-  catalog's 0,3 V): `play(on)` sets it, a new board keeps it (every step sets it on entry), and a tap on its box flips
-  it where the step's `naming.tap` lets it, never while the camera flies (`taps` counts them; QA probe `player`).
+  instrument stands on its place, only where a pointer hovers) and, with `sound`, of the player (`naming.player`) and
+  the speaker (`naming.speaker`, by a long touch too: the prologue's `quiet`, where the hand takes nothing). Without
+  `keepDoor` every `openDoor` makes a new door (`resistor`: one dive step); with it a door the step before left open
+  into the same part stays, its rail where it is, except on a deep link (`resistor-pick`: `bands` → `series`). With
+  `sound` the player is the model's setting of the bench's `PLAYER` (0 stopped; with none set it plays the catalog's
+  0,3 V): `play(on)` sets it, a new board keeps it (every step sets it on entry), and a tap on its box flips it where
+  the step's `naming.tap` lets it, never while the camera flies (`taps` counts them; QA probes `player`, `speaker`).
+  `board` is `bench.preset` (E4-B: a preset takes the plugs it does not name out too, so the clear the chapters did
+  before it is gone).
 - **`goals.ts`** — the rows of sockets (null when one is out), one socket's row, two rows in any order, one row on each
   of two sides, a number in a window; the tally of readings that each must hold `need` seconds in a row, counted once;
   a run of time while a condition holds (`createHold`: done once it held, `restart` keeps it done).
 - **`policy.ts`** — `HandPolicy` from a step's rules by kind: `part:` / `leg:` by the catalog key, `tray:` slots, the
-  probes by name (`probe:red`, `probe:black`, `probe:ch1`, `probe:ch2`; `probes: true` — the multimeter's two),
-  `switch`; plug leads never; the names under the pointer from the step's `name`, a probe by its own name.
+  probes by name (`probe:red`, `probe:black`, `probe:ch1`, `probe:ch2`; `probes: true` — the multimeter's two), the
+  plug leads by name (`lead:pl+` … through `lead(name)`; none without it — `filter/pass` moves `pl+`), `switch`; where
+  a carried part may come down (`place(spec, id, legs)`, false: let go over the board it goes back where it was —
+  `capacitor/reservoir`'s C3, the prologue's amplifier only into their own sockets) and what happens once a thing has
+  arrived (`done`); the names under the pointer from the step's `name` (a part by its key and id, a probe and a plug by
+  their own names). `kindOf` names a key's kind: `resistor`, `led`, `jumper`, `pot`, and a capacitor by its dielectric
+  (`PARTS[key].dielectric`) — `electrolytic` for the can, `capacitor` for a ceramic disc or a film box; `other` else.
 - **`names.ts`** — invisible twins of the parts' `hit` boxes and of the multimeter's case for the names of what a step
   keeps in place; only where a pointer hovers.
 - **`dock.ts`**, **`meter.ts`** — a phone's dock buttons for the tray's slots, the battery's switch and the player
-  (`player`, shown on a phone only); the dial's switch (`meter-mode`) and the number (`meter`).
+  (`player`, shown on a phone only; the switch with `inside` on every device and working while `bench.flying` — the
+  floor `inside` of `capacitor/inside`, where the slider is out of the frame); the dial's switch (`meter-mode`) and the
+  number (`meter`).
+- **`fresh.ts`** — «Нові деталі» (`fresh`): a button shown while the step is on screen and a part of the board or a
+  thing of the bench (the speaker, the lamp) is burnt or bulged (`damaged`); its press is the step's own — the step's
+  board again, whole (`resistor/amp`, `meter/amps`; `capacitor-kinds/rated`, `reverse`).
+- **`knob.ts`** — a pot's knob in the panel (`knobSlider`): a slider 0 … 1, its value the model's setting of the part
+  (`setSetting` on a drag, a click, a key), the knob on the board following it; the marks the step's words, the value
+  a percentage; off while the camera flies (the prologue's and `meter`'s «Гучність»; `divider/pot`, `volume`,
+  `filter/tone`).
+- **`state.ts`** — a part's state as the step's word (`conditionText(spec, condition, words)`, «—» with none): a
+  capacitor's «warm» gets the word for «ok» (plan decision 2 of batch E4, `parts/look.ts` `shownStatus`).
+- **`callouts.ts`** — a callout's point on a part's body toward the camera (`onBody`, `resistor-pick/on`'s lesson: on
+  an oblique shot a point over a part lands on what stands behind it) and the part a ray through a point meets first
+  (`firstUnder`, the checks').
 - **`scope.ts`** — the oscilloscope in the panel: a division's text («0,5 s», «20 ms», «0,02 V»; the number and the unit
   from the code, the words «на поділку» the step's), an axis' title (the step's caption, then its division), the chart's
   words (`own`: channel 1 on the right axis at its own scale, the titles sharing the width), the step's board with the
@@ -882,11 +930,18 @@ const depth = depthSlider(ctx, bench, ui, () => stand.door, () => here(S), end, 
 - **`depth.ts`** — the slider «Глибина» (`depth`): 0 … `end` + `LENS_LEG`, the rail at the slider − `LENS_LEG`; a drag
   scrubs, a click glides; a tap on the resting lens lays it on the part; the fill follows the rail every frame.
 
-Tests: `__tests__/goals.test.ts` (rows, the tally, the run), `rules.test.ts` (the hand's rules and the probes by name,
-the dock with the player, the meter over a stub bench), `scope.test.ts` (the words, the crests, the board),
-`stand.test.ts` (a live bench with the engine's `CameraDirector`: the board, the door made anew or kept, given up once
-home; with `sound` the speaker, the player's level across a board and its tap; the instruments' names; the depth
-slider's way, the lens's tap and the fill).
+The bench's own pieces the steps use with these: the named shot `amp` (`bench/shots.ts`, the amplifier's left part
+with the multimeter, steep — `resistor/amp`'s, for `capacitor-kinds/amp`, `capacitor/reservoir`, `filter/coupling`)
+and a board's node row by row (`sim/board` `joinedRows`).
+
+Tests: `__tests__/goals.test.ts` (rows, the tally, the run), `rules.test.ts` (the hand's rules, the probes and the plugs
+by name, `place` and `done`, the kinds; the dock with the player and the switch inside; a part's state in words; the
+meter over a stub bench), `scope.test.ts` (the words, the crests, the board), `stand.test.ts` (a live bench with the
+engine's `CameraDirector`: the board, the door made anew or kept, given up once home; with `sound` the speaker in
+sound, its name, the player's level across a board and its tap; the instruments' names; the depth slider's way, the
+lens's tap and the fill), `live.test.ts` (on a live bench: the knob and its setting, «Нові деталі» shown only while
+something is burnt or bulged, the callouts' points on their own parts, a phone's print down at the part);
+`__tests__/context.ts` is their stub context.
 
 ## Копії
 

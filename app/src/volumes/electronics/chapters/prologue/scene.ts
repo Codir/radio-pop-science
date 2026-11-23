@@ -8,8 +8,8 @@
  */
 import { defineScene } from '@/engine/api';
 import { stepUi, type StepUiApi } from '@/hud';
+import { SWITCH_ID } from '@electronics/shared/steps';
 import { sessionGoals, STEP_IDS, type Chapter, type StepFactory, type StepId, type StepModule } from './chapter';
-import { SWITCH_ID } from './parts/dock';
 import { createPrologueStand } from './stand';
 import { quietStep } from './steps/01-quiet';
 import { loudStep } from './steps/02-loud';

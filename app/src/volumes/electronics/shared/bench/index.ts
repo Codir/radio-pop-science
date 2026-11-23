@@ -207,10 +207,11 @@ export interface Bench {
   meter: number;
   scope: number;
   /**
-   * A step's own small circuit: the board holds exactly these parts, at once, and the plugs named in `leads` are in
-   * these sockets (null: lying at rest); a plug not named stays where it is. A part or a plug that does not stand
-   * where it is put is a RangeError: a preset is the step's data. Every part in it is new and whole: the model forgets
-   * what it remembered of the parts taken off (`model.forget`), an old `R1` burnt or warm included.
+   * A step's own small circuit — the step's whole bench: the board holds exactly these parts, at once, and the plugs
+   * named in `leads` are in these sockets; a plug not named (or named null) lies at rest, so no plug of the board
+   * before stands where these parts go. A part or a plug that does not stand where it is put is a RangeError: a preset
+   * is the step's data. Every part in it is new and whole: the model forgets what it remembered of the parts taken off
+   * (`model.forget`), an old `R1` burnt or warm included.
    */
   preset(parts: readonly PresetPart[], leads?: Readonly<Record<string, SocketId | null>>): void;
   /** Takes every part and plug off the board; the model forgets the parts at once (`model.forget`). */
@@ -551,6 +552,8 @@ export function mountBench(ctx: ChapterContext, options: BenchOptions = {}): Ben
     eye.camera = ctx.camera.camera;
     eye.aspect = ctx.viewport.aspect;
     eye.phone = phone;
+    // down at a part (the dive's floors): a phone reads its print by the desk's rule (VISUAL §9, its exception)
+    eye.close = bench.flying;
     eye.room = room;
     // the parts and the plugs follow the board's state (what the hand drives, it moves), stand on their legs, and the
     // hand turns what has arrived into the board's state; the prints show where they can be read from this camera
@@ -683,6 +686,9 @@ export function mountBench(ctx: ChapterContext, options: BenchOptions = {}): Ben
     scope: 0,
     preset(list, leads) {
       takeOff();
+      // the plugs too: a preset is the step's whole bench (`seatPreset` seats the parts before the plugs, so a plug of
+      // the board before left in a socket would stand where a part's leg goes)
+      state.leads.clear();
       seatPreset(layout, state, list, leads, new Set(fixed.leads.keys()));
       parts.sync();
       fixed.sync(state, () => false);

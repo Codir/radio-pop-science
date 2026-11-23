@@ -2,14 +2,15 @@
  * The words the chapter's panel composes from numbers (`parts/bands.ts`, `parts/readouts.ts`): the table of the bands
  * of `bands` (what each band says, shown once it was chosen), the tolerance's span of `series`, the stops of its
  * slider, and the readouts of `power` and `burn` (the voltage with four significant digits like the multimeter, the
- * power in watts with three decimals, the state by the model's condition). The captions themselves are the script's
+ * power in watts with three decimals; the state by the model's condition is `shared/steps`' `conditionText`, tested
+ * there). The captions themselves are the script's
  * (`__tests__/manifest.test.ts`); here they are stand-ins.
  */
 import { describe, expect, it } from 'vitest';
 import { resistorBands } from '@electronics/shared/parts';
 import { PARTS } from '@electronics/sim/core';
 import { bandMeaning, bandRows, seriesStops, toleranceSpan } from '../parts/bands';
-import { conditionText, voltsText, wattsText } from '../parts/readouts';
+import { voltsText, wattsText } from '../parts/readouts';
 
 const NBSP = String.fromCharCode(160);
 const plain = (s: string): string => s.split(NBSP).join(' ');
@@ -83,13 +84,5 @@ describe('the readouts of `power` and `burn`', () => {
     expect(plain(wattsText(0))).toBe('0,000 W');
     expect(plain(wattsText(-1e-12))).toBe('0,000 W');
     expect(wattsText(undefined)).toBe('—');
-  });
-
-  it('names the state by the model’s condition; «—» for one the step has no word for', () => {
-    const words = { ok: 'cold', warm: 'warm' };
-    expect(conditionText('ok', words)).toBe('cold');
-    expect(conditionText('warm', words)).toBe('warm');
-    expect(conditionText('hot', words)).toBe('—');
-    expect(conditionText(null, words)).toBe('—');
   });
 });

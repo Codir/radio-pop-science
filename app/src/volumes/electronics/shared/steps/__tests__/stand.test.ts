@@ -6,65 +6,13 @@
  * model's level of the player, kept by a new board); the instruments' cases named; the slider's way and the
  * magnifier's tap as the rail's moves.
  */
-import { Group, type Object3D } from 'three';
 import { describe, expect, it } from 'vitest';
-import type { AppState, ChapterContext, StepInfo } from '@/engine/api';
-import { CameraDirector } from '@/engine/camera/director';
+import type { StepInfo } from '@/engine/api';
 import type { SliderSpec } from '@/hud';
 import { LENS_LEG } from '../../dive';
 import { createStepStand, type StepStand } from '../stand';
 import { DEPTH_ID, depthSlider } from '../depth';
-
-type Click = { enabled?: () => boolean; click?: () => void; tooltip?: () => string };
-
-/** A chapter context with only what the stand uses; the stage's step is settable, the input's handlers are kept. */
-function stubContext(formFactor: 'desktop' | 'phone' = 'desktop') {
-  const root = new Group();
-  let seed = 1;
-  const next = (): number => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
-  const camera = new CameraDirector();
-  camera.setViewport(1920, 1080);
-  const handlers = new Map<Object3D, Click>();
-  const stage = { current: 'a' as string | null };
-  const settings = { audio: true, volume: 0.8 } as AppState['settings'];
-  const ctx = {
-    root,
-    clock: { dt: 0, time: 0 },
-    onDispose: () => {},
-    onResize: () => () => {},
-    qa: { expose: () => () => {}, probe: (_n: string, _t: Object3D | (() => unknown)) => () => {} },
-    input: {
-      register: (o: Object3D, h: Click) => {
-        handlers.set(o, h);
-        return () => handlers.delete(o);
-      },
-      on: () => () => {},
-    },
-    device: { formFactor, hover: true },
-    viewport: { width: 1920, height: 1080, aspect: 1920 / 1080, dpr: 1 },
-    quality: { count: (n: number) => n },
-    random: { next, range: (a: number, b: number) => a + (b - a) * next() },
-    env: {
-      base: () => {},
-      setScale: () => {},
-      setShadow: () => {},
-      tune: () => {},
-      params: { keyIntensity: 0 },
-    },
-    post: { base: () => {} },
-    camera,
-    stage,
-    nav: { volume: null, volumes: [] },
-    reducedMotion: false,
-    renderer: { info: { render: { calls: 0 } } },
-    // the volume's own sound output (the option `sound`): its store and a gesture that never comes (it plays silently
-    // on the engine's clock)
-    store: { get: () => ({ settings }) as AppState, subscribe: () => () => {} },
-    gesture: new Promise<void>(() => {}),
-    manifest: { theme: { accent: 'teal', sky: 'studio', mood: 'studio' } },
-  } as unknown as ChapterContext;
-  return { ctx, camera, stage, handlers };
-}
+import { stubContext } from './context';
 
 const DT = 1 / 60;
 const info = (instant: boolean): StepInfo =>
@@ -179,6 +127,24 @@ describe('the step stand with sound', () => {
     expect(tap.enabled?.()).toBe(false);
     tap.click?.();
     expect(stand.taps).toBe(1);
+  });
+
+  it('names the speaker where the step does, by a long touch too, never while the camera flies', () => {
+    const { ctx, handlers } = stubContext('phone');
+    const stand = createStepStand(ctx, { sound: true });
+    const { bench } = stand;
+    const speaker = handlers.get(bench.props.things.speaker.group)!;
+    expect(speaker).toBeDefined();
+    expect(speaker.enabled?.()).toBe(false);
+    stand.naming = { meter: '', speaker: 'speaker' };
+    expect(speaker.enabled?.()).toBe(true);
+    expect(speaker.tooltip?.()).toBe('speaker');
+    bench.flying = true;
+    expect(speaker.enabled?.()).toBe(false);
+    // no sound: the bench's speaker is not named by the stand
+    const quiet = stubContext();
+    const silent = createStepStand(quiet.ctx);
+    expect(quiet.handlers.has(silent.bench.props.things.speaker.group)).toBe(false);
   });
 
   it('has no tap on the player without sound', () => {

@@ -10,10 +10,19 @@
  * is open, so a deep link burns nothing.
  */
 import { trayLabel } from '@electronics/shared/bench';
-import { handPolicy, kindOf, rowsOf, sameRows, switchToggle, trayButtons } from '@electronics/shared/steps';
+import type { PartStatus } from '@electronics/shared/parts';
+import {
+  conditionText,
+  handPolicy,
+  kindOf,
+  rowsOf,
+  sameRows,
+  switchToggle,
+  trayButtons,
+} from '@electronics/shared/steps';
 import { BURN, ROWS } from '../parts/boards';
 import { HOLD } from '../parts/goals';
-import { conditionText, wattsText, type Condition } from '../parts/readouts';
+import { wattsText } from '../parts/readouts';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';
 
@@ -38,7 +47,7 @@ export const burnStep: StepFactory = ({ ctx, stand, reached, reach, here }) => {
       id: r?.id ?? null,
       spec: r?.spec ?? null,
       p: reading ? reading.p : null,
-      condition: ((r ? bench.model.part(r.id)?.condition : null) ?? null) as Condition | null,
+      condition: ((r ? bench.model.part(r.id)?.condition : null) ?? null) as PartStatus | null,
     };
   };
   /** The 100 Ω that burnt in its place with the switch closed, and the time since. */
@@ -58,7 +67,12 @@ export const burnStep: StepFactory = ({ ctx, stand, reached, reach, here }) => {
       reset: true,
       controls: [
         { type: 'readout', id: 'r-power', label: word(0), text: () => wattsText(own().p) },
-        { type: 'readout', id: 'r-state', label: word(1), text: () => conditionText(own().condition, states) },
+        {
+          type: 'readout',
+          id: 'r-state',
+          label: word(1),
+          text: () => conditionText(own().spec ?? '', own().condition, states),
+        },
         ...trayButtons(bench, [RESISTOR], trayLabel, stand.phone),
         switchToggle(bench, word(8), stand.phone),
       ],

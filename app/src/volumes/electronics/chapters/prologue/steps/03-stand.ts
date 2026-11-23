@@ -12,12 +12,12 @@
  * not there yet: the LED, then the volume knob P1 (a `cyan` pulse).
  */
 import { put, setSetting, type SocketId } from '@electronics/sim/board';
+import { handPolicy } from '@electronics/shared/steps';
 import type { StepFactory } from '../chapter';
 import { caption } from '../content';
 import { AMP, HOLD, IDS, KNOB, TAKE, WINDOWS } from '../parts/boards';
 import { soundNote, waveGauge } from '../parts/dock';
 import { createVisits } from '../parts/goals';
-import { handPolicy } from '../parts/policy';
 
 const S = 'stand';
 const SPEC = new Map(AMP.parts.map((p) => [p.id, p.spec]));
@@ -86,7 +86,7 @@ export const standStep: StepFactory = ({ ctx, stand, reached, reach, here }) => 
       for (const p of bench.state.parts.values()) home.set(p.id, [...p.legs]);
       bench.hands.policy = handPolicy(bench, {
         part: (_spec, id) => TAKE.includes(id),
-        place: (id, legs) => {
+        place: (_spec, id, legs) => {
           const own = home.get(id);
           return own !== undefined && own.length === legs.length && own.every((s, k) => s === legs[k]);
         },
@@ -95,7 +95,7 @@ export const standStep: StepFactory = ({ ctx, stand, reached, reach, here }) => 
         },
         name: (w) => (w.id === IDS.led ? word(1) : w.id !== undefined && TAKE.includes(w.id) ? word(0) : ''),
       });
-      stand.naming = { player: '', speaker: '', scope: '', tap: false };
+      stand.naming = { meter: '' };
     },
     late(dt, t) {
       if (!here(S)) return;

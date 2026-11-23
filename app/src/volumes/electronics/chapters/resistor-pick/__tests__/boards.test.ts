@@ -32,7 +32,6 @@ import {
   POWER,
   ROWS,
   WINDOWS,
-  joinedRows,
   loopWith,
 } from '../parts/boards';
 
@@ -151,7 +150,6 @@ describe('the steps’ boards in the model', () => {
     expect(s.parts.get('R1')!.legs.map(rowOf).sort()).toEqual(['5ae', ON_ROWS.led].sort());
     expect([...ON_ROWS.ground].sort()).toEqual(['-', '12fj', '15fj', '17ae', '2fj', '9fj'].sort());
     expect([...ON_ROWS.supply].sort()).toEqual(['2ae', '5ae']);
-    expect(joinedRows(ON, '7ae').sort()).toEqual(['7ae', '7fj']);
     const model = solve(s);
     const v = (a: string, b: string) => Math.abs(model.rowVolts(a)! - model.rowVolts(b)!);
     for (const g of ON_ROWS.ground) expect(inside(v(ON_ROWS.led, g), WINDOWS.on.led), g).toBe(true);

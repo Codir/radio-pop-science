@@ -12,15 +12,17 @@
  * round): 1,745 … 1,755 V across LED1 (5fj and the − rail or a row its jumpers tie to it) and 6,582 … 6,592 V across
  * R1 (the supply's 5ae or 2ae, and 5fj).
  */
-import { Raycaster, Vector3 } from 'three';
+import { Vector3 } from 'three';
 import type { CalloutSpec } from '@/hud';
 import {
   across,
   createTally,
+  firstUnder,
   handPolicy,
   kindOf,
   meterReadout,
   meterSwitch,
+  onBody,
   rowsOf,
   within,
 } from '@electronics/shared/steps';
@@ -51,26 +53,12 @@ export const onStep: StepFactory = ({ ctx, stand, reached, reach, here }) => {
         : null;
     return at !== null && within(size, ...WINDOWS.on[at]) ? at : null;
   };
-  // the callouts' points (world): on a part's body, its middle moved toward the camera by half the body's thickness
-  // (the hit box's narrower side across: the LED's collar, the resistor's lacquer) — on the part on the screen, never
-  // over it, where the oblique shot would put the point on whatever stands behind
-  const size = new Vector3();
-  const toward = new Vector3();
-  const onBody = (id: string) => {
-    const v = new Vector3();
-    return (): Vector3 => {
-      const m = bench.parts.models.get(id);
-      if (!m) return v.set(0, -100, 0);
-      m.hit.getWorldPosition(v);
-      m.hit.getWorldScale(size);
-      toward.copy(ctx.camera.camera.position).sub(v).normalize();
-      return v.addScaledVector(toward, Math.min(size.x, size.z) / 2);
-    };
-  };
   /** A probe is in the hand: the names step aside, the sockets they stand over are the probe's targets. */
   const aiming = (): boolean => bench.hands.held?.startsWith('probe:') ?? false;
   const visible = (k: Where) => (): boolean => here(S) && !tally.done(k) && !bench.flying && !aiming();
-  const dots = { led: onBody('LED1'), res: onBody('R1') };
+  // the callouts' points (world): on a part's body toward the camera (`onBody`) — on the part on the screen, never over
+  // it, where the oblique shot would put the point on whatever stands behind
+  const dots = { led: onBody(ctx, bench, 'LED1'), res: onBody(ctx, bench, 'R1') };
   const led: CalloutSpec = {
     anchor: dots.led,
     text: word(8),
@@ -80,7 +68,8 @@ export const onStep: StepFactory = ({ ctx, stand, reached, reach, here }) => {
       return stand.phone() ? 'down' : 'left';
     },
   };
-  // for the checks: the callouts' points, and R1's body end to end along its axis (the hit box's local x)
+  // for the checks: the callouts' points (and the part a ray through each meets first, `firstUnder`), and R1's body end
+  // to end along its axis (the hit box's local x)
   ctx.qa.probe('on:led', dots.led);
   ctx.qa.probe('on:res', dots.res);
   for (const k of [0, 1] as const) {
@@ -90,30 +79,13 @@ export const onStep: StepFactory = ({ ctx, stand, reached, reach, here }) => {
       return m ? m.hit.localToWorld(v.set(k === 0 ? -0.5 : 0.5, 0, 0)) : v.set(0, -100, 0);
     });
   }
-  // and the part a ray from the eye through a callout's point meets first: the part the point shows on
-  const ray = new Raycaster();
-  const dir = new Vector3();
-  const firstUnder = (p: Vector3): string | null => {
-    const eye = ctx.camera.camera.position;
-    ray.set(eye, dir.copy(p).sub(eye).normalize());
-    let first: string | null = null;
-    let near = Infinity;
-    for (const [id, m] of bench.parts.models) {
-      const hit = ray.intersectObject(m.hit, false)[0];
-      if (hit && hit.distance < near) {
-        near = hit.distance;
-        first = id;
-      }
-    }
-    return first;
-  };
   ctx.qa.expose(S, () => ({
     mode: bench.multimeter.mode,
     rows: probeRows(),
     value: bench.multimeter.value,
     text: bench.multimeter.text,
     led: bench.model.reading('LED1')?.i ?? null,
-    dots: { led: firstUnder(dots.led()), res: firstUnder(dots.res()) },
+    dots: { led: firstUnder(ctx, bench, dots.led()), res: firstUnder(ctx, bench, dots.res()) },
     counted: [...tally.counted],
     holding: tally.holding,
     reached: reached(S),

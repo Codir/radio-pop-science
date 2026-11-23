@@ -3,8 +3,8 @@
  * at the filament, the shadowless bounce above the lamp's pool, every frame (light.ts `LightRig.bounce`); and what the
  * circuit model's state shows on the bench (E2-7) — the lamp lit by its filament's temperature, an LED by its current
  * with one of the board's three lights, an overloaded resistor warming, burning once and staying burnt (a new one «ok»
- * until it closes the circuit), the lamp burning out with no wisp, a short warming the battery's box; and the wisps a
- * chapter can only read.
+ * until it closes the circuit), the lamp burning out with no wisp, a short warming the battery's box; the wisps a
+ * chapter can only read; and a step's preset as its whole bench, the plugs it does not name out.
  */
 import { Group, PerspectiveCamera, Vector3, type Object3D } from 'three';
 import { describe, expect, it } from 'vitest';
@@ -261,6 +261,25 @@ describe('the model’s state on the bench (VISUAL §1 principle 3, §4.4, §4.6
     expect(bench.model.part('LAMP')!.condition).toBe('hot');
     expect(bench.props.bulb.burnt).toBe(false);
     expect(bench.lamp).toBeGreaterThan(0.9);
+  });
+
+  it('a step’s preset is its whole bench: a plug it does not name comes out, so its parts seat where plugs stood', () => {
+    const bench = mountBench(stubContext());
+    // the lamp's step: its plugs on the + rail and in a3
+    bench.preset([], { lamp1: '+2', lamp2: 'a3' });
+    expect(Object.fromEntries(bench.state.leads)).toEqual({ lamp1: '+2', lamp2: 'a3' });
+    bench.closed = 1;
+    // the next step's board puts a resistor's leg in a3 and names no plug (the sandbox's lamp → led, E3-6's amplifier
+    // → the LED's loop): before, the lamp's plug stayed in a3 and the preset threw a RangeError
+    const parts: readonly PresetPart[] = [{ id: 'R1', spec: 'resistor-330', at: 'a3' }];
+    expect(() => bench.preset(parts)).not.toThrow();
+    expect(bench.state.parts.get('R1')?.legs).toEqual(['a3', 'a7']);
+    expect([...bench.state.leads.keys()]).toEqual([]);
+    bench.update(1 / 60, 1 / 60);
+    expect(bench.lamp).toBe(0);
+    // the plugs it names are in their sockets; a plug named null lies at rest
+    bench.preset(parts, { 'spk+': 'c10', 'spk-': null });
+    expect(Object.fromEntries(bench.state.leads)).toEqual({ 'spk+': 'c10' });
   });
 
   it('a short warms the battery’s box by the tint, no more; the battery never burns', () => {

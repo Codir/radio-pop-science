@@ -1,16 +1,17 @@
 /**
  * The goals' pure maths (`parts/goals.ts`) and the dock's (`parts/dock.ts`): the run of `quiet` and its crest, the
- * visits of `stand` with the half of the goal it calls, the step's crest from the first sample of its board — on the
- * bench's own speaker too, two boards back to back with the step's starting mid-chunk — and when the line «Звук
- * вимкнено…» shows.
+ * visits of `stand` with the half of the goal it calls, `riddle`'s hold over the tally of `@electronics/shared/steps`,
+ * the step's crest from the first sample of its board — on the bench's own speaker too, two boards back to back with
+ * the step's starting mid-chunk — and when the line «Звук вимкнено…» shows.
  */
 import { describe, expect, it } from 'vitest';
 import type { AppState, ChapterContext } from '@/engine/api';
 import { createSpeaker } from '@electronics/shared/instruments';
 import { LIVE } from '@electronics/shared/model';
+import { createTally } from '@electronics/shared/steps';
 import { CREST_SECONDS, HOLD, IDS, WINDOWS } from '../parts/boards';
 import { soundOff, stepCrest } from '../parts/dock';
-import { createRun, createTally, createVisits, type StandFrame } from '../parts/goals';
+import { createRun, createVisits, type StandFrame } from '../parts/goals';
 
 const F = 1 / 60;
 const frames = (seconds: number): number => Math.round(seconds * 60);

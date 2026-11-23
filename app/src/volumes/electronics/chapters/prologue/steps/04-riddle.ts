@@ -8,12 +8,11 @@
  * 2 s in a row in each of the three rows (any order), the amplifier playing.
  */
 import { setSetting } from '@electronics/shared/bench';
+import { createTally, handPolicy, rowOf } from '@electronics/shared/steps';
 import type { StepFactory } from '../chapter';
 import { caption } from '../content';
 import { AMP, HOLD, IDS, KNOB, RIDDLE_MARKS, RIDDLE_ROWS, type RiddleRow } from '../parts/boards';
-import { createTally, rowOf } from '../parts/goals';
 import { overSocket } from '../parts/marks';
-import { handPolicy } from '../parts/policy';
 import { RIDDLE, riddleBoard } from '../parts/scope';
 
 const S = 'riddle';
@@ -68,8 +67,8 @@ export const riddleStep: StepFactory = ({ ctx, stand, reached, reach, here }) =>
       bench.oscilloscope.configure(RIDDLE);
       bench.oscilloscope.put({ ch1: null, ch2: null });
       bench.multimeter.put({ red: null, black: null });
-      bench.hands.policy = handPolicy(bench, { probe: true, name: (w) => (w.probe ? word(1) : '') });
-      stand.naming = { player: '', speaker: '', scope: word(0), tap: false };
+      bench.hands.policy = handPolicy(bench, { probes: ['ch1'], name: (w) => (w.probe === 'ch1' ? word(1) : '') });
+      stand.naming = { meter: '', scope: word(0) };
     },
     late(dt) {
       if (!here(S)) return;

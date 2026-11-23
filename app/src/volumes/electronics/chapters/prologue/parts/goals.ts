@@ -1,90 +1,9 @@
 /**
- * The goals' small pure maths: which row a socket is in, a run of time while a condition holds, a tally of states that
- * each have to hold for a while, the crest of a run (`quiet`), and the visits of `stand` — a part out of the circuit
+ * The goals' own small pure maths: the crest of a run (`quiet`) and the visits of `stand` — a part out of the circuit
  * and back. Every goal of the chapter reads the bench's numbers — the board as data, the model's currents, the
- * speaker's crest, the scope's probe — through these. `rowOf`, `within`, `createHold` and `createTally` are copies of
- * the chapter `meter`'s `parts/goals.ts` (a chapter never imports another).
+ * speaker's crest, the scope's probe — through these and the shared ones of `@electronics/shared/steps` (`rowOf`,
+ * `createHold`, `createTally`).
  */
-import type { BoardLayout, RowId, SocketId } from '@electronics/sim/board';
-
-/** The row of one socket; null when it is out (or not the board's). */
-export const rowOf = (layout: BoardLayout, socket: SocketId | null | undefined): RowId | null =>
-  socket === null || socket === undefined ? null : (layout.socket(socket)?.row ?? null);
-
-/** A number within [lo, hi]; null and NaN are not. */
-export const within = (v: number | null | undefined, lo: number, hi: number): boolean =>
-  typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
-
-/** Time in a row while a condition holds; `done` once it held `need` seconds (and stays so until `reset`). */
-export interface Hold {
-  feed(on: boolean, dt: number): void;
-  readonly held: number;
-  readonly done: boolean;
-  reset(): void;
-}
-
-export function createHold(need: number): Hold {
-  let held = 0;
-  let done = false;
-  return {
-    feed(on, dt) {
-      held = on ? held + Math.max(dt, 0) : 0;
-      if (held >= need - 1e-9) done = true;
-    },
-    get held() {
-      return held;
-    },
-    get done() {
-      return done;
-    },
-    reset() {
-      held = 0;
-      done = false;
-    },
-  };
-}
-
-/** States that each must hold `need` seconds in a row to count; once counted, a state stays counted. */
-export interface Tally<K extends string> {
-  /** This frame's state (null: none of them) over `dt` seconds. */
-  feed(key: K | null, dt: number): void;
-  done(key: K): boolean;
-  /** Every state counted. */
-  all(): boolean;
-  /** The states counted, in the order they were. */
-  readonly counted: readonly K[];
-  /** How long the state of this frame has held (s). */
-  readonly holding: number;
-  reset(): void;
-}
-
-export function createTally<K extends string>(keys: readonly K[], need: number): Tally<K> {
-  const counted: K[] = [];
-  let last: K | null = null;
-  let held = 0;
-  return {
-    feed(key, dt) {
-      if (key === null || key !== last) held = 0;
-      last = key;
-      if (key === null || !keys.includes(key)) return;
-      held += Math.max(dt, 0);
-      if (held >= need - 1e-9 && !counted.includes(key)) counted.push(key);
-    },
-    done: (key) => counted.includes(key),
-    all: () => keys.every((k) => counted.includes(k)),
-    get counted() {
-      return counted;
-    },
-    get holding() {
-      return held;
-    },
-    reset() {
-      counted.length = 0;
-      last = null;
-      held = 0;
-    },
-  };
-}
 
 /**
  * A run of `need` seconds while a condition holds, and its crest — the largest of a number over the run (`quiet`: the

@@ -259,7 +259,7 @@ describe('the shots (VISUAL §8)', () => {
 
   it('on a phone every name of the bench is the `phone` shot; elsewhere the shots are their own', () => {
     const p = benchShots(true);
-    for (const name of ['stand', 'board', 'meter', 'scope', 'phone'] as const)
+    for (const name of ['stand', 'board', 'meter', 'scope', 'phone', 'amp'] as const)
       expect(p[name]).toBe(STAGE_SHOTS.phone);
     expect(benchShots(false)).toBe(STAGE_SHOTS);
   });

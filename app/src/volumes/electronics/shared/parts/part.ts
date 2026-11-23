@@ -80,8 +80,14 @@ export interface PartEye {
   camera: Camera;
   /** The viewport's width over its height. */
   aspect: number;
-  /** A phone shows no print in the scene (VISUAL §9). */
+  /** A phone shows no print in the scene (VISUAL §9) — but where `close`. */
   phone: boolean;
+  /**
+   * The camera is down at a part, on the dive's floors `part` and `inside` (the bench: while the door has the camera,
+   * `bench.flying`): a phone reads a print there by the desk's rule, ≥ 16 px-equivalent per em (VISUAL §9, its
+   * exception — the code «104» `capacitor-kinds/ceramic` asks the reader to read through the magnifier).
+   */
+  close?: boolean;
   /** The room's light 0…1: an unlit print darkens with it and never shines in the dark. */
   room: number;
 }
@@ -106,7 +112,7 @@ export interface PartView {
   setLook(look: Partial<PartLook>, dt: number): void;
   /** What the body's surface shows now (`look.ts`): the heat tint, the scorch, the char. */
   readonly surface: Surface;
-  /** Every frame: the print shows only where all of it has ≥ 16 px-equivalent per em, never on a phone. */
+  /** Every frame: the print shows only where all of it has ≥ 16 px-equivalent per em, on a phone only `close`. */
   view(eye: PartEye): void;
   dispose(): void;
 }
@@ -203,16 +209,16 @@ export class Prints {
     const roomChanged = Math.abs(room - this.room) > 1e-3;
     if (roomChanged) this.room = room;
     let smallest = Infinity;
-    if (!eye.phone) {
+    // a phone's scene shows no print but down at a part (`close`), where it reads by the desk's rule
+    const desk = !eye.phone || eye.close === true;
+    if (desk) {
       this.texts[0]!.parent?.updateWorldMatrix(true, true);
       for (const t of this.texts) {
         t.updateMatrixWorld();
         smallest = Math.min(smallest, this.pxEq(t, eye));
       }
     }
-    const k = eye.phone
-      ? 0
-      : Math.min(Math.max((smallest - LEGIBLE.MIN) / (LEGIBLE.FULL - LEGIBLE.MIN), 0), 1);
+    const k = desk ? Math.min(Math.max((smallest - LEGIBLE.MIN) / (LEGIBLE.FULL - LEGIBLE.MIN), 0), 1) : 0;
     if (Math.abs(k - this.legible) < 1e-3 && !roomChanged) return;
     this.legible = k;
     // a new colour each time: Text3D re-colours only on a new value

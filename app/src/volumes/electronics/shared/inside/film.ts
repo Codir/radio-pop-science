@@ -505,7 +505,7 @@ export function createFilm(part: PartModel, opts: FilmOptions = {}): Film {
   part.bodyGroup.add(group);
 
   // the heat of the model on the inside's surface (never light); burnt, the belt is in the inside's mesh (`build`)
-  const look = createSurfaceLook([insideMat, grainMat], null, { scorch: false, char: 0 });
+  const look = createSurfaceLook([insideMat, grainMat], null, { tint: 'heat', scorch: false, char: 0 });
 
   /* ------------------------------------------------------------------------------------- the state */
 

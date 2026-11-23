@@ -7,14 +7,16 @@
  * (`AMPS_SHOT`). Goal: no part joins the gap's rows (the + rail and 1ae), «A», the probes in those two rows (either
  * way), |I| 13,2 … 13,4 mA (the model's 13,3122 mA) for 1 s, and the meter's current the battery's within 0,1 %: all
  * the amplifier's current through the meter. The meter on «A» elsewhere is nearly a wire and can short a part of the
- * amplifier: a part burns (the model's event); then the dock's button «Нові деталі» puts the step's board back, whole,
- * the dial on «V», the probes at rest.
+ * amplifier: a part burns (the model's event); then the dock's button «Нові деталі» (`freshButton`) puts the step's
+ * board back, whole, the dial on «V», the probes at rest.
  */
 import { STAGE_SHOTS } from '@electronics/shared/bench';
 import { METER_ID } from '@electronics/shared/instruments';
 import {
   MODE_ID,
   createTally,
+  damaged,
+  freshButton,
   handPolicy,
   meterReadout,
   meterSwitch,
@@ -60,15 +62,6 @@ export const ampsStep: StepFactory = ({ ctx, ui, stand, reached, reach, here }) 
     if (meter === undefined || battery === undefined || Math.abs(battery) < 1e-6) return false;
     return within(size(), LO, HI) && Math.abs(Math.abs(meter) / Math.abs(battery) - 1) < WINDOWS.same;
   };
-  /** A part of the board burnt or bulged, or the speaker burnt (a thing of the bench, outside `state.parts`): the
-   * button «Нові деталі» shows; the step's board brings them back whole (the bench forgets its things too). */
-  const damaged = (): boolean => {
-    for (const id of [...bench.state.parts.keys(), 'SPK']) {
-      const c = bench.model.part(id)?.condition;
-      if (c === 'burnt' || c === 'bulged') return true;
-    }
-    return false;
-  };
   /** The step's own board, new and whole; the dial on «V», the probes at rest. */
   const fresh = (): void => {
     stand.board(AMP.parts, AMP.leads);
@@ -89,7 +82,7 @@ export const ampsStep: StepFactory = ({ ctx, ui, stand, reached, reach, here }) 
     battery: bench.model.reading('BAT')?.i ?? null,
     led: bench.model.reading('LED1')?.i ?? null,
     holding: tally.holding,
-    damaged: damaged(),
+    damaged: damaged(bench),
     key: bench.model.net?.key ?? null,
     reached: reached(S),
   }));
@@ -103,7 +96,7 @@ export const ampsStep: StepFactory = ({ ctx, ui, stand, reached, reach, here }) 
         meterSwitch(bench, word(0), ['V', 'A'], '', 'V'),
         meterReadout(bench, word(1)),
         ...trayButtons(bench, ['jumper'], () => word(4), stand.phone),
-        { type: 'button', id: 'fresh', label: word(5), visible: () => here(S) && damaged(), onClick: fresh },
+        freshButton(bench, word(5), () => here(S), fresh),
       ],
       callouts: [
         {

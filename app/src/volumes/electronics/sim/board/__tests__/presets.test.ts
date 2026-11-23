@@ -1,7 +1,8 @@
 /**
  * The boards of the pilot chapters as data (`presets.ts`): what a step puts on the board with `bench.preset`, seated by
  * the same pure maths the bench uses (`seatPreset`). The LED's loop of the chapters `resistor` and `resistor-pick` gives
- * the numbers their scripts give; the amplifier's parts have the bench's names (`AMPLIFIER_IDS`).
+ * the numbers their scripts give; the amplifier's parts have the bench's names (`AMPLIFIER_IDS`); a node's rows
+ * through a board's jumpers (`joinedRows`).
  */
 import { describe, expect, it } from 'vitest';
 import { AMPLIFIER_NODES, WIRE_OHMS, amplifierNetlist, solveDC, type Netlist } from '../../core';
@@ -12,6 +13,7 @@ import {
   AMPLIFIER_IDS,
   AMPLIFIER_PRESET,
   LED_LOOP,
+  joinedRows,
   presetState,
   seatPreset,
   spans,
@@ -90,6 +92,22 @@ describe('the amplifier’s ids on the bench (AMPLIFIER_IDS)', () => {
     }
     // the battery, the switch, the player and the speaker are the bench's; the volume control is a pot on the board
     expect(AMPLIFIER_IDS).toEqual({ B1: 'BAT', S1: 'SW', PL: 'PLAYER', LS1: 'SPK', VR1: 'P1' });
+  });
+});
+
+describe('the rows a board’s jumpers join (joinedRows)', () => {
+  it('gives a node row by row: the row itself and every row its jumpers tie to it, through a chain of them', () => {
+    // the amplifier's ground: the − rail and the rows of J1, J3, J4, J9 to it, and 9fj by J5 from 12fj
+    const ground = ['-', '12fj', '15fj', '17ae', '2fj', '9fj'];
+    expect(joinedRows(layout, AMPLIFIER_PRESET, '-').sort()).toEqual(ground.sort());
+    // the supply after the protection diode and the row J8 feeds from it
+    expect(joinedRows(layout, AMPLIFIER_PRESET, '5ae').sort()).toEqual(['2ae', '5ae']);
+    // the output: Q2's emitter and Q3's by J7 across the channel
+    expect(joinedRows(layout, AMPLIFIER_PRESET, '7ae').sort()).toEqual(['7ae', '7fj']);
+    // a row no jumper touches is itself alone; the + rail with J10 its row 1ae
+    expect(joinedRows(layout, AMPLIFIER_PRESET, '14ae')).toEqual(['14ae']);
+    expect(joinedRows(layout, AMPLIFIER_PRESET, '+').sort()).toEqual(['+', '1ae']);
+    expect(joinedRows(layout, LED_LOOP, '-').sort()).toEqual(['-', '10ae']);
   });
 });
 

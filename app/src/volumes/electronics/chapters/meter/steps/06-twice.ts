@@ -9,12 +9,12 @@
  * (3 s together at least): the knob at 0,25 or lower for 1 s, at 0,5 or higher for 1 s, and channel 1 at 0,02 V a
  * division for 1 s while the knob stands within 0,25 … 0,5 (both lines on the screen then).
  */
-import { fmtPercent } from '@/content/format';
 import { setSetting } from '@electronics/shared/bench';
 import {
   createHold,
   crestStats,
   handPolicy,
+  knobSlider,
   perDivision,
   rowOf,
   scopeBoard,
@@ -77,22 +77,17 @@ export const twiceStep: StepFactory = ({ ctx, ui, stand, reached, reach, here })
     ui: {
       reset: true,
       controls: [
-        {
-          type: 'slider',
-          id: VOLUME_ID,
-          label: word(0),
-          min: 0,
-          max: 1,
-          step: 0.01,
-          value: KNOB,
-          marks: [
+        knobSlider(
+          bench,
+          VOLUME_ID,
+          'P1',
+          word(0),
+          [
             { value: 0, label: word(1) },
             { value: 1, label: word(2) },
           ],
-          format: (v: number) => fmtPercent(v),
-          onInput: (v: number) => void setSetting(bench.state, 'P1', v),
-          onChange: (v: number) => void setSetting(bench.state, 'P1', v),
-        },
+          KNOB,
+        ),
         // the crests right under the knob that moves them (a block keeps its place in the dock; review of E3-8)
         crestStats(bench, CRESTS_ID, [word(4), word(5)], CREST_SECONDS),
         {

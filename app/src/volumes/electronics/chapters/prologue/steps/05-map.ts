@@ -11,10 +11,10 @@
  */
 import { journeyInset } from '@/hud-dom/journey';
 import { setSetting } from '@electronics/shared/bench';
+import { handPolicy } from '@electronics/shared/steps';
 import type { StepFactory } from '../chapter';
 import { caption } from '../content';
 import { AMP, IDS, KNOB } from '../parts/boards';
-import { handPolicy } from '../parts/policy';
 import { boardOnCanvas, MAP_FLIGHT, mapPost, mapShot } from '../parts/shots';
 
 const S = 'map';
@@ -61,7 +61,7 @@ export const mapStep: StepFactory = ({ ctx, stand, reached, reach, here }) => {
       bench.multimeter.put({ red: null, black: null });
       bench.oscilloscope.put({ ch1: null, ch2: null });
       bench.hands.policy = handPolicy(bench, { name: () => '' });
-      stand.naming = { player: '', speaker: '', scope: '', tap: false };
+      stand.naming = { meter: '' };
     },
     late() {
       if (!here(S)) return;

@@ -307,14 +307,13 @@ describe('the steps’ boards on the bench', () => {
     for (const parts of [FLASH, LIMIT, OHM]) expect(hits({ parts, leads: {} }, false)).toEqual([]);
   });
 
-  it('after the amplifier every step’s board seats again, once the bench is cleared first (`stand.board`)', () => {
+  it('after the amplifier every step’s board seats again: a preset is the step’s whole bench, its plugs out too', () => {
     const bench = mountBench(stubContext());
-    bench.preset(AMP.parts, AMP.leads);
-    // a plug a preset does not name stays, and the parts are seated before the plugs: the LED's loop needs c10
-    expect(() => bench.preset(LED_LOOP.parts)).toThrow(RangeError);
+    // the amplifier's speaker plug stands in c10, where the LED's loop needs its cathode: the preset takes it out
+    // (E4-B; before, a plug the preset did not name stayed, and the chapter cleared the bench first)
     for (const parts of [FLASH, LIMIT, OHM, loopWith('resistor-10k'), LAW, LED_LOOP.parts]) {
       bench.preset(AMP.parts, AMP.leads);
-      bench.clear();
+      expect(bench.state.leads.get('spk+')).toBe('c10');
       expect(() => bench.preset(parts)).not.toThrow();
       expect(bench.state.leads.size).toBe(0);
     }

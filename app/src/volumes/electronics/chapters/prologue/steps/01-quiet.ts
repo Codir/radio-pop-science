@@ -8,13 +8,13 @@
  * while the sound is off, the line that says so. The hand takes nothing. Goal: the player plays with its plugs past
  * the amplifier for 3 s in a row, the speaker's crest over them within 0,05 … 0,06 V (the model's 0,051 … 0,058 V).
  */
+import { handPolicy, rowOf } from '@electronics/shared/steps';
 import type { StepFactory } from '../chapter';
 import { caption } from '../content';
 import { HOLD, QUIET, ROWS, WINDOWS } from '../parts/boards';
 import { soundNote, waveGauge } from '../parts/dock';
-import { createRun, rowOf } from '../parts/goals';
+import { createRun } from '../parts/goals';
 import { PLAYER_CALL } from '../parts/marks';
-import { handPolicy } from '../parts/policy';
 import { quietShot } from '../parts/shots';
 
 const S = 'quiet';
@@ -72,7 +72,7 @@ export const quietStep: StepFactory = ({ ctx, stand, reached, reach, here }) => 
       bench.multimeter.put({ red: null, black: null });
       bench.oscilloscope.put({ ch1: null, ch2: null });
       bench.hands.policy = handPolicy(bench, { name: () => '' });
-      stand.naming = { player: word(0), speaker: word(1), scope: '', tap: true };
+      stand.naming = { meter: '', player: word(0), speaker: word(1), tap: true };
       tapsBefore = stand.taps;
     },
     late(dt, t) {

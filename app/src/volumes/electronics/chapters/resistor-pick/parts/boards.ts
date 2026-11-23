@@ -7,6 +7,7 @@ import {
   AMPLIFIER_PRESET,
   LED_LOOP,
   createLayout,
+  joinedRows,
   type BoardPreset,
   type PresetPart,
   type RowId,
@@ -53,32 +54,14 @@ export const ROWS = Object.freeze({
 
 const layout = createLayout();
 
-/** The rows the jumpers of a board join to `row` (the row itself included): one node, read row by row. */
-export function joinedRows(preset: BoardPreset, row: RowId): RowId[] {
-  const links = preset.parts
-    .filter((p) => p.spec === 'jumper' && p.to !== undefined)
-    .map((p) => [layout.socket(p.at)!.row, layout.socket(p.to!)!.row] as const);
-  const out = new Set<RowId>([row]);
-  for (let grew = true; grew; ) {
-    grew = false;
-    for (const [a, b] of links) {
-      if (out.has(a) !== out.has(b)) {
-        out.add(out.has(a) ? b : a);
-        grew = true;
-      }
-    }
-  }
-  return [...out];
-}
-
 /** `on`: the rows of the LED «on» (its anode's, by R1's leg) and of the two sides around them. */
 export const ON_ROWS = Object.freeze({
   /** The row of LED1's anode and R1's leg on the near half. */
   led: '5fj' as RowId,
   /** The − rail and the rows its jumpers tie to it: LED1's cathode stands in the rail. */
-  ground: joinedRows(ON, '-'),
+  ground: joinedRows(layout, ON, '-'),
   /** The supply after the protection diode (Q2's collector, R1's other leg) and the row J8 feeds from it. */
-  supply: joinedRows(ON, '5ae'),
+  supply: joinedRows(layout, ON, '5ae'),
 });
 
 type Window = readonly [lo: number, hi: number];
