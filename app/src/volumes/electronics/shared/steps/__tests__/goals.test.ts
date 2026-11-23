@@ -1,7 +1,10 @@
-/** The goals' small maths (`goals.ts`): rows of sockets, rows in any order, and the tally of held readings. */
+/**
+ * The goals' small maths (`goals.ts`): rows of sockets, rows in any order, the tally of held readings and a run of time
+ * in a row.
+ */
 import { describe, expect, it } from 'vitest';
 import { createLayout } from '@electronics/sim/board';
-import { across, createTally, rowsOf, sameRows, within } from '../goals';
+import { across, createHold, createTally, rowOf, rowsOf, sameRows, within } from '../goals';
 
 const layout = createLayout();
 
@@ -11,6 +14,11 @@ describe('rows of the goals', () => {
     expect(rowsOf(layout, ['+3', 'j10', '-1'])).toEqual(['+', '10fj', '-']);
     expect(rowsOf(layout, ['b5', null])).toBeNull();
     expect(rowsOf(layout, ['z9'])).toBeNull();
+    // one socket's row (a probe's): null with it out or off the board
+    expect(rowOf(layout, 'd13')).toBe('13ae');
+    expect(rowOf(layout, '+4')).toBe('+');
+    expect(rowOf(layout, null)).toBeNull();
+    expect(rowOf(layout, 'z9')).toBeNull();
   });
 
   it('matches two rows in any order; one row in each of two sides', () => {
@@ -61,5 +69,31 @@ describe('the tally of held readings', () => {
     // a key the tally does not hold is never counted
     t.feed('z' as 'a', 5);
     expect(t.counted).toEqual(['a']);
+  });
+});
+
+describe('a run of time in a row', () => {
+  it('breaks on a frame without its state, is done once it held its seconds and stays done until reset', () => {
+    const h = createHold(2);
+    for (let k = 0; k < 100; k++) h.feed(true, 1 / 60);
+    h.feed(false, 1 / 60);
+    expect(h.held).toBe(0);
+    expect(h.done).toBe(false);
+    for (let k = 0; k < 119; k++) h.feed(true, 1 / 60);
+    expect(h.done).toBe(false);
+    h.feed(true, 1 / 60);
+    expect(h.done).toBe(true);
+    h.feed(false, 1 / 60);
+    expect(h.done).toBe(true);
+    // restart: the run counts again from 0, what held stays done; reset forgets it
+    h.feed(true, 0.5);
+    h.restart();
+    expect(h.held).toBe(0);
+    expect(h.done).toBe(true);
+    h.reset();
+    expect(h.done).toBe(false);
+    // a held frame (dt 0) adds nothing
+    for (let k = 0; k < 100; k++) h.feed(true, 0);
+    expect(h.held).toBe(0);
   });
 });

@@ -7,8 +7,8 @@
  */
 import { defineScene } from '@/engine/api';
 import { stepUi, type StepUiApi } from '@/hud';
+import { PLAYER_ID, SWITCH_ID } from '@electronics/shared/steps';
 import { sessionGoals, STEP_IDS, type Chapter, type StepFactory, type StepId, type StepModule } from './chapter';
-import { PLAYER_ID, SWITCH_ID } from './parts/dock';
 import { createMeterStand } from './stand';
 import { voltsStep } from './steps/01-volts';
 import { ampsStep } from './steps/02-amps';

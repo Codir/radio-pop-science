@@ -11,13 +11,20 @@
  */
 import { fmtPercent } from '@/content/format';
 import { setSetting } from '@electronics/shared/bench';
+import {
+  createHold,
+  crestStats,
+  handPolicy,
+  perDivision,
+  rowOf,
+  scopeBoard,
+  voltsText,
+} from '@electronics/shared/steps';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';
 import { AMP, HOLD, KNOB, ROWS, TWICE_MARKS, WINDOWS } from '../parts/boards';
-import { createHold, rowOf } from '../parts/goals';
 import { overSocket } from '../parts/marks';
-import { handPolicy } from '../parts/policy';
-import { TWICE, TWICE_ZOOM, crestStats, perDivision, scopeBoard, voltsText } from '../parts/scope';
+import { CREST_SECONDS, TWICE, TWICE_ZOOM } from '../parts/scope';
 
 const S = 'twice';
 /** The dock's ids. */
@@ -87,7 +94,7 @@ export const twiceStep: StepFactory = ({ ctx, ui, stand, reached, reach, here })
           onChange: (v: number) => void setSetting(bench.state, 'P1', v),
         },
         // the crests right under the knob that moves them (a block keeps its place in the dock; review of E3-8)
-        crestStats(bench, CRESTS_ID, [word(4), word(5)]),
+        crestStats(bench, CRESTS_ID, [word(4), word(5)], CREST_SECONDS),
         {
           type: 'segmented',
           id: SCALE_ID,

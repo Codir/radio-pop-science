@@ -5,12 +5,10 @@
  * takes the two probes only. Goal: «V», red in the + rail and black in the − rail, the display 8,975 … 8,985 V (the
  * model's 8,98002 V) for 1 s; and the other way round, −8,985 … −8,975 V for 1 s (either first).
  */
+import { MODE_ID, createTally, handPolicy, meterReadout, meterSwitch, rowOf, within } from '@electronics/shared/steps';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';
 import { AMP, HOLD, ROWS, WINDOWS } from '../parts/boards';
-import { MODE_ID, meterReadout, meterSwitch } from '../parts/dock';
-import { createTally, rowOf, within } from '../parts/goals';
-import { handPolicy } from '../parts/policy';
 
 const S = 'volts';
 const [LO, HI] = WINDOWS.volts;

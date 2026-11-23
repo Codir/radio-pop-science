@@ -779,41 +779,63 @@ chapters:
   and nothing tall in front of the volume knob, at the far right by the player; the speaker's coral lead lies over
   the knob's case on its way to `c10` (the speaker's row is left of the pot).
 
-## `steps` — what the chapters' steps build from (E3-7)
+## `steps` — what the chapters' steps build from (E3-7, E3-10)
 
 The small pieces every chapter on the bench repeated, moved here from `chapters/resistor` once `resistor-pick` needed
-them too (REUSE.md, «Копії»). A chapter keeps its own words (captions), boards and hold times and passes them in.
+them too, and from `chapters/meter` (the probes by name, the player, the oscilloscope's words and crests, the stand
+with sound) once the clone was merged (REUSE.md, «Копії»). A chapter keeps its own words (captions), boards, scales
+and hold times and passes them in.
 
 ```ts
-const stand = createStepStand(ctx, { keepDoor }); // the chapter's `stand.ts`: the bench, the door, the lens keeper,
-// the ladder «де ми», the names under the pointer (`stand.naming`, set by each step), `stand.board(parts, leads)`
-const tally = createTally(['a', 'b'], HOLD.reading); // the chapter's `HOLD`; `rowsOf`, `sameRows`, `across`, `within`
-bench.hands.policy = handPolicy(bench, { part, leg, tray, probes, switch, flip, name }); // by kind (`kindOf`)
+const stand = createStepStand(ctx, { keepDoor, sound }); // the chapter's `stand.ts`: the bench, the door, the lens
+// keeper, the ladder «де ми», the names under the pointer (`stand.naming`, set by each step),
+// `stand.board(parts, leads)`; with `sound` the speaker in sound and the player: `stand.play(on)`, `stand.playing()`,
+// a tap where `naming.tap`
+const tally = createTally(['a', 'b'], HOLD.reading); // the chapter's `HOLD`; `rowsOf`, `rowOf`, `sameRows`, `across`,
+// `within`; `createHold(need)`: a run of time in a row
+bench.hands.policy = handPolicy(bench, { part, leg, tray, probes, switch, flip, name }); // by kind (`kindOf`);
+// `probes`: `true` (the multimeter's red and black) or the probes by name, ['ch1', 'ch2'] the oscilloscope's
 trayButtons(bench, specs, label, stand.phone); switchToggle(bench, label, stand.phone); // a phone's dock
+playerToggle(label, stand.phone, (on) => stand.play(on)); // the player in a phone's dock
 meterSwitch(bench, label, ['off', 'V'], offWord, 'off'); meterReadout(bench, label); // the multimeter in the panel
+board: scopeBoard(bench, id, title, { volts, time, division, ch1, ch2, own }); // the oscilloscope's chart and its words
+crestStats(bench, id, [in, out], seconds); // both channels' crests over the last seconds, one block of two numbers
 const depth = depthSlider(ctx, bench, ui, () => stand.door, () => here(S), end, { label, top, bottom });
 // controls: [depth.control, …]; enter: depth.reset(); update: depth.update()
 ```
 
-- **`stand.ts`** — `createStepStand`: `mountBench` once, the magnifier's door into a part (`openDoor(partId, info,
-  lead)`; `closeDoor(info, then)` flies the rail home, then the step's shot; the door is given up once home), its lens
-  keeper over everything, the ladder, the names. Without `keepDoor` every `openDoor` makes a new door (`resistor`: one
-  dive step); with it a door the step before left open into the same part stays, its rail where it is, except on a
-  deep link (`resistor-pick`: `bands` → `series`).
-- **`goals.ts`** — the rows of sockets (null when one is out), two rows in any order, one row on each of two sides, a
-  number in a window; the tally of readings that each must hold `need` seconds in a row, counted once.
-- **`policy.ts`** — `HandPolicy` from a step's rules by kind: `part:` / `leg:` by the catalog key, `tray:` slots,
-  `probe:`, `switch`; plug leads never; the names under the pointer from the step's `name`.
+- **`stand.ts`** — `createStepStand`: `mountBench` once (with `sound`, its speaker in sound), the magnifier's door into
+  a part (`openDoor(partId, info, lead)`; `closeDoor(info, then)` flies the rail home, then the step's shot; the door is
+  given up once home), its lens keeper over everything, the ladder, the names — of the parts a step keeps in place
+  (`naming.part`), of the multimeter's and the oscilloscope's cases (`naming.meter`, `naming.scope`: only once the
+  instrument stands on its place, only where a pointer hovers) and, with `sound`, of the player (`naming.player`).
+  Without `keepDoor` every `openDoor` makes a new door (`resistor`: one dive step); with it a door the step before left
+  open into the same part stays, its rail where it is, except on a deep link (`resistor-pick`: `bands` → `series`).
+  With `sound` the player is the model's setting of the bench's `PLAYER` (0 stopped; with none set it plays the
+  catalog's 0,3 V): `play(on)` sets it, a new board keeps it (every step sets it on entry), and a tap on its box flips
+  it where the step's `naming.tap` lets it, never while the camera flies (`taps` counts them; QA probe `player`).
+- **`goals.ts`** — the rows of sockets (null when one is out), one socket's row, two rows in any order, one row on each
+  of two sides, a number in a window; the tally of readings that each must hold `need` seconds in a row, counted once;
+  a run of time while a condition holds (`createHold`: done once it held, `restart` keeps it done).
+- **`policy.ts`** — `HandPolicy` from a step's rules by kind: `part:` / `leg:` by the catalog key, `tray:` slots, the
+  probes by name (`probe:red`, `probe:black`, `probe:ch1`, `probe:ch2`; `probes: true` — the multimeter's two),
+  `switch`; plug leads never; the names under the pointer from the step's `name`, a probe by its own name.
 - **`names.ts`** — invisible twins of the parts' `hit` boxes and of the multimeter's case for the names of what a step
   keeps in place; only where a pointer hovers.
-- **`dock.ts`**, **`meter.ts`** — a phone's dock buttons for the tray's slots and the battery's switch (shown on a phone
-  only); the dial's switch (`meter-mode`) and the number (`meter`).
+- **`dock.ts`**, **`meter.ts`** — a phone's dock buttons for the tray's slots, the battery's switch and the player
+  (`player`, shown on a phone only); the dial's switch (`meter-mode`) and the number (`meter`).
+- **`scope.ts`** — the oscilloscope in the panel: a division's text («0,5 s», «20 ms», «0,02 V»; the number and the unit
+  from the code, the words «на поділку» the step's), an axis' title (the step's caption, then its division), the chart's
+  words (`own`: channel 1 on the right axis at its own scale, the titles sharing the width), the step's board with the
+  chart, a crest with three decimals («—» with nothing) and both channels' crests over the step's seconds as one block.
 - **`depth.ts`** — the slider «Глибина» (`depth`): 0 … `end` + `LENS_LEG`, the rail at the slider − `LENS_LEG`; a drag
   scrubs, a click glides; a tap on the resting lens lays it on the part; the fill follows the rail every frame.
 
-Tests: `__tests__/goals.test.ts` (rows, the tally), `rules.test.ts` (the hand's rules, the dock, the meter over a stub
-bench), `stand.test.ts` (a live bench with the engine's `CameraDirector`: the board, the door made anew or kept, given up
-once home; the depth slider's way, the lens's tap and the fill).
+Tests: `__tests__/goals.test.ts` (rows, the tally, the run), `rules.test.ts` (the hand's rules and the probes by name,
+the dock with the player, the meter over a stub bench), `scope.test.ts` (the words, the crests, the board),
+`stand.test.ts` (a live bench with the engine's `CameraDirector`: the board, the door made anew or kept, given up once
+home; with `sound` the speaker, the player's level across a board and its tap; the instruments' names; the depth
+slider's way, the lens's tap and the fill).
 
 ## Копії
 

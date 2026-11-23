@@ -12,13 +12,21 @@
  */
 import { STAGE_SHOTS } from '@electronics/shared/bench';
 import { METER_ID } from '@electronics/shared/instruments';
+import {
+  MODE_ID,
+  createTally,
+  handPolicy,
+  meterReadout,
+  meterSwitch,
+  rowsOf,
+  sameRows,
+  trayButtons,
+  within,
+} from '@electronics/shared/steps';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';
 import { AMP, HOLD, ROWS, SUPPLY, WINDOWS } from '../parts/boards';
-import { MODE_ID, meterReadout, meterSwitch, trayButtons } from '../parts/dock';
-import { createTally, rowsOf, sameRows, within } from '../parts/goals';
 import { overPart } from '../parts/marks';
-import { handPolicy } from '../parts/policy';
 import { AMPS_SHOT, CAMERA_FLIGHT } from '../parts/shots';
 
 const S = 'amps';

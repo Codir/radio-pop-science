@@ -8,14 +8,12 @@
  * it then, to open and close it again), and from 0,5 s after that closing the newest samples of the trace lie within
  * 8,975 … 8,985 V for 2 s in a row (the model's 8,98001 V). «постійна напруга» stands over the screen with the takeaway.
  */
+import { createHold, handPolicy, rowOf, scopeBoard, switchToggle, within } from '@electronics/shared/steps';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';
 import { AMP, HOLD, ROWS, WINDOWS } from '../parts/boards';
-import { switchToggle } from '../parts/dock';
-import { createHold, rowOf, within } from '../parts/goals';
 import { overSwitch, overTrace } from '../parts/marks';
-import { handPolicy } from '../parts/policy';
-import { FLAT, scopeBoard } from '../parts/scope';
+import { FLAT } from '../parts/scope';
 import { CAMERA_FLIGHT } from '../parts/shots';
 
 const S = 'flat';

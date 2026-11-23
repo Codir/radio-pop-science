@@ -1,8 +1,9 @@
 /**
- * The goals' small pure maths: which rows a part's legs or the meter's probes are in, and a tally of readings that
- * each have to hold for a while (a script's «щонайменше 1 s»). The goals of the chapters on the bench read the bench's
- * numbers — the board as data, the model's currents, the multimeter's display — through these. How long each of a
- * chapter's states must hold is the chapter's own (its `parts/goals.ts`, `HOLD`), passed to `createTally`.
+ * The goals' small pure maths: which rows a part's legs or the instruments' probes are in, a tally of readings that
+ * each have to hold for a while (a script's «щонайменше 1 s») and a run of time while a condition holds. The goals of
+ * the chapters on the bench read the bench's numbers — the board as data, the model's currents, the instruments'
+ * displays — through these. How long each of a chapter's states must hold is the chapter's own (its `parts/goals.ts`,
+ * `HOLD`), passed to `createTally` and `createHold`.
  */
 import type { BoardLayout, RowId, SocketId } from '@electronics/sim/board';
 
@@ -16,6 +17,10 @@ export function rowsOf(layout: BoardLayout, sockets: readonly (SocketId | null)[
   }
   return rows;
 }
+
+/** The row of one socket; null when it is out (or not the board's). */
+export const rowOf = (layout: BoardLayout, socket: SocketId | null): RowId | null =>
+  socket === null ? null : (layout.socket(socket)?.row ?? null);
 
 /** Two rows are these two, in any order. */
 export function sameRows(rows: readonly RowId[] | null, want: readonly RowId[]): boolean {
@@ -72,6 +77,40 @@ export function createTally<K extends string>(keys: readonly K[], need: number):
       counted.length = 0;
       last = null;
       held = 0;
+    },
+  };
+}
+
+/** Time in a row while a condition holds; `done` once it held `need` seconds (and stays so until `reset`). */
+export interface Hold {
+  feed(on: boolean, dt: number): void;
+  readonly held: number;
+  readonly done: boolean;
+  /** Start counting again (the run broke), keeping `done`. */
+  restart(): void;
+  reset(): void;
+}
+
+export function createHold(need: number): Hold {
+  let held = 0;
+  let done = false;
+  return {
+    feed(on, dt) {
+      held = on ? held + Math.max(dt, 0) : 0;
+      if (held >= need - 1e-9) done = true;
+    },
+    get held() {
+      return held;
+    },
+    get done() {
+      return done;
+    },
+    restart() {
+      held = 0;
+    },
+    reset() {
+      held = 0;
+      done = false;
     },
   };
 }

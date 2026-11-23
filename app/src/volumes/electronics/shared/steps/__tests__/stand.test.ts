@@ -2,18 +2,20 @@
  * The step stand (`stand.ts`) and the depth slider (`depth.ts`) on a live bench (`mountBench` with a stub context and
  * the engine's own `CameraDirector`, no WebGL): a step's own board, the door made anew on every visit or — `keepDoor`
  * — kept between two dive steps into the same part (not on a deep link, not into another part), given up once its
- * rail is home after the door's steps; the slider's way and the magnifier's tap as the rail's moves.
+ * rail is home after the door's steps; with `sound` the bench's speaker in sound and the player under a tap (the
+ * model's level of the player, kept by a new board); the instruments' cases named; the slider's way and the
+ * magnifier's tap as the rail's moves.
  */
 import { Group, type Object3D } from 'three';
 import { describe, expect, it } from 'vitest';
-import type { ChapterContext, StepInfo } from '@/engine/api';
+import type { AppState, ChapterContext, StepInfo } from '@/engine/api';
 import { CameraDirector } from '@/engine/camera/director';
 import type { SliderSpec } from '@/hud';
 import { LENS_LEG } from '../../dive';
 import { createStepStand, type StepStand } from '../stand';
 import { DEPTH_ID, depthSlider } from '../depth';
 
-type Click = { enabled?: () => boolean; click?: () => void };
+type Click = { enabled?: () => boolean; click?: () => void; tooltip?: () => string };
 
 /** A chapter context with only what the stand uses; the stage's step is settable, the input's handlers are kept. */
 function stubContext(formFactor: 'desktop' | 'phone' = 'desktop') {
@@ -24,6 +26,7 @@ function stubContext(formFactor: 'desktop' | 'phone' = 'desktop') {
   camera.setViewport(1920, 1080);
   const handlers = new Map<Object3D, Click>();
   const stage = { current: 'a' as string | null };
+  const settings = { audio: true, volume: 0.8 } as AppState['settings'];
   const ctx = {
     root,
     clock: { dt: 0, time: 0 },
@@ -54,6 +57,11 @@ function stubContext(formFactor: 'desktop' | 'phone' = 'desktop') {
     nav: { volume: null, volumes: [] },
     reducedMotion: false,
     renderer: { info: { render: { calls: 0 } } },
+    // the volume's own sound output (the option `sound`): its store and a gesture that never comes (it plays silently
+    // on the engine's clock)
+    store: { get: () => ({ settings }) as AppState, subscribe: () => () => {} },
+    gesture: new Promise<void>(() => {}),
+    manifest: { theme: { accent: 'teal', sky: 'studio', mood: 'studio' } },
   } as unknown as ChapterContext;
   return { ctx, camera, stage, handlers };
 }
@@ -136,6 +144,66 @@ describe('the step stand', () => {
     expect(stand.door).not.toBeNull();
     frames(900, () => stand.door === null);
     expect(stand.door).toBeNull();
+  });
+});
+
+describe('the step stand with sound', () => {
+  it('mounts the bench’s speaker in sound only when asked', () => {
+    expect(createStepStand(stubContext().ctx).bench.speaker).toBeNull();
+    expect(createStepStand(stubContext().ctx, { sound: true }).bench.speaker).not.toBeNull();
+  });
+
+  it('plays and stops the player by the model’s level, which a new board keeps; a tap flips it where the step lets it', () => {
+    const { ctx, handlers } = stubContext();
+    const stand = createStepStand(ctx, { sound: true });
+    const { bench } = stand;
+    // no level set: the player plays at the catalog's 0,3 V
+    expect(stand.playing()).toBe(true);
+    stand.play(false);
+    expect(bench.state.settings.get('PLAYER')).toBe(0);
+    expect(stand.playing()).toBe(false);
+    stand.board(R1);
+    expect(stand.playing()).toBe(false);
+    stand.play(true);
+    expect(bench.state.settings.get('PLAYER')).toBeCloseTo(0.3, 12);
+    // the tap on the player's box: only where the step's naming lets it, never while the camera flies
+    const tap = handlers.get(bench.props.things.player.group)!;
+    expect(tap.enabled?.()).toBe(false);
+    stand.naming = { meter: '', player: 'player', tap: true };
+    expect(tap.enabled?.()).toBe(true);
+    expect(tap.tooltip?.()).toBe('player');
+    tap.click?.();
+    expect(stand.playing()).toBe(false);
+    expect(stand.taps).toBe(1);
+    bench.flying = true;
+    expect(tap.enabled?.()).toBe(false);
+    tap.click?.();
+    expect(stand.taps).toBe(1);
+  });
+
+  it('has no tap on the player without sound', () => {
+    const { ctx, handlers } = stubContext();
+    const stand = createStepStand(ctx);
+    expect(handlers.has(stand.bench.props.things.player.group)).toBe(false);
+  });
+
+  it('names the instruments’ cases by the step’s words, once they stand on their places', () => {
+    const { ctx, handlers } = stubContext();
+    const stand = createStepStand(ctx);
+    const { bench } = stand;
+    const meter = handlers.get(bench.multimeter.body)!;
+    const scope = handlers.get(bench.oscilloscope.body)!;
+    stand.naming = { meter: 'meter', scope: 'scope' };
+    expect(meter.enabled?.()).toBe(false);
+    expect(scope.enabled?.()).toBe(false);
+    bench.meter = 1;
+    bench.scope = 1;
+    expect(meter.enabled?.()).toBe(true);
+    expect(scope.enabled?.()).toBe(true);
+    expect([meter.tooltip?.(), scope.tooltip?.()]).toEqual(['meter', 'scope']);
+    stand.naming = { meter: '' };
+    expect(meter.enabled?.()).toBe(false);
+    expect(scope.enabled?.()).toBe(false);
   });
 });
 

@@ -10,14 +10,13 @@
  * model's 0,002 mV: the operating point's leak). «змінна напруга» stands over the screen with the takeaway.
  */
 import { setSetting } from '@electronics/shared/bench';
+import { MODE_ID, handPolicy, meterReadout, playerToggle, rowOf, scopeBoard } from '@electronics/shared/steps';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';
 import { AMP, HOLD, KNOB, ROWS, WAVE_METER, WINDOWS } from '../parts/boards';
-import { MODE_ID, meterReadout, playerToggle } from '../parts/dock';
-import { rowOf, waveVerdict } from '../parts/goals';
+import { waveVerdict } from '../parts/goals';
 import { overTrace } from '../parts/marks';
-import { handPolicy } from '../parts/policy';
-import { WAVE, scopeBoard } from '../parts/scope';
+import { WAVE } from '../parts/scope';
 
 const S = 'wave';
 const RULES = { need: HOLD.wave, window: HOLD.crest, crest: WINDOWS.wave.crest, edge: WINDOWS.wave.edge };

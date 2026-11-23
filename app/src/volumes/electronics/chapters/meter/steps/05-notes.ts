@@ -6,13 +6,12 @@
  * in a row and on 1 ms for 3 s in a row (either first). «частота» stands over the screen with the takeaway.
  */
 import { setSetting } from '@electronics/shared/bench';
+import { createTally, handPolicy, rowOf, scopeBoard, timeText } from '@electronics/shared/steps';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';
 import { AMP, HOLD, KNOB, NOTES_SCOPE, ROWS } from '../parts/boards';
-import { createTally, rowOf } from '../parts/goals';
 import { overTrace } from '../parts/marks';
-import { handPolicy } from '../parts/policy';
-import { NOTES_ENTRY, NOTES_TIMES, WAVE, scopeBoard, timeText } from '../parts/scope';
+import { NOTES_ENTRY, NOTES_TIMES, WAVE } from '../parts/scope';
 
 const S = 'notes';
 /** The dock's id of the switch «Час на поділку». */

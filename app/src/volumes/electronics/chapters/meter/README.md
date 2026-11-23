@@ -12,15 +12,13 @@ the board (the switch closed, the player stopped, the LED «on» lit), the multi
 | File | What |
 | --- | --- |
 | `scene.ts` · `chapter.ts` | orchestrator: the stand → six step modules → `stage.define` + `stepUi.define`; the params `meter` and `scope` (the instruments slide in and out, 0.6 s); the dock's toggles follow the switch and the player |
-| `stand.ts` | `mountBench(ctx, { sound: true })` once; a step's board (`board`: cleared, then `bench.preset`); the player — its level is the model's setting of `PLAYER` (`playing`, `play`), a tap on its box where the step lets it; the names under the pointer of the instruments' cases and the player (`naming`) |
+| `stand.ts` | the step stand of `@electronics/shared/steps` with sound (`createStepStand(ctx, { sound: true })`): the bench once with its speaker in sound; a step's board (`board`: cleared, then `bench.preset`); the player — its level is the model's setting of `PLAYER` (`playing`, `play`), a tap on its box where the step lets it (`naming.tap`); the names under the pointer of the instruments' cases and the player (`naming`) |
 | `parts/boards.ts` | the board (`AMP`), the supply jumper `J10`, the rows of the goals, the sockets a step puts a probe in, the player's level, the knob, the windows and the times of the goals |
-| `parts/goals.ts` | rows of sockets, a tally of states held for a while, a run in a row, the wave's verdict (a copy of `resistor`'s first four helpers: a chapter never imports another) |
-| `parts/policy.ts` | what the hand may take in a step and the names it shows (`HandPolicy`), the probes named one by one |
-| `parts/dock.ts` | the multimeter's dial switch and readout, a phone's tray buttons, the battery's switch and the player as toggles |
-| `parts/scope.ts` | every step's scale and display, the chart's words (an axis' caption with its division: «2,5 V на поділку»), the crests of `twice` (one `stats` block) |
+| `parts/goals.ts` | the wave's verdict (`wave`); the rows, the tally and the run in a row are `@electronics/shared/steps`' |
+| `parts/scope.ts` | every step's scale and display and how far back the crests of `twice` look; the chart's words (an axis' caption with its division: «2,5 V на поділку») and the crests' block (one `stats` block) are `@electronics/shared/steps`' (`scopeBoard`, `crestStats`) |
 | `parts/shots.ts` | `amps`'s own shot (`AMPS_SHOT`) and the longer flight around it (`CAMERA_FLIGHT`) |
 | `parts/marks.ts` | where the callouts stand: over the scope's screen (a phone: over channel 1's probe), over a socket, over a part on the board, over the switch |
-| `steps/01-volts.ts` … `06-twice.ts` | the steps |
+| `steps/01-volts.ts` … `06-twice.ts` | the steps; the hand's rules with the probes by name (`handPolicy`), the dock (`meterSwitch`, `meterReadout`, `trayButtons`, `switchToggle`, `playerToggle`) and the goals' maths come from `@electronics/shared/steps` (moved there in E3-10 from this chapter's copies, REUSE.md) |
 | `qa/interactions.mjs` · `qa/helpers.mjs` | every goal by real pointer input (mouse or touch), the readers, the recalls, the closing card; helpers copied from the bench's sandbox (`REUSE.md`) |
 
 ## Steps
@@ -62,8 +60,8 @@ currents, the oscilloscope's trace (the roll's newest points) and its crests (`S
   a phone 360 px wide (seen on the shots).
 - **The wave's goal reads the crests of the samples shown** (`peak` over 2 s and over the run), not each sweep: the same
   model numbers, every sample counted.
-- **Names under the pointer** of the multimeter's and the oscilloscope's cases and of the player are the chapter's
-  (`stand.ts`), only where a pointer hovers; the probes' and the jumper's are the hand's (`parts/policy.ts`).
+- **Names under the pointer** of the multimeter's and the oscilloscope's cases and of the player are the step stand's
+  (`naming`), only where a pointer hovers; the probes' and the jumper's are the hand's (`handPolicy`).
 - **The player's toggle in the dock and a tap on its box** both set the model's `PLAYER` level (0,3 V or 0); the tap
   only in `wave` (the script: the hand takes the probes alone in `notes` and `twice`).
 - On a touch screen, as with a mouse, a grip shows only on an end the step lets the hand take (the shared hand since
