@@ -517,9 +517,10 @@ roll.anchor('metal' | 'film', out); // on the section over the axis: a metal lay
 - **Roll** (`roll.ts`): the box cut by the upright plane through the winding's axis, all but the corner by leg 1 under
   the plane `ROLL.corner` across the winding; on the section the oval roll — three turns of film (`mist`) and metal
   (`steel`) wound in a spiral (`windAt`) on a flattened core, the first strip's metal from the end by leg 0 with a bare
-  edge by leg 1, the second's the other way —, the sprayed ends, the leads from the box's bottom up against them, the
-  potting, the shell; on the corner's face the same layers cut across, the turns bending round. Static. Draw calls:
-  the inside's two, four with the part.
+  edge by leg 1, the second's the other way —, the sprayed ends, the leads from the box's bottom up against them (to
+  `ROLL.lead.top` over the axis: leg 1's rises over the corner's plane, so it shows going into its end there too), the
+  potting, the shell; on the corner's face the same layers cut across, the turns bending round, and leg 1's lead.
+  Static. Draw calls: the inside's two, four with the part.
 
 For checks: the door's reader has `PlatesState` — `{ volts, charges, count, positive, amps, speed, legElectrons,
 bulged, open, amount, printHidden, drawCalls, insideCalls }` — or `RollState` — `{ turns, open, amount, printHidden,

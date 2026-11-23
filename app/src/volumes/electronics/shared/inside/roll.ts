@@ -17,8 +17,9 @@
  * - the potting between the roll and the box (darker than the box), the box's shell in its own colour.
  * The corner by leg 1 under the plane `ROLL.corner` — across the winding, rising toward leg 1 — stays standing on the
  * reader's side (`WedgeOptions.keep`); its face on that plane cuts the roll across, so the turns show there as the
- * spiral they are, the layers of the upright section bending round into them (the second mesh). Leg 1's lead stays
- * inside that corner; leg 0's end shows whole.
+ * spiral they are, the layers of the upright section bending round into them (the second mesh). Leg 0's end and lead
+ * show whole; leg 1's lead rises over the corner's plane (`ROLL.lead.top`), so it shows going into its end above the
+ * corner, and cut across on the corner's face (leg 1's leg under the box the corner hides from the door's camera).
  * The view is static: the box is not in a circuit, so nothing moves and no charge is drawn. The turns are three
  * (`ROLL.turns`) and thick, for the layers to be seen; a real part's film is thinner than a hair, its turns hundreds.
  *
@@ -64,8 +65,11 @@ export const ROLL = {
   margin: 0.04,
   /** The sprayed metal ends: thick along the axis, standing out of the roll's oval by `proud`. */
   spray: { thick: 0.035, proud: 0.008 },
-  /** The leads in the box: their radius; how far over the axis their tops reach (a share of the roll's half-height). */
-  lead: { radius: 0.022, top: 0.1 },
+  /**
+   * The leads in the box: their radius; how far over the axis their tops reach (a share of the roll's half-height) —
+   * welded up the sprayed end, leg 1's well over the corner's plane (`corner`), so the camera sees it go in there too.
+   */
+  lead: { radius: 0.022, top: 0.6 },
   /**
    * The corner kept by leg 1: the plane through the axis where the first strip's metal stops (`margin` in from the
    * roll's end), rising toward leg 1 by `slope` along the axis per unit of height; under it the reader's half stands.

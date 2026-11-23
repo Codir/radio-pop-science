@@ -2,16 +2,18 @@
  * Inside a film capacitor (`roll.ts`, docs/volumes/electronics/VISUAL.md §7, batch E4): the box cut in half by the
  * upright plane through the winding's axis (the body's x) on the reader's side, and on the section the roll of two
  * metallised strips — film and metal taking turns, each strip's metal reaching its own sprayed end and stopping short
- * of the other —, the sprayed ends, the leads from the box's bottom up against them, the potting and the box's shell.
- * For both film boxes of the catalog: everything it draws within the part's box, one draw call of its own (three with
- * the part), the callouts' points on the section's metal and film, nothing while the part is whole, the part given back
- * whole. No WebGL: the scene graph and the numbers.
+ * of the other —, the sprayed ends, the leads from the box's bottom up against them, the potting and the box's shell;
+ * the corner by leg 1 kept, its face across the winding. For both film boxes of the catalog: everything it draws within
+ * the part's box, two draw calls of its own (four with the part), both leads in the camera's sight, the callouts'
+ * points on the section's metal and film, nothing while the part is whole, the part given back whole. No WebGL: the
+ * scene graph and the numbers.
  */
 import { Box3, Color, Matrix4, Vector3, type Material, type Mesh, type Object3D } from 'three';
 import { describe, expect, it } from 'vitest';
 import { col } from '@/style';
 import { PARTS } from '@electronics/sim/core';
 import { BOARD_SPEC } from '@electronics/sim/board';
+import { STAGE_FOV } from '../../bench/shots';
 import { PART_VIEW } from '../../dive/poses';
 import { FILM as BOX, RADIAL_Y, buildPart, type PartModel } from '../../parts';
 import { LEG_COLOR } from '../../parts/part';
@@ -58,6 +60,18 @@ function clipped(m: Material, p: Vector3): boolean {
   if (planes.length === 0) return false;
   const out = planes.map((pl) => pl.distanceToPoint(p) < 0);
   return m.clipIntersection ? out.every(Boolean) : out.some(Boolean);
+}
+/** Whether a point of the body frame is in the part's rounded box. */
+function inBox(q: Vector3): boolean {
+  const k = L.box.corner;
+  const d = [Math.abs(q.x) - (L.box.x - k), Math.abs(q.y - L.axisY) - (L.box.y - k), Math.abs(q.z) - (L.box.z - k)];
+  return Math.hypot(...d.map((x) => Math.max(x, 0))) + Math.min(Math.max(...d), 0) - k <= 0;
+}
+/** The door's camera on the floor `inside`, in the body frame of the part `m` (as `PART_VIEW` frames it). */
+function insideCamera(m: PartModel): Vector3 {
+  const size = Math.max(m.hit.scale.x, m.hit.scale.y, m.hit.scale.z);
+  const distance = size / (PART_VIEW.inside * 2 * Math.tan(((STAGE_FOV / 2) * Math.PI) / 180) * 1.5);
+  return m.hit.position.clone().addScaledVector(FRONT, distance);
 }
 function opened(key = 'film-1u') {
   const m = make(key);
@@ -333,15 +347,6 @@ describe('the roll inside a film capacitor (createRoll)', () => {
       }
       // whole: as much face as the plane has in the box on the reader's side, out to its surface — no holes, no
       // overlaps (1 %)
-      const inBox = (q: Vector3): boolean => {
-        const k = L.box.corner;
-        const d = [
-          Math.abs(q.x) - (L.box.x - k),
-          Math.abs(q.y - L.axisY) - (L.box.y - k),
-          Math.abs(q.z) - (L.box.z - k),
-        ];
-        return Math.hypot(...d.map((x) => Math.max(x, 0))) + Math.min(Math.max(...d), 0) - k <= 0;
-      };
       let expected = 0;
       const N = 720;
       for (let j = 0; j < N; j++) {
@@ -386,6 +391,76 @@ describe('the roll inside a film capacitor (createRoll)', () => {
         expect(metal[0]!.from / reach, `${key} at ${th}`).toBeCloseTo(windAt(th).layers(0)[1], 2);
       }
     }
+  });
+
+  it('shows each lead going into its sprayed end in the camera’s sight: leg 1’s over the kept corner and on its face', () => {
+    const { x: cx, slope } = L.corner;
+    const R = L.lead.radius;
+    const leg = LEG_COLOR.getHexString();
+    for (const key of BOXES) {
+      const { m, roll } = opened(key);
+      m.bodyGroup.updateWorldMatrix(true, true);
+      const box = m.body[0]!;
+      const camera = insideCamera(m);
+      const all = quads(roll);
+      const blocked: string[] = [];
+      for (const sign of [-1, 1]) {
+        for (const x of [P - 0.9 * R, P, P + 0.9 * R]) {
+          // near the lead's top, on its strip of the section over the axis
+          const at = new Vector3(sign * x, L.lead.top - 0.004, -INSET);
+          const r = Math.hypot(at.y - L.axisY, INSET);
+          const onLead = all.some(
+            (q) => q.color === leg && q.face === 0 && q.x0 <= at.x && at.x <= q.x1 && q.r0 <= r && r <= q.r1,
+          );
+          expect(onLead, `${key}: lead ${sign} at ${x}`).toBe(true);
+          // the line from it to the door's camera meets nothing of the box the cut keeps — the corner by leg 1 above all
+          // — until it leaves the box
+          const dir = camera.clone().sub(at).normalize();
+          const q = new Vector3();
+          for (let k = 1; k <= 4000; k++) {
+            q.copy(at).addScaledVector(dir, k * 0.0005);
+            if (!inBox(q)) break;
+            if (!clipped(box, m.bodyGroup.localToWorld(q.clone()))) {
+              blocked.push(`lead ${sign} at ${x}: the box kept at ${q.toArray().map((v) => v.toFixed(3))}`);
+              break;
+            }
+          }
+        }
+      }
+      expect(blocked, key).toEqual([]);
+      // the corner's face cuts leg 1's lead across where its plane meets it: a patch of the legs' colour, as large as
+      // the plane's cut through the lead's column on the reader's side
+      const mesh = roll.group.getObjectByName('roll:corner') as Mesh;
+      const pos = mesh.geometry.getAttribute('position');
+      const colors = mesh.geometry.getAttribute('color');
+      let area = 0;
+      const v = [new Vector3(), new Vector3(), new Vector3()] as const;
+      for (let i = 0; i < pos.count; i += 3) {
+        if (new Color(colors.getX(i), colors.getY(i), colors.getZ(i)).getHexString() !== leg) continue;
+        for (let j = 0; j < 3; j++) v[j]!.fromBufferAttribute(pos, i + j);
+        const a = new Vector3().subVectors(v[1], v[0]).cross(new Vector3().subVectors(v[2], v[0])).length() / 2;
+        // (none of the lead at these angles: collapsed to a point on the axis)
+        if (a < 1e-12) continue;
+        area += a;
+        // on leg 1's column, in front of the section, no higher than the lead's top
+        for (const p of v) {
+          expect(p.x, key).toBeGreaterThan(P - R - 0.005);
+          expect(p.x, key).toBeLessThan(P + R + 0.005);
+          expect(p.z, key).toBeGreaterThanOrEqual(-1e-6);
+          expect(p.z, key).toBeLessThanOrEqual(R + 1e-6);
+          expect(p.y, key).toBeLessThanOrEqual(L.lead.top + 1e-6);
+        }
+      }
+      const lo = (P - R - cx) / slope;
+      const hi = Math.min((P + R - cx) / slope, L.lead.top - L.axisY);
+      const expected = Math.max(hi - lo, 0) * R * Math.hypot(1, slope);
+      expect(expected).toBeGreaterThan(0);
+      expect(Math.abs(area / expected - 1), `${key}: ${area} of ${expected}`).toBeLessThan(0.1);
+    }
+    // the corner's plane rises toward leg 1, and leg 1's lead stands clear over it across its whole width — by more
+    // than its own thickness at the far side
+    const over = (x: number): number => L.lead.top - L.axisY - (x - cx) / slope;
+    expect(over(P + R)).toBeGreaterThan(R);
   });
 
   it('gives its callouts points on the section: a layer of metal toward leg 0, a layer of film toward leg 1', () => {
