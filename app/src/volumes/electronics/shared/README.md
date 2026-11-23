@@ -22,8 +22,8 @@ Each module has its public face in `shared/<module>/index.ts`; there is no `shar
 | | the LEDs' three lights; the wisp of a burn and the bulged can's steam | `lights`, `smoke` | E2 · E2-7 (steam E2-9) |
 | `parts` | every kind of part with the marks of the real one; the permanent things; the look of heat, the burn, the bulge | `part`, `resistor`, `capacitors`, `diode`, `led`, `transistor`, `pot`, `jumper`, `speaker`, `battery9v`, `player`, `bulb`, `code`, `look`, `heat-scale` | E2 · E2-4; the look E2-7; the catalog's marks E2-M; the bands' reader E3-5 |
 | `hand` | the two gestures, the grips and cues, the tray, the legs, the ground a lead lies on, the scripted swap | `hands`, `tray`, `leg`, `grips`, `cue`, `curves`, `glide`, `terrain`, `swap` | E2 · E2-5 |
-| `model` | the only caller of the circuit model (`driver`); the model in time for the scope and the speaker (`live`); the checks' hashes | `driver`, `live`, `hash` | E2 · E2-6; the model's time E2-7; `live`, `still` E2-9; the speaker's pace E2-10 |
-| `instruments` | the multimeter and its probes; the oscilloscope; the speaker in sound | `meter`, `meter-model`, `probe`; `scope`, `scope-model`, `sweep`; `speaker` | E2 · E2-6; E2-9; E2-10; the speaker's crest E3-9 |
+| `model` | the only caller of the circuit model (`driver`, and the board in time it drives); the model in time for the scope and the speaker (`live`); the board in time for the bench's looks (`timed`); the checks' hashes | `driver`, `live`, `timed`, `hash` | E2 · E2-6; the model's time E2-7; `live`, `still` E2-9; the speaker's pace E2-10; `timed` E4-T |
+| `instruments` | the multimeter and its probes; the oscilloscope; the speaker in sound | `meter`, `meter-model`, `probe`; `scope`, `scope-model`, `sweep`; `speaker` | E2 · E2-6; E2-9; E2-10; the speaker's crest E3-9; the scope's offset, divisions before the edge, single shot on a held page, held crests and level line E4-S |
 | `dive` | the magnifier as the door from the step's shot to a part and into it; the ladder «де ми» | `door`, `camera-rail`, `rail-math`, `poses`, `levels`, `lens-keeper`, `ladder`, `cutaway` | E2 · E2-8 |
 | `inside` | a resistor's carbon film, opened by the door | `film`, `wedge` | E3 · E3-5 |
 | `sound` | the volume's own sound output and the model playing in blocks (its own README) | `output`, `plan`, `stream`, `handler`, `protocol`, `model.worker`, `tape`, `board` | E1 · E1-9; probes, restart, damage E2-9 |
@@ -62,7 +62,8 @@ sandbox's check `leaks` holds it).
 
 **The frame** (`bench.update`): the filament's and the slider's ramps; the light and the room; the parts and the plugs
 follow the board's state; the instruments' probes; the hand (what arrives this frame is in the state); the model's sync
-(a new shape compiles, a new setting solves); the model's time (`advance`: heat, a burn and its one wisp); the looks
+(a new shape compiles, a new setting solves); the model's time (`advance`: heat, a burn and its one wisp; while
+`timed`, the board in time through the frame's seconds); the looks
 and the lights from the model; the multimeter's reading; the model in time (the scope's taps, the board, the blocks,
 the speaker) and the sweep shown now; on a held page the scope's window; the lit rows, the tray, the prints. A chapter
 reads the bench after `bench.update`; the dive's door and the magnifier's keeper go after it («dive» below).
@@ -85,6 +86,7 @@ frame by `bench.update`):
 | `closed` | 0 | the chapter; the hand (a tap on the slider, or the dock's toggle the chapter binds) | the battery's switch: 0 open (the thumb pushed left, the gap shows) … 1 closed — the setting of the model's part `SW` in `state.settings` |
 | `atPart` | false | the dive's door | the camera is down at a part, on the floors `part` and `inside` (not on the floor `stand` of the flight): a phone reads the prints there by the desk's rule (VISUAL §9, its exception) |
 | `flying` | false | the dive's door; a chapter at its border | the camera flies: the hand and the switch do nothing |
+| `timed` | false | the chapter (a step that shows a capacitor giving its charge) | the bench counts the board in time for its looks (`model.timed`, «model» below): the LEDs' light, the readings, the meter and a door's inner view are the board in time's last moment; never on the amplifier |
 | `lens`, `lensTarget` | 0, `null` | the chapter (a door's keeper takes it over) | the magnifier: 0 in its holder … 1 at `lensTarget` (a `LensPose` in the base frame, e.g. `overPose`) |
 | `lensCall` | 0 | the chapter | the step asks the reader to take the magnifier: the resting ring turns full cyan and pulses |
 | `dive` | 0 | the chapter (a door's keeper) | progress of the flight through the ring: the rim's arcs from 0.5 on |
@@ -105,8 +107,8 @@ setting), the hand's policy, the tray, the instruments' dial, scale and probes, 
 reader's hand writes the board's state (a part, a leg, a plug), the switch and the probes' places. The bench writes
 everything the model says: the model's solve and time, the lamp, the looks, the lights, the wisps, the meter's reading,
 the scope's trace and the speaker's sound — none of these has a setter. The dive's door writes `flying` and lays the
-magnifier through its keeper. Only `shared/model/driver.ts` calls the circuit model; the stream's thread runs the
-same model on the board the driver gives it.
+magnifier through its keeper. Only `shared/model/driver.ts` calls the circuit model (with the board in time it
+drives, `timed.ts`); the stream's thread runs the same model on the board the driver gives it.
 
 ## Rules
 
@@ -144,7 +146,8 @@ same model on the board the driver gives it.
 | `electronics-parts` | every part and permanent thing: where, its draw calls, its prints and whether the camera sees them | `parts`, `print` |
 | `electronics-hand` | what the hand holds, where a carried end would go, the preview, the lit rows, the switch's flips | `hand` |
 | `electronics-motion` | the camera, the thing moved, its tilt and every plug, every frame | `hand` |
-| `electronics-model` | the netlist's key, solves, compiles, `ok`, `failure`, `dcMs`, every part's reading and the rows' volts | `parts`, `meter`, `heat`, `film` |
+| `electronics-model` | the netlist's key, solves, compiles, `ok`, `failure`, `dcMs`, every part's reading and the rows' volts (while `timed`, the board in time's: `timed` says so) | `parts`, `meter`, `heat`, `film`, `timed` |
+| `electronics-timed` | the board in time: on, running, `ok`, its moment, starts, its steps since the start, the steps and ms of the last frame that let time pass and the worst since the start, the settings changed and when, the threshold watches, the cans' volts, the hash of its last moment | `timed` |
 | `electronics-heat` | every part's condition, heat, load, light and surface; the things, the lamp, the LEDs' lights, the wisps, the burns | `heat` |
 | `electronics-meter` | the dial, the probes' sockets, the reading now and the display's text | `meter` |
 | `electronics-scope` | the model in time (where, blocks, `since`, `now`), the sweep, its points and hash, a held page's windows | `scope` |
@@ -367,6 +370,9 @@ model.powered(a, b); // a source that drives a current is in their island: the c
 model.forget('R1'); // a new part goes under this id: its memory goes at once, the next sync solves again
 model.advance(dt); // the model's time passes (heat; a part that burns is solved out at once): the ids burnt now
 model.part('R1'); // { condition, load, heat, kelvin? } as the bench shows it; null while the last solve failed
+model.timed = true; // the board in time for the looks (E4-T): reading, nodeVolts, rowVolts, volts of its last moment
+model.volts('C1'); // a capacitor's voltage across its capacitance: 8.968 V on the closed switch of `capacitor/store`
+model.timeline.watch('LED1', 1e-3).fell - model.timeline.changed('SW'); // 0.5058 s: below 1 mA after the opening
 ```
 
 - **Compile on a new shape, solve on a new setting.** The netlist's `key` (`sim/board`) is the circuit's shape: a part
@@ -446,8 +452,47 @@ model.part('R1'); // { condition, load, heat, kelvin? } as the bench shows it; n
   bass note and the kick, while the second beat of the first bar is the bass's rest — a held window of music from
   0.5 s showed one high note and no bass. The same board gives the same samples (the checks hash them).
 
+**The board in time for the looks** (`timed.ts`, task E4-T; plan decision 1 of batch E4, recon E4 §1.3). Neither of
+the two above can show a capacitor giving its charge to an LED: the operating point has the capacitor open, so the
+switch opened is the LED dark at once, and the stream comes 0.06–0.25 s behind the bench (its blocks ahead of the sample
+shown), so a «gone at once» and a 10 μF's 11 ms «blink» would both look like a quarter of a second's glow. So a step
+that shows one turns `bench.timed` on (`model.timed`): the driver then counts the board on the bench in time frame by
+frame — a `Transient` of its own (its own `ModelState`) stepped through each frame's `dt` at `TIMED.rate` 4800 steps a
+second (80 a frame at 60 fps; the fraction carried to the next frame) —, and `reading`, `nodeVolts`, `rowVolts` and
+`volts` (a capacitor's voltage across its capacitance, `PartMemory.volts`) are its last moment's: the LEDs' light and
+the lights on the board (`show`), every part's reading (`electronics-model`, `electronics-heat`), the multimeter's V
+and A and a door's inner view (its current, the plates' charges) show the same moment.
+- **Starts** from the board's operating point (`start('dc')`) at the first sync after it is turned on and after every
+  `forget` (a step's `preset` or `clear`): the step's cans charged by a closed switch, empty behind an open one. Its
+  moment `timeline.now` runs on through every start.
+- **A new shape** (a part in, into the hand, back) is a `rebuild`: the moment runs on, every capacitor keeps its charge
+  by id — a can in the hand keeps what it held, a new one from the tray comes empty (closing onto an empty 470 μF:
+  4.17 A for a few milliseconds, full in the same frame). A new setting (the switch, a knob) is written in, its moment
+  kept (`timeline.changed(id)`); the next step takes it. On a frame of no time after a new shape the readings are the
+  last moment's of the parts still in the circuit, none for a new one.
+- **A frame of no time** (`dt` 0, a held frame) moves nothing: a held page shows its step's entry — the operating
+  point — and two held pages the same moment (`timeline.hash()`).
+- **The damage is the driver's**, told at every start and change (a part burnt is a gap there too); its own heat fails
+  nothing, and the heat the bench shows stays on the operating point (`advance`): a part's condition, load and heat
+  (`part`), the ohmmeter, `powered`, `tauMax` and `still` are the operating point's whether `timed` or not. Nothing in
+  the steps that count in time warms.
+- **A threshold watch** (`timeline.watch(part, level)`, one per pair, kept for the bench's life): the moment the size of
+  a part's current last fell below the level (`fell`) or rose to it (`rose`), straight between two steps — finer than a
+  frame: on the board of `capacitor/store` the LED's current falls below 1 mA 0.5058 / 0.1081 / 0.0113 s after the
+  switch's opening for 470 / 100 / 10 μF, as the script's run at 1/24 000 s (`model/__tests__/timed.test.ts`).
+- **Its numbers.** 470 μF from an ideal 9 V into 330 Ω and the red LED is the oracle's (`led-discharge.json`) within
+  0.1 mA at all twenty of its times; on the bench's battery after the opening 11.33 / 4.48 / 1.03 mA at 0.1 / 0.25 /
+  0.5 s (brightness 0.83 / 0.61 / 0.37), the can 2.02 V after 0.5 s and 1.61 V after 1 s; no can — below 0.1 mA in
+  the frame of the opening. Its cost there: ≈ 0.1 ms a frame under the test runner, measured in the browser by the
+  sandbox's section `timed` (≤ 1 ms). Small boards only; never the amplifier.
+- **The scope and the speaker stay the stream's**: a step with the board in time shows no scope (its trace would trail
+  the LED).
+
 For checks: `__app.read('electronics-model')` → `{ key, version, compiles, ok, failure, dcMs, iterations, issues,
-pending, parts: { id: { u, i, p } }, rows: { row: volts } }` (the rows a part uses; nothing of a failed solve).
+pending, timed, parts: { id: { u, i, p } }, rows: { row: volts } }` (the rows a part uses; nothing of a failed solve;
+while `timed`, the board in time's readings and rows). `__app.read('electronics-timed')` → `{ on, running, ok, reason,
+rate, now, starts, steps, frameSteps, ms, worstMs, changed: { id: s }, watches: [{ part, level, below, fell, rose }],
+volts: { id: V }, hash }`.
 
 ## `instruments` — the multimeter (E2-6)
 
@@ -516,6 +561,27 @@ ui.define({ scope: { board: { title, size: 'md', children: [
   (`channelVolts`, E3-8: `meter/twice` shows the amplifier's small input at 0,02 V a division beside its speaker at
   0,25 V): its trace on the screen at it, and on the board's chart channel 1 on the right axis — a chart made with
   `ScopeWords.y2`; without it every channel is drawn on the chart at `voltsPerDiv`.
+- **0 V off the screen** (`ground` beyond ±4, E4-S): `ground` is any finite number of divisions, and beyond ±4 the
+  screen holds a narrow band round a steady voltage, as a real scope's offset does — small changes of a big voltage:
+  `capacitor/reservoir`'s supply at 0,05 V a division with `ground` −165 shows 8,05 … 8,45 V (0,1 V with −83: 7,9 …
+  8,7 V). The chart's axis ticks the real volts («8,05», «8,1» …), the trigger's own level is the band's middle, and
+  a trace beyond the band — the − rail, 165 divisions down — lies on the screen's edge, on the instrument and on the
+  chart.
+- **Divisions before the edge** (`pretrigger`, E4-S: 0 … 9 whole divisions, 0 by default): a sweep starts that much
+  before the sample its trigger found, so that the edge shows whole (`filter/block`: one division, the jump on the
+  first division from the left); the chart's time runs from the edge — 0 there, «−5» … «45» ms at 5 ms a division —,
+  a label every other division from 0. `trigger.at` and `t0` are the edge's moment. A sweep that runs free has its 0
+  as far in; a held window too. A roll has none.
+- **A single shot** (`trigger.auto` false, an explicit `level`): the sweep an edge started stays drawn until the next
+  edge (`model.caught` — a sweep of the samples that came, started by an edge; a new scale or a new board clears it),
+  on a held page too (below).
+- **A level on the chart** (`cursor: { volts, channel? }`, E4-S; its word `ScopeWords.cursor`): a dashed line across
+  the board's chart at the level, `mist` (no hue of its own), named in the legend by the step's word, and a marker
+  where the channel's trace last crossed it, either way (`model.crossing()`: its x on the chart and the model's
+  moment; a white dot ringed in the channel's colour, no guides). On a roll the marker moves left with its trace. No
+  line while the level is off the screen; none on the instrument's screen. `capacitor/time`: 5,688 V, 63 % of 9 V.
+  `steps/scope.ts` `scopeBoard` passes no cursor word (E4-B's file): a step with a cursor makes its board with
+  `bench.oscilloscope.chart(id, { ...scopeWords(words), cursor })`.
 - **The input** (`SCOPE_INPUT`, E3-8): each probe in a socket off the − rail puts 1 MΩ from its row to the − rail
   into the circuit (`oscilloscope.extra()`, beside the meter's own part in the driver's `extra`), as a real scope's
   input does: the model's row is loaded as on a real bench — a rail behind an open switch falls to its diode's
@@ -523,7 +589,11 @@ ui.define({ scope: { board: { title, size: 'md', children: [
   thousand (the divider's 5,997 V reads 5,993 V with a probe on it). The input leaves with the probe.
 - **A channel's crest** (`model.peak(channel, seconds)`, E3-8): the largest |v| of the samples shown over the last
   seconds (kept per chunk of `PEAK_CHUNK` 240 samples, 10 ms; the samples ahead of the one shown do not count yet),
-  null while the channel is off — a step's readout of a wave's crest (`meter/twice`). **Sweep** (`display: 'sweep'`): a sweep starts where the trigger's channel
+  null while the channel is off — a step's readout of a wave's crest (`meter/twice`). On a held page, while its
+  window is shown, the window's (E4-S): the last seconds of its samples, all of them when it is shorter — `divider/
+  volume`'s two spans of 50 ms from 1 s, `filter`'s 480 samples —, not those the stream gave in the seconds before the
+  page held (an RC charging then read 3,02 V against the window's 8,88 V); a later sample shown (a frame with time) or
+  a sweep of the stream's samples gives the stream's again. **Sweep** (`display: 'sweep'`): a sweep starts where the trigger's channel
   crosses its level the way its slope says (the level: the step's, or the middle of the last span of that channel;
   `sweep.ts` `findTrigger`), within the last span of candidates and not before the end of the last sweep and its
   `holdoff`; with `auto` and no edge for a whole span it runs free; at most one a frame, only of samples that came.
@@ -541,19 +611,24 @@ ui.define({ scope: { board: { title, size: 'md', children: [
   glow, no bloom. The grid's tint is `steel` at 0.6 (the platform's screen draws its rim in it too).
 - **A held page** (`?freeze`): the bench's stream runs on the main thread (frames of fixed time give the same samples)
   and, on a frame with no time after anything changed — the board, a setting, a probe, the scale, time that passed —,
-  the scope shows `model.still` of two spans (once per change, as the radio's held frames): one span after the first
-  edge within the first span, or from its start without one. A roll keeps what it rolled.
+  the scope shows `model.still` of two spans (once per change, as the radio's held frames): one span with the first
+  edge `pretrigger` divisions in, or from its start without one. A roll keeps what it rolled, and so does a single
+  shot caught (`auto` off, `model.caught`, E4-S): the window from the operating point could never show the edge
+  (`filter/block`), so the shot stays on the held page until a new scale or a new board — then the window again.
 - **The probes** are ends of the hand like the multimeter's (`probe:ch1`, `probe:ch2`; `end:ch1`, `end:ch2` their tips),
   any socket but the other one's; they rest on the table in front of the scope, on a phone on the base in front of the
   board where the multimeter's rest (VISUAL §9: a step with both instruments on a phone puts one pair in sockets).
   On a phone the chart is in the panel's tab «Графіки» and the instrument out of the shot.
 
 For checks: `__app.read('electronics-scope')` → `{ mode, blocks, ms, since, now, display, fs, span, unit, timePerDiv,
-voltsPerDiv, channelVolts, volts, ground, trigger: { channel, level, slope, auto, used, found, at }, version, sweeps, holds, on, n, min,
-max, screen, t0, hash, points, frozen, stills, still: { warmup, tau, ms }, ch1, ch2, shown, ready }` (`mode` — where the
-model runs in time: `worker`, `sync`, `off`; `volts` — the V a division each channel is shown at; `points` — each channel's trace, its times on the chart's axis from `t0`;
-`screen` — the instrument's extremes, −1 … 1; `hash` — FNV-1a of the points: two pages that show the same, the same
-hash). The sandbox's steps `scope` and `rc` and `qa/measure.mjs --only scope` drive it.
+voltsPerDiv, channelVolts, volts, ground, trigger: { channel, level, slope, auto, used, found, at }, pretrigger, caught,
+cursor, crossing, crest, version, sweeps, holds, on, n, min, max, screen, t0, hash, points, frozen, stills, still: {
+warmup, tau, crest, ms }, ch1, ch2, shown, ready }` (`mode` — where the model runs in time: `worker`, `sync`, `off`;
+`volts` — the V a division each channel is shown at; `points` — each channel's trace, its times on the chart's axis
+from `t0`; `screen` — the instrument's extremes, −1 … 1; `hash` — FNV-1a of the points: two pages that show the same,
+the same hash; `crossing` — `{ x, t }` of `model.crossing()`; `crest` — each channel's `peak` over 0,5 s, the steps'
+readouts; `still.crest` — each tap's largest |v| over the last held window). The sandbox's steps `scope`, `rc`,
+`offset` and `shot` and `qa/measure.mjs --only scope` drive it.
 
 ## `instruments` — the speaker in sound (E2-10)
 

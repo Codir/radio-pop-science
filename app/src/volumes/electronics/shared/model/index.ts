@@ -1,7 +1,7 @@
 /**
  * The bench's link to the circuit model (`driver.ts`): the one place the bench calls `sim/core`; the model in time,
- * played by E1-9's stream for the oscilloscope (`live.ts`); and the checks' small helpers (`hash.ts`, copied from
- * `radio`).
+ * played by E1-9's stream for the oscilloscope (`live.ts`); the board in time frame by frame for the bench's looks
+ * (`timed.ts`, driven by the driver while `timed`); and the checks' small helpers (`hash.ts`, copied from `radio`).
  */
 export {
   OHMMETER,
@@ -16,3 +16,4 @@ export {
 } from './driver';
 export { fnv1a, meanOf } from './hash';
 export { LIVE, createLive, type Live, type LiveOptions } from './live';
+export { TIMED, type Timeline, type TimedWatch } from './timed';

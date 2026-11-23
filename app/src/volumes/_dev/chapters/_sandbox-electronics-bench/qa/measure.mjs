@@ -5,7 +5,7 @@
 // `qa/measure.mjs`, docs/volumes/electronics/REUSE.md «Копії»; the sections are the bench's own):
 //
 //   node app/src/volumes/_dev/chapters/_sandbox-electronics-bench/qa/measure.mjs --port 5480 --out <dir>
-//        [--only room,…,film,plates,roll,print,scope,sound,repeat,leaks] [--size 1280x720] [--touch]
+//        [--only room,…,film,plates,roll,print,timed,scope,sound,repeat,leaks] [--size 1280x720] [--touch]
 //
 // Sections (`--only`, default all):
 //   room  — step `room` on a held page (`?freeze`): the bench's reader `electronics-bench` (204 sockets, 36 rows),
@@ -114,15 +114,38 @@
 //           reported (VISUAL §9 asks for both); the end of the slider (`inside`: a disc has no inner view, it stays
 //           whole) the same; back at 0 a phone shows none again; the console; snapshots
 //           `print-<board|flight|part|end|home>-<size>.jpg`.
+//   timed — the bench in time (E4-T, `shared/model/timed.ts`) on a held page, step `timed` (the board of
+//           `capacitor/store` with 470 μF, the switch closed, the meter on the can's rows), every number from the
+//           bench's readers, never from pixels (`electronics-timed`, `-model`, `-heat`, `-meter`, `-dive`): on,
+//           running, 4800 steps a second; closed — the LED's 21.235 mA at light 1, the can's 8.968 V on the meter,
+//           the rows and the door; ten held frames move nothing (the moment, the steps, the hash) and a second held
+//           page has the same hash; the switch opened from the dock, then 60 frames of 1/60 s — 80 steps each, the
+//           LED's current and light at 0.1 / 0.25 / 0.5 s the script's (11.33 / 4.48 / 1.03 mA, 0.83 / 0.61 / 0.37),
+//           the light falling every frame with the LED lighting the board all along, the meter the rows of each frame
+//           and the door the can's volts of it, 1.61 V after 1 s, the threshold watch's 0.506 s to below 1 mA (the
+//           bench below from frame 31) and the panel's «0,5058 s», the cost ≤ 1 ms a frame (mean and 95th
+//           percentile; the worst reported); closed again the can full, opened again the same light at 0.25 s;
+//           100 μF and 10 μF — below 1 mA after 0.108 s and 0.0113 s (finer than a frame); no can — < 0.1 mA and dark
+//           in the frame the switch opens, still dark half a second on with the meter at 0 V (its reading and its
+//           display); inside the 470 μF — 60 charges, opened from the dock there, 1.61 V and its charges 1 s later,
+//           the LED still glowing; the console; snapshots `timed-<closed|ember|fade|none|inside>-<size>.jpg`.
 //   scope — the oscilloscope (E2-9): step `scope` (the amplifier with a low-pass before its volume control, the
 //           probes in j17 and j13) on two held pages — the same `electronics-scope.hash` (the window `model.still`
 //           computes at once: deterministic), a sweep triggered on channel 1, ≤ 600 points a channel, the chart and the
 //           instrument's screen of the same sweep (the screen's extremes the chart's on its scale), the board chart on
-//           screen, ≤ 350 draw calls; the filter's resistor 1 → 4.7 → 10 kΩ (`__ui.set('filter', …)`, held pages):
-//           the amplitude of channel 2 after the filter falls, channel 1's stays; step `rc` (10 kΩ, 100 μF, a roll) — the
-//           switch closed by a real pointer (a phone: the dock's toggle), 1.5 s of frames: channel 2 at the model's
-//           moment `since` + 1 s is 62.95 % ± 0.5 % of 9 V (R·C = 1 s with the scope's own input of 1 MΩ on the
-//           capacitor, E3-8; E1-5's tolerance), channel 1 at 9 V; a live page of
+//           screen, the crests the held window's (E4-S: `crest` = `still.crest`, not the stream's), ≤ 350 draw calls;
+//           the filter's resistor 1 → 4.7 → 10 kΩ (`__ui.set('filter', …)`, held pages): the amplitude of channel 2
+//           after the filter falls, channel 1's stays; step `rc` (10 kΩ, 100 μF, a roll) — the switch closed by a real
+//           pointer (a phone: the dock's toggle), 1.5 s of frames: channel 2 at the model's moment `since` + 1 s is
+//           62.95 % ± 0.5 % of 9 V (R·C = 1 s with the scope's own input of 1 MΩ on the capacitor, E3-8; E1-5's
+//           tolerance), channel 1 at 9 V, and the cursor's crossing of 63 % of 9 V (E4-S) at `since` + 1.010 s ± 10 ms,
+//           left of the roll's newest sample; step `offset` (E4-S: the amplifier's supply, 0.05 V a division, 0 V 165
+//           divisions down) on a held page — the trace inside the band 8.05 … 8.45 V and inside the instrument's
+//           screen, the − rail on its bottom edge, the crests the held window's; step `shot` (E4-S: `filter/block`'s
+//           board, one sweep, a division before its edge) on a held page — before the switch the window at rest (two
+//           flat lines), the switch closed by a real pointer (a phone: the dock's toggle) and 0.25 s of frames: the
+//           jump caught (≥ 8.5 V, ≤ 0.5 V at its end, the division before it at rest, its edge at 0), then held frames
+//           and the switch opened again keep it — the same hash, no new window; a live page of
 //           `scope` (no `freeze`): the model in the background thread (`mode` worker), the first sweep ≤ 5 s after the
 //           page settled, sweeps and blocks keep coming; the console; snapshots `scope-<what>-<size>.jpg`.
 //   sound — the speaker in sound (E2-10), step `sound` (the player → a 10 kΩ pot as the volume control → the speaker)
@@ -2170,6 +2193,263 @@ async function print(context) {
   await page.close();
 }
 
+/* -------------------------------------------------------------------------------------- section timed */
+
+/**
+ * The script's model run E4-2 of `capacitor/store` (docs/volumes/electronics/chapters/capacitor.md, «Ціль» and the
+ * notes): after the opening with 470 μF the LED's current and brightness at 0.1 / 0.25 / 0.5 s — frames 6, 15, 30 of
+ * 1/60 s —, the time to below 1 mA for 470 / 100 / 10 μF, the can's volts after 1 s; on the closed switch.
+ */
+const STORE = {
+  closed: { amps: 0.021235, volts: 8.968 },
+  fade: [
+    { frame: 6, amps: 0.011334, light: 0.828 },
+    { frame: 15, amps: 0.00448, light: 0.607 },
+    { frame: 30, amps: 0.001032, light: 0.372 },
+  ],
+  below1mA: { 'electrolytic-470u-16v': 0.5058, 'electrolytic-100u-16v': 0.1081, 'electrolytic-10u-16v': 0.0113 },
+  voltsAt1s: 1.61,
+};
+/** The board in time's steps a second (`shared/model/timed.ts` `TIMED`). */
+const TIMED_RATE = 4800;
+/** Its cost on the desktop, ms a frame (the brief). */
+const TIMED_MS = 1;
+
+async function timed(context) {
+  const n = (report.sections.timed = {});
+  const page = await context.newPage();
+  const pos = await open(page, 'timed').catch((err) => ({ error: String(err) }));
+  if (!check('opened', at(pos, 'timed'), where(pos))) {
+    await page.close();
+    return;
+  }
+  const { dive, to } = diveKit(page);
+  const timeline = () => read(page, 'electronics-timed');
+  const model = () => read(page, 'electronics-model');
+  const heat = () => read(page, 'electronics-heat');
+  const meter = () => read(page, 'electronics-meter');
+  const frame = () => page.evaluate(() => window.__app.step(1 / 60, 1));
+  const fadeText = () =>
+    page.evaluate(() => document.querySelector('[data-ui="ctl-timed-fade"] output')?.textContent ?? null);
+  const snap = (what) => join(out, `timed-${what}-${tag}.jpg`);
+  /** Everything the bench shows of the board in time at one frame: the LED (its current and the light the bench
+   * gives it), the meter's reading now, the rows it reads, the can's volts, the door's inner view, the cost. */
+  const sample = async () => {
+    const [t, m, h, me, d] = await Promise.all([timeline(), model(), heat(), meter(), dive()]);
+    return {
+      now: t.now,
+      steps: t.steps,
+      frameSteps: t.frameSteps,
+      ms: t.ms,
+      hash: t.hash,
+      amps: m.parts?.LED1?.i ?? null,
+      light: h.parts?.LED1?.light ?? null,
+      lit: h.leds?.lit ?? [],
+      meter: me.live,
+      rows: (m.rows?.['12ae'] ?? NaN) - (m.rows?.['13ae'] ?? NaN),
+      volts: t.volts?.C1 ?? null,
+      inside: d?.inside?.volts ?? null,
+      charges: d?.inside?.charges ?? null,
+      watch: t.watches?.find((w) => w.part === 'LED1' && w.level === 1e-3) ?? null,
+      opened: t.changed?.SW ?? NaN,
+    };
+  };
+
+  // 0. the entry on a held page: the board in time from the step's operating point
+  const t0 = await timeline();
+  const s0 = await sample();
+  n.entry = { ...t0, ...s0 };
+  check(
+    'the bench counts the step’s board in time (`bench.timed`): on, running, 4800 steps a second',
+    t0.on && t0.running && t0.ok && t0.rate === TIMED_RATE && t0.starts >= 1,
+    `on ${t0.on}, running ${t0.running}, ok ${t0.ok}, rate ${t0.rate}, starts ${t0.starts}, now ${round(t0.now, 4)} s`,
+  );
+  check(
+    'the switch closed: the LED takes the model’s 21.235 mA at full light, the can holds 8.968 V — meter, rows and the door alike',
+    (await model()).timed === true &&
+      Math.abs(s0.amps - STORE.closed.amps) < 1e-6 &&
+      s0.light === 1 &&
+      Math.abs(s0.volts - STORE.closed.volts) < 1e-3 &&
+      Math.abs(s0.meter - STORE.closed.volts) < 1e-3 &&
+      s0.meter === s0.rows &&
+      s0.inside === s0.volts,
+    `${round(s0.amps * 1e3, 4)} mA, light ${s0.light}; can ${round(s0.volts, 4)} V, meter ${round(s0.meter, 4)} V, rows ${round(s0.rows, 4)} V, door ${round(s0.inside, 4)} V`,
+  );
+  await screenshot(page, snap('closed'));
+
+  // 1. held frames (dt 0) move nothing; a second held page shows the same moment (the same hash)
+  for (let k = 0; k < 10; k++) await held(page);
+  const s1 = await sample();
+  check(
+    'ten held frames (dt 0) move nothing: the moment, the steps, the hash',
+    s1.now === s0.now && s1.steps === s0.steps && s1.hash === s0.hash && s1.amps === s0.amps,
+    `now ${s0.now} → ${s1.now}, steps ${s0.steps} → ${s1.steps}, hash ${s0.hash} → ${s1.hash}`,
+  );
+  const twin = await context.newPage();
+  const tpos = await open(twin, 'timed').catch((err) => ({ error: String(err) }));
+  const tw = at(tpos, 'timed') ? await read(twin, 'electronics-timed') : null;
+  n.twin = tw && { now: tw.now, hash: tw.hash };
+  check(
+    'a second held page of the step: the same moment, the same hash',
+    tw !== null && tw.now === t0.now && tw.hash === t0.hash,
+    `${tw?.now} s ${tw?.hash} against ${t0.now} s ${t0.hash}`,
+  );
+  await twin.close();
+
+  // 2. the switch opened from the dock, then a second of frames of 1/60 s: the LED fades as the can gives its charge
+  await page.evaluate(() => window.__ui.set('timed-switch', false, true));
+  const fade = [];
+  let before = s1.steps;
+  for (let k = 1; k <= 60; k++) {
+    await frame();
+    const f = await sample();
+    fade.push({ k, ...f, taken: f.steps - before });
+    before = f.steps;
+  }
+  n.fade = fade.map((f) => ({ k: f.k, amps: f.amps, light: f.light, volts: f.volts, meter: f.meter, ms: f.ms }));
+  const opened = fade[0].opened;
+  check(
+    'every frame of 1/60 s is 80 steps of the board in time (and the frames the page draws held between, none)',
+    fade.every((f) => f.taken === 80 && f.frameSteps === 80),
+    `${[...new Set(fade.map((f) => f.taken))].join(', ')} steps a frame`,
+  );
+  for (const want of STORE.fade) {
+    const f = fade[want.frame - 1];
+    check(
+      `${round(want.frame / 60, 3)} s after the opening: the LED’s current ${round(want.amps * 1e3, 3)} mA, its light ${want.light} (the script’s run)`,
+      Math.abs(f.amps - want.amps) < 5e-5 && Math.abs(f.light - want.light) < 0.01,
+      `${round(f.amps * 1e3, 4)} mA, light ${round(f.light, 3)}`,
+    );
+  }
+  check(
+    'the light falls every frame and the LED stays lit through the second (it lights the board)',
+    fade.every((f, k) => k === 0 || f.light < fade[k - 1].light) && fade.every((f) => f.lit.includes('LED1')),
+    `light ${round(fade[0].light, 3)} → ${round(fade[59].light, 3)}`,
+  );
+  check(
+    'every frame the meter reads the rows of that moment, and the door the can’s volts of it',
+    fade.every((f) => f.meter === f.rows && f.inside === f.volts),
+    fade
+      .filter((f) => f.meter !== f.rows || f.inside !== f.volts)
+      .slice(0, 3)
+      .map((f) => `frame ${f.k}: meter ${f.meter} rows ${f.rows} door ${f.inside} can ${f.volts}`)
+      .join('; ') || 'all 60',
+  );
+  check(
+    `after 1 s the can holds ${STORE.voltsAt1s} V (the script’s run)`,
+    Math.abs(fade[59].volts - STORE.voltsAt1s) < 0.01,
+    `${round(fade[59].volts, 4)} V`,
+  );
+  const w470 = fade[59].watch;
+  const below = w470 ? w470.fell - opened : NaN;
+  const firstBelow = fade.find((f) => Math.abs(f.amps) < 1e-3)?.k;
+  n.below1mA = { 'electrolytic-470u-16v': below, frame: firstBelow, text: await fadeText() };
+  check(
+    'the threshold watch: below 1 mA 0.506 s after the opening, between the 30th and the 31st frame — the panel says it',
+    Math.abs(below - STORE.below1mA['electrolytic-470u-16v']) < 1e-3 && firstBelow === 31 && n.below1mA.text === '0,5058 s',
+    `${round(below, 5)} s, the bench below from frame ${firstBelow}; the panel «${n.below1mA.text}»`,
+  );
+  const cost = fade.map((f) => f.ms).sort((a, b) => a - b);
+  const mean = cost.reduce((a, b) => a + b, 0) / cost.length;
+  n.cost = { mean, p95: cost[Math.floor(cost.length * 0.95)], worst: cost[cost.length - 1], worstSinceStart: (await timeline()).worstMs };
+  check(
+    `its cost on this board ≤ ${TIMED_MS} ms a frame (the mean and the 95th percentile; the worst reported)`,
+    mean <= TIMED_MS && n.cost.p95 <= TIMED_MS,
+    `mean ${round(mean, 3)} ms, 95 % ${round(n.cost.p95, 3)} ms, worst ${round(n.cost.worst, 3)} ms (since the start ${round(n.cost.worstSinceStart, 3)} ms)`,
+  );
+  await screenshot(page, snap('ember'));
+
+  // 3. the screenshot of the fade: closed again (the can fills within the frame), opened, 15 frames (0.25 s)
+  await page.evaluate(() => window.__ui.set('timed-switch', true, true));
+  await advance(page, 0.3);
+  const refill = await sample();
+  check(
+    'closed again: the can full within the frames, the LED at full light',
+    Math.abs(refill.volts - STORE.closed.volts) < 1e-3 && refill.light === 1,
+    `${round(refill.volts, 4)} V, light ${refill.light}`,
+  );
+  await page.evaluate(() => window.__ui.set('timed-switch', false, true));
+  for (let k = 0; k < 15; k++) await frame();
+  const quarter = await sample();
+  check('0.25 s after the opening again: the same light', Math.abs(quarter.light - 0.607) < 0.01, `light ${round(quarter.light, 3)}`);
+  await screenshot(page, snap('fade'));
+
+  // 4. the other cans and none: each a new board, started again from its operating point with the switch closed
+  n.cans = {};
+  for (const [spec, label] of [
+    ['electrolytic-100u-16v', '100u'],
+    ['electrolytic-10u-16v', '10u'],
+  ]) {
+    await page.evaluate(() => window.__ui.set('timed-switch', true, true));
+    await page.evaluate((v) => window.__ui.set('timed-can', v, true), spec);
+    await advance(page, 0.3);
+    await page.evaluate(() => window.__ui.set('timed-switch', false, true));
+    const frames = [];
+    for (let k = 1; k <= 12; k++) {
+      await frame();
+      frames.push(await sample());
+    }
+    const last = frames[frames.length - 1];
+    const s = last.watch ? last.watch.fell - last.opened : NaN;
+    n.cans[label] = { below: s, frame: frames.findIndex((f) => Math.abs(f.amps) < 1e-3) + 1, first: frames[0].light, text: await fadeText() };
+    const want = STORE.below1mA[spec];
+    check(
+      `${label}: below 1 mA ${want} s after the opening (the threshold watch, finer than a frame)`,
+      Math.abs(s - want) < (label === '10u' ? 2e-4 : 1e-3),
+      `${round(s, 5)} s, the bench below from frame ${n.cans[label].frame}, the first frame’s light ${round(n.cans[label].first, 3)}; the panel «${n.cans[label].text}»`,
+    );
+  }
+  await page.evaluate(() => window.__ui.set('timed-switch', true, true));
+  await page.evaluate(() => window.__ui.set('timed-can', 'none', true));
+  await advance(page, 0.3);
+  await page.evaluate(() => window.__ui.set('timed-switch', false, true));
+  await frame();
+  const none = await sample();
+  n.none = { amps: none.amps, light: none.light };
+  check(
+    'no can: in the very frame the switch opens the LED takes < 0.1 mA and is dark',
+    Math.abs(none.amps) < 1e-4 && none.light === 0 && !none.lit.includes('LED1'),
+    `${none.amps} A, light ${none.light}`,
+  );
+  // half a second on: still dark, and the meter's display (its own refresh) has caught up with the rails' 0 V
+  await advance(page, 0.5);
+  const noneLater = await sample();
+  const shown = (await meter()).value;
+  check(
+    'no can, half a second on: dark, the meter at 0 V (reading and display)',
+    noneLater.light === 0 && Math.abs(noneLater.meter) < 1e-6 && Math.abs(shown) < 1e-6,
+    `light ${noneLater.light}, reading ${noneLater.meter} V, display ${shown} V`,
+  );
+  await screenshot(page, snap('none'));
+
+  // 5. inside the 470 μF: full on the closed switch; opened from the dock there, the charges drain with the LED
+  await page.evaluate(() => window.__ui.set('timed-switch', true, true));
+  await page.evaluate(() => window.__ui.set('timed-can', 'electrolytic-470u-16v', true));
+  await advance(page, 0.3);
+  const inside = await to(DEPTH);
+  check(
+    'inside the can: the floor `inside`, 60 charges at 8.968 V',
+    inside.floor === 'inside' && inside.inside?.open && inside.inside?.charges === 60,
+    `floor ${inside.floor}, ${inside.inside?.charges} charges at ${inside.inside?.volts} V`,
+  );
+  await page.evaluate(() => window.__ui.set('timed-switch', false, true));
+  for (let k = 0; k < 60; k++) await frame();
+  const drained = await sample();
+  n.inside = { volts: drained.inside, charges: drained.charges, light: drained.light };
+  check(
+    'opened inside, 1 s later: the plates hold the board in time’s 1.61 V, their charges by it, the LED still glowing',
+    Math.abs(drained.inside - STORE.voltsAt1s) < 0.01 && drained.charges === chargeCount(drained.inside) && drained.light > 0.1,
+    `${round(drained.inside, 4)} V, ${drained.charges} charges, light ${round(drained.light, 3)}`,
+  );
+  await screenshot(page, snap('inside'));
+  await to(0);
+
+  const errors = await appErrors(page);
+  n.errors = errors;
+  check('console', errors.length === 0, consoleText(errors));
+  await page.close();
+}
+
 /* -------------------------------------------------------------------------------------- section scope */
 
 /** The model's rate in time (`shared/model/live.ts` `LIVE`). */
@@ -2189,6 +2469,17 @@ const RC63 = (() => {
 const FIRST_SWEEP = 5;
 /** The filter's resistors of the step `scope`, in the order the dock's switch offers them. */
 const FILTERS = ['resistor-1k', 'resistor-4k7', 'resistor-10k'];
+
+/**
+ * `rc`'s cursor (E4-S): 63 % of 9 V on channel 2, which the charge through 10 kΩ ∥ the scope's 1 MΩ into 100 μF crosses
+ * 1.0103 s after the switch (the script of `capacitor`, step `slow`: the model's run with the probe on the capacitor).
+ */
+const RC_CROSS = { volts: 0.632 * 9, after: 1.0103, tolerance: 0.01 };
+/** Both channels' crests on a held page are its window's: `peak` over 0.5 s, the window shorter than that (E4-S). */
+const heldCrests = (sc) =>
+  Array.isArray(sc?.crest) &&
+  Array.isArray(sc?.still?.crest) &&
+  [0, 1].every((c) => sc.on[c] !== true || (sc.crest[c] !== null && Math.abs(sc.crest[c] - sc.still.crest[c]) < 1e-6));
 
 /** The value of a channel's points at the model's moment `t` (s): straight between the points round it. */
 function traceAt(scope, channel, t) {
@@ -2251,6 +2542,11 @@ async function scope(context) {
       'scope: the instrument’s screen shows the chart’s sweep (its extremes the same on the screen’s scale)',
       same,
       `ch1 ${round(sc?.min?.[0], 4)} … ${round(sc?.max?.[0], 4)} V → ${round(sc?.screen?.[0]?.min, 4)} … ${round(sc?.screen?.[0]?.max, 4)}; ch2 ${round(sc?.min?.[1], 4)} … ${round(sc?.max?.[1], 4)} V → ${round(sc?.screen?.[1]?.min, 4)} … ${round(sc?.screen?.[1]?.max, 4)}`,
+    );
+    check(
+      'scope: the crests on the held page are the held window’s (E4-S), not the stream’s before it',
+      heldCrests(sc),
+      `crest ${JSON.stringify(sc?.crest?.map((v) => round(v, 5)))}, the window's ${JSON.stringify(sc?.still?.crest?.map((v) => round(v, 5)))}`,
     );
     if (touch) await page.evaluate(() => window.__ui.setSheet?.({ tab: 'board' }));
     const chart = await page.evaluate(() => window.__ui.locate('ctl-scope-scope'));
@@ -2327,6 +2623,19 @@ async function scope(context) {
         v !== null && Math.abs(v / RC63.volts - RC63.share) <= RC63.tolerance && Math.abs(v1 - 9) < 0.02,
         `${round(v, 4)} V = ${round((v / RC63.volts) * 100, 3)} %; channel 1 ${round(v1, 4)} V`,
       );
+      // E4-S: the cursor at 63 % of 9 V on channel 2 and where the trace crossed it, left of the newest sample
+      const cross = s1.crossing;
+      n.rc.cursor = s1.cursor;
+      n.rc.crossing = cross ? { x: round(cross.x, 4), after: round(cross.t - s1.since, 5) } : null;
+      check(
+        'rc: the cursor at 63 % of 9 V on channel 2; the trace crossed it 1.010 s ± 10 ms after the switch, left of now',
+        s1.cursor?.channel === 1 &&
+          Math.abs(s1.cursor.volts - RC_CROSS.volts) < 1e-9 &&
+          cross !== null &&
+          Math.abs(cross.t - s1.since - RC_CROSS.after) <= RC_CROSS.tolerance &&
+          cross.x < 0,
+        `cursor ${JSON.stringify(s1.cursor)}; crossing ${cross ? `${round(cross.t - s1.since, 5)} s after the switch, x ${round(cross.x, 4)} s` : 'none'}`,
+      );
       const calls = await drawCalls(page);
       check('rc: draw calls ≤ 350', calls.engine > 0 && calls.engine <= DRAW_CALLS.gate, `${calls.engine}`);
       await screenshot(page, snap('rc'));
@@ -2336,7 +2645,158 @@ async function scope(context) {
     await page.close();
   }
 
-  // 4. a live page: the model in the background thread, sweeps that come and keep coming
+  // 4. step `offset` (E4-S): the amplifier's supply in a band of 0.4 V, 0 V 165 divisions below the middle
+  {
+    const page = await context.newPage();
+    const pos = await open(page, 'offset').catch((err) => ({ error: String(err) }));
+    if (check('offset: opened', at(pos, 'offset'), where(pos))) {
+      await held(page);
+      const s = await scopeNow(page);
+      const lo = (-4 - s.ground) * s.voltsPerDiv;
+      const hi = (4 - s.ground) * s.voltsPerDiv;
+      const onScreen = (v) => Math.max(-1, Math.min(1, (v / s.voltsPerDiv + s.ground) / 4));
+      n.offset = {
+        band: [round(lo, 4), round(hi, 4)],
+        supply: [round(s.min[0], 4), round(s.max[0], 4)],
+        screen: s.screen,
+        level: round(s.trigger.used, 4),
+        crest: s.crest?.map((v) => round(v, 5)),
+        window: s.still?.crest?.map((v) => round(v, 5)),
+        warmup: s.still?.warmup,
+      };
+      check(
+        'offset: 0.05 V a division with 0 V 165 divisions below the middle — the screen 8.05 … 8.45 V',
+        s.voltsPerDiv === 0.05 && s.ground === -165 && Math.abs(lo - 8.05) < 1e-9 && Math.abs(hi - 8.45) < 1e-9,
+        `${s.voltsPerDiv} V a division, ground ${s.ground}: ${round(lo, 4)} … ${round(hi, 4)} V`,
+      );
+      check(
+        'offset: the supply (channel 1 in e5) inside the band and inside the instrument’s screen, triggered on its middle',
+        s.ch1 === 'e5' &&
+          s.trigger.found === true &&
+          s.trigger.used > lo &&
+          s.trigger.used < hi &&
+          s.min[0] > lo &&
+          s.max[0] < hi &&
+          s.screen[0] !== null &&
+          s.screen[0].min > -1 &&
+          s.screen[0].max < 1 &&
+          Math.abs(s.screen[0].min - onScreen(s.min[0])) < 1e-6 &&
+          Math.abs(s.screen[0].max - onScreen(s.max[0])) < 1e-6,
+        `${round(s.min[0], 4)} … ${round(s.max[0], 4)} V → screen ${round(s.screen[0]?.min, 3)} … ${round(s.screen[0]?.max, 3)}; level ${round(s.trigger.used, 4)} V`,
+      );
+      check(
+        'offset: the − rail (channel 2 in −5, 0 V) cut at the screen’s bottom edge',
+        s.ch2 === '-5' && Math.abs(s.max[1]) < 1e-9 && s.screen[1]?.min === -1 && s.screen[1]?.max === -1,
+        `channel 2 ${round(s.max[1], 6)} V → screen ${JSON.stringify(s.screen[1])}`,
+      );
+      check(
+        'offset: the crests on the held page are the held window’s',
+        heldCrests(s),
+        `crest ${JSON.stringify(n.offset.crest)}, the window's ${JSON.stringify(n.offset.window)}`,
+      );
+      if (touch) await page.evaluate(() => window.__ui.setSheet?.({ tab: 'board' }));
+      const chart = await page.evaluate(() => window.__ui.locate('ctl-scope-offset'));
+      check('offset: the board chart on screen', chart !== null && chart.w > 50, JSON.stringify(chart));
+      await screenshot(page, snap('offset'));
+      const errors = await appErrors(page);
+      check('offset: console', errors.length === 0, consoleText(errors));
+    }
+    await page.close();
+  }
+
+  // 5. step `shot` (E4-S): one sweep, a division before its edge, caught and kept on the held page
+  {
+    const page = await context.newPage();
+    const pos = await open(page, 'shot').catch((err) => ({ error: String(err) }));
+    if (check('shot: opened', at(pos, 'shot'), where(pos))) {
+      const s0 = await scopeNow(page);
+      check(
+        'shot: before the switch, the held window at rest — two flat lines at 0 V, nothing caught',
+        s0?.display === 'sweep' &&
+          s0.pretrigger === 1 &&
+          s0.trigger.auto === false &&
+          s0.holds >= 1 &&
+          s0.caught === false &&
+          s0.trigger.found === false &&
+          s0.n.every((m) => m > 0) &&
+          [0, 1].every((c) => Math.abs(s0.max[c]) < 1e-3 && Math.abs(s0.min[c]) < 1e-3),
+        `holds ${s0?.holds}, caught ${s0?.caught}, found ${s0?.trigger?.found}, ch1 ${round(s0?.max?.[0], 5)} V, ch2 ${round(s0?.max?.[1], 5)} V`,
+      );
+      const phone = (await read(page, 'electronics-bench'))?.phone === true;
+      const p = await pointer(page, touch);
+      if (phone) await page.evaluate(() => window.__ui.setSheet?.({ tab: 'controls' }));
+      const tapSwitch = async () => {
+        await held(page);
+        const sw = phone
+          ? await page.evaluate(() => window.__ui.locate('ctl-battery-switch'))
+          : await page.evaluate(() => window.__app.locate('switch'));
+        if (sw) await p.tap(sw.x, sw.y);
+        return (await read(page, 'electronics-board'))?.settings?.SW;
+      };
+      const closed = await tapSwitch();
+      check(`shot: a tap on ${phone ? 'the dock’s toggle' : 'the slider'} closes the switch`, closed === 1, `SW ${closed}`);
+      await page.evaluate(() => window.__app.step(1 / 60, 15));
+      await held(page);
+      const s1 = await scopeNow(page);
+      const [rail, r] = s1.points;
+      const before = r.v.filter((_, k) => r.x[k] < 0);
+      const at0 = r.x.findIndex((x) => x >= 0);
+      const on = rail.v.filter((_, k) => rail.x[k] >= 0);
+      n.shot = {
+        sweeps: s1.sweeps,
+        found: s1.trigger.found,
+        caught: s1.caught,
+        at: round(s1.trigger.at - s1.since, 5),
+        max: round(s1.max[1], 4),
+        end: round(r.v.at(-1), 4),
+        first: round(r.x[0], 4),
+        before: before.length,
+        rail: [round(Math.min(...on), 4), round(Math.max(...on), 4)],
+      };
+      check(
+        'shot: the jump caught — channel 2 to ≥ 8.5 V at the edge and ≤ 0.5 V at the sweep’s end, a division at rest before the edge at 0, channel 1 at 9 V from it',
+        s1.caught === true &&
+          s1.trigger.found === true &&
+          s1.sweeps > s0.sweeps &&
+          s1.max[1] >= 8.5 &&
+          r.v.at(-1) <= 0.5 &&
+          Math.abs(r.x[0] + 5) < 1e-6 &&
+          before.length > 0 &&
+          before.every((v) => Math.abs(v) < 1e-3) &&
+          Math.abs(r.x[at0]) < 1e-6 &&
+          r.v[at0] >= 8.5 &&
+          on.length > 0 &&
+          on.every((v) => v > 8.9),
+        JSON.stringify(n.shot),
+      );
+      await screenshot(page, snap('shot'));
+      // held frames: the shot stays — no window from the operating point in its place
+      for (let k = 0; k < 3; k++) await held(page);
+      const s2 = await scopeNow(page);
+      check(
+        'shot: held frames keep it — the same hash, no new window',
+        s2.hash === s1.hash && s2.holds === s1.holds && s2.stills === s1.stills && s2.caught === true,
+        `hash ${s1.hash} → ${s2.hash}, holds ${s1.holds} → ${s2.holds}, stills ${s1.stills} → ${s2.stills}`,
+      );
+      // the switch opened again on the held page: no new edge, the shot still stays
+      const opened = await tapSwitch();
+      await held(page);
+      await held(page);
+      const s3 = await scopeNow(page);
+      check(
+        'shot: the switch opened again on the held page — the shot stays',
+        opened === 0 && s3.hash === s1.hash && s3.holds === s1.holds && s3.caught === true,
+        `SW ${opened}, hash ${s3.hash}, holds ${s3.holds}`,
+      );
+      const calls = await drawCalls(page);
+      check('shot: draw calls ≤ 350', calls.engine > 0 && calls.engine <= DRAW_CALLS.gate, `${calls.engine}`);
+      const errors = await appErrors(page);
+      check('shot: console', errors.length === 0, consoleText(errors));
+    }
+    await page.close();
+  }
+
+  // 6. a live page: the model in the background thread, sweeps that come and keep coming
   {
     const page = await context.newPage();
     const url = appUrl(base, { route: route('scope'), q });
@@ -2707,8 +3167,8 @@ async function leaks(context) {
 /* ---------------------------------------------------------------------------------------------- run */
 
 const SECTIONS = {
-  room, shots, parts, hand, meter, heat, loupe, film, plates, roll, print, scope, sound, repeat, leaks,
-}; // prettier-ignore
+  room, shots, parts, hand, meter, heat, loupe, film, plates, roll, print, timed, scope, sound, repeat, leaks,
+};
 const only =
   typeof args.only === 'string'
     ? args.only

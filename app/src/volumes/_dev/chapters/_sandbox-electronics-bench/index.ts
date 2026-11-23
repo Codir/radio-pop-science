@@ -16,7 +16,11 @@ import { defineChapter } from '@/engine/api';
  * through a 10 kΩ pot as the volume control into the speaker, the volume slider in the panel (step `sound`; the bench
  * is mounted with its option `sound`, so the speaker plays wherever it is in the circuit); E4-I: inside the
  * capacitors — an electrolytic's two plates with the model's charges (step `plates`), a film capacitor's roll (step
- * `roll`); E4-B: a part's print down at the part, a phone's too (step `print`).
+ * `roll`); E4-B: a part's print down at the part, a phone's too (step `print`); E4-T: the bench in time — the LED
+ * fading as the can gives its charge, the meter and the plates of the same moment (step `timed`); E4-S: the
+ * oscilloscope's offset — the amplifier's supply in a band of 0,4 V (step `offset`) —, a single shot with a division
+ * before its edge, kept on a held page (step `shot`), and the dashed level of 63 % with the crossing's marker on the
+ * charge of `rc`.
  * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
@@ -43,7 +47,17 @@ export const SANDBOX = {
     rc: {
       title: 'Осцилограф: заряд конденсатора',
       blurb:
-        'Від шини «+» перемичка, резистор 10 kΩ і конденсатор 100 μF до шини «−»; вимикач розімкнено. Слід іде прокруткою, новий праворуч. Замкніть вимикач: канал 1 одразу стрибає до 9 V, а канал 2 — напруга на конденсаторі — росте плавно й за секунду, сталу часу 10 kΩ на 100 μF, доходить до 63 % від 9 V.',
+        'Від шини «+» перемичка, резистор 10 kΩ і конденсатор 100 μF до шини «−»; вимикач розімкнено. Слід іде прокруткою, новий праворуч. Замкніть вимикач: канал 1 одразу стрибає до 9 V, а канал 2 — напруга на конденсаторі — росте плавно й за секунду, сталу часу 10 kΩ на 100 μF, доходить до 63 % від 9 V. Пунктир на графіку — 63 % від 9 V, і там, де слід каналу 2 його перетнув, стає позначка, що далі їде ліворуч разом зі слідом.',
+    },
+    offset: {
+      title: 'Осцилограф: живлення крупно',
+      blurb:
+        'Підсилювач тому грає. Щуп каналу 1 — на лінії живлення за захисною деталлю, щуп каналу 2 — на шині «−». Нуль осцилографа стоїть далеко внизу, поза екраном: 0,05 V на поділку, і екран показує лише смугу від 8,05 до 8,45 V — видно, як живлення хитається з музикою на соті частки вольта. Шина «−» лежить на нижньому краю екрана. Вийміть високий конденсатор-запас ліворуч — і лінія хитається сильніше.',
+    },
+    shot: {
+      title: 'Осцилограф: одна розгортка',
+      blurb:
+        'Від шини «+» перемичка, плівковий конденсатор 1 μF, резистор 10 kΩ через жолоб і перемичка до шини «−»; вимикач розімкнено. Осцилограф чекає одного запуску: канал 2 перейде 1 V угору. Замкніть вимикач — і він ловить одну розгортку, на поділку раніше за перехід: канал 1 стрибає до 9 V, канал 2 — майже до 9 V і за кілька сотих секунди сходить нанівець. Розгортка лишається на екрані, доки не прийде наступна, і на завмерлій сторінці теж.',
     },
     parts: {
       title: 'Деталі на платі',
@@ -105,6 +119,11 @@ export const SANDBOX = {
       blurb:
         'Керамічний конденсатор 100 nF сам на платі, вимикач розімкнено. Повзунок «Глибина» веде лупу на диск і камеру до нього: на поверсі «деталь» видно його код «104». На телефоні теж: зблизька друк читають за тим самим правилом, що й на комп’ютері, — лише там, де кожна літера щонайменше 16 px; на звичайному ракурсі телефона друку немає.',
     },
+    timed: {
+      title: 'Стенд у часі: конденсатор віддає заряд',
+      blurb:
+        'Коло світлодіода, а поруч, між шинами, — конденсатор 470 μF; вимикач замкнено, мультиметр показує напругу на конденсаторі. Стенд рахує цю плату в часі, кадр за кадром: розімкніть вимикач — світлодіод не гасне одразу, а тьмяніє за пів секунди й ще довго ледь жевріє, бо конденсатор віддає йому заряд; мультиметр і лупа всередині конденсатора показують ту саму мить. Панель записує, через скільки після вимикача струм світлодіода впав нижче 1 mA. Перемикач «Конденсатор» ставить 10, 100 чи 470 μF або прибирає його: без конденсатора світлодіод гасне тієї ж миті.',
+    },
     sound: {
       title: 'Звук із динаміка',
       blurb:
@@ -141,8 +160,19 @@ export const SANDBOX = {
   /** Step `plates`: the switch of the can in C1's sockets (its values are the tray's labels); the can turned round. */
   plates: { can: 'Конденсатор', flip: 'Навпаки' },
   /**
-   * The oscilloscope's board (steps `scope`, `rc`): its title, the axes' quantities and the word of a division (the
-   * symbols, units and numbers are the code's), the channels of each step, the switch of the filter's resistor.
+   * Step `timed`: the switch of the can in C1's sockets (the values are the tray's labels; «none» a word), the
+   * multimeter's number, the time from the switch's opening to the LED's current below 1 mA (its number the code's).
+   */
+  timed: {
+    can: 'Конденсатор',
+    none: 'Без конденсатора',
+    meter: 'Мультиметр на конденсаторі',
+    fade: 'Струм світлодіода понад 1 mA після вимикача',
+  },
+  /**
+   * The oscilloscope's board (steps `scope`, `rc`, `offset`, `shot`): its title, the axes' quantities and the word of a
+   * division (the symbols, units and numbers are the code's), the channels of each step, the switch of the filter's
+   * resistor, the name of the dashed level of `rc` (E4-S).
    */
   scope: {
     board: 'Осцилограф',
@@ -150,8 +180,11 @@ export const SANDBOX = {
     channels: {
       scope: { ch1: 'Канал 1 — до фільтра', ch2: 'Канал 2 — після фільтра' },
       rc: { ch1: 'Канал 1 — до резистора', ch2: 'Канал 2 — на конденсаторі' },
+      offset: { ch1: 'Канал 1 — живлення', ch2: 'Канал 2 — шина «−»' },
+      shot: { ch1: 'Канал 1 — до конденсатора', ch2: 'Канал 2 — за конденсатором' },
     },
     resistor: 'Резистор фільтра',
+    cursor: '63 % від 9 V',
   },
   /** Step `sound`: the volume slider (its value the code's per cent). */
   sound: { volume: 'Гучність' },
