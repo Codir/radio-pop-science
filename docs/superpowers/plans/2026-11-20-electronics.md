@@ -30,7 +30,7 @@ GitHub Actions і GitHub Pages.
 | E1 | `2026-11-20-electronics/batch-E1.md` | каркас, сайт `/electronics/`, модель кола з еталоном ngspice, документи тому, проба звуку | у роботі |
 | E2 | `2026-11-20-electronics/batch-E2.md` | стенд: кімната, плата з гніздами, лоток, деталі, вставляння, нагрів і поломки, мультиметр, осцилограф, звук; пісочниця | E2-1…E2-8 у роботі в окремому клоні паралельно з E1; E2-9, E2-10 — після злиття |
 | E3 | `2026-11-20-electronics/batch-E3.md` | пілот: реєстр термінів, сценарії й глави `prologue`, `meter`, `resistor`, `resistor-pick` | сценарії — після E1; глави `resistor`, `resistor-pick` — після стенда, далі `meter`, `prologue` |
-| E4 | — | `divider`, `capacitor`, `capacitor-kinds`, `filter` | — |
+| E4 | `2026-11-20-electronics/batch-E4.md` | `divider`, `capacitor`, `capacitor-kinds`, `filter` | розвідка `recon-E4/` |
 | E5 | — | `diode`, `led` | — |
 | E6 | — | `transistor`, `amplifier` | — |
 | E7 | — | `build`, `lab`, далі гілки | — |
