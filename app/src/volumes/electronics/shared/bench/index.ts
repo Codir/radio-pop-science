@@ -154,6 +154,12 @@ export interface Bench {
   readonly hands: Hands;
   /** The camera flies (the magnifier, a chapter's border): the hand and the switch do nothing (default false). */
   flying: boolean;
+  /**
+   * The camera is down at a part, on the dive's floors `part` and `inside` (default false; a door writes it from its
+   * floor, never on the floor `stand` of its flight): a phone reads the prints there by the desk's rule (VISUAL §9, its
+   * exception; `PartEye.close`).
+   */
+  atPart: boolean;
   /** The magnifier and its holder. */
   readonly tools: BenchTools;
   /** The circuit model of what is on the board (`shared/model`): the only way the bench reads the circuit. */
@@ -552,8 +558,9 @@ export function mountBench(ctx: ChapterContext, options: BenchOptions = {}): Ben
     eye.camera = ctx.camera.camera;
     eye.aspect = ctx.viewport.aspect;
     eye.phone = phone;
-    // down at a part (the dive's floors): a phone reads its print by the desk's rule (VISUAL §9, its exception)
-    eye.close = bench.flying;
+    // down at a part (the dive's floors `part`, `inside`): a phone reads its print by the desk's rule (VISUAL §9, its
+    // exception) — not on the floor `stand` of the flight
+    eye.close = bench.atPart;
     eye.room = room;
     // the parts and the plugs follow the board's state (what the hand drives, it moves), stand on their legs, and the
     // hand turns what has arrived into the board's state; the prints show where they can be read from this camera
@@ -666,6 +673,7 @@ export function mountBench(ctx: ChapterContext, options: BenchOptions = {}): Ben
         return smoke.fired;
       },
     },
+    atPart: false,
     flying: false,
     ambient: BENCH_AMBIENT,
     moon: 1,

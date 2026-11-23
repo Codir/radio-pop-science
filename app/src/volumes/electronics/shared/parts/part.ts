@@ -83,9 +83,10 @@ export interface PartEye {
   /** A phone shows no print in the scene (VISUAL §9) — but where `close`. */
   phone: boolean;
   /**
-   * The camera is down at a part, on the dive's floors `part` and `inside` (the bench: while the door has the camera,
-   * `bench.flying`): a phone reads a print there by the desk's rule, ≥ 16 px-equivalent per em (VISUAL §9, its
-   * exception — the code «104» `capacitor-kinds/ceramic` asks the reader to read through the magnifier).
+   * The camera is down at a part, on the dive's floors `part` and `inside` (the bench: `bench.atPart`, which the door
+   * writes from its floor — not on the floor `stand` of its flight): a phone reads a print there by the desk's rule,
+   * ≥ 16 px-equivalent per em (VISUAL §9, its exception — the code «104» `capacitor-kinds/ceramic` asks the reader to
+   * read through the magnifier).
    */
   close?: boolean;
   /** The room's light 0…1: an unlit print darkens with it and never shines in the dark. */

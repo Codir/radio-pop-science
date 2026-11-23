@@ -67,7 +67,8 @@
  *   print — a part's print down at the part (E4-B, VISUAL §9's exception), shot `board`: C1, a ceramic disc of 100 nF,
  *           alone in e8/e10 (the board of `capacitor-kinds/ceramic`), the switch open; the same door and slider lead
  *           to it: on the floor `part` its code «104» reads by the desk's rule (≥ 16 px-equivalent) on a phone too —
- *           the bench's `PartEye.close` while the door has the camera; on the step's shot a phone shows no print;
+ *           the bench's `PartEye.close` on the floors `part` and `inside` (`bench.atPart`); on the step's shot and on
+ *           the floor `stand` of the flight a phone shows no print;
  *   sound — the speaker in sound (E2-10), shot `stand`: the player → a 10 kΩ pot as the volume control → the speaker
  *           (`VOLUME`: P1 in b17 … b13 — `ccw` on the ground row 17ae, J1 from it to the − rail, the wiper 15ae, `cw`
  *           13ae; the plugs `pl+` in c13, `pl-` in c17, `spk+` in c15, `spk-` in a17); the panel's slider `volume`

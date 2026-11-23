@@ -17,8 +17,10 @@
  * The door follows its part: while its rail rests on the step's shot, a part moved to other sockets (or the phone's
  * shot instead of the desk's) gives it new stops. The camera is the rail's only while it is off the step's shot: back
  * there, at rest, the rail lets it go and the step's shot is held. While it is off, the hand and the battery's switch do
- * nothing (`bench.flying`, written when it changes). A chapter feeds the rail from its depth slider (`travelTo`, and
- * `rail.scrub` for a drag) and lays the magnifier with its keeper from `lens`, `rim` and `glass` (`lens-keeper.ts`).
+ * nothing (`bench.flying`, written when it changes); on the floors `part` and `inside` alone — not on the flight's
+ * stretch on the floor `stand` — a phone reads the prints by the desk's rule (`bench.atPart`, written when it changes;
+ * VISUAL §9, its exception). A chapter feeds the rail from its depth slider (`travelTo`, and `rail.scrub` for a drag)
+ * and lays the magnifier with its keeper from `lens`, `rim` and `glass` (`lens-keeper.ts`).
  */
 import { Vector3 } from 'three';
 import type { ChapterContext, Shot } from '@/engine/api';
@@ -146,6 +148,7 @@ export function partDoor(ctx: ChapterContext, bench: Bench, partId: string, opts
   /** Where to go once the rail is back on the step's shot (undefined: no way home under way). */
   let homing: { then: string | null } | undefined;
   let flying = false;
+  let atPart = false;
   let cutaway: Cutaway | null = null;
   let cutModel: object | null = null;
   let time = 0;
@@ -258,6 +261,13 @@ export function partDoor(ctx: ChapterContext, bench: Bench, partId: string, opts
         flying = now;
         bench.flying = now;
       }
+      // down at the part (its floors, not the flight's stretch on the floor `stand`): a phone reads its print there
+      const floor = door.floor;
+      const deep = floor === 'part' || floor === 'inside';
+      if (deep !== atPart) {
+        atPart = deep;
+        bench.atPart = deep;
+      }
     },
     dispose() {
       rail.release();
@@ -265,6 +275,7 @@ export function partDoor(ctx: ChapterContext, bench: Bench, partId: string, opts
       cutaway = null;
       cutModel = null;
       if (flying) bench.flying = flying = false;
+      if (atPart) bench.atPart = atPart = false;
       for (const off of qa) off();
     },
   };
@@ -303,6 +314,7 @@ export function partDoor(ctx: ChapterContext, bench: Bench, partId: string, opts
       floor: door.floor,
       flying,
       bench: bench.flying,
+      atPart: bench.atPart,
       cut: cutaway?.amount ?? 0,
       open: cutaway?.open ?? false,
       inside: cutaway?.state?.() ?? null,

@@ -83,6 +83,7 @@ frame by `bench.update`):
 | `ambient` | `BENCH_AMBIENT` 0.8 | the chapter | lift of the unlit room: a cool fill and a stronger moon that step back when the lamp burns |
 | `moon` | 1 | the chapter | strength of the cold moon |
 | `closed` | 0 | the chapter; the hand (a tap on the slider, or the dock's toggle the chapter binds) | the battery's switch: 0 open (the thumb pushed left, the gap shows) … 1 closed — the setting of the model's part `SW` in `state.settings` |
+| `atPart` | false | the dive's door | the camera is down at a part, on the floors `part` and `inside` (not on the floor `stand` of the flight): a phone reads the prints there by the desk's rule (VISUAL §9, its exception) |
 | `flying` | false | the dive's door; a chapter at its border | the camera flies: the hand and the switch do nothing |
 | `lens`, `lensTarget` | 0, `null` | the chapter (a door's keeper takes it over) | the magnifier: 0 in its holder … 1 at `lensTarget` (a `LensPose` in the base frame, e.g. `overPose`) |
 | `lensCall` | 0 | the chapter | the step asks the reader to take the magnifier: the resting ring turns full cyan and pulses |
@@ -208,9 +209,10 @@ state: the heat on the body's surface, the burnt marks, the bulged electrolytic 
 an LED's light (`light` b → glow 1.8 · b and a halo 0.5 · b, none below 0.02) and a pot's knob (`setting`, 300° within
 0.15 s); `surface` is what the body shows now. The prints are Text3D, made only where the fonts are loaded (never in
 unit tests but where a test loads the fonts' metrics). A phone shows no print but down at a part (VISUAL §9, its
-exception, E4-B): `PartEye.close` — the bench sets it while the dive's door has the camera (`bench.flying`, the floors
-`part` and `inside`) — reads a print by the desk's rule there, so the ceramic's «104» reads through the magnifier
-(29,2 px-equivalent on 390 × 844 at the rail's 0.75; the sandbox's step `print`, `qa/measure.mjs --only print`).
+exception, E4-B): `PartEye.close` — the bench sets it from `bench.atPart`, which the dive's door writes on its floors
+`part` and `inside` alone (not on the floor `stand` of its flight) — reads a print by the desk's rule there, so the
+ceramic's «104» reads through the magnifier (29,2 px-equivalent on 390 × 844 at the rail's 0.75; the sandbox's step
+`print`, `qa/measure.mjs --only print`).
 
 Every mark is read off the key's spec: a `capacitor`'s code, or its value and voltage, from its `dielectric`, `farads`
 and `ratedV` (E1-5; an electrolytic's in μF however large, «1000 μF 16 V», as a real can is printed — E4-B), a
@@ -692,10 +694,11 @@ keeper.to(() => door.lens(door.rail.position), 1.2); // on the step's entry
   on the same line. A drag (`rail.scrub`) follows the hand; `door.travelTo` glides in the flight's time (`levels.ts`
   `flightSeconds`: the whole way 2 s, with reduced motion 0.6 s, a shorter way less). The rail takes the camera with the
   first move and gives it back when it rests on the step's shot again (that shot held, `ctx.camera.hold`); while the
-  camera is anywhere else the door writes `bench.flying` — the hand and the switch do nothing. `door.home()` glides
-  back, then `then` takes the camera; `door.home({ instant: true })` (a step entered without motion) puts the rail on
-  its start at once — `door.lens(door.rail.position)` is the holder's pose, the next dive starts from the step's shot —
-  and leaves the camera on the shot the new step has put it on.
+  camera is anywhere else the door writes `bench.flying` — the hand and the switch do nothing —, and on the floors
+  `part` and `inside` alone `bench.atPart` — a phone reads the prints there by the desk's rule (VISUAL §9).
+  `door.home()` glides back, then `then` takes the camera; `door.home({ instant: true })` (a step entered without
+  motion) puts the rail on its start at once — `door.lens(door.rail.position)` is the holder's pose, the next dive
+  starts from the step's shot — and leaves the camera on the shot the new step has put it on.
 - **The stops** (`poses.ts`, pure maths of the part's sockets and its model's `hit`): both cameras on one line from the
   body, 60° over the board's face, across the part's axis on the reader's side (`partPlace`, `partStops`; `PART_VIEW`
   holds the numbers). A part moved while the rail rests gets new stops; the door is `ready` only while every leg of its
@@ -720,9 +723,9 @@ keeper.to(() => door.lens(door.rail.position), 1.2); // on the step's entry
   give each its callouts' points and its numbers.
 
 For checks: `__app.read('electronics-dive')` → `{ part, ready, engaged, position, target, moving, min, floor, flying,
-bench, cut, open, inside, camera, aim, lens, atHolder, stops }` (the door's rail, the floor shown, whether it flies and
-`bench.flying`, the inner view: how far open and what it shows — a `FilmState`, `PlatesState` or `RollState`, below —, the camera and its
-aim, the lens's ring and whether it lies in its holder, the stops);
+bench, atPart, cut, open, inside, camera, aim, lens, atHolder, stops }` (the door's rail, the floor shown, whether it
+flies and `bench.flying`, `bench.atPart`, the inner view: how far open and what it shows — a `FilmState`, `PlatesState`
+or `RollState`, below —, the camera and its aim, the lens's ring and whether it lies in its holder, the stops);
 probes `dive:end0`, `dive:end1` (the body's ends along its axis) and `dive:ring-top`, `dive:ring-bottom` (the ring's
 extent along the camera's up). One door per chapter: a second one's reader takes the name over. The sandbox's step
 `loupe` (a 4.7 kΩ in a5 … a9) and `qa/measure.mjs --only loupe` (a mouse, `--touch`) drive them.

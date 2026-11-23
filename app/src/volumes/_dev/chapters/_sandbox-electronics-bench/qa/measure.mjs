@@ -106,12 +106,14 @@
 //           back at 0 the box whole; the hue families ≤ 4; the console; snapshots
 //           `roll-<board|part|inside>-<size>.jpg`.
 //   print — a part's print down at the part (E4-B, VISUAL §9's exception) on a held page, step `print` (a ceramic disc
-//           of 100 nF alone in e8/e10, shot `board`): on the board's shot a phone shows no print; at the floor `part`
-//           on the rail's 0.75 (`capacitor-kinds`' end of the dive, `resistor-pick`'s `DIVE_END`) the code «104» shown
-//           whole and ≥ 16 px-equivalent per em — on a phone too, by the desk's rule (`PartEye.close`) —, its em in the
-//           world and its px-equivalent reported (VISUAL §9 asks for both); the end of the slider (`inside`: a disc has
-//           no inner view, it stays whole) the same; back at 0 a phone shows none again; the console; snapshots
-//           `print-<board|part|end|home>-<size>.jpg`.
+//           of 100 nF alone in e8/e10, shot `board`): on the board's shot a phone shows no print; on the floor `stand`
+//           of the flight (the rail's 0.4: flying, not `atPart`) a phone shows none either, its exception being the
+//           floors `part` and `inside` alone; at the floor `part` on the rail's 0.75 (`capacitor-kinds`' end of the
+//           dive, `resistor-pick`'s `DIVE_END`) the code «104» shown whole and ≥ 16 px-equivalent per em — on a phone
+//           too, by the desk's rule (`PartEye.close`, `bench.atPart`) —, its em in the world and its px-equivalent
+//           reported (VISUAL §9 asks for both); the end of the slider (`inside`: a disc has no inner view, it stays
+//           whole) the same; back at 0 a phone shows none again; the console; snapshots
+//           `print-<board|flight|part|end|home>-<size>.jpg`.
 //   scope — the oscilloscope (E2-9): step `scope` (the amplifier with a low-pass before its volume control, the
 //           probes in j17 and j13) on two held pages — the same `electronics-scope.hash` (the window `model.still`
 //           computes at once: deterministic), a sweep triggered on channel 1, ≤ 600 points a channel, the chart and the
@@ -2074,6 +2076,8 @@ async function roll(context) {
 
 /** The rail's stop on the floor `part` where a chapter ends its dive to read a part (`resistor-pick` `DIVE_END`). */
 const PART_END = 0.75;
+/** A stop of the flight still on the floor `stand` (it ends at the rail's 0.5, `levels.ts`), the camera the door's. */
+const FLIGHT_STAND = 0.4;
 
 async function print(context) {
   const n = (report.sections.print = {});
@@ -2098,6 +2102,28 @@ async function print(context) {
   if (touch) check('on the board’s shot a phone shows no print', s0.texts.length === 0, `${s0.texts.length} texts`);
   else check('on the board’s shot (reported)', true, `«104» ${s0.code === null ? 'hidden' : `${round(s0.code, 1)} px-eq`}`);
   await screenshot(page, snap('board'));
+  // on the floor `stand` of the flight: the camera the door's, yet no exception — a phone shows no print
+  const f = await to(FLIGHT_STAND + LENS_LEG);
+  const sf = await seen();
+  n.flight = {
+    position: round(f.position, 3),
+    floor: f.floor,
+    flying: f.flying,
+    atPart: f.atPart,
+    shown: sf.c1?.printsShown,
+    pxEq: round(sf.code, 1),
+    texts: sf.texts.length,
+  };
+  check(
+    `flight: on the floor stand, flying, not at the part${touch ? '; a phone shows no print' : ' (the desk’s print reported)'}`,
+    Math.abs(f.position - FLIGHT_STAND) < 1e-3 &&
+      f.floor === 'stand' &&
+      f.flying === true &&
+      f.atPart === false &&
+      (!touch || sf.texts.length === 0),
+    `rail ${round(f.position, 3)}, floor ${f.floor}, flying ${f.flying}, atPart ${f.atPart}, ${sf.texts.length} texts, «104» ${sf.code === null ? 'hidden' : `${round(sf.code, 1)} px-eq`}`,
+  );
+  await screenshot(page, snap('flight'));
   for (const [what, slider] of [
     ['part', PART_END + LENS_LEG],
     ['end', DEPTH],
@@ -2109,6 +2135,7 @@ async function print(context) {
       position: round(at0.position, 3),
       floor: at0.floor,
       flying: at0.flying,
+      atPart: at0.atPart,
       prints: s.c1?.prints,
       shown: s.c1?.printsShown,
       clear: s.c1?.printsClear,
@@ -2119,19 +2146,23 @@ async function print(context) {
       `${what}: on the floor ${at0.floor}, «104» shown whole and seen, ≥ 16 px-eq${touch ? ' (a phone: the desk’s rule down at the part)' : ''}`,
       d.ready !== false &&
         (what === 'part' ? at0.floor === 'part' && Math.abs(at0.position - PART_END) < 1e-3 : at0.position === 1) &&
+        at0.atPart === true &&
         s.c1?.printsShown === s.c1?.prints &&
         s.c1?.printsClear === s.c1?.prints &&
         s.code !== null &&
         s.code >= 16,
-      `rail ${round(at0.position, 3)}, floor ${at0.floor}, shown ${s.c1?.printsShown}/${s.c1?.prints}, clear ${s.c1?.printsClear}, em ${round(s.c1?.printEm, 4)}, «104» ${round(s.code, 1)} px-eq`,
+      `rail ${round(at0.position, 3)}, floor ${at0.floor}, atPart ${at0.atPart}, shown ${s.c1?.printsShown}/${s.c1?.prints}, clear ${s.c1?.printsClear}, em ${round(s.c1?.printEm, 4)}, «104» ${round(s.code, 1)} px-eq`,
     );
     await screenshot(page, snap(what));
   }
   const home = await to(0);
   const s1 = await seen();
-  n.home = { flying: home.flying, texts: s1.texts.length };
-  if (touch)
-    check('back at 0 a phone shows no print again', !home.flying && s1.texts.length === 0, `flying ${home.flying}, ${s1.texts.length} texts`);
+  n.home = { flying: home.flying, atPart: home.atPart, texts: s1.texts.length };
+  check(
+    `back at 0: not flying, not at the part${touch ? '; a phone shows no print again' : ''}`,
+    !home.flying && home.atPart === false && (!touch || s1.texts.length === 0),
+    `flying ${home.flying}, atPart ${home.atPart}, ${s1.texts.length} texts`,
+  );
   await screenshot(page, snap('home'));
   const errors = await appErrors(page);
   n.errors = errors;

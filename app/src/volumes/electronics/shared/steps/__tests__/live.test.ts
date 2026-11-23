@@ -9,7 +9,7 @@
  * exception).
  */
 import { readFileSync } from 'node:fs';
-import { Box3, Vector3 } from 'three';
+import { Box3, Vector3, type Camera } from 'three';
 import { describe, expect, it } from 'vitest';
 import { fmtPercent } from '@/content/format';
 import type { StepInfo } from '@/engine/api';
@@ -156,25 +156,69 @@ describe('the callouts’ points on a part', () => {
   });
 });
 
+/** One em of a text on screen in px-equivalent (px at 1080p), as `chapter-check` measures it (`part.ts` `Prints`). */
+function pxEq(t: Text3D, camera: Camera, aspect: number): number {
+  t.updateWorldMatrix(true, false);
+  camera.updateMatrixWorld(true);
+  const m = t.metrics;
+  const cx = (m.left + m.right) / 2;
+  const cy = (m.top + m.bottom) / 2;
+  const a = new Vector3(cx, cy, 0).applyMatrix4(t.matrixWorld).project(camera);
+  const b = new Vector3(cx, cy + t.fontSize, 0).applyMatrix4(t.matrixWorld).project(camera);
+  return Math.hypot((b.x - a.x) * aspect, b.y - a.y) * 540;
+}
+
 describe('a part’s print on a phone, down at the part', () => {
-  it('is hidden on the step’s shot and shown on the dive’s floor `part` where it reads (the bench’s eye is `close`)', () => {
+  it('is hidden on the step’s shot and on the floor `stand` of the flight, shown on the floor `part` where it reads', () => {
     const fonts = new URL('../../../../../../public/fonts/fonts.json', import.meta.url);
     setFontData(JSON.parse(readFileSync(fonts, 'utf8')) as FontJson);
     // the ceramic disc of `capacitor-kinds/ceramic` alone on the board, its code «104» toward the reader
-    const { bench, stand, camera, frames } = live([{ id: 'C1', spec: 'ceramic-100n', at: 'e8' }], undefined, 'phone');
+    const { ctx, bench, stand, camera, frames } = live(
+      [{ id: 'C1', spec: 'ceramic-100n', at: 'e8' }],
+      undefined,
+      'phone',
+    );
     camera.go('board', { instant: true });
     frames(2);
     const code = bench.parts.models.get('C1')!.group.getObjectByName('print:104') as Text3D;
     expect(code).toBeDefined();
     expect(code.visible).toBe(false);
+    expect(bench.atPart).toBe(false);
     const door = stand.openDoor('C1', { from: null, instant: false, direction: 1, index: 0 } as unknown as StepInfo);
     frames(1);
     expect(door.ready).toBe(true);
+    // still on the floor `stand`, the camera the door's: the print would read by the desk's rule, yet a phone shows
+    // none — the exception is the floors `part` and `inside` only (E4-B l, VISUAL §9)
+    door.travelTo(0.45);
+    frames(600, () => !door.rail.moving);
+    frames(2);
+    expect(door.floor).toBe('stand');
+    expect(bench.flying).toBe(true);
+    expect(bench.atPart).toBe(false);
+    expect(pxEq(code, camera.camera, ctx.viewport.aspect)).toBeGreaterThan(18);
+    expect(code.visible).toBe(false);
+    // on the floor `part`: shown
     door.travelTo(0.75);
     frames(600, () => !door.rail.moving);
     frames(2);
     expect(door.floor).toBe('part');
-    expect(bench.flying).toBe(true);
+    expect(bench.atPart).toBe(true);
     expect(code.visible).toBe(true);
+    // back up on the floor `stand`, still flying: hidden again
+    door.travelTo(0.45);
+    frames(600, () => !door.rail.moving);
+    frames(2);
+    expect(door.floor).toBe('stand');
+    expect(bench.flying).toBe(true);
+    expect(bench.atPart).toBe(false);
+    expect(code.visible).toBe(false);
+    // the door gone while down at the part: the bench is back to the step's rule
+    door.travelTo(1);
+    frames(600, () => !door.rail.moving);
+    frames(2);
+    expect(door.floor).toBe('inside');
+    expect(bench.atPart).toBe(true);
+    door.dispose();
+    expect(bench.atPart).toBe(false);
   });
 });
