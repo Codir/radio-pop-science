@@ -47,10 +47,13 @@
  *           and slider lead into C1, cut in half: two plates, the insulator, the charges from the model's voltage across
  *           the capacitance, the electrons in the legs at its current. The dock's switch `plates-can` puts a 10, 100,
  *           470 or 1000 μF can in C1's sockets; the toggle `plates-switch` is the battery's switch and works while the
- *           camera is inside. Probes `plates:plus`, `plates:minus`, `plates:insulator` — the callouts' points;
+ *           camera is inside; the toggle `plates-flip` stands C1 the other way round (a new part, whole), and with the
+ *           switch closed the model bulges it — the insulator cracked. Probes `plates:plus`, `plates:minus`,
+ *           `plates:insulator` — the callouts' points;
  *   roll  — inside a film capacitor (E4-I, `shared/inside/roll.ts`), shot `board`: C1 1 μF in e8/e10 alone (the board of
- *           `capacitor-kinds/film`), the switch open; the door into C1, cut in half: the roll of metallised film, its
- *           sprayed ends and the leads. Probes `roll:metal`, `roll:film` — the callouts' points.
+ *           `capacitor-kinds/film`), the switch open; the door into C1, cut in half but for the corner by leg 1,
+ *           whose face across the winding shows the turns: the roll of metallised film, its sprayed ends and the
+ *           leads. Probes `roll:metal`, `roll:film` — the callouts' points.
  * Every other step has an empty board and an empty tray, and the probes at rest. Readers: the bench's own
  * `electronics-bench` (sockets, rows, draw calls, the print shown), `electronics-board` (the parts and their legs, the
  * plugs, the settings, the netlist's key), `electronics-parts` (every model: where, draw calls, its print),
@@ -192,11 +195,12 @@ const PLATES_CANS = [
   'electrolytic-470u-16v',
   'electrolytic-1000u-16v',
 ] as const;
-const platesBoard = (spec: string): readonly PresetPart[] => [
+const platesBoard = (spec: string, flipped = false): readonly PresetPart[] => [
   ...LED_LOOP.parts,
   { id: 'J3', spec: 'jumper', at: '+12', to: 'a12' },
   { id: 'J4', spec: 'jumper', at: 'e13', to: '-13' },
-  { id: 'C1', spec, at: 'c12' },
+  // the other way round: leg 0 (the plus) in row 13, toward the − rail
+  flipped ? { id: 'C1', spec, at: 'c13', o: 2 } : { id: 'C1', spec, at: 'c12' },
 ];
 /** Step `roll`: a film capacitor alone, as `capacitor-kinds/film` seats it. */
 const ROLL_BOARD: readonly PresetPart[] = [{ id: 'C1', spec: 'film-1u', at: 'e8' }];
@@ -411,7 +415,7 @@ export default defineScene((ctx) => {
           value: 'electrolytic-470u-16v',
           onChange: (spec: string) => {
             const closed = bench.closed;
-            bench.preset(platesBoard(spec));
+            bench.preset(platesBoard(spec, ui.value<boolean>('plates-flip')));
             bench.closed = closed;
           },
         },
@@ -421,6 +425,17 @@ export default defineScene((ctx) => {
           label: SANDBOX.names.switch,
           value: true,
           onChange: (on: boolean) => (bench.closed = on ? 1 : 0),
+        },
+        {
+          type: 'toggle' as const,
+          id: 'plates-flip',
+          label: SANDBOX.plates.flip,
+          value: false,
+          onChange: (on: boolean) => {
+            const closed = bench.closed;
+            bench.preset(platesBoard(ui.value<string>('plates-can'), on));
+            bench.closed = closed;
+          },
         },
       ],
     },
@@ -491,7 +506,10 @@ export default defineScene((ctx) => {
       ui.set('meter-mode', 'V');
       bench.hands.policy = FREE.has(id) ? { take: () => true, tooltip } : { take: () => false };
       if (id === 'film') ui.set('film-value', FILM_VALUES[0]);
-      if (id === 'plates') ui.set('plates-can', 'electrolytic-470u-16v');
+      if (id === 'plates') {
+        ui.set('plates-can', 'electrolytic-470u-16v');
+        ui.set('plates-flip', false);
+      }
       if (DOOR_STEPS.has(id)) {
         door = partDoor(ctx, bench, DOOR_PARTS[id]!, { lead: 'board' });
         const d = door;

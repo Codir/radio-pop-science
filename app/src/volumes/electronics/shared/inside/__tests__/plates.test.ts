@@ -25,7 +25,7 @@ import { BOARD_SPEC } from '@electronics/sim/board';
 import { STAGE_FOV } from '../../bench/shots';
 import { PART_VIEW } from '../../dive/poses';
 import { CAN, LEG, RADIAL_Y, buildPart, type PartModel } from '../../parts';
-import { LEG_COLOR } from '../../parts/part';
+import { LEG_COLOR, mix } from '../../parts/part';
 import { electronSpeed } from '../film';
 import { PLATES, asPlates, chargeCount, createPlates, platesLayout } from '../plates';
 import { CLOSED, INSET } from '../wedge';
@@ -134,20 +134,31 @@ describe('the plates inside an electrolytic (createPlates)', () => {
     expect(drawn(plates.group)).toEqual([]);
   });
 
-  it('stands its plates over the legs — the plus over leg 0, the minus under the stripe — the insulator between', () => {
+  it('stands the plates over the legs (plus over leg 0, minus under the stripe), the insulator on the plus', () => {
+    // thinner than the plate (a real can's insulator is an oxide tens of nanometres thick on its plus foil)
+    expect(PLATES.insulator.thick).toBeLessThanOrEqual(PLATES.plate.thick / 2);
     for (const key of CANS) {
-      const { L } = opened(key);
+      const { L, plates } = opened(key);
       expect(L.x).toBeCloseTo(P / 2, 12);
-      // each plate's thickness about its leg's line, the insulator in the middle, a gap either side of it
-      expect(L.x - L.half).toBeGreaterThan(PLATES.insulator.thick / 2 + 2 * PLATES.charges.radius);
       expect(L.bottom).toBeLessThan(L.top);
-      expect(L.ins.bottom).toBeLessThan(L.bottom);
-      expect(L.ins.top).toBeGreaterThan(L.top);
-      // the plates and the insulator within the can's inner wall
+      // the skin lies on the plus plate's inner side (leg 0's, −x), as tall and as deep as the plate: no free sheet
+      expect(L.ins.x0).toBeCloseTo(-L.x + L.half, 12);
+      expect(L.ins.x1 - L.ins.x0).toBeCloseTo(PLATES.insulator.thick, 12);
+      expect(L.ins.cx).toBeCloseTo((L.ins.x0 + L.ins.x1) / 2, 12);
+      expect([L.ins.bottom, L.ins.top, L.ins.depth]).toEqual([L.bottom, L.top, L.depth]);
+      const skin = plates.group.getObjectByName('plates:insulator') as Mesh;
+      skin.geometry.computeBoundingBox();
+      const b = skin.geometry.boundingBox!.clone().translate(skin.position);
+      expect(b.min.x).toBeCloseTo(L.ins.x0, 6);
+      expect(b.max.x).toBeCloseTo(L.ins.x1, 6);
+      expect(b.min.y).toBeCloseTo(L.bottom, 6);
+      expect(b.max.y).toBeCloseTo(L.top, 6);
+      // the charges of the plus plate in its skin, room for them between it and the minus plate
+      expect(L.x - L.half - L.ins.x1).toBeGreaterThan(4 * PLATES.charges.radius);
+      // the plates within the can's inner wall, over the bung, under the top
       expect(Math.hypot(L.x + L.half, L.depth)).toBeLessThan(L.inner);
-      expect(Math.hypot(L.ins.half, L.ins.depth)).toBeLessThan(L.inner);
-      expect(L.ins.top).toBeLessThan(L.ceiling);
-      expect(L.ins.bottom).toBeGreaterThan(L.floor);
+      expect(L.top).toBeLessThan(L.ceiling);
+      expect(L.bottom).toBeGreaterThan(L.floor);
     }
   });
 
@@ -258,39 +269,102 @@ describe('the plates inside an electrolytic (createPlates)', () => {
     expect(plates.state().bulged).toBe(true);
   });
 
-  it('bulged: the insulator broken through by a dark crack, the top’s section domed, no charges', () => {
-    const { plates, L } = opened('electrolytic-100u-6v3', 9);
-    const core = plates.group.getObjectByName('plates:core') as Mesh;
-    const faces = plates.group.getObjectByName('plates:faces') as Mesh;
-    const vertices = (m: Mesh) => m.geometry.getAttribute('position').count;
-    const top = (): number => {
-      faces.geometry.computeBoundingBox();
-      return faces.geometry.boundingBox!.max.y;
-    };
-    const whole = vertices(core);
-    expect(top()).toBeCloseTo(L.y1, 3);
-    plates.follow({ amps: 0.009, heat: 1, burnt: false, volts: 0, bulged: true }, 1 / 60, 0);
-    // the crack joins the inside's one mesh: in the insulator's plane, within it, on the half the cut leaves
-    expect(vertices(core)).toBeGreaterThan(whole);
-    const pos = core.geometry.getAttribute('position');
-    let crack = 0;
-    for (let i = 0; i < pos.count; i++) {
-      // (the inner wall and the bottom stand off the insulator's middle: at the wall's radius, or on the floor)
-      const onWall = Math.hypot(pos.getX(i), pos.getZ(i)) > L.inner - 1e-3;
-      if (Math.abs(pos.getX(i)) > PLATES.crack.radius + 1e-6 || onWall || pos.getY(i) < L.floor + 1e-3) continue;
-      crack++;
-      expect(pos.getY(i)).toBeGreaterThanOrEqual(L.bottom - PLATES.crack.radius - 1e-6);
-      expect(pos.getY(i)).toBeLessThanOrEqual(L.top + PLATES.crack.radius + 1e-6);
-      expect(pos.getZ(i)).toBeLessThan(0);
-      expect(Math.abs(pos.getZ(i))).toBeLessThan(L.ins.depth);
+  it('bulged: the insulator cracked where the camera sees it, the top’s section domed, no charges', () => {
+    for (const key of CANS) {
+      const { m, plates, L } = opened(key, 9);
+      const core = plates.group.getObjectByName('plates:core') as Mesh;
+      const faces = plates.group.getObjectByName('plates:faces') as Mesh;
+      const vertices = (x: Mesh) => x.geometry.getAttribute('position').count;
+      const top = (): number => {
+        faces.geometry.computeBoundingBox();
+        return faces.geometry.boundingBox!.max.y;
+      };
+      const ink = mix('ink', 'steel', 0.12).getHexString();
+      /** The section's triangles of some area in the crack's colour: their corners. */
+      const darkOnCut = (): Vector3[] => {
+        const pos = faces.geometry.getAttribute('position');
+        const colors = faces.geometry.getAttribute('color');
+        const out: Vector3[] = [];
+        for (let i = 0; i < pos.count; i += 3) {
+          if (new Color(colors.getX(i), colors.getY(i), colors.getZ(i)).getHexString() !== ink) continue;
+          const t = [0, 1, 2].map((j) => new Vector3().fromBufferAttribute(pos, i + j));
+          const area = new Vector3().subVectors(t[1]!, t[0]!).cross(new Vector3().subVectors(t[2]!, t[0]!)).length();
+          if (area > 1e-9) out.push(...t);
+        }
+        return out;
+      };
+      const whole = vertices(core);
+      expect(top(), key).toBeCloseTo(L.y1, 3);
+      expect(darkOnCut(), key).toEqual([]);
+      plates.follow({ amps: 0.009, heat: 1, burnt: false, volts: 0, bulged: true }, 1 / 60, 0);
+      plates.update(0, 0);
+      // on the cut: a dark band up through the skin's strip, within it, from its bottom to its top
+      const cut = darkOnCut();
+      expect(cut.length, key).toBeGreaterThan(30);
+      for (const p of cut) {
+        expect(p.x, key).toBeGreaterThanOrEqual(L.ins.x0 - 1e-6);
+        expect(p.x, key).toBeLessThanOrEqual(L.ins.x1 + 1e-6);
+        expect(p.z, key).toBeCloseTo(-INSET, 6);
+      }
+      const ys = cut.map((p) => p.y);
+      expect(Math.min(...ys), key).toBeCloseTo(L.ins.bottom, 6);
+      expect(Math.max(...ys), key).toBeCloseTo(L.ins.top, 6);
+      // it zigzags: across the skin, the band's middle swings by more than half the skin's thickness
+      const xs = cut.map((p) => p.x);
+      expect(Math.max(...xs) - Math.min(...xs), key).toBeGreaterThan(0.75 * PLATES.insulator.thick);
+      // up the skin's face by the cut: the crack joins the inside's one mesh, on the skin's face toward the minus
+      // plate, just behind the cut on the half it leaves, from the plate's bottom to its top
+      expect(vertices(core), key).toBeGreaterThan(whole);
+      const pos = core.geometry.getAttribute('position');
+      const crack: Vector3[] = [];
+      for (let i = 0; i < pos.count; i++) {
+        const p = new Vector3().fromBufferAttribute(pos, i);
+        // (the inner wall and the bottom stand off the skin: at the wall's radius, or on the floor)
+        if (Math.hypot(p.x, p.z) > L.inner - 1e-3 || p.y < L.floor + 0.005) continue;
+        crack.push(p);
+      }
+      expect(crack.length, key).toBeGreaterThan(20);
+      const { radius, near, far } = PLATES.crack;
+      for (const p of crack) {
+        expect(p.x, key).toBeGreaterThanOrEqual(L.ins.x1 - radius - 1e-6);
+        expect(p.x, key).toBeLessThanOrEqual(L.ins.x1 + 2 * radius + 1e-6);
+        expect(p.z, key).toBeLessThanOrEqual(-near + 1e-6);
+        expect(p.z, key).toBeGreaterThanOrEqual(-far - 1e-6);
+        expect(p.y, key).toBeGreaterThanOrEqual(L.ins.bottom - radius - 1e-6);
+        expect(p.y, key).toBeLessThanOrEqual(L.ins.top + radius + 1e-6);
+      }
+      // in the camera's sight: the line from the crack's front toward the door's camera on `inside` meets no plate
+      // and no skin, and leaves the can where the cut took it (z > 0), never through its kept wall or top
+      const size = Math.max(m.hit.scale.x, m.hit.scale.y, m.hit.scale.z);
+      const distance = size / (PART_VIEW.inside * 2 * Math.tan(((STAGE_FOV / 2) * Math.PI) / 180) * 1.5);
+      const camera = m.hit.position.clone().addScaledVector(FRONT, distance);
+      const front = crack.filter((p) => p.x > L.ins.x1 + radius);
+      expect(front.length, key).toBeGreaterThan(10);
+      const blocked: string[] = [];
+      for (const at of front.filter((_, i) => i % 3 === 0)) {
+        const dir = camera.clone().sub(at).normalize();
+        const q = new Vector3();
+        let left: Vector3 | null = null;
+        for (let k = 1; k <= 4000 && !left; k++) {
+          q.copy(at).addScaledVector(dir, k * 0.0005);
+          const inside = q.y > L.bottom && q.y < L.top && Math.abs(q.z) < L.depth;
+          if (inside && Math.abs(q.x + L.x) < L.half) blocked.push('the plus plate');
+          if (inside && Math.abs(q.x - L.x) < L.half) blocked.push('the minus plate');
+          if (inside && q.x > L.ins.x0 && q.x < L.ins.x1) blocked.push('the skin');
+          if (Math.hypot(q.x, q.z) > L.r || q.y > L.y1) left = q.clone();
+        }
+        if (!left || left.z <= 0) blocked.push(`leaves at ${left?.toArray().join(', ')}, not through the cut`);
+      }
+      expect(blocked, key).toEqual([]);
+      expect(top(), key).toBeGreaterThan(L.y1 + CAN.bulge.dome * 0.9);
+      expect(plates.state().charges, key).toBe(0);
+      // whole again (a new part would be): the crack goes, the top is flat
+      plates.bulged(false);
+      plates.update(0, 0);
+      expect(vertices(core), key).toBe(whole);
+      expect(darkOnCut(), key).toEqual([]);
+      expect(top(), key).toBeCloseTo(L.y1, 3);
     }
-    expect(crack).toBeGreaterThan(20);
-    expect(top()).toBeGreaterThan(L.y1 + CAN.bulge.dome * 0.9);
-    expect(plates.state().charges).toBe(0);
-    // whole again (a new part would be): the crack goes, the top is flat
-    plates.bulged(false);
-    expect(vertices(core)).toBe(whole);
-    expect(top()).toBeCloseTo(L.y1, 3);
   });
 
   it('seen from behind, the cut and the charges turn to the back', () => {
@@ -355,8 +429,8 @@ describe('the plates inside an electrolytic (createPlates)', () => {
       const plus = local('plus');
       const minus = local('minus');
       const ins = local('insulator');
-      // on the inner side of its plate, within it, on the half the cut leaves
-      expect(plus.x).toBeCloseTo(-L.x + L.half, 9);
+      // on the inner side of its plate (the plus plate's in front of its skin), within it, on the half the cut leaves
+      expect(plus.x).toBeCloseTo(L.ins.x1, 9);
       expect(minus.x).toBeCloseTo(L.x - L.half, 9);
       for (const p of [plus, minus]) {
         expect(p.y).toBeGreaterThan(L.bottom);
@@ -364,8 +438,8 @@ describe('the plates inside an electrolytic (createPlates)', () => {
         expect(p.z).toBeLessThan(0);
         expect(p.z).toBeGreaterThan(-L.depth);
       }
-      // on the insulator's section, under its middle
-      expect(ins.x).toBe(0);
+      // on the skin's section on the plus plate, under its middle
+      expect(ins.x).toBeCloseTo(L.ins.cx, 9);
       expect(ins.z).toBeCloseTo(-INSET, 12);
       expect(ins.y).toBeGreaterThan(L.ins.bottom);
       expect(ins.y).toBeLessThan((L.ins.bottom + L.ins.top) / 2);
@@ -386,7 +460,11 @@ describe('the plates inside an electrolytic (createPlates)', () => {
           const inPlate = (cx: number): boolean =>
             Math.abs(q.x - cx) < L.half - 1e-4 && q.y > L.bottom && q.y < L.top && Math.abs(q.z) < L.depth;
           expect(inPlate(-L.x) || inPlate(L.x), `${key} ${name}: through a plate`).toBe(false);
-          const inIns = Math.abs(q.x) < L.ins.half - 1e-4 && q.y > L.ins.bottom && q.y < L.ins.top && Math.abs(q.z) < L.ins.depth;
+          const inIns =
+            Math.abs(q.x - L.ins.cx) < L.ins.half - 1e-4 &&
+            q.y > L.ins.bottom &&
+            q.y < L.ins.top &&
+            Math.abs(q.z) < L.ins.depth;
           if (name !== 'insulator') expect(inIns, `${key} ${name}: through the insulator`).toBe(false);
           if (Math.hypot(q.x, q.z) > L.r || q.y > L.y1) left = q;
         }
@@ -420,13 +498,15 @@ describe('the plates inside an electrolytic (createPlates)', () => {
     };
     const mid = (L.bottom + L.top) / 2;
     // a plate's section stands where its leg's line is: over leg 0 at −P/2, over leg 1 at +P/2; the lead under it;
-    // the insulator's in the middle; nothing of the plates between them
+    // the insulator's on the plus plate's inner side; between it and the minus plate nothing
     expect(colourAt(-P / 2, mid)).toBe(col('steel').getHexString());
     expect(colourAt(P / 2, mid)).toBe(col('steel').getHexString());
     expect(colourAt(-P / 2, (L.floor + L.bottom) / 2)).toBe(LEG_COLOR.getHexString());
     expect(colourAt(P / 2, (L.floor + L.bottom) / 2)).toBe(LEG_COLOR.getHexString());
-    expect(colourAt(-L.ins.half / 2, mid)).toBe(col('mist').getHexString());
-    expect(colourAt(L.ins.half / 2, mid)).toBe(col('mist').getHexString());
+    expect(colourAt(L.ins.x0 + 0.1 * PLATES.insulator.thick, mid)).toBe(col('mist').getHexString());
+    expect(colourAt(L.ins.x1 - 0.1 * PLATES.insulator.thick, mid)).toBe(col('mist').getHexString());
+    expect(colourAt(L.ins.x1 + 0.5 * PLATES.insulator.thick, mid)).toBeNull();
+    expect(colourAt(0, mid)).toBeNull();
     expect(colourAt(-P / 4, mid)).toBeNull();
     // the sleeve's section: `mist` on the stripe's side (+x, over leg 1), `ink` on the other
     expect(colourAt(L.r - PLATES.sleeve / 2, mid)).toBe(col('mist').getHexString());

@@ -496,32 +496,37 @@ const roll = asRoll(door.cutaway); // a film box's: static, no `follow`
 roll.anchor('metal' | 'film', out); // on the section over the axis: a metal layer near leg 0, a film layer near leg 1
 ```
 
-- **The wedge** (`wedge.ts`): `createWedge(model, width, axisY, skip, { axis, upright })` cuts about the body's x (an
-  axial part, a film box's winding) or its vertical y (`axis: 'y'`, a radial can), its middle toward the camera — or,
-  `upright`, level toward the reader's side, so a half cut is the upright plane through the axis. `createSection(axis,
-  axisY, layers)` lays the two section faces of layers whose radii may change with the face's angle (a box, an oval
-  roll, a plate or a leg off the axis), one mesh, colours per vertex; `printKeeper` hides the print (which three's
-  clipping does not reach) with the half the cut takes.
+- **The wedge** (`wedge.ts`): `createWedge(model, width, axisY, skip, { axis, upright, keep })` cuts about the body's
+  x (an axial part, a film box's winding) or its vertical y (`axis: 'y'`, a radial can), its middle toward the camera
+  — or, `upright`, level toward the reader's side, so a half cut is the upright plane through the axis; `keep` (a plane
+  in the body frame) leaves the corner its normal points to standing within the wedge (a third clipping plane).
+  `createSection(axis, axisY, layers)` lays the two section faces of layers whose radii may change with the face's
+  angle (a box, an oval roll, a plate or a leg off the axis), one mesh, colours per vertex; `printKeeper` hides the
+  print (which three's clipping does not reach) with the half the cut takes.
 - **Plates** (`plates.ts`, VISUAL §7, plan decision 11 of batch E4): the can cut along its vertical axis and everything
-  in it — two steel plates over the legs (the plus over leg 0, the minus under the stripe), a thin `mist` insulator
-  between them (`sheath()`), the leads up through the bung, the dark inner wall; the section faces of the sleeve over
-  the aluminium wall (`mist` on the stripe's side), the bung, the top (domed when bulged), the plates, the leads, the
-  insulator. The charges are the library's orbs without glow, «+» (`coral`) and electrons (`cyan`) pair facing pair on
+  in it — two metal plates (`steel`; a real can's are aluminium foils) over the legs (the plus over leg 0, the minus
+  under the stripe), the insulator a `mist` skin 0.012 thick on the plus plate's inner side (`sheath()`; a real can's
+  is the oxide on its plus foil), the leads up through the bung, the dark inner wall; the section faces of the sleeve
+  over the aluminium wall (`mist` on the stripe's side), the bung, the top (domed when bulged), the plates, the leads,
+  the skin. The charges are the library's orbs without glow, «+» (`coral`) and electrons (`cyan`) pair facing pair on
   the plates' inner sides, `chargeCount(volts)` = round(60 · |V| / 9) on each (60 at 8.968 V, 13 at 2.02 V), on the
   half the cut leaves; the other way round, the «+» sit on the minus plate. The legs' electrons drift at
-  `electronSpeed(amps)` (the resistor's rule): charging, down leg 0 and up leg 1. Bulged: a dark crack through the
-  insulator, no charges. Draw calls: the inside's six, nine with the part.
-- **Roll** (`roll.ts`): the box cut by the upright plane through the winding's axis; on the section the oval roll —
-  three turns of film (`mist`) and metal (`steel`) in turn on a flattened core, the first strip's metal from the end by
-  leg 0 with a bare edge by leg 1, the second's the other way —, the sprayed ends, the leads from the box's bottom up
-  against them, the potting, the shell. Static. Draw calls: the inside's one, three with the part.
+  `electronSpeed(amps)` (the resistor's rule): charging, down leg 0 and up leg 1. Bulged: the skin cracked — a dark
+  band zigzagging up through its section and a dark crack up its face just behind the cut, where the camera sees
+  them —, no charges. Draw calls: the inside's six, nine with the part.
+- **Roll** (`roll.ts`): the box cut by the upright plane through the winding's axis, all but the corner by leg 1 under
+  the plane `ROLL.corner` across the winding; on the section the oval roll — three turns of film (`mist`) and metal
+  (`steel`) wound in a spiral (`windAt`) on a flattened core, the first strip's metal from the end by leg 0 with a bare
+  edge by leg 1, the second's the other way —, the sprayed ends, the leads from the box's bottom up against them, the
+  potting, the shell; on the corner's face the same layers cut across, the turns bending round. Static. Draw calls:
+  the inside's two, four with the part.
 
 For checks: the door's reader has `PlatesState` — `{ volts, charges, count, positive, amps, speed, legElectrons,
 bulged, open, amount, printHidden, drawCalls, insideCalls }` — or `RollState` — `{ turns, open, amount, printHidden,
 drawCalls, insideCalls }` — under `inside`. The sandbox's steps `plates` (the board of `capacitor/store`, the can
-switch 10 / 100 / 470 / 1000 μF, the battery's switch working inside, probes `plates:plus`, `plates:minus`,
-`plates:insulator`) and `roll` (a 1 μF film box alone, probes `roll:metal`, `roll:film`) and `qa/measure.mjs --only
-plates,roll` drive them.
+switch 10 / 100 / 470 / 1000 μF, the battery's switch working inside, the toggle `plates-flip` that stands C1 the other
+way round for the model to bulge it, probes `plates:plus`, `plates:minus`, `plates:insulator`) and `roll` (a 1 μF film
+box alone, probes `roll:metal`, `roll:film`) and `qa/measure.mjs --only plates,roll` drive them.
 
 ## Boards of the steps (`sim/board/presets.ts`, E3-5)
 

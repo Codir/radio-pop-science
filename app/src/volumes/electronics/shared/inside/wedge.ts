@@ -8,7 +8,9 @@
  * `clipIntersection`, so only what both remove is gone. Each plane clips a hair (`SLIVER`) into the side it keeps, and
  * a section face stands inside that hair with a material that clips nothing: whatever of the body reaches the plane
  * (the ends of the bands' paint) is cut away behind the face, never seen as a seam in front of it. The planes are set
- * once when the wedge is made and parked far away while it is closed, so opening it compiles no shader.
+ * once when the wedge is made and parked far away while it is closed, so opening it compiles no shader. A view may keep
+ * a corner of the part standing within the wedge (`WedgeOptions.keep`, the film capacitor's roll): a third plane, so
+ * the cut is the wedge less that corner.
  *
  * The axis of the cut (`WedgeAxis`): the body's x, the axis of an axial part (a resistor) and of a film capacitor's
  * winding; or the body's vertical y through the origin, the axis of a radial can (E4-I). A body that is not round about
@@ -172,8 +174,11 @@ const UP = new Vector3(0, 1, 0);
 export interface Wedge {
   /** The axis it cuts about. */
   readonly axis: WedgeAxis;
-  /** The two planes through the axis (world): the body's materials clip with them. */
-  readonly planes: readonly [Plane, Plane];
+  /**
+   * The two planes through the axis (world), and the plane of the corner kept (`WedgeOptions.keep`) when there is one:
+   * the body's materials clip with them.
+   */
+  readonly planes: readonly [Plane, Plane, ...Plane[]];
   /** The share open now, 0 … 1, and whether it is open (≥ `CLOSED`). */
   readonly amount: number;
   readonly open: boolean;
@@ -200,6 +205,12 @@ export interface WedgeOptions {
    * what stands under the axis — a lead into the box — lies in it). About y the middle is level anyway.
    */
   readonly upright?: boolean;
+  /**
+   * A corner the wedge leaves standing: the side of this plane (body frame) its normal points to is kept even where the
+   * wedge takes the rest — a point goes only where every plane removes it (`clipIntersection`), so the cut is the wedge
+   * less that corner. The corner's own face on the plane is the inner view's to lay.
+   */
+  readonly keep?: { readonly normal: Vector3; readonly point: Vector3 };
 }
 
 /**
@@ -215,7 +226,9 @@ export function createWedge(
   opts: WedgeOptions = {},
 ): Wedge {
   const axis = opts.axis ?? 'x';
-  const planes: [Plane, Plane] = [new Plane(), new Plane()];
+  const planes: [Plane, Plane, ...Plane[]] = opts.keep
+    ? [new Plane(), new Plane(), new Plane()]
+    : [new Plane(), new Plane()];
   const clipped = bodyMaterials(model, skip).map((m) => ({
     m,
     planes: m.clippingPlanes,
@@ -234,6 +247,7 @@ export function createWedge(
   let alpha = axis === 'x' ? Math.PI / 2 : 0;
   let half = 0;
   const axisAt = new Vector3();
+  const keepAt = new Vector3();
   const local = new Vector3();
   const n = new Vector3();
   const normals = new Matrix3();
@@ -276,6 +290,13 @@ export function createWedge(
       normals.getNormalMatrix(frame.matrixWorld);
       planes[0].setFromNormalAndCoplanarPoint(tangentOf(axis, b1, n).negate().applyMatrix3(normals).normalize(), axisAt);
       planes[1].setFromNormalAndCoplanarPoint(tangentOf(axis, b2, n).applyMatrix3(normals).normalize(), axisAt);
+      // the corner kept: its plane keeps the side its normal points to (and clips a hair into it, as the others)
+      if (opts.keep && planes[2]) {
+        planes[2].setFromNormalAndCoplanarPoint(
+          n.copy(opts.keep.normal).applyMatrix3(normals).normalize(),
+          frame.localToWorld(keepAt.copy(opts.keep.point)),
+        );
+      }
       for (const p of planes) p.constant -= SLIVER * scale;
     },
     dispose() {

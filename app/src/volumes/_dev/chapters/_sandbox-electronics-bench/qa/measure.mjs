@@ -92,14 +92,17 @@
 //           the free area, the legs' electrons at the speed of the model's current; the dock's toggle opens the switch
 //           while the camera is inside — the charges follow what the model keeps then, and the closed switch brings
 //           them back; the dock's switch puts each can (10, 100, 470, 1000 μF) in C1's sockets — open, 60 charges, the
-//           calls within bounds; back at 0 the can whole; the hue families ≤ 4; the console; snapshots
-//           `plates-<board|470|open|10u|100u|1000u>-<size>.jpg`.
+//           calls within bounds; the dock's toggle `plates-flip` stands the 470 μF the other way round — the model
+//           bulges it within seconds: no charges, the insulator cracked (its crack in the inside's meshes), the calls
+//           within bounds; turned back, a whole can with 60 charges; back at 0 the can whole; the hue families ≤ 4; the
+//           console; snapshots `plates-<board|470|open|10u|100u|1000u|bulged>-<size>.jpg`.
 //   roll  — inside a film capacitor (E4-I, `shared/inside/roll.ts`) on a held page, step `roll` (C1 1 μF alone in
 //           e8/e10, shot `board`): on the board's shot the cut is closed; the floor `part` (rail 0.7) with the box whole;
-//           the slider set to its end — the floor `inside`, the box cut in half, three turns, the print taken with the
-//           cut half, the whole view ≤ 3 draw calls and the inside's 1, the callouts' points (`roll:metal`,
-//           `roll:film`) on screen in the free area; back at 0 the box whole; the hue families ≤ 4; the console;
-//           snapshots `roll-<board|part|inside>-<size>.jpg`.
+//           the slider set to its end — the floor `inside`, the box cut in half but for the corner by leg 1 (whose face
+//           across the winding shows the turns), three turns, the print taken with the cut half, the whole view ≤ 4
+//           draw calls and the inside's 2, the callouts' points (`roll:metal`, `roll:film`) on screen in the free area;
+//           back at 0 the box whole; the hue families ≤ 4; the console; snapshots
+//           `roll-<board|part|inside>-<size>.jpg`.
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-electronics-bench — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -1885,7 +1888,44 @@ async function plates(context) {
   await page.evaluate(() => window.__ui.set('plates-can', 'electrolytic-470u-16v', true));
   await advance(page, 0.3);
 
-  // 4. back at 0: the can whole
+  // 4. the can the other way round, the switch closed: the model bulges it — no charges, the insulator cracked
+  await page.evaluate(() => window.__ui.set('plates-flip', true, true));
+  let dBulged = await dive();
+  let waited = 0;
+  for (; waited < 40 && !dBulged.inside?.bulged; waited++) {
+    await advance(page, 0.25);
+    dBulged = await dive();
+  }
+  await advance(page, 0.5);
+  dBulged = await dive();
+  n.bulged = { seconds: waited * 0.25, floor: dBulged.floor, ...dBulged.inside };
+  // (turned round, the can keeps its print on the half the cut leaves, behind: one call more than the view's nine)
+  const printKept = dBulged.inside?.printHidden === 0 ? 1 : 0;
+  check(
+    'turned round, the switch closed: the can bulges inside, no charges, ≤ 9 calls but the print kept (the inside ≤ 6)',
+    dBulged.floor === 'inside' && dBulged.inside?.open === true && dBulged.inside?.bulged === true &&
+      dBulged.inside?.charges === 0 && dBulged.inside?.drawCalls - printKept <= 9 && dBulged.inside?.insideCalls <= 6,
+    `after ${waited * 0.25} s: bulged ${dBulged.inside?.bulged}, ${dBulged.inside?.charges} charges, ` +
+      `${dBulged.inside?.drawCalls} calls (the inside ${dBulged.inside?.insideCalls}, the print kept ${printKept})`,
+  );
+  const bulgedAnchor = await onScreen(page, ['plates:insulator']);
+  n.bulged.anchor = bulgedAnchor.probes['plates:insulator'];
+  check(
+    'the cracked insulator’s point on screen in the free area',
+    !!bulgedAnchor.probes['plates:insulator']?.inside,
+    JSON.stringify(bulgedAnchor.probes['plates:insulator']),
+  );
+  await screenshot(page, snap('bulged'));
+  await page.evaluate(() => window.__ui.set('plates-flip', false, true));
+  await advance(page, 0.3);
+  const dWhole = await dive();
+  check(
+    'turned back: a whole can, 60 charges',
+    dWhole.inside?.bulged === false && dWhole.inside?.charges === 60,
+    `bulged ${dWhole.inside?.bulged}, ${dWhole.inside?.charges} charges`,
+  );
+
+  // 5. back at 0: the can whole
   const home = await to(0);
   check('back at 0: the can whole', home.cut === 0 && home.inside?.open === false && !home.flying, `cut ${home.cut}, open ${home.inside?.open}`);
 
@@ -1915,14 +1955,14 @@ async function roll(context) {
   const r = inside.inside;
   n.inside = { floor: inside.floor, cut: inside.cut, ...r };
   check(
-    'inside: the box cut in half — the floor `inside`, open, three turns',
+    'inside: the box cut in half but for the corner by leg 1 — the floor `inside`, open, three turns',
     inside.position === 1 && inside.floor === 'inside' && inside.cut === 1 && r?.open === true && r?.turns === 3,
     `position ${inside.position}, floor ${inside.floor}, cut ${inside.cut}, open ${r?.open}, turns ${r?.turns}`,
   );
   check('the print goes with the half the cut takes', r?.printHidden === 1, `${r?.printHidden} hidden`);
   check(
-    'the whole view of the opened box ≤ 3 draw calls, the inside’s 1',
-    r?.drawCalls >= 2 && r?.drawCalls <= 3 && r?.insideCalls === 1,
+    'the whole view of the opened box ≤ 4 draw calls, the inside’s 2 (the upright section, the corner’s face)',
+    r?.drawCalls >= 3 && r?.drawCalls <= 4 && r?.insideCalls === 2,
     `${r?.drawCalls} (the inside ${r?.insideCalls})`,
   );
   const calls = (n.drawCalls = await drawCalls(page));

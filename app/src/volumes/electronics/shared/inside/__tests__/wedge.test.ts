@@ -124,6 +124,37 @@ describe('the wedge about the vertical (a radial can)', () => {
     expect(tilted.alpha).toBeCloseTo(Math.PI / 6, 12);
   });
 
+  it('keeps a corner standing within the wedge: the side its plane’s normal points to, a hair of it clipped', () => {
+    const m = buildPart('film-1u')!;
+    m.group.updateWorldMatrix(true, true);
+    const axisY = 0.675;
+    // the plane x = 0.15 + 0.8 (y − axisY): the corner toward +x and down is kept
+    const keep = { normal: new Vector3(1, -0.8, 0).normalize(), point: new Vector3(0.15, axisY, 0) };
+    const wedge = createWedge(m, Math.PI, axisY, new Set(), { axis: 'x', upright: true, keep });
+    expect(wedge.planes.length).toBe(3);
+    const box = m.body[0]!;
+    expect(box.clippingPlanes?.length).toBe(3);
+    // (the points in the body frame, the planes in the world's)
+    const at = (x: number, y: number, z: number): Vector3 => m.bodyGroup.localToWorld(new Vector3(x, y, z));
+    // closed: nothing clipped, wherever
+    wedge.set(0, FRONT);
+    expect(clipped(box, at(0, axisY, 0.05))).toBe(false);
+    wedge.set(1, FRONT);
+    // the front half goes, but for the corner beyond the plane; the back half stays everywhere
+    expect(clipped(box, at(0, axisY, 0.05))).toBe(true);
+    expect(clipped(box, at(-0.3, axisY - 0.3, 0.05))).toBe(true);
+    expect(clipped(box, at(0.3, axisY - 0.2, 0.05))).toBe(false);
+    expect(clipped(box, at(0.3, axisY + 0.3, 0.05))).toBe(true);
+    expect(clipped(box, at(0.3, axisY - 0.2, -0.05))).toBe(false);
+    // a hair of the corner clipped at its plane (where its face stands), not more
+    const on = new Vector3(0.15 - 0.8 * 0.1, axisY - 0.1, 0.05);
+    const off = (d: number): Vector3 => m.bodyGroup.localToWorld(on.clone().addScaledVector(keep.normal, d));
+    expect(clipped(box, off(SLIVER / 2))).toBe(true);
+    expect(clipped(box, off(2 * SLIVER))).toBe(false);
+    wedge.dispose();
+    expect(box.clippingPlanes ?? []).toEqual([]);
+  });
+
   it('about x it still cuts as it did for the resistor (the default axis)', () => {
     const m = buildPart('resistor-330')!;
     m.group.updateWorldMatrix(true, true);

@@ -15,8 +15,18 @@ import { BOARD_SPEC } from '@electronics/sim/board';
 import { PART_VIEW } from '../../dive/poses';
 import { FILM as BOX, RADIAL_Y, buildPart, type PartModel } from '../../parts';
 import { LEG_COLOR } from '../../parts/part';
-import { ROLL, asRoll, boxReach, createRoll, ovalReach, rollLayout, uprightOnFace } from '../roll';
-import { CLOSED, INSET } from '../wedge';
+import {
+  ROLL,
+  asRoll,
+  boxReach,
+  cornerPoint,
+  createRoll,
+  ovalReach,
+  rollLayout,
+  uprightOnFace,
+  windAt,
+} from '../roll';
+import { CLOSED, INSET, SLIVER } from '../wedge';
 
 const P = BOARD_SPEC.pitch;
 const BOXES = Object.entries(PARTS)
@@ -147,9 +157,21 @@ describe('the roll inside a film capacitor (createRoll)', () => {
     const box = m.body[0]!;
     // the half on the reader's side gone, over the axis and under it; the half behind kept, however high
     for (const y of [L.axisY + 0.3, L.axisY, L.axisY - 0.3]) {
-      expect(clipped(box, new Vector3(0, y, 0.05))).toBe(true);
-      expect(clipped(box, new Vector3(0, y, -0.05))).toBe(false);
+      expect(clipped(box, m.bodyGroup.localToWorld(new Vector3(-0.1, y, 0.05)))).toBe(true);
+      expect(clipped(box, m.bodyGroup.localToWorld(new Vector3(-0.1, y, -0.05)))).toBe(false);
     }
+    // but for the corner by leg 1 under the plane across the winding, which stands on the reader's side too
+    const { x: cx, slope } = L.corner;
+    for (const [x, y] of [
+      [0.3, L.axisY],
+      [0.35, L.axisY + 0.1],
+      [0.1, L.axisY - 0.2],
+      [-0.05, L.axisY - 0.33],
+    ] as const) {
+      expect(x - slope * (y - L.axisY) > cx, `${x}, ${y}`).toBe(true);
+      expect(clipped(box, m.bodyGroup.localToWorld(new Vector3(x, y, 0.1))), `${x}, ${y}`).toBe(false);
+    }
+    expect(clipped(box, m.bodyGroup.localToWorld(new Vector3(0.1, L.axisY + 0.05, 0.1)))).toBe(true);
     expect(((m.legs.material as Material).clippingPlanes ?? []).length).toBe(0);
     roll.cut(CLOSED / 2);
     expect(roll.open).toBe(false);
@@ -163,7 +185,7 @@ describe('the roll inside a film capacitor (createRoll)', () => {
       m.bodyGroup.updateWorldMatrix(true, true);
       const toBody = new Matrix4().copy(m.bodyGroup.matrixWorld).invert();
       const meshes = drawn(roll.group);
-      expect(meshes.map((x) => x.name), key).toEqual(['roll:faces']);
+      expect(meshes.map((x) => x.name), key).toEqual(['roll:faces', 'roll:corner']);
       for (const mesh of meshes) {
         mesh.geometry.computeBoundingBox();
         const b = mesh.geometry.boundingBox!.clone().applyMatrix4(new Matrix4().multiplyMatrices(toBody, mesh.matrixWorld));
@@ -172,13 +194,13 @@ describe('the roll inside a film capacitor (createRoll)', () => {
     }
   });
 
-  it('costs one draw call of its own and three with the part', () => {
+  it('costs two draw calls of its own and four with the part', () => {
     for (const key of BOXES) {
       const { m, roll } = opened(key);
       const calls = drawn(m.bodyGroup);
-      expect(calls.length, calls.map((c) => c.name).join(', ')).toBeLessThanOrEqual(3);
+      expect(calls.length, calls.map((c) => c.name).join(', ')).toBeLessThanOrEqual(4);
       expect(roll.state().drawCalls).toBe(calls.length);
-      expect(roll.state().insideCalls).toBe(1);
+      expect(roll.state().insideCalls).toBe(2);
       expect(calls).toContain(m.legs);
     }
   });
@@ -239,6 +261,133 @@ describe('the roll inside a film capacitor (createRoll)', () => {
     }
   });
 
+  it('winds the strips into a spiral: each turn a little farther out as the angle about the axis grows', () => {
+    const w0 = windAt(0);
+    const wPi = windAt(Math.PI);
+    // half a turn round from over the axis to under it, a quarter from straight behind (where the spiral starts) to
+    // over it
+    expect(wPi.layers(0)[0] - w0.layers(0)[0]).toBeCloseTo(w0.turn / 2, 12);
+    expect(w0.layers(0)[0] - windAt(-Math.PI / 2 + 1e-9).layers(0)[0]).toBeCloseTo(w0.turn / 4, 6);
+    // one turn more of room than turns: the roll's oval holds every angle's spiral, the wrap of bare film round it
+    for (let k = 0; k < 64; k++) {
+      const th = -Math.PI / 2 + (k / 64) * 2 * Math.PI;
+      const w = windAt(th);
+      expect(w.core).toBeGreaterThanOrEqual(ROLL.core);
+      expect(w.layers(ROLL.turns - 1)[4]).toBeCloseTo(w.wrap, 12);
+      expect(w.wrap).toBeLessThanOrEqual(1 + 1e-12);
+      // each turn's layers in order — film, metal, film, metal — and each turn where the one before ends
+      for (let t = 0; t < ROLL.turns; t++) {
+        const b = w.layers(t);
+        for (let i = 1; i < 5; i++) expect(b[i]).toBeGreaterThan(b[i - 1]!);
+        if (t > 0) expect(b[0]).toBeCloseTo(w.layers(t - 1)[4], 12);
+      }
+    }
+    // on the upright section the layers over the axis and under it are half a turn apart
+    const { roll } = opened();
+    const steel = col('steel').getHexString();
+    const firstMetal = (face: 0 | 1) =>
+      quads(roll)
+        .filter((q) => q.face === face && q.color === steel && q.r1 - q.r0 > 1e-6 && Math.abs(q.x0 + q.x1) < 0.2)
+        .sort((a, b) => a.r0 - b.r0)[0]!;
+    expect(firstMetal(0).r0 / ovalReach(L.roll.y, L.roll.z, 0)).toBeCloseTo(w0.layers(0)[1], 3);
+    expect(firstMetal(1).r0 / ovalReach(L.roll.y, L.roll.z, Math.PI)).toBeCloseTo(wPi.layers(0)[1], 3);
+  });
+
+  it('lays the kept corner’s face across the winding, toward the camera, whole, the turns on it as a spiral', () => {
+    const { slope, x: cx } = L.corner;
+    const out = new Vector3(-1, slope, 0).normalize();
+    // the face looks up out of the corner, toward the door's camera
+    expect(out.dot(FRONT)).toBeGreaterThan(0.5);
+    // the plane meets the box on the reader's side only between the roll's ends and leg 1's end wall: leg 0's end, its
+    // lead and the second strip's bare edge stay on the upright section, in full view
+    expect(cx - slope * L.box.y).toBeGreaterThan(-L.roll.end + ROLL.margin);
+    expect(cx + slope * L.box.y).toBeGreaterThan(L.box.x);
+    for (const key of BOXES) {
+      const { roll } = opened(key);
+      const mesh = roll.group.getObjectByName('roll:corner') as Mesh;
+      const pos = mesh.geometry.getAttribute('position');
+      const nor = mesh.geometry.getAttribute('normal');
+      const colors = mesh.geometry.getAttribute('color');
+      // on the plane where the wedge clips the corner (its hair into it: the box's own faces end at the face's edge),
+      // on the reader's side, facing out of the corner, wound so
+      const p = new Vector3();
+      for (let i = 0; i < pos.count; i++) {
+        p.fromBufferAttribute(pos, i);
+        expect((p.x - slope * (p.y - L.axisY) - cx) / Math.hypot(1, slope)).toBeCloseTo(SLIVER, 6);
+        expect(p.z).toBeGreaterThanOrEqual(-1e-6);
+        expect(new Vector3().fromBufferAttribute(nor, i).distanceTo(out)).toBeLessThan(1e-6);
+      }
+      // each triangle's corners as (y, z) — on the plane x follows from y — its colour, its area
+      const tris: { t: [number, number][]; color: string; area: number }[] = [];
+      for (let i = 0; i < pos.count; i += 3) {
+        const v = [0, 1, 2].map((j) => new Vector3().fromBufferAttribute(pos, i + j));
+        const n = new Vector3().subVectors(v[1]!, v[0]!).cross(new Vector3().subVectors(v[2]!, v[0]!));
+        if (n.lengthSq() < 1e-16) continue;
+        expect(n.clone().normalize().dot(out)).toBeGreaterThan(0.999);
+        const t = v.map((q) => {
+          q.addScaledVector(out, SLIVER);
+          return [q.y, q.z] as [number, number];
+        });
+        const color = new Color(colors.getX(i), colors.getY(i), colors.getZ(i)).getHexString();
+        tris.push({ t, color, area: n.length() / 2 });
+      }
+      // whole: as much face as the plane has in the box on the reader's side, out to its surface — no holes, no
+      // overlaps (1 %)
+      const inBox = (q: Vector3): boolean => {
+        const k = L.box.corner;
+        const d = [
+          Math.abs(q.x) - (L.box.x - k),
+          Math.abs(q.y - L.axisY) - (L.box.y - k),
+          Math.abs(q.z) - (L.box.z - k),
+        ];
+        return Math.hypot(...d.map((x) => Math.max(x, 0))) + Math.min(Math.max(...d), 0) - k <= 0;
+      };
+      let expected = 0;
+      const N = 720;
+      for (let j = 0; j < N; j++) {
+        const th = ((j + 0.5) / N) * Math.PI;
+        let lo = 0;
+        let hi = 1;
+        for (let i = 0; i < 40; i++) {
+          const mid = (lo + hi) / 2;
+          if (inBox(cornerPoint(mid, th).addScaledVector(out, -SLIVER))) lo = mid;
+          else hi = mid;
+        }
+        expected += ((lo * lo) / 2) * (Math.PI / N) * Math.hypot(1, slope);
+      }
+      const area = tris.reduce((a, x) => a + x.area, 0);
+      expect(Math.abs(area / expected - 1), `${key}: ${area} of ${expected}`).toBeLessThan(0.01);
+      // the colour of the face at ρ from the axis at the angle θ
+      const colourAt = (th: number, rho: number): string | null => {
+        const q = cornerPoint(rho, th);
+        // (the triangles' corners taken back onto the plane itself above)
+        for (const { t, color } of tris) {
+          const [[x0, y0], [x1, y1], [x2, y2]] = t as [[number, number], [number, number], [number, number]];
+          const d = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2);
+          const a = ((y1 - y2) * (q.y - x2) + (x2 - x1) * (q.z - y2)) / d;
+          const b = ((y2 - y0) * (q.y - x2) + (x0 - x2) * (q.z - y2)) / d;
+          if (a >= -1e-6 && b >= -1e-6 && a + b <= 1 + 1e-6) return color;
+        }
+        return null;
+      };
+      // across the roll, under the axis toward the reader: the turns — film and metal by turns, each strip's metal
+      // once a turn, the first a little farther out as the angle grows (a spiral, not rings)
+      const steel = col('steel').getHexString();
+      for (const th of [0.6 * Math.PI, 0.75 * Math.PI, 0.9 * Math.PI]) {
+        const reach = ovalReach(L.roll.y, L.roll.z, th);
+        const runs: { color: string | null; from: number }[] = [];
+        for (let rho = 0.0005; rho < reach * 0.999; rho += 0.0005) {
+          const c = colourAt(th, rho);
+          if (runs.at(-1)?.color !== c) runs.push({ color: c, from: rho });
+        }
+        const metal = runs.filter((r) => r.color === steel);
+        expect(metal.length, `${key} at ${th}`).toBe(2 * ROLL.turns);
+        expect(runs.filter((r) => r.color === null), `${key} at ${th}: a hole`).toEqual([]);
+        expect(metal[0]!.from / reach, `${key} at ${th}`).toBeCloseTo(windAt(th).layers(0)[1], 2);
+      }
+    }
+  });
+
   it('gives its callouts points on the section: a layer of metal toward leg 0, a layer of film toward leg 1', () => {
     for (const key of BOXES) {
       const { m, roll } = opened(key);
@@ -252,9 +401,10 @@ describe('the roll inside a film capacitor (createRoll)', () => {
         return all.some((q) => q.color === color && q.x0 <= p.x && p.x <= q.x1 && q.r0 <= r && r <= q.r1);
       };
       for (const p of [metal, film]) {
-        // on the section's plane, over the axis
+        // on the section's plane, over the axis, never behind the corner kept by leg 1
         expect(p.z).toBeCloseTo(-INSET, 6);
         expect(p.y).toBeGreaterThan(L.axisY);
+        expect(p.x - L.corner.slope * (p.y - L.axisY), key).toBeLessThan(L.corner.x - 0.05);
       }
       expect(on(metal, col('steel').getHexString()), key).toBe(true);
       expect(on(film, col('mist').getHexString()), key).toBe(true);

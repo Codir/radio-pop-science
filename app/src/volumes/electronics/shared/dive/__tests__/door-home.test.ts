@@ -250,6 +250,7 @@ describe('the door into an electrolytic opens its plates, fed by the bench’s m
     const roll = asRoll(door.cutaway);
     expect(roll).not.toBeNull();
     expect(roll!.state().open).toBe(true);
-    expect(roll!.state().insideCalls).toBe(1);
+    // the upright section and the face of the corner kept across the winding
+    expect(roll!.state().insideCalls).toBe(2);
   });
 });

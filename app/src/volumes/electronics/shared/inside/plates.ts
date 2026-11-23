@@ -6,20 +6,24 @@
  * What is drawn, in the part's body frame (the can's axis the vertical y through the origin, leg 0 — the plus — at
  * −P/2 along x, leg 1 — the minus, under the sleeve's stripe — at +P/2):
  * - the can cut in half along its axis (`wedge.ts` with the axis 'y', `PLATES.wedge` 180° on the camera's side), and
- *   everything in it: two steel plates along the legs, the plus one over leg 0, the minus one over leg 1, a thin
- *   insulator between them (`mist`, the lit translucent `sheath()`, never `K.glass`, which shines in the dark), the
- *   leads from the legs up through the bung to the bottom of their plates, the can's inner wall and bottom;
+ *   everything in it: two metal plates (`steel`; a real can's are aluminium foils) along the legs, the plus one over
+ *   leg 0, the minus one over leg 1; the insulator a thin skin on the plus plate's inner side, thinner than the plate
+ *   (`mist`, the lit translucent `sheath()`, never `K.glass`, which shines in the dark) — a real can's insulator is the
+ *   oxide on its plus foil, tens of nanometres thick, and from it to the minus foil runs paper soaked in the
+ *   electrolyte, which the picture leaves dark; the leads from the legs up through the bung to the bottom of their
+ *   plates, the can's inner wall and bottom;
  * - the section faces of all of it, as one mesh (`createSection`): the sleeve (`ink`, `mist` on the stripe's side) over
  *   the aluminium wall, the bung, the aluminium top (a bulged one domed), the plates, the leads, the insulator;
  * - the charges (the library's orbs, no glow, VISUAL §1.5): «+» (`coral`, the proton's look) on the inner side of the
- *   plus plate and electrons (`cyan`) on the minus plate's, pair facing pair — as many as `chargeCount` of the
- *   voltage across the capacitance (`InsideState.volts`, the model's `PartMemory.volts`, never the voltage between the
- *   legs), on the half of the plates the cut leaves; charged the other way round, the «+» sit on the minus plate and the
- *   electrons on the plus one;
+ *   plus plate, in its skin, and electrons (`cyan`) on the minus plate's, pair facing pair — as many as `chargeCount`
+ *   of the voltage across the capacitance (`InsideState.volts`, the model's `PartMemory.volts`, never the voltage
+ *   between the legs), on the half of the plates the cut leaves; charged the other way round, the «+» sit on the minus
+ *   plate and the electrons on the plus one;
  * - electrons in the legs — on the leg under the can and on the cut lead inside — drifting at `electronSpeed` of the
  *   model's current into leg 0, the resistor's own rule: charging, out of the plus plate down leg 0 and up leg 1 into
  *   the minus plate; giving the charge back, the other way.
- * Bulged (`bulged`), the insulator is broken through — a dark crack — and there are no charges (the model's bulged can
+ * Bulged (`bulged`), the insulator is broken through — a dark crack where the camera sees it: zigzagging up through
+ * the skin's section on the cut and up the skin's face by the cut — and there are no charges (the model's bulged can
  * holds none: its voltage is 0). No halos, no field lines: three hue families with the room (blue, `cyan`, `coral`).
  *
  * Honest drawing (`docs/volumes/electronics/chapters/capacitor.md`, «Докладніше» of `inside`): a real can's plates are
@@ -39,7 +43,7 @@ import { PARTS } from '@electronics/sim/core';
 import { BOARD_SPEC } from '@electronics/sim/board';
 import { sheath, tame } from '../bench/materials';
 import { CAN, MM, RADIAL_Y, electrolyticCan, sleeveProfile, type PartModel } from '../parts';
-import { CRACK_COLOR, LEG, LEG_COLOR, mix, radialLegs } from '../parts/part';
+import { LEG, LEG_COLOR, mix, radialLegs } from '../parts/part';
 import { electronSpeed } from './film';
 import {
   INSET,
@@ -52,6 +56,8 @@ import {
 } from './wedge';
 
 const P = BOARD_SPEC.pitch;
+/** How far over the part's bung the inside's bottom lies. */
+const FLOOR_LIFT = 0.002;
 
 /** The numbers of the view, in the body frame's units (VISUAL §7, «Числа прольоту»). */
 export const PLATES = {
@@ -67,15 +73,19 @@ export const PLATES = {
    * from the wall they keep.
    */
   plate: { thick: 0.03, low: 0.18, high: 0.2, margin: 0.03 },
-  /** The insulator: its thickness; how far past the plates it stands, up and down; how far in from the wall. */
-  insulator: { thick: 0.04, over: 0.03, margin: 0.02 },
+  /** The insulator: a skin this thick on the plus plate's inner side, as tall and as deep as the plate. */
+  insulator: { thick: 0.012 },
   /** The charges on each plate at `volts` (`chargeCount`), their radius, how far their middles stand off the plate (a
    * share of the radius: the rest of the ball sinks into it), how far from the plate's edges and the cut. */
   charges: { count: 60, volts: 9, radius: 0.024, off: 0.35, margin: 1.3 },
   /** The electrons in each leg, their size as a share of the charges'. */
   electrons: { perLeg: 12, scale: 0.7 },
-  /** The crack of a bulged can's insulator: its tube's radius, its bends. */
-  crack: { radius: 0.007, bends: 9 },
+  /**
+   * The crack of a bulged can's insulator. On the cut: a band `band` of the skin's thickness wide, zigzagging up
+   * through the skin, a bend every `step` of its height. Up the skin's face by the cut: a tube of `radius`, `near` …
+   * `far` behind the cut, with as many bends.
+   */
+  crack: { band: 0.45, step: 0.03, radius: 0.006, near: 0.01, far: 0.035 },
 } as const;
 
 /** The charges on each plate for the voltage across the capacitance: round(N · |V| / 9), held to 0 … N. */
@@ -157,6 +167,7 @@ export function platesLayout(r: number, h: number) {
   const x = P / 2;
   const bottom = y0 + CAN.bung.to + plate.low * h;
   const top = y1 - CAN.top.below - plate.high * h;
+  const depth = Math.sqrt(inner * inner - (x + half) ** 2) - plate.margin;
   return {
     y0,
     y1,
@@ -169,12 +180,16 @@ export function platesLayout(r: number, h: number) {
     bottom,
     top,
     /** The plates' half-depth along z. */
-    depth: Math.sqrt(inner * inner - (x + half) ** 2) - plate.margin,
+    depth,
+    /** The insulator on the plus plate's inner side: from `x0` (the plate's face) to `x1`, its middle `cx`. */
     ins: {
+      x0: -x + half,
+      x1: -x + half + insulator.thick,
+      cx: -x + half + insulator.thick / 2,
       half: insulator.thick / 2,
-      bottom: bottom - insulator.over,
-      top: top + insulator.over,
-      depth: Math.sqrt(inner * inner - (insulator.thick / 2) ** 2) - insulator.margin,
+      bottom,
+      top,
+      depth,
     },
     /** The inner wall's span: over the bung to the top's underside. */
     floor: y0 + CAN.bung.to,
@@ -227,6 +242,11 @@ function hash(i: number, salt: number): number {
   return v - Math.floor(v);
 }
 
+/** The crack's bend `i`: −1 … 1, every other one to the other side, each by its own amount. */
+function crackBend(i: number): number {
+  return (i % 2 === 0 ? 1 : -1) * (0.55 + 0.45 * hash(i, 11));
+}
+
 /** The colours of the view. */
 const COLORS = {
   plate: col('steel'),
@@ -236,6 +256,8 @@ const COLORS = {
   stripe: col('mist'),
   bung: mix('ink', 'slate', 0.3),
   insulator: col('mist'),
+  /** The crack of a bulged can's insulator: dark on its pale skin (a hair off the sleeve's `ink`). */
+  crack: mix('ink', 'steel', 0.12),
   /** The inside of the can, away from the light: dark, so the plates and the charges stand out against it. */
   wall: mix('steel', 'ink', 0.7),
 } as const;
@@ -285,14 +307,15 @@ export function createPlates(part: PartModel): Plates {
   const core = new Mesh(new BufferGeometry(), coreMat);
   core.name = 'plates:core';
 
+  // the insulator: a skin on the plus plate's inner side (a real can's oxide on its plus foil)
   const insulatorMat = clip(tame(sheath({ color: 'mist', opacity: 0.5, edgeOpacity: 0.9 })));
   insulatorMat.name = 'plates.insulator';
   const insulator = new Mesh(
-    G.rbox(PLATES.insulator.thick, L.ins.top - L.ins.bottom, 2 * L.ins.depth, 0.01, 2),
+    G.rbox(PLATES.insulator.thick, L.ins.top - L.ins.bottom, 2 * L.ins.depth, 0.004, 2),
     insulatorMat,
   );
   insulator.name = 'plates:insulator';
-  insulator.position.set(0, (L.ins.bottom + L.ins.top) / 2, 0);
+  insulator.position.set(L.ins.cx, (L.ins.bottom + L.ins.top) / 2, 0);
 
   /* ------------------------------------------------------------------------- the section faces */
 
@@ -352,15 +375,33 @@ export function createPlates(part: PartModel): Plates {
     color: COLORS.plate,
     steps: 10,
   });
-  // the insulator, the plates and the leads where the cut meets them
-  layers.push({
+  // the insulator where the cut meets it: its strip on the plus plate and, bulged, the dark crack zigzagging up through
+  // it — the band crosses the skin from the plate toward the gap and back at every bend (`crackBend`)
+  const oxide = (theta: number): [number, number] => slabOnFace(L.ins.cx, L.ins.half, L.ins.depth, theta);
+  const bends = Math.max(2, Math.round((L.ins.top - L.ins.bottom) / PLATES.crack.step));
+  const crackMid = (u: number, theta: number): number => {
+    const [a, b] = oxide(theta);
+    const i = Math.round(((u - L.ins.bottom) / (L.ins.top - L.ins.bottom)) * bends);
+    return a + (b - a) * (0.5 + 0.5 * (1 - PLATES.crack.band) * crackBend(i));
+  };
+  const crackHalf = (theta: number): number => {
+    const [a, b] = oxide(theta);
+    return isBulged ? 0.5 * PLATES.crack.band * (b - a) : 0;
+  };
+  const strip = (r0: SectionLayer['r0'], r1: SectionLayer['r1'], color: Color): SectionLayer => ({
     u0: L.ins.bottom,
     u1: L.ins.top,
-    r0: at(0),
-    r1: (_u, th) => slabOnFace(0, L.ins.half, L.ins.depth, th)[1],
-    color: COLORS.insulator,
-    steps: 1,
+    r0,
+    r1,
+    color,
+    steps: bends,
   });
+  layers.push(
+    strip((_u, th) => oxide(th)[0], (u, th) => crackMid(u, th) - crackHalf(th), COLORS.insulator),
+    strip((u, th) => crackMid(u, th) - crackHalf(th), (u, th) => crackMid(u, th) + crackHalf(th), COLORS.crack),
+    strip((u, th) => crackMid(u, th) + crackHalf(th), (_u, th) => oxide(th)[1], COLORS.insulator),
+  );
+  // the plates and the leads where the cut meets them
   for (const sign of [-1, 1]) {
     const cx = sign * L.x;
     layers.push({
@@ -524,32 +565,36 @@ export function createPlates(part: PartModel): Plates {
 
   const buildCore = (): void => {
     const b = new Builder(`${part.key}:plates-core`);
-    // the inner wall, its profile downward so that it faces in
+    // the inner wall, its profile downward so that it faces in; the bottom a hair over the part's own bung, whose top
+    // would fight it for the same depth (and shows the sleeve's heat)
+    const floor = L.floor + FLOOR_LIFT;
     b.lathe(
       [
         [L.inner, L.ceiling],
-        [L.inner, L.floor],
+        [L.inner, floor],
       ],
       { seg: 48, c: COLORS.wall },
     );
     b.lathe(
       [
-        [L.inner, L.floor],
-        [0, L.floor],
+        [L.inner, floor],
+        [0, floor],
       ],
       { seg: 48, c: COLORS.bung },
     );
     if (isBulged) {
-      // the insulator broken through: a dark crack up its middle, on the half the cut leaves
-      const { bends, radius } = PLATES.crack;
+      // the insulator broken through: a dark crack zigzagging up the skin's face toward the minus plate, just behind
+      // the cut on the half it leaves — where the camera sees it through the empty cut (the plates and the skin's own
+      // section stand beside it, never in front)
+      const { radius, near, far } = PLATES.crack;
       const pts: Vector3[] = [];
-      const z = -side * L.ins.depth * 0.35;
+      const x = L.ins.x1 + 0.5 * radius;
       for (let i = 0; i <= bends; i++) {
         const k = i / bends;
-        const jag = (i % 2 === 0 ? 1 : -1) * (0.3 + 0.7 * hash(i, 11)) * L.ins.depth * 0.18;
-        pts.push(new Vector3(0, L.bottom + (L.top - L.bottom) * k, z + jag));
+        const z = near + radius + (far - near - 2 * radius) * (0.5 + 0.5 * crackBend(i + 3));
+        pts.push(new Vector3(x, L.ins.bottom + (L.ins.top - L.ins.bottom) * k, -side * z));
       }
-      b.tube(pts, radius, { seg: 6, c: CRACK_COLOR });
+      b.tube(pts, radius, { seg: 6, c: COLORS.crack });
     }
     core.geometry.dispose();
     core.geometry = b.geometry('toon');
@@ -646,8 +691,9 @@ export function createPlates(part: PartModel): Plates {
         name === 'insulator'
           ? L.ins.bottom + (L.ins.top - L.ins.bottom) * 0.3
           : L.bottom + (L.top - L.bottom) * 0.6;
-      if (name === 'insulator') out.set(0, y, -side * INSET);
-      else out.set(name === 'plus' ? -L.x + L.half : L.x - L.half, y, -side * m);
+      // the insulator on its section; a plate on its inner side (the plus plate's in front of its skin)
+      if (name === 'insulator') out.set(L.ins.cx, y, -side * INSET);
+      else out.set(name === 'plus' ? L.ins.x1 : L.x - L.half, y, -side * m);
       part.bodyGroup.updateWorldMatrix(true, false);
       return part.bodyGroup.localToWorld(out);
     },
