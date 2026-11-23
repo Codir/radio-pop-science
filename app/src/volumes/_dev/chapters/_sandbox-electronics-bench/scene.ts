@@ -64,6 +64,14 @@
  *           `capacitor-kinds/film`), the switch open; the door into C1, cut in half but for the corner by leg 1,
  *           whose face across the winding shows the turns: the roll of metallised film, its sprayed ends and the
  *           leads. Probes `roll:metal`, `roll:film` — the callouts' points;
+ *   timed — the bench in time (E4-T, `shared/model/timed.ts`), shot `board`: the board of `capacitor/store` with C1
+ *           470 μF in c12/c13, the switch closed, the multimeter on V with its probes on the can's rows (d12, d13);
+ *           `bench.timed`, so the LED's light, the meter and the door's plates show the board in time's last moment —
+ *           opened, the switch leaves the LED fading as the can gives its charge. The dock: the time from the switch's
+ *           opening to the LED's current below 1 mA (`timed-fade`, the board in time's threshold watch), the meter's
+ *           number (`timed-meter`), the battery's switch (`timed-switch`, working while the camera is inside), the can
+ *           (`timed-can`: 10, 100, 470 μF or none — a new board, started again from its operating point) and the same
+ *           door and slider as `plates` into C1;
  *   sound — the speaker in sound (E2-10), shot `stand`: the player → a 10 kΩ pot as the volume control → the speaker
  *           (`VOLUME`: P1 in b17 … b13 — `ccw` on the ground row 17ae, J1 from it to the − rail, the wiper 15ae, `cw`
  *           13ae; the plugs `pl+` in c13, `pl-` in c17, `spk+` in c15, `spk-` in a17); the panel's slider `volume`
@@ -76,14 +84,16 @@
  * moves, the plugs — every frame), `electronics-model` (the circuit model: its key, solves, dcMs, readings) and
  * `electronics-meter` (the dial, the probes' sockets, the reading and the display's text), `electronics-scope` (the
  * model in time, the sweep, its points and hash, a held page's windows), `electronics-sound` (the sound output, the
- * speaker in the circuit, its blocks' levels and hash) and, in the step `loupe`,
+ * speaker in the circuit, its blocks' levels and hash), `electronics-timed` (the board in time: on, its moment, starts,
+ * its steps, the last moving frame's steps and cost, its watches, the cans' volts, its hash) and, in the steps with a
+ * door,
  * `electronics-dive` (the door's rail, the floor, whether it flies, the cut); probes `socket:<id>` for every socket of
  * the board (`a1` … `j17`, `+1` … `+17`, `-1` … `-17`), the hand's `part:<id>`, `leg:<id>:<k>`, `tip:<id>:<k>`,
  * `lead:<name>`, `end:<name>`, `probe:<red|black|ch1|ch2>` (the grip on a probe's handle; its tip `end:<name>`),
  * `tray:<key>`, `switch`, and the door's `dive:end0`, `dive:end1`, `dive:ring-top`, `dive:ring-bottom`.
  */
 import { Vector3 } from 'three';
-import { fmtSI } from '@/content';
+import { fmtSI, fmtUnit } from '@/content';
 import { defineScene } from '@/engine/api';
 import { stepUi } from '@/hud';
 import {
@@ -287,12 +297,33 @@ const platesBoard = (spec: string, flipped = false): readonly PresetPart[] => [
 ];
 /** Step `roll`: a film capacitor alone, as `capacitor-kinds/film` seats it. */
 const ROLL_BOARD: readonly PresetPart[] = [{ id: 'C1', spec: 'film-1u', at: 'e8' }];
+/**
+ * Step `timed` (E4-T): the board of `capacitor/store` and `capacitor/capacity` — the LED's loop, J3 and J4 — with the
+ * dock's can in C1's sockets c12/c13, or none; the multimeter's probes on the can's rows (d12, d13).
+ */
+const TIMED_CANS = ['electrolytic-10u-16v', 'electrolytic-100u-16v', 'electrolytic-470u-16v'] as const;
+const TIMED_NONE = 'none';
+const timedBoard = (can: string): readonly PresetPart[] =>
+  can === TIMED_NONE ? platesBoard('').filter((p) => p.id !== 'C1') : platesBoard(can);
+const TIMED_PROBES = { red: 'd12', black: 'd13' } as const;
+/** The level of the LED's current the step's panel times after the switch (A): `capacitor/capacity`'s 1 mA. */
+const TIMED_LEVEL = 1e-3;
 /** The steps with the magnifier's door, and the part it leads into. */
-const DOOR_PARTS: Readonly<Record<string, string>> = { loupe: 'R1', film: 'R1', plates: 'C1', roll: 'C1' };
+const DOOR_PARTS: Readonly<Record<string, string>> = { loupe: 'R1', film: 'R1', plates: 'C1', roll: 'C1', timed: 'C1' };
 const DOOR_STEPS: ReadonlySet<string> = new Set(Object.keys(DOOR_PARTS));
 
 /** The steps whose circuit is on: the battery's switch closed. */
-const LIVE: ReadonlySet<string> = new Set(['divider', 'led', 'overload', 'lamp', 'film', 'plates', 'scope', 'bulged']);
+const LIVE: ReadonlySet<string> = new Set([
+  'divider',
+  'led',
+  'overload',
+  'lamp',
+  'film',
+  'plates',
+  'timed',
+  'scope',
+  'bulged',
+]);
 /** The steps where the reader may take everything (with a door only while the camera is on the board's shot). */
 const FREE: ReadonlySet<string> = new Set([
   'hand',
@@ -305,6 +336,7 @@ const FREE: ReadonlySet<string> = new Set([
   'film',
   'plates',
   'roll',
+  'timed',
   'scope',
   'rc',
   'bulged',
@@ -321,6 +353,7 @@ const PRESETS: Readonly<Record<string, readonly PresetPart[]>> = {
   film: filmBoard(FILM_VALUES[0]),
   plates: platesBoard('electrolytic-470u-16v'),
   roll: ROLL_BOARD,
+  timed: timedBoard('electrolytic-470u-16v'),
   scope: filterParts(FILTER_VALUES[0]),
   rc: RC,
   bulged: REVERSED,
@@ -351,6 +384,7 @@ const CAMERAS: Readonly<Record<string, BenchShot>> = {
   film: 'board',
   plates: 'board',
   roll: 'board',
+  timed: 'board',
   sound: 'stand',
 };
 const TRAYS: Readonly<Record<string, readonly string[]>> = { hand: TRAY, overload: ['resistor-100'] };
@@ -497,6 +531,7 @@ export default defineScene((ctx) => {
     scope: { scope: 1 },
     rc: { scope: 1 },
     divider: { meter: 1 },
+    timed: { meter: 1 },
   };
   ctx.stage.define(
     Object.fromEntries(
@@ -592,7 +627,61 @@ export default defineScene((ctx) => {
       ],
     },
     roll: { controls: [depth] },
+    // step `timed` (E4-T): the bench counts the board in time; the readouts (the time from the switch's opening to the
+    // LED's current below 1 mA, the meter on the can), the switch (it works while the camera is inside), the can in C1's
+    // sockets (a new part, whole: the board starts again from its operating point) and the dive into it
+    timed: {
+      controls: [
+        {
+          type: 'readout' as const,
+          id: 'timed-fade',
+          label: SANDBOX.timed.fade,
+          text: () => (fade === null ? '—' : fmtUnit(fade, 's', { digits: 4 })),
+        },
+        bench.multimeter.readout('timed-meter', SANDBOX.timed.meter),
+        {
+          type: 'toggle' as const,
+          id: 'timed-switch',
+          label: SANDBOX.names.switch,
+          value: true,
+          onChange: (on: boolean) => (bench.closed = on ? 1 : 0),
+        },
+        {
+          type: 'segmented' as const,
+          id: 'timed-can',
+          label: SANDBOX.timed.can,
+          items: [
+            ...TIMED_CANS.map((spec) => ({ id: spec, label: trayLabel(spec) })),
+            { id: TIMED_NONE, label: SANDBOX.timed.none },
+          ],
+          value: 'electrolytic-470u-16v',
+          onChange: (spec: string) => {
+            const closed = bench.closed;
+            bench.preset(timedBoard(spec));
+            bench.closed = closed;
+            bench.multimeter.put(TIMED_PROBES);
+          },
+        },
+        depth,
+      ],
+    },
   });
+  // step `timed`: the moment the switch last opened (the board in time's), and the time from it to the LED's current
+  // below 1 mA by the threshold watch — finer than a frame (10 μF: 11 ms); null until it fell after that opening
+  let fade: number | null = null;
+  let opened = Number.NaN;
+  let wasClosed = false;
+  const timedFade = (): void => {
+    const timeline = bench.model.timeline;
+    const watch = timeline.watch('LED1', TIMED_LEVEL);
+    const closed = bench.closed >= 0.5;
+    if (wasClosed && !closed) {
+      opened = timeline.changed('SW');
+      fade = null;
+    }
+    if (!closed && watch.fell >= opened) fade = watch.fell - opened;
+    wasClosed = closed;
+  };
   // the callouts' points of the film (checks): far below the bench while there is none
   const filmProbe = (name: FilmAnchor) => {
     const v = new Vector3();
@@ -637,6 +726,9 @@ export default defineScene((ctx) => {
         // leaving the dive: back to the board's shot first (the lens with it into its holder), then this step's shot
         door.home({ instant: info.instant, then: CAMERAS[id] });
       }
+      // the board in time only where the step shows a can giving its charge (E4-T); a preset starts it again from
+      // the board's operating point
+      bench.timed = id === 'timed';
       const preset = PRESETS[id];
       if (preset) bench.preset(preset, { ...NO_LEADS, ...LEADS[id] });
       else bench.clear();
@@ -647,8 +739,8 @@ export default defineScene((ctx) => {
       if (id === 'scope') ui.set('filter', FILTER_VALUES[0]);
       bench.tray.set(TRAYS[id] ?? []);
       bench.closed = LIVE.has(id) ? 1 : 0;
-      // every step starts with the probes at rest by the meter and the dial on V
-      bench.multimeter.put({ red: null, black: null });
+      // every step starts with the probes at rest by the meter and the dial on V (`timed`: on the can's rows)
+      bench.multimeter.put(id === 'timed' ? TIMED_PROBES : { red: null, black: null });
       bench.multimeter.mode = 'V';
       ui.set('meter-mode', 'V');
       bench.hands.policy = FREE.has(id) ? { take: () => true, tooltip } : { take: () => false };
@@ -656,6 +748,12 @@ export default defineScene((ctx) => {
       if (id === 'plates') {
         ui.set('plates-can', 'electrolytic-470u-16v');
         ui.set('plates-flip', false);
+      }
+      if (id === 'timed') {
+        ui.set('timed-can', 'electrolytic-470u-16v');
+        fade = null;
+        opened = Number.NaN;
+        wasClosed = bench.closed >= 0.5;
       }
       if (id === 'sound') ui.set('volume', 1);
       if (DOOR_STEPS.has(id)) {
@@ -674,6 +772,10 @@ export default defineScene((ctx) => {
       const on = bench.closed >= 0.5;
       if (ui.value<boolean>('battery-switch') !== on) ui.set('battery-switch', on);
       if (ctx.stage.current === 'plates' && ui.value<boolean>('plates-switch') !== on) ui.set('plates-switch', on);
+      if (ctx.stage.current === 'timed') {
+        if (ui.value<boolean>('timed-switch') !== on) ui.set('timed-switch', on);
+        timedFade();
+      }
       // the dive: the door after the bench (the parts stood on their legs), then the lens over everything
       if (door) {
         door.update(dt);

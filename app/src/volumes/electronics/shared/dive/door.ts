@@ -12,7 +12,8 @@
  *   part opens (`cut`, `cutaway.ts`: a resistor's carbon film, `shared/inside/film.ts`; an electrolytic's plates, a film
  *   capacitor's roll) and stands opened at the end, the floor `inside`; the door feeds the inner view what the bench's
  *   model says of the part every frame (its current, its heat, whether it burnt, a capacitor's voltage across its
- *   capacitance and whether it bulged).
+ *   capacitance and whether it bulged) — while the bench counts in time (`bench.timed`), its current and voltage at
+ *   the board in time's last moment.
  *
  * The door follows its part: while its rail rests on the step's shot, a part moved to other sockets (or the phone's
  * shot instead of the desk's) gives it new stops. The camera is the rail's only while it is off the step's shot: back
@@ -234,10 +235,11 @@ export function partDoor(ctx: ChapterContext, bench: Bench, partId: string, opts
       // its capacitance and its bulging (the last good solve's while the model's last solve failed)
       if (cutaway?.follow) {
         time += Math.max(dt, 0);
-        // (a part out of the circuit, a burnt one solved out, has no reading: no current through it)
+        // (a part out of the circuit, a burnt one solved out, has no reading: no current through it); while the bench
+        // counts in time (`bench.timed`), its current and a capacitor's voltage are the board in time's last moment —
+        // the very moment the LED and the meter show — else the operating point's (`PartMemory.volts`)
         const state = bench.model.part(partId);
         const amps = state ? (bench.model.reading(partId)?.i ?? 0) : 0;
-        // the operating point's memory (`PartMemory.volts`, written by every good solve) until the bench counts in time
         const memory = bench.model.state.parts.get(partId);
         cutaway.follow(
           state
@@ -245,7 +247,7 @@ export function partDoor(ctx: ChapterContext, bench: Bench, partId: string, opts
                 amps,
                 heat: state.heat,
                 burnt: state.condition === 'burnt',
-                volts: memory?.volts ?? 0,
+                volts: bench.model.volts(partId) ?? 0,
                 bulged: memory?.bulged === true || state.condition === 'bulged',
               }
             : null,

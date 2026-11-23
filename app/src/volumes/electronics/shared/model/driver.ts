@@ -27,6 +27,13 @@
  * A held page (`?freeze`) shows the oscilloscope's window from `still` (plan decision 16): the circuit on the board in
  * time, computed at once from its operating point — warmed up for max(0.2 s, 5 τmax), τmax the longest time constant of
  * its capacitors (`tauMax`), then the samples asked for. The model in time on a live page is the stream's (`live.ts`).
+ *
+ * The bench's looks in time (plan decision 1 of batch E4): while a step asks (`timed`), the board is counted in time
+ * frame by frame as well (`timed.ts`: the frame's dt at 1/4800 s, from the operating point at a start and at every
+ * step's preset — `forget` —, the charges by id through a new shape), and what a part reads, a node's and a row's
+ * voltage and a capacitor's voltage across its capacitance (`reading`, `nodeVolts`, `rowVolts`, `volts`) are its last
+ * moment's: the LED's light, the meter and the inner view of the can show the same moment. A part's condition, load
+ * and heat (`part`) stay the operating point's, and so do the ohmmeter, `powered`, `tauMax` and `still`.
  */
 import {
   PARTS,
@@ -55,6 +62,7 @@ import {
   type FixedPart,
   type RowId,
 } from '@electronics/sim/board';
+import { createTimedBoard, type TimedDamage, type Timeline } from './timed';
 
 export interface BenchModelSource {
   readonly layout: BoardLayout;
@@ -105,7 +113,9 @@ export interface BenchModel {
   /**
    * Delete what the model remembers of a part (its heat, whether it burnt; sim/core/README.md, «The state») at once:
    * a new part is going to stand under this id (a step's preset, `bench.preset` and `bench.clear`). The next sync
-   * solves again, though the circuit's shape is the same. A part the model remembers nothing of changes nothing.
+   * solves again, though the circuit's shape is the same. A part the model remembers nothing of changes nothing — but
+   * the board in time (`timed`) starts again from the operating point at the next sync: a new part's charge is not
+   * an old one's.
    */
   forget(id: string): void;
   /**
@@ -113,9 +123,20 @@ export interface BenchModel {
    * the heat of every part moves toward its load (`sim/core` `advanceHeat`), and a part whose heat reaches its limit
    * burns — the circuit is solved again at once, with it a gap. Returns the ids of the parts that burnt now (an event,
    * told once). After a failed solve no time passes: the heat holds (G7, nothing new is shown). A frame with no time
-   * (dt 0, a held frame) or a time that is not one changes nothing.
+   * (dt 0, a held frame) or a time that is not one changes nothing. While `timed`, the board in time then steps
+   * through the same seconds (a part burnt now a gap there too).
    */
   advance(seconds: number): readonly string[];
+  /**
+   * The board in time for the bench's looks (plan decision 1 of batch E4; default false): while true, every sync
+   * follows the board in time (`timed.ts`: it starts from the operating point at the first sync, and again after a
+   * `forget`), every `advance` steps it through the frame's time, and `reading`, `nodeVolts`, `rowVolts` and `volts`
+   * are its last moment's. A step that shows a capacitor giving its charge turns it on; never the amplifier (its cost).
+   * Off, they are the operating point's again.
+   */
+  timed: boolean;
+  /** The board in time behind `timed`: its moment, its starts, its cost, the threshold watches. */
+  readonly timeline: Timeline;
   /**
    * The state of a part as the bench shows it (VISUAL §4.8): in the circuit, its condition and load from the last
    * solve; out of it (in the hand, a leg in the air), `ok` and no load — or `burnt`, which it stays until it leaves the
@@ -124,12 +145,21 @@ export interface BenchModel {
    */
   part(id: string): PartState | null;
   /** What a meter would read on a part of the circuit now on the board; null when it is not in it, or the last solve
-   * failed. */
+   * failed. While `timed`, at the last moment of the board in time (null too while its last step failed, or for a
+   * part put in on a frame of no time until its first step). */
   reading(id: string): PartReading | null;
-  /** The voltage of a node (V); null when the node is not the board's, or the last solve failed. */
+  /** The voltage of a node (V); null when the node is not the board's, or the last solve failed. While `timed`, at
+   * the last moment of the board in time. */
   nodeVolts(node: number): number | null;
   /** The voltage of a row (V): its node's. */
   rowVolts(row: RowId): number | null;
+  /**
+   * A capacitor's voltage across its capacitance (V; `PartMemory.volts`, its charge over its capacitance — not the
+   * voltage between its legs, which has its ESR's drop in it): the operating point's, or while `timed` the board in
+   * time's last moment (a can in the hand keeps what it held); 0 for a bulged can. Null for a part that is not a
+   * capacitor or that the model has not seen, and while the last solve failed.
+   */
+  volts(id: string): number | null;
   /**
    * The resistance between two nodes as an ohmmeter measures it (Ω): the circuit now on the board with its sources
    * out (the batteries, a player), a small test current from the meter's own source (`OHMMETER`) through the nodes,
@@ -284,13 +314,38 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
     return changed;
   };
 
-  /** Delete the memory of every part that is no longer on the bench (sim/core/README.md, «The state»). */
+  /** The board in time (`timed`): on, and to start again at the next sync (turned on, or told by `forget`). */
+  const timeline = createTimedBoard(now);
+  let timedOn = false;
+  let fresh = true;
+
+  /** Delete the memory of every part that is no longer on the bench (sim/core/README.md, «The state»), in the board
+   * in time too. */
   const forgetGone = (more: readonly PartInstance[]): void => {
-    for (const id of [...state.parts.keys()]) {
-      if (board.parts.has(id) || fixedIds.has(id) || more.some((p) => p.id === id)) continue;
-      state.parts.delete(id);
-    }
+    const gone = (id: string): boolean => !(board.parts.has(id) || fixedIds.has(id) || more.some((p) => p.id === id));
+    for (const id of [...state.parts.keys()]) if (gone(id)) state.parts.delete(id);
+    if (timedOn) timeline.sweep(gone);
   };
+
+  /** The bench's damage on the board now: its burnt parts and bulged cans, for the board in time. */
+  const damageOf = (parts: readonly PartInstance[]): TimedDamage => {
+    const burnt: string[] = [];
+    const bulged: string[] = [];
+    for (const p of parts) {
+      const memory = state.parts.get(p.id);
+      if (memory?.burnt) burnt.push(p.id);
+      else if (memory?.bulged) bulged.push(p.id);
+    }
+    return { burnt, bulged };
+  };
+  /** The board in time follows the netlist of the last sync. */
+  const follow = (): void => {
+    if (!net) return;
+    timeline.follow(net.net, net.key, damageOf(net.net.parts), fresh);
+    fresh = false;
+  };
+  /** Whether the board in time gives the readings now. */
+  const inTime = (): boolean => timedOn && timeline.running;
 
   /** Solve the compiled circuit with the bench's state; a failure keeps the last good solution. */
   const solve = (c: Circuit): void => {
@@ -383,20 +438,44 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
         dirty = true;
       } else dirty = settle(next.net.parts) || forgotten;
       net = next;
-      if (!dirty) return;
+      if (!dirty) {
+        // the board in time turned on, or told to start again, with the shape and settings as they were (a start that
+        // failed is tried again at the next solve, not every frame)
+        if (timedOn && fresh) follow();
+        return;
+      }
       forgotten = false;
       solve(circuit);
+      if (timedOn) follow();
     },
     forget(id) {
       if (state.parts.delete(id)) forgotten = true;
+      fresh = true;
     },
     advance(seconds) {
+      // no time passes in the board in time either
       if (!ok || !solution || !circuit || !(seconds > 0) || !Number.isFinite(seconds)) return NONE;
       // the solution is the circuit's now on the board: a failed or a new one would have been solved at the sync
       const burnt = advanceHeat(state, circuit, solution, seconds);
-      if (burnt.length > 0) solve(circuit);
+      if (burnt.length > 0) {
+        solve(circuit);
+        // the board in time takes the new damage before its steps of this frame
+        if (timedOn) follow();
+      }
+      if (timedOn) timeline.advance(seconds);
       return burnt;
     },
+    get timed() {
+      return timedOn;
+    },
+    set timed(on: boolean) {
+      if (on === timedOn) return;
+      timedOn = on;
+      // off: its board dropped; on again: it starts from the operating point of the board at the next sync
+      if (on) fresh = true;
+      else timeline.stop();
+    },
+    timeline,
     part(id) {
       if (!ok || !solution) return null;
       const memory = state.parts.get(id);
@@ -411,15 +490,23 @@ export function createBenchModel(src: BenchModelSource): BenchModel {
       return memory?.kelvin === undefined ? base : { ...base, kelvin: memory.kelvin };
     },
     reading(id) {
-      return ok && solution ? (solution.parts[id] ?? null) : null;
+      if (!ok || !solution) return null;
+      return inTime() ? timeline.reading(id) : (solution.parts[id] ?? null);
     },
     nodeVolts(n) {
       if (!ok || !solution || !Number.isInteger(n) || n < 0 || n >= solution.v.length) return null;
-      return solution.v[n]!;
+      return inTime() ? timeline.nodeVolts(n) : solution.v[n]!;
     },
     rowVolts(row) {
       const n = layout.node(row);
       return n < 0 ? null : model.nodeVolts(n);
+    },
+    volts(id) {
+      if (!ok || !solution) return null;
+      if (inTime()) return timeline.volts(id);
+      const memory = state.parts.get(id);
+      if (memory?.bulged) return 0;
+      return memory?.volts ?? null;
     },
     ohms(a, b) {
       if (!net || !Number.isInteger(a) || !Number.isInteger(b)) return null;

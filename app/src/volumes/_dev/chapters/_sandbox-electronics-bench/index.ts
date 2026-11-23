@@ -16,7 +16,8 @@ import { defineChapter } from '@/engine/api';
  * through a 10 kΩ pot as the volume control into the speaker, the volume slider in the panel (step `sound`; the bench
  * is mounted with its option `sound`, so the speaker plays wherever it is in the circuit); E4-I: inside the
  * capacitors — an electrolytic's two plates with the model's charges (step `plates`), a film capacitor's roll (step
- * `roll`).
+ * `roll`); E4-T: the bench in time — the LED fading as the can gives its charge, the meter and the plates of the same
+ * moment (step `timed`).
  * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
@@ -100,6 +101,11 @@ export const SANDBOX = {
       blurb:
         'Плівковий конденсатор 1 μF сам на платі, вимикач розімкнено. Повзунок «Глибина» веде лупу на брусок і камеру всередину: брусок розрізано навпіл, і видно рулон із двох смужок плівки з шаром металу на кожній, торці, вкриті металом, і ніжки, що до них доходять. Біля другої ніжки лишено куток бруска, і на його косому зрізі видно витки рулону, а над ним — як ця ніжка входить у свій торець. Вигляд статичний: брусок поза колом.',
     },
+    timed: {
+      title: 'Стенд у часі: конденсатор віддає заряд',
+      blurb:
+        'Коло світлодіода, а поруч, між шинами, — конденсатор 470 μF; вимикач замкнено, мультиметр показує напругу на конденсаторі. Стенд рахує цю плату в часі, кадр за кадром: розімкніть вимикач — світлодіод не гасне одразу, а тьмяніє за пів секунди й ще довго ледь жевріє, бо конденсатор віддає йому заряд; мультиметр і лупа всередині конденсатора показують ту саму мить. Панель записує, через скільки після вимикача струм світлодіода впав нижче 1 mA. Перемикач «Конденсатор» ставить 10, 100 чи 470 μF або прибирає його: без конденсатора світлодіод гасне тієї ж миті.',
+    },
     sound: {
       title: 'Звук із динаміка',
       blurb:
@@ -135,6 +141,16 @@ export const SANDBOX = {
   film: { value: 'Резистор' },
   /** Step `plates`: the switch of the can in C1's sockets (its values are the tray's labels); the can turned round. */
   plates: { can: 'Конденсатор', flip: 'Навпаки' },
+  /**
+   * Step `timed`: the switch of the can in C1's sockets (the values are the tray's labels; «none» a word), the
+   * multimeter's number, the time from the switch's opening to the LED's current below 1 mA (its number the code's).
+   */
+  timed: {
+    can: 'Конденсатор',
+    none: 'Без конденсатора',
+    meter: 'Мультиметр на конденсаторі',
+    fade: 'Струм світлодіода понад 1 mA після вимикача',
+  },
   /**
    * The oscilloscope's board (steps `scope`, `rc`): its title, the axes' quantities and the word of a division (the
    * symbols, units and numbers are the code's), the channels of each step, the switch of the filter's resistor.

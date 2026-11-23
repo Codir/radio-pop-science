@@ -158,6 +158,14 @@ export interface Bench {
   readonly tools: BenchTools;
   /** The circuit model of what is on the board (`shared/model`): the only way the bench reads the circuit. */
   readonly model: BenchModel;
+  /**
+   * The bench counts the board in time for its looks (plan decision 1 of batch E4; default false): a step that shows a
+   * capacitor giving its charge turns it on — the model's board in time frame by frame (`model.timed`,
+   * `shared/model/timed.ts`), from its operating point at every `preset`, a frame of no time moving nothing. While on,
+   * the LEDs' light, every part's reading, the multimeter and a door's inner view show the last moment of it; heat,
+   * the scope and the speaker stay as they are. Never on the amplifier (its cost).
+   */
+  timed: boolean;
   /** The LEDs' light on the board: three shadowless point lights the brightest LEDs take (VISUAL §4.4). */
   readonly leds: LedLights;
   /**
@@ -466,8 +474,8 @@ export function mountBench(ctx: ChapterContext, options: BenchOptions = {}): Ben
     lampLevel = s && s.condition !== 'burnt' ? lampGlow(s.kelvin) : 0;
     return lampLevel;
   };
-  /** A part's look from the model: its condition, heat and load, an LED's brightness; null while the last solve
-   * failed (the last look holds). */
+  /** A part's look from the model: its condition, heat and load, an LED's brightness (from its current: while
+   * `timed`, the board in time's last moment); null while the last solve failed (the last look holds). */
   const lookOf = (id: string, key: string): Partial<PartLook> | null => {
     const s = model.part(id);
     if (s === null) return null;
@@ -494,12 +502,16 @@ export function mountBench(ctx: ChapterContext, options: BenchOptions = {}): Ben
   const puffAt = new Vector3();
   /** The parts that failed, as the model told it (QA): the id, the bench's time and how — burnt, or a can bulged. */
   const burns: { id: string; t: number; what: 'burnt' | 'bulged' }[] = [];
+  /** The worst frame of the board in time since it last started (QA), ms. */
+  let timedWorst = 0;
+  let timedStarts = -1;
   /**
    * After the model's sync, every frame: the model's time passes (a part may burn, an electrolytic bulge), and
    * everything shows its state. The moment of either is one puff, once: a wisp of smoke over a burnt part, a puff of
    * steam out of a bulged can's vent (VISUAL §4.8; E1-5's `bulged`).
    */
   const show = (dt: number): void => {
+    // the model's time (heat; while `timed`, the board in time through the same seconds)
     for (const id of model.advance(dt)) {
       const what = model.part(id)?.condition === 'bulged' ? 'bulged' : 'burnt';
       burns.push({ id, t: time, what });
@@ -507,6 +519,11 @@ export function mountBench(ctx: ChapterContext, options: BenchOptions = {}): Ben
       const at = hottest(id, puffAt);
       if (at) smoke.puff(at, what === 'bulged' ? 'steam' : 'smoke');
     }
+    if (model.timeline.starts !== timedStarts) {
+      timedStarts = model.timeline.starts;
+      timedWorst = 0;
+    }
+    timedWorst = Math.max(timedWorst, model.timeline.ms);
     smoke.update(dt);
     parts.look(dt, lookOf);
     if (!model.ok) return;
@@ -664,6 +681,12 @@ export function mountBench(ctx: ChapterContext, options: BenchOptions = {}): Ben
       },
     },
     flying: false,
+    get timed() {
+      return model.timed;
+    },
+    set timed(on: boolean) {
+      model.timed = on;
+    },
     ambient: BENCH_AMBIENT,
     moon: 1,
     get lamp() {
@@ -748,9 +771,11 @@ export function mountBench(ctx: ChapterContext, options: BenchOptions = {}): Ben
   });
   // `__app.read('electronics-model')` — the circuit model of the board: the netlist's key, how many solves and compiles,
   // whether the last solve succeeded (and why not), what it cost, the parts left out, every part's reading and the
-  // voltage of every row a part uses (the last good solution; nothing of a failed one)
+  // voltage of every row a part uses (the last good solution; nothing of a failed one) — the readings and the rows the
+  // bench shows: while `timed`, the board in time's last moment (`timed` says which)
   ctx.qa.expose('electronics-model', () => {
     const used = new Set(model.circuit?.net.parts.flatMap((p) => p.pins) ?? []);
+    const ids = model.ok ? Object.keys(model.solution?.parts ?? {}) : [];
     return {
       key: model.net?.key ?? null,
       version: model.version,
@@ -761,10 +786,51 @@ export function mountBench(ctx: ChapterContext, options: BenchOptions = {}): Ben
       iterations: model.solution?.iterations ?? 0,
       issues: model.solution?.issues ?? [],
       pending: [...(model.net?.pending ?? [])],
-      parts: model.ok ? { ...model.solution?.parts } : {},
+      timed: model.timed && model.timeline.running,
+      parts: Object.fromEntries(
+        ids.flatMap((id) => {
+          const r = model.reading(id);
+          return r ? [[id, { ...r }]] : [];
+        }),
+      ),
       rows: Object.fromEntries(
         layout.rows.filter((r) => used.has(layout.node(r))).map((r) => [r, model.rowVolts(r)]),
       ),
+    };
+  });
+  // `__app.read('electronics-timed')` — the board in time for the looks (`bench.timed`): whether it is on and running,
+  // how it went, its moment, starts, its steps since the start, the steps and the cost (ms) of the last frame that let
+  // time pass and the worst one since it last started, the settings changed since the start and their moments, every
+  // threshold watch (its part, level, whether below, the moments it fell and rose), every capacitor's voltage across
+  // its capacitance on the board now, the hash of its last moment
+  ctx.qa.expose('electronics-timed', () => {
+    const t = model.timeline;
+    return {
+      on: model.timed,
+      running: t.running,
+      ok: t.ok,
+      reason: t.reason,
+      rate: t.rate,
+      now: t.now,
+      starts: t.starts,
+      steps: t.steps,
+      frameSteps: t.frameSteps,
+      ms: t.ms,
+      worstMs: timedWorst,
+      changed: t.changes(),
+      watches: t.watches().map((w) => ({
+        part: w.part,
+        level: w.level,
+        below: w.below,
+        fell: w.fell,
+        rose: w.rose,
+      })),
+      volts: Object.fromEntries(
+        (model.net?.net.parts ?? [])
+          .filter((p) => PARTS[p.spec]?.kind === 'capacitor')
+          .map((p) => [p.id, model.volts(p.id)]),
+      ),
+      hash: t.hash(),
     };
   });
   // `__app.read('electronics-heat')` — what the model's state shows: every part's condition, heat, load, its LED light

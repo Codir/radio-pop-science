@@ -235,6 +235,59 @@ describe('the door into an electrolytic opens its plates, fed by the bench’s m
     expect(plates!.state().open).toBe(false);
   });
 
+  it('while the bench counts in time, the plates, the LED’s light and the meter show one moment of the can’s discharge', () => {
+    const { ctx, camera } = stubContext();
+    const bench = mountBench(ctx);
+    bench.timed = true;
+    bench.preset([
+      { id: 'J1', spec: 'jumper', at: '+5', to: 'a5' },
+      { id: 'R1', spec: 'resistor-330', at: 'b5' },
+      { id: 'LED1', spec: 'led-red', at: 'c9' },
+      { id: 'J2', spec: 'jumper', at: 'e10', to: '-10' },
+      { id: 'J3', spec: 'jumper', at: '+12', to: 'a12' },
+      { id: 'J4', spec: 'jumper', at: 'e13', to: '-13' },
+      { id: 'C1', spec: 'electrolytic-470u-16v', at: 'c12' },
+    ]);
+    bench.closed = 1;
+    // the multimeter on V across the can's rows
+    bench.meter = 1;
+    bench.multimeter.put({ red: 'd12', black: 'd13' });
+    bench.snap();
+    camera.go('board', { instant: true });
+    const door = partDoor(ctx, bench, 'C1', { lead: 'board' });
+    const t = { now: 0 };
+    frame(bench, door, t);
+    door.travelTo(1);
+    for (let i = 0; i < 600 && door.rail.moving; i++) frame(bench, door, t);
+    frame(bench, door, t);
+    expect(door.floor).toBe('inside');
+    expect(bench.model.timeline.running).toBe(true);
+    const plates = asPlates(door.cutaway)!;
+    expect(plates.state().volts).toBeCloseTo(8.968, 3);
+    expect(plates.state().charges).toBe(60);
+    // the switch opened inside: half a second of frames, and every view says the same moment of the board in time
+    bench.closed = 0;
+    for (let i = 0; i < 30; i++) frame(bench, door, t);
+    const volts = bench.model.volts('C1')!;
+    expect(volts).toBeCloseTo(2.02, 2);
+    expect(plates.state().volts).toBe(volts);
+    expect(plates.state().charges).toBe(chargeCount(volts));
+    expect(plates.state().amps).toBe(bench.model.reading('C1')!.i);
+    // the LED still takes 1.03 mA from the can and lights the board (at the operating point it would be dark)
+    expect(bench.model.reading('LED1')!.i).toBeCloseTo(0.001032, 5);
+    expect(bench.leds.lit).toContain('LED1');
+    // the meter across the can's legs: its capacitance's volts and the ESR's drop of the same moment
+    expect(bench.multimeter.live).toBe(bench.model.rowVolts('12ae')! - bench.model.rowVolts('13ae')!);
+    expect(bench.multimeter.live).toBeCloseTo(bench.model.reading('C1')!.u, 9);
+    // a held frame moves none of it
+    bench.update(0, t.now);
+    door.update(0);
+    expect(bench.model.volts('C1')).toBe(volts);
+    expect(plates.state().volts).toBe(volts);
+    door.home({ instant: true });
+    frame(bench, door, t);
+  });
+
   it('a film box opens its roll', () => {
     const { ctx, camera } = stubContext();
     const bench = mountBench(ctx);
