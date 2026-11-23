@@ -5,10 +5,9 @@
  * + side, and closes the switch: the model gives the LED 0,93 A, it lights for a few frames and burns (the bench's
  * wisp is the model's event). Goal: an LED of the step burnt in that place with the switch closed, and 1 s after.
  */
-import { kindOf, handPolicy } from '../parts/policy';
+import { handPolicy, kindOf, rowsOf, switchToggle, trayButtons } from '@electronics/shared/steps';
 import { FLASH, ROWS } from '../parts/boards';
-import { HOLD, rowsOf } from '../parts/goals';
-import { switchToggle, trayButtons } from '../parts/dock';
+import { HOLD } from '../parts/goals';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';
 

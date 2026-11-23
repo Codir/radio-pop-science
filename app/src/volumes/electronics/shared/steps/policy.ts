@@ -1,12 +1,10 @@
 /**
- * A copy of `chapters/resistor/parts/policy.ts`, unchanged but for this note: a chapter never imports another chapter.
- *
  * What the reader's hand may take in a step and the names it shows (`HandPolicy` of `shared/hand`), from a step's
  * rules by kind: the parts on the board by their key (`part:<id>`, `leg:<id>:<k>`), the tray's slots (`tray:<key>`),
- * the multimeter's probes (`probe:red`, `probe:black`) and the battery's switch (`switch`). A plug lead is never
- * taken in this chapter.
+ * the multimeter's probes (`probe:red`, `probe:black`) and the battery's switch (`switch`). A plug lead (`lead:<id>`)
+ * is never taken through these rules.
  */
-import type { Bench, HandKey, HandPolicy } from '@electronics/shared/bench';
+import type { Bench, HandKey, HandPolicy } from '../bench';
 
 export interface HandRules {
   /** A part on the board (or waiting in the air) may be taken whole. */
@@ -54,7 +52,7 @@ export function handPolicy(bench: Bench, rules: HandRules): HandPolicy {
   };
 }
 
-/** The kind of a catalog key as this chapter names things: `resistor-330` → `resistor`, `led-red` → `led`. */
+/** The kind of a catalog key as the steps name things: `resistor-330` → `resistor`, `led-red` → `led`. */
 export function kindOf(spec: string): 'resistor' | 'led' | 'jumper' | 'other' {
   if (spec.startsWith('resistor-')) return 'resistor';
   if (spec.startsWith('led-')) return 'led';

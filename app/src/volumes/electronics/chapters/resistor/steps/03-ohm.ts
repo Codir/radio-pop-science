@@ -8,10 +8,18 @@
  * within reach. Goal: the Ω mode and three readings, each held 1 s with the probes in the two rows of one resistor's
  * legs — «330,0 Ω», «1,000 kΩ», «4,700 kΩ».
  */
-import { kindOf, handPolicy } from '../parts/policy';
+import {
+  createTally,
+  handPolicy,
+  kindOf,
+  meterReadout,
+  meterSwitch,
+  rowsOf,
+  sameRows,
+  within,
+} from '@electronics/shared/steps';
 import { OHM, WINDOWS } from '../parts/boards';
-import { HOLD, createTally, rowsOf, sameRows, within } from '../parts/goals';
-import { meterReadout, meterSwitch } from '../parts/meter';
+import { HOLD } from '../parts/goals';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';
 

@@ -1,12 +1,10 @@
 /**
- * A copy of `chapters/resistor/parts/dock.ts`, unchanged but for this note: a chapter never imports another chapter.
- *
  * The dock's controls a phone needs instead of what its shot leaves out (VISUAL §9): the tray's slots as buttons that
  * put a new part over the board (`hands.offer`) and the battery's switch as a toggle bound to `bench.closed` (the step
- * may set it too: the scene keeps the toggle showing the switch as it is). Shown on a phone only.
+ * may set it too: the chapter's scene keeps the toggle showing the switch as it is). Shown on a phone only.
  */
 import type { ButtonSpec, ToggleSpec } from '@/hud';
-import type { Bench } from '@electronics/shared/bench';
+import type { Bench } from '../bench';
 
 /** The dock's id of a tray slot's button. */
 export const trayButtonId = (spec: string): string => `tray-${spec}`;

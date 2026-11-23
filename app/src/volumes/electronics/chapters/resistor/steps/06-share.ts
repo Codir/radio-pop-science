@@ -8,10 +8,18 @@
  * resistor's (5ae, 9ae), 8,968 V from the + side (the rail or 5ae) to the − side (the rail or 10ae).
  */
 import { Box3, Vector3 } from 'three';
-import { handPolicy } from '../parts/policy';
+import {
+  across,
+  createTally,
+  handPolicy,
+  meterReadout,
+  meterSwitch,
+  rowsOf,
+  sameRows,
+  within,
+} from '@electronics/shared/steps';
 import { ROWS, WINDOWS, loopWith } from '../parts/boards';
-import { HOLD, across, createTally, rowsOf, sameRows, within } from '../parts/goals';
-import { meterReadout, meterSwitch } from '../parts/meter';
+import { HOLD } from '../parts/goals';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';
 

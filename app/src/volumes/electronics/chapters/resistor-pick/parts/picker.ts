@@ -3,7 +3,7 @@
  * part's `hit` box (never drawn, still hit by a ray — the hand's own target is that box, and one object takes one set of
  * handlers), registered while `enabled` holds; a click there gives the band whose middle is nearest along the body
  * (`bandAt` of `shared/parts`, from the hit point in the part's body frame). It follows the part's model: a new model
- * under the id (a step's board put again) gets a new twin. As `parts/names.ts` does for the names.
+ * under the id (a step's board put again) gets a new twin. As `shared/steps/names.ts` does for the names.
  */
 import { Mesh, type Object3D } from 'three';
 import type { ChapterContext } from '@/engine/api';

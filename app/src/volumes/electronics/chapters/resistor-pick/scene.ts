@@ -8,6 +8,7 @@
 import { defineScene } from '@/engine/api';
 import { stepUi, type StepUiApi } from '@/hud';
 import type { BenchShot } from '@electronics/shared/bench';
+import { SWITCH_ID } from '@electronics/shared/steps';
 import {
   DIVE_STEPS,
   sessionGoals,
@@ -17,7 +18,6 @@ import {
   type StepId,
   type StepModule,
 } from './chapter';
-import { SWITCH_ID } from './parts/dock';
 import { createPickStand } from './stand';
 import { bandsStep } from './steps/01-bands';
 import { seriesStep } from './steps/02-series';

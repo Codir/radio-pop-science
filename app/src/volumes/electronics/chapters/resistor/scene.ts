@@ -8,8 +8,8 @@
 import { defineScene } from '@/engine/api';
 import { stepUi, type StepUiApi } from '@/hud';
 import type { BenchShot } from '@electronics/shared/bench';
+import { SWITCH_ID } from '@electronics/shared/steps';
 import { sessionGoals, STEP_IDS, type Chapter, type StepFactory, type StepId, type StepModule } from './chapter';
-import { SWITCH_ID } from './parts/dock';
 import { createResistorStand } from './stand';
 import { flashStep } from './steps/01-flash';
 import { limitStep } from './steps/02-limit';

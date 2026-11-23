@@ -10,11 +10,18 @@
  * in 9ae/10ae (any order). The formula card (`P = U × I`) comes with the takeaway.
  */
 import { trayLabel } from '@electronics/shared/bench';
+import {
+  createTally,
+  handPolicy,
+  kindOf,
+  meterReadout,
+  rowsOf,
+  sameRows,
+  trayButtons,
+  within,
+} from '@electronics/shared/steps';
 import { METER_PROBES, POWER, ROWS, WINDOWS } from '../parts/boards';
-import { HOLD, createTally, rowsOf, sameRows, within } from '../parts/goals';
-import { trayButtons } from '../parts/dock';
-import { meterReadout } from '../parts/meter';
-import { kindOf, handPolicy } from '../parts/policy';
+import { HOLD } from '../parts/goals';
 import { conditionText, voltsText, wattsText, type Condition } from '../parts/readouts';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';

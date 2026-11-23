@@ -15,11 +15,21 @@ import { Box3, Vector3 } from 'three';
 import type { Shot } from '@/engine/api';
 import { STAGE_FOV, STAGE_SHOTS } from '@electronics/shared/bench';
 import { METER_ID } from '@electronics/shared/instruments';
-import { kindOf, handPolicy } from '../parts/policy';
+import {
+  across,
+  createTally,
+  handPolicy,
+  kindOf,
+  meterReadout,
+  meterSwitch,
+  MODE_ID,
+  rowsOf,
+  sameRows,
+  trayButtons,
+  within,
+} from '@electronics/shared/steps';
 import { AMP, AMP_ROWS, WINDOWS } from '../parts/boards';
-import { HOLD, across, createTally, rowsOf, sameRows, within } from '../parts/goals';
-import { trayButtons } from '../parts/dock';
-import { MODE_ID, meterReadout, meterSwitch } from '../parts/meter';
+import { HOLD } from '../parts/goals';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';
 

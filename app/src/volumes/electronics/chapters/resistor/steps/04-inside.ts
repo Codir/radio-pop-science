@@ -1,24 +1,22 @@
 /**
  * `resistor/inside` — «Усередині резистора». The LED's loop with 330 Ω, the switch closed; the shot `board`. The dock's
- * slider «Глибина» is the magnifier's way down (`shared/dive`: the door into R1, 0 «стенд» … the end «усередині
- * резистора»; a drag scrubs it, a click glides), a tap on the resting lens lays it on the resistor; the ladder «де ми»
- * shows the floor. On the floor `inside` the resistor's carbon film (`shared/inside`) is open: its groove cut for the
+ * slider «Глибина» (`shared/steps`, `depthSlider`) is the magnifier's way down (`shared/dive`: the door into R1, 0
+ * «стенд» … the end «усередині резистора»; a drag scrubs it, a click glides), a tap on the resting lens lays it on the
+ * resistor; the ladder «де ми» shows the floor. On the floor `inside` the resistor's carbon film (`shared/inside`) is open: its groove cut for the
  * value, the electrons drifting at the model's current, three callouts on it. The dock's switch «Резистор» puts a
  * 330 Ω or a 10 kΩ in R1's sockets (a new part under the same id: the door follows it). Goal: on the floor `inside`,
  * 1 s with each of the two values (any order), the switch closed.
  */
 import { Vector3 } from 'three';
 import { trayLabel } from '@electronics/shared/bench';
-import { LENS_LEG } from '@electronics/shared/dive';
 import { asFilm, type FilmAnchor } from '@electronics/shared/inside';
+import { createTally, depthSlider } from '@electronics/shared/steps';
 import { loopWith } from '../parts/boards';
-import { HOLD, createTally } from '../parts/goals';
+import { HOLD } from '../parts/goals';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';
 
 const S = 'inside';
-/** The slider runs 0 … `DEPTH`; the door's rail position is the slider − `LENS_LEG`. */
-const DEPTH = 1 + LENS_LEG;
 /** The two values of the dock's switch. */
 const VALUES = ['resistor-330', 'resistor-10k'] as const;
 type Value = (typeof VALUES)[number];
@@ -29,12 +27,9 @@ export const insideStep: StepFactory = ({ ctx, ui, stand, reached, reach, here }
   const { bench } = stand;
   const word = (i: number): string => caption(S, i);
   const tally = createTally<Value>(VALUES, HOLD.reading);
-  let fill = -1;
   const door = () => stand.door;
-  const resting = (): boolean => {
-    const d = door();
-    return !!d && !d.rail.moving && d.rail.position <= d.rail.rail.min + 1e-6;
-  };
+  // «Глибина» down to the floor `inside` (the rail's 1); a tap on the resting lens lays it on the resistor
+  const depth = depthSlider(ctx, bench, ui, door, () => here(S), 1, { label: word(0), top: word(1), bottom: word(2) });
   /** The camera rests on the floor `inside` and the film is open. */
   const down = (): boolean => {
     const d = door();
@@ -55,15 +50,6 @@ export const insideStep: StepFactory = ({ ctx, ui, stand, reached, reach, here }
   };
   const points = { film: point('film'), groove: point('groove'), rod: point('rod') };
   for (const name of ['film', 'groove', 'rod'] as const) ctx.qa.probe(`film:${name}`, points[name]);
-  // a tap on the resting magnifier lays it over the resistor: the slider glides to the end of its lens leg
-  ctx.input.register(bench.tools.lens.group, {
-    cursor: 'pointer',
-    enabled: () => here(S) && !!door()?.ready && resting() && !bench.flying,
-    click: () => {
-      ui.set('depth', LENS_LEG);
-      door()?.travelTo(0);
-    },
-  });
   ctx.qa.expose(S, () => {
     const d = door();
     const film = asFilm(d?.cutaway ?? null);
@@ -80,32 +66,13 @@ export const insideStep: StepFactory = ({ ctx, ui, stand, reached, reach, here }
       reached: reached(S),
     };
   });
-  const stop = (v: number): string => (v < DEPTH / 2 ? word(1) : word(2));
 
   return {
     spec: { camera: 'board', params: { meter: 0 } },
     ui: {
       reset: true,
       controls: [
-        {
-          type: 'slider',
-          id: 'depth',
-          label: word(0),
-          min: 0,
-          max: DEPTH,
-          value: 0,
-          step: 0.005,
-          marks: [
-            { value: 0, label: word(1) },
-            { value: DEPTH, label: word(2) },
-          ],
-          format: stop,
-          disabled: () => !door()?.ready && resting(),
-          onChange: (v) => door()?.travelTo(v - LENS_LEG),
-          onInput: (v, how) => {
-            if (how === 'drag') door()?.rail.scrub(v - LENS_LEG);
-          },
-        },
+        depth.control,
         {
           type: 'segmented',
           id: 'film-value',
@@ -130,7 +97,7 @@ export const insideStep: StepFactory = ({ ctx, ui, stand, reached, reach, here }
     },
     enter(info) {
       tally.reset();
-      fill = -1;
+      depth.reset();
       stand.board(loopWith(VALUES[0]));
       bench.closed = 1;
       bench.tray.set([]);
@@ -141,11 +108,8 @@ export const insideStep: StepFactory = ({ ctx, ui, stand, reached, reach, here }
       stand.openDoor('R1', info, 'board');
     },
     update() {
-      const d = door();
-      if (!here(S) || !d) return;
       // the slider's fill is where the dive is (its thumb where the reader put it)
-      const p = d.rail.position;
-      if (Math.abs(p + LENS_LEG - fill) > 0.002) ui.patch('depth', { current: (fill = p + LENS_LEG) });
+      depth.update();
     },
     late(dt) {
       if (!here(S)) return;

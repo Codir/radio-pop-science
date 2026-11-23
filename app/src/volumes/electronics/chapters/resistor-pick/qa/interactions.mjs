@@ -13,7 +13,8 @@
 // 330 Ω, the span of the tolerance in the panel; the two nearest values from the tray (a phone: the dock's buttons)
 // one at a time in the LED's gap on the ammeter; the 330 Ω beside the LED and then a 1 kΩ, with the panel's voltage,
 // power and state; a 100 Ω between the jumpers' ends with the switch closed (a phone: the dock's toggle) — it burns;
-// the multimeter on «V» on the amplifier's LED «on» and on its 2,2 kΩ. After each goal the panel shows the takeaway
+// the multimeter on «V» on the amplifier's LED «on» and on its 2,2 kΩ, whose callouts' points sit each on its own part
+// and whose LED's tag leaves R1's body free (snapshot `on-entry-<size>.jpg`). After each goal the panel shows the takeaway
 // and the reader numbers are the model's; «Докладніше» opens; every recall link of every step is followed (each
 // leads into this chapter or into `resistor`, built, and «назад» returns); every step is arrived at with «Далі» and its
 // camera sampled frame by frame for jumps; the closing card has three lines and the bridge, and «Далі» on it is
@@ -543,6 +544,22 @@ const steps = {
     const s0 = await read(page, 'on');
     const m0 = await meterNow();
     check('on entry: the meter off, «—», the LED «on» lit at ≈ 3 mA', m0.mode === 'off' && m0.text === '—' && s0.led > 0.0029 && s0.led < 0.0031, JSON.stringify({ mode: m0.mode, text: m0.text, led: s0.led }));
+    // the two callouts: each point on its own part (the first body a ray from the eye through it meets), the LED's tag
+    // over none of R1's body (its axis, end to end) and R1's tag off the LED's point
+    await textTab();
+    check('on entry: each callout’s point on its own part', s0.dots?.led === 'LED1' && s0.dots?.res === 'R1', JSON.stringify(s0.dots));
+    const tags = await page.evaluate(() => [0, 1].map((i) => window.__ui.locate(`callout-${i}`)));
+    const r1 = [await scr('on:r1-0'), await scr('on:r1-1')];
+    const ledDot = await scr('on:led');
+    const inTag = (r, q) => q.x > r.x - r.w / 2 && q.x < r.x + r.w / 2 && q.y > r.y - r.h / 2 && q.y < r.y + r.h / 2;
+    const body = Array.from({ length: 11 }, (_, i) => ({ x: r1[0].x + ((r1[1].x - r1[0].x) * i) / 10, y: r1[0].y + ((r1[1].y - r1[0].y) * i) / 10 }));
+    const round = (r) => r && { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) };
+    check(
+      'on entry: the LED’s tag leaves R1’s body free, R1’s tag the LED’s point',
+      !!tags[0] && !!tags[1] && !body.some((q) => inTag(tags[0], q)) && !inTag(tags[1], ledDot),
+      JSON.stringify({ tags: tags.map(round), r1: r1.map((q) => [Math.round(q.x), Math.round(q.y)]), led: [Math.round(ledDot.x), Math.round(ledDot.y)] }),
+    );
+    await snap('on-entry');
     await controls();
     check('the dial has no «A»', !(await shown(page, '[data-ui="ctl-meter-mode:A"]')) && (await shown(page, '[data-ui="ctl-meter-mode:V"]')));
     await tapControl('meter-mode:V');

@@ -1,13 +1,11 @@
 /**
- * A copy of `chapters/resistor/parts/meter.ts`, unchanged but for this note: a chapter never imports another chapter.
- *
  * The multimeter in the step's panel (VISUAL §5.1): the dial's switch (`meter-mode`, the positions a step offers —
  * «вимкнено» is a word of the step's captions, V, A and Ω are the instrument's symbols) and the number (`meter`, a
  * text readout, no count-up). Every step that shows the meter declares them anew; `reset` brings the dial back.
  */
 import type { ReadoutSpec, SegmentedSpec } from '@/hud';
-import type { Bench } from '@electronics/shared/bench';
-import type { MeterMode } from '@electronics/shared/instruments';
+import type { Bench } from '../bench';
+import type { MeterMode } from '../instruments';
 
 export const MODE_ID = 'meter-mode';
 export const READOUT_ID = 'meter';

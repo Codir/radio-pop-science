@@ -7,11 +7,18 @@
  * dock, rich: `I = U / R`) comes with the takeaway.
  */
 import { trayLabel } from '@electronics/shared/bench';
-import { kindOf, handPolicy } from '../parts/policy';
+import {
+  createTally,
+  handPolicy,
+  kindOf,
+  meterReadout,
+  rowsOf,
+  sameRows,
+  trayButtons,
+  within,
+} from '@electronics/shared/steps';
 import { LAW, LAW_PROBES, ROWS, WINDOWS } from '../parts/boards';
-import { HOLD, createTally, rowsOf, sameRows, within } from '../parts/goals';
-import { trayButtons } from '../parts/dock';
-import { meterReadout } from '../parts/meter';
+import { HOLD } from '../parts/goals';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';
 

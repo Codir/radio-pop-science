@@ -10,10 +10,9 @@
  * is open, so a deep link burns nothing.
  */
 import { trayLabel } from '@electronics/shared/bench';
+import { handPolicy, kindOf, rowsOf, sameRows, switchToggle, trayButtons } from '@electronics/shared/steps';
 import { BURN, ROWS } from '../parts/boards';
-import { HOLD, rowsOf, sameRows } from '../parts/goals';
-import { switchToggle, trayButtons } from '../parts/dock';
-import { kindOf, handPolicy } from '../parts/policy';
+import { HOLD } from '../parts/goals';
 import { conditionText, wattsText, type Condition } from '../parts/readouts';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';

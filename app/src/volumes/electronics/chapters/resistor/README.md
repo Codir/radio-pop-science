@@ -12,12 +12,10 @@ which feeds the 470 Ω.
 | File | What |
 | --- | --- |
 | `scene.ts` · `chapter.ts` | orchestrator: the stand → seven step modules → `stage.define` + `stepUi.define`; the param `meter` (the multimeter slides in, 0.6 s); the door of `inside` flies home before the next step's shot; the dock's switch toggle follows `bench.closed` |
-| `stand.ts` | `mountBench` once, the magnifier's door into a part with its lens keeper and the ladder «де ми» (`benchLadder`), the names under the pointer (`naming`, set by each step) |
+| `stand.ts` | the step stand of `@electronics/shared/steps` (`createStepStand`): `mountBench` once, the magnifier's door into a part (new on every visit of `inside`) with its lens keeper and the ladder «де ми» (`benchLadder`), the names under the pointer (`naming`, set by each step) |
 | `parts/boards.ts` | every step's board as data (`FLASH`, `LIMIT`, `OHM`, `loopWith`, `LAW`, `AMP`), the rows of the goals and their windows (`WINDOWS`) |
-| `parts/goals.ts` | rows of sockets, rows in any order, the tally of readings held 1 s |
-| `parts/policy.ts` | what the hand may take in a step and the names it shows (`HandPolicy`) |
-| `parts/names.ts` | names under the pointer of what a step keeps in place (a jumper, an LED, the amplifier's parts, the meter's case): an invisible twin of the part's `hit`, only where a pointer hovers |
-| `parts/dock.ts` · `parts/meter.ts` | a phone's dock: the tray's buttons and the battery's switch; the multimeter's dial switch and readout |
+| `parts/goals.ts` | how long each goal's state holds (`HOLD`, the script's «Ціль») |
+| `@electronics/shared/steps` | shared with `resistor-pick` (shared/README.md, «steps»): rows of sockets and the tally of held readings, what the hand may take in a step and the names it shows (`handPolicy`), the names under the pointer of what a step keeps in place (an invisible twin of the part's `hit`, only where a pointer hovers), a phone's dock (the tray's buttons, the battery's switch), the multimeter's dial switch and readout, the depth slider of `inside` (`depthSlider`) |
 | `steps/01-flash.ts` … `07-amp.ts` | the steps |
 | `qa/interactions.mjs` · `qa/helpers.mjs` | every goal by real pointer input (mouse or touch), the readers, the closing card; helpers copied from the bench's sandbox (`REUSE.md`) |
 
@@ -63,8 +61,8 @@ state, and `flash` starts with no LED and the switch open, so nothing burns befo
   round 3).
 - **Names under the pointer of things the step keeps in place** (the script's «назви за наведенням» of jumpers, the
   LED in `limit`, the amplifier's parts, the multimeter): the bench's hand names only what it may take, so the chapter
-  adds invisible twins of those parts' `hit` boxes (`parts/names.ts`). Only where a pointer hovers: on a touch screen a
-  twin would take the taps meant for a grip beside it; there the names are the dock's and the panel's.
+  adds invisible twins of those parts' `hit` boxes (`shared/steps/names.ts`). Only where a pointer hovers: on a touch
+  screen a twin would take the taps meant for a grip beside it; there the names are the dock's and the panel's.
 - **Ω on a live circuit shows «—»**: built in the bench's meter (`readMeter` asks `BenchModel.powered`, a small shared
   change with tests, plan E3 decision 5 as the controller ruled), since the merged E2-6 measured with the sources out.
 - `inside`: the value switch is in the step (`bench.preset` of the loop with another R1 under the same id), not a

@@ -9,8 +9,8 @@
  */
 import { Mesh, type Object3D } from 'three';
 import type { ChapterContext } from '@/engine/api';
-import type { Bench } from '@electronics/shared/bench';
-import type { PartModel } from '@electronics/shared/parts';
+import type { Bench } from '../bench';
+import type { PartModel } from '../parts';
 
 export interface Names {
   /** Every frame after the bench updated: twins for the parts that came, gone with the parts that left. */

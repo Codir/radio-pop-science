@@ -5,11 +5,10 @@
  * the model gives 21,2 mA, the LED shines steadily and never burns. Goal: a 330 Ω in the rows 5ae and 9ae, the switch
  * closed, and the LED of the step at 21,0 … 21,5 mA, whole, for 2 s in a row.
  */
-import { kindOf, handPolicy } from '../parts/policy';
-import { LIMIT, ROWS, WINDOWS } from '../parts/boards';
-import { HOLD, rowsOf, sameRows, within } from '../parts/goals';
-import { switchToggle, trayButtons } from '../parts/dock';
 import { trayLabel } from '@electronics/shared/bench';
+import { handPolicy, kindOf, rowsOf, sameRows, switchToggle, trayButtons, within } from '@electronics/shared/steps';
+import { LIMIT, ROWS, WINDOWS } from '../parts/boards';
+import { HOLD } from '../parts/goals';
 import { caption } from '../content';
 import type { StepFactory } from '../chapter';
 

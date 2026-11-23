@@ -1,8 +1,9 @@
 # `shared` — the bench of the volume «Радіоелектроніка»
 
 The scene's side of the volume: the dark room and the stand, the breadboard, the parts, the hand, the instruments, the
-dive through the magnifier and the bench's link to the circuit model (`sim/core`, `sim/board`). No step logic lives
-here. The look and the numbers of all of it are fixed by `docs/volumes/electronics/VISUAL.md`. Batch E2
+dive through the magnifier and the bench's link to the circuit model (`sim/core`, `sim/board`). No step's logic lives
+here: `steps` holds only the small pieces the chapters' steps share, with the chapters' words and numbers passed in. The
+look and the numbers of all of it are fixed by `docs/volumes/electronics/VISUAL.md`. Batch E2
 (`docs/superpowers/plans/2026-11-20-electronics/batch-E2.md`) builds the modules one task at a time; this file grows
 with them (task E2-10 writes the mount, the options, the state table and the readers for checks).
 
@@ -505,6 +506,42 @@ chapters:
   On the bench's shots the tall cans stand at the back (C1 and C2 on the line a, C3 across the channel at the left)
   and nothing tall in front of the volume knob, at the far right by the player; the speaker's coral lead lies over
   the knob's case on its way to `c10` (the speaker's row is left of the pot).
+
+## `steps` — what the chapters' steps build from (E3-7)
+
+The small pieces every chapter on the bench repeated, moved here from `chapters/resistor` once `resistor-pick` needed
+them too (REUSE.md, «Копії»). A chapter keeps its own words (captions), boards and hold times and passes them in.
+
+```ts
+const stand = createStepStand(ctx, { keepDoor }); // the chapter's `stand.ts`: the bench, the door, the lens keeper,
+// the ladder «де ми», the names under the pointer (`stand.naming`, set by each step), `stand.board(parts, leads)`
+const tally = createTally(['a', 'b'], HOLD.reading); // the chapter's `HOLD`; `rowsOf`, `sameRows`, `across`, `within`
+bench.hands.policy = handPolicy(bench, { part, leg, tray, probes, switch, flip, name }); // by kind (`kindOf`)
+trayButtons(bench, specs, label, stand.phone); switchToggle(bench, label, stand.phone); // a phone's dock
+meterSwitch(bench, label, ['off', 'V'], offWord, 'off'); meterReadout(bench, label); // the multimeter in the panel
+const depth = depthSlider(ctx, bench, ui, () => stand.door, () => here(S), end, { label, top, bottom });
+// controls: [depth.control, …]; enter: depth.reset(); update: depth.update()
+```
+
+- **`stand.ts`** — `createStepStand`: `mountBench` once, the magnifier's door into a part (`openDoor(partId, info,
+  lead)`; `closeDoor(info, then)` flies the rail home, then the step's shot; the door is given up once home), its lens
+  keeper over everything, the ladder, the names. Without `keepDoor` every `openDoor` makes a new door (`resistor`: one
+  dive step); with it a door the step before left open into the same part stays, its rail where it is, except on a
+  deep link (`resistor-pick`: `bands` → `series`).
+- **`goals.ts`** — the rows of sockets (null when one is out), two rows in any order, one row on each of two sides, a
+  number in a window; the tally of readings that each must hold `need` seconds in a row, counted once.
+- **`policy.ts`** — `HandPolicy` from a step's rules by kind: `part:` / `leg:` by the catalog key, `tray:` slots,
+  `probe:`, `switch`; plug leads never; the names under the pointer from the step's `name`.
+- **`names.ts`** — invisible twins of the parts' `hit` boxes and of the multimeter's case for the names of what a step
+  keeps in place; only where a pointer hovers.
+- **`dock.ts`**, **`meter.ts`** — a phone's dock buttons for the tray's slots and the battery's switch (shown on a phone
+  only); the dial's switch (`meter-mode`) and the number (`meter`).
+- **`depth.ts`** — the slider «Глибина» (`depth`): 0 … `end` + `LENS_LEG`, the rail at the slider − `LENS_LEG`; a drag
+  scrubs, a click glides; a tap on the resting lens lays it on the part; the fill follows the rail every frame.
+
+Tests: `__tests__/goals.test.ts` (rows, the tally), `rules.test.ts` (the hand's rules, the dock, the meter over a stub
+bench), `stand.test.ts` (a live bench with the engine's `CameraDirector`: the board, the door made anew or kept, given up
+once home; the depth slider's way, the lens's tap and the fill).
 
 ## Копії
 

@@ -10,9 +10,10 @@
  */
 import { fmtSI } from '@/content';
 import { PARTS, resistorKey } from '@electronics/sim/core';
+import { createTally } from '@electronics/shared/steps';
 import { loopWith } from '../parts/boards';
 import { seriesStops, toleranceSpan } from '../parts/bands';
-import { HOLD, createTally } from '../parts/goals';
+import { HOLD } from '../parts/goals';
 import { NONE } from '../parts/readouts';
 import { caption } from '../content';
 import { DIVE_END, type StepFactory } from '../chapter';

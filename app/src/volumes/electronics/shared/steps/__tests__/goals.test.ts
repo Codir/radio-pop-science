@@ -1,8 +1,7 @@
-/** The goals' small maths (`parts/goals.ts`): rows of sockets, rows in any order, and the tally of held readings. */
+/** The goals' small maths (`goals.ts`): rows of sockets, rows in any order, and the tally of held readings. */
 import { describe, expect, it } from 'vitest';
 import { createLayout } from '@electronics/sim/board';
-import { HOLD, across, createTally, rowsOf, sameRows, within } from '../parts/goals';
-import { kindOf } from '../parts/policy';
+import { across, createTally, rowsOf, sameRows, within } from '../goals';
 
 const layout = createLayout();
 
@@ -24,18 +23,10 @@ describe('rows of the goals', () => {
     expect(within(Number.NaN, 0, 1)).toBe(false);
     expect(within(0.5, 0, 1)).toBe(true);
   });
-
-  it('names the kinds the chapter tells apart', () => {
-    expect(kindOf('resistor-4k7')).toBe('resistor');
-    expect(kindOf('led-red')).toBe('led');
-    expect(kindOf('jumper')).toBe('jumper');
-    expect(kindOf('diode-1n4007')).toBe('other');
-  });
 });
 
 describe('the tally of held readings', () => {
   it('counts a reading once it held for its time in a row; another reading or none starts the time again', () => {
-    expect(HOLD.reading).toBe(1);
     const t = createTally(['a', 'b'] as const, 1);
     for (let k = 0; k < 50; k++) t.feed('a', 1 / 60);
     expect(t.done('a')).toBe(false);
@@ -59,5 +50,16 @@ describe('the tally of held readings', () => {
     for (let k = 0; k < 100; k++) t.feed('a', 0);
     expect(t.done('a')).toBe(false);
     expect(t.counted).toEqual([]);
+  });
+
+  it('takes its time from the chapter: 2 s needs twice the frames of 1 s', () => {
+    const t = createTally(['a'] as const, 2);
+    for (let k = 0; k < 119; k++) t.feed('a', 1 / 60);
+    expect(t.done('a')).toBe(false);
+    t.feed('a', 1 / 60);
+    expect(t.done('a')).toBe(true);
+    // a key the tally does not hold is never counted
+    t.feed('z' as 'a', 5);
+    expect(t.counted).toEqual(['a']);
   });
 });
