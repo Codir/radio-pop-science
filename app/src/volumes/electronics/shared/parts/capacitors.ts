@@ -24,7 +24,8 @@ import { MM, Prints, RADIAL_Y, assemble, mix, radialLegs, slots, type PartModel 
 const P = BOARD_SPEC.pitch;
 
 export const CERAMIC = { diameter: 0.58, thickness: 0.15 } as const;
-export const FILM = { width: 0.83, depth: 0.29, height: 0.75 } as const;
+/** The film box; `corner` is the rounding of its edges. */
+export const FILM = { width: 0.83, depth: 0.29, height: 0.75, corner: 0.05 } as const;
 
 /** Muted ochre (tan): darker and greyer than `orange`, so a cold capacitor never reads as heat (VISUAL §4.7). */
 export const CERAMIC_BODY = mix(mix('amber', 'wireBrown', 0.5), 'steel', 0.3);
@@ -100,7 +101,7 @@ export function createCeramic(farads: number, key = 'ceramic'): PartModel {
 export function createFilm(farads: number, key = 'film'): PartModel {
   const { width: W, depth: D, height: H } = FILM;
   const b = new Builder(key);
-  b.box(W, H, D, { at: [0, RADIAL_Y, 0], r: 0.05, seg: 2, slot: 'gloss', c: FILM_BODY });
+  b.box(W, H, D, { at: [0, RADIAL_Y, 0], r: FILM.corner, seg: 2, slot: 'gloss', c: FILM_BODY });
   const model = b.build();
   const body = new Group();
   body.add(model.group);
@@ -131,21 +132,29 @@ export interface ElectrolyticModel extends PartModel {
   readonly size: { readonly d: number; readonly h: number };
 }
 
-/** How far the sleeve is wrapped over the top's edge. */
-const RIM = 0.05;
-/** A bulged can (VISUAL §4.8): its top 0.05 over the rim, the sleeve a little wider. */
-const BULGE = 0.05;
-const SWELL = 1.03;
+/**
+ * The can's shape (an inner view's section faces follow it, `shared/inside/plates.ts`): how far the sleeve is wrapped
+ * over the top's edge (`rim`); the aluminium top inside the rim, its underside `top.below` under the can's top and
+ * `top.thick` thick; the rubber bung at the bottom, `bung.inset` in from the side, from `bung.from` to `bung.to` over
+ * the can's bottom; bulged (VISUAL §4.8), its top domed `bulge.dome` over the rim and the sleeve `bulge.swell` times
+ * wider.
+ */
+export const CAN = {
+  rim: 0.05,
+  top: { below: 0.014, thick: 0.012 },
+  bung: { inset: 0.04, from: 0.004, to: 0.016 },
+  bulge: { dome: 0.05, swell: 1.03 },
+} as const;
+const RIM = CAN.rim;
+const BULGE = CAN.bulge.dome;
+const SWELL = CAN.bulge.swell;
 
-export function createElectrolytic(farads: number, volts: number, key = 'electrolytic'): ElectrolyticModel {
-  const can = electrolyticCan(farads, volts);
-  const d = can.d * MM;
-  const h = can.h * MM;
-  const r = d / 2;
-  const y0 = RADIAL_Y;
-  const y1 = y0 + h;
-  // the sleeve from the bottom's edge, round the bead near the bottom, up the side and over the top's edge
-  const sleeve: G.Pt[] = [
+/**
+ * The sleeve's profile (radius, height) of a can `r` in radius from `y0` to `y1`: from the bottom's edge, round the
+ * bead near the bottom, up the side and over the top's edge.
+ */
+export function sleeveProfile(r: number, y0: number, y1: number): G.Pt[] {
+  return [
     [r - 0.04, y0],
     [r - 0.01, y0 + 0.006],
     [r, y0 + 0.03],
@@ -158,6 +167,16 @@ export function createElectrolytic(farads: number, volts: number, key = 'electro
     [r - RIM, y1],
     [r - RIM, y1 - 0.012],
   ];
+}
+
+export function createElectrolytic(farads: number, volts: number, key = 'electrolytic'): ElectrolyticModel {
+  const can = electrolyticCan(farads, volts);
+  const d = can.d * MM;
+  const h = can.h * MM;
+  const r = d / 2;
+  const y0 = RADIAL_Y;
+  const y1 = y0 + h;
+  const sleeve = sleeveProfile(r, y0, y1);
   const b = new Builder(key);
   const quarter = Math.PI / 4;
   b.lathe(sleeve, {
@@ -178,7 +197,13 @@ export function createElectrolytic(farads: number, volts: number, key = 'electro
     c: 'mist',
   });
   // the rubber bung at the bottom
-  b.cyl(r - 0.04, 0.012, { at: [0, y0 + 0.004, 0], seg: 28, c: 'ink', slot: 'gloss', bevel: 0 });
+  b.cyl(r - CAN.bung.inset, CAN.bung.to - CAN.bung.from, {
+    at: [0, y0 + CAN.bung.from, 0],
+    seg: 28,
+    c: 'ink',
+    slot: 'gloss',
+    bevel: 0,
+  });
   // a row of «−» down the stripe
   for (let y = y0 + 0.24; y <= y1 - 0.2; y += 0.2) {
     b.box(0.004, 0.022, Math.min(0.12, r * 0.6), {
@@ -190,7 +215,7 @@ export function createElectrolytic(farads: number, volts: number, key = 'electro
     });
   }
   // the aluminium top inside the rim, with its cross-shaped vent
-  b.cyl(r - RIM, 0.012, { at: [0, y1 - 0.014, 0], seg: 32, slot: 'metal', c: 'steel', bevel: 0 });
+  b.cyl(r - RIM, CAN.top.thick, { at: [0, y1 - CAN.top.below, 0], seg: 32, slot: 'metal', c: 'steel', bevel: 0 });
   for (const a of [0, Math.PI / 2]) {
     b.box(2 * (r - RIM - 0.03), 0.004, 0.018, {
       at: [0, y1 - 0.002, 0],

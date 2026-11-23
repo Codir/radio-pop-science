@@ -9,10 +9,11 @@
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { CameraDirector, type Shot } from '@/engine/camera/director';
+import { PARTS } from '@electronics/sim/core';
 import { createLayout, type SocketId } from '@electronics/sim/board';
 import { LENS, PLACES } from '../../bench/layout';
 import { STAGE_FOV, STAGE_SHOTS, boardToWorld } from '../../bench/shots';
-import { asFilm } from '../../inside';
+import { asFilm, asPlates, asRoll } from '../../inside';
 import { AXIAL_Y, RESISTOR, buildPart, createResistor } from '../../parts';
 import { createCutaway } from '../cutaway';
 import { CUT_OPENS } from '../door';
@@ -215,5 +216,21 @@ describe('the inner views by kind (cutaway.ts)', () => {
     r!.dispose();
     expect(createCutaway(buildPart('led-red')!)).toBeNull();
     expect(createCutaway(buildPart('ceramic-100n')!)).toBeNull();
+  });
+
+  it('a capacitor opens by its dielectric: an electrolytic its plates, a film box its roll, a ceramic disc nothing', () => {
+    for (const [key, s] of Object.entries(PARTS)) {
+      if (s.kind !== 'capacitor') continue;
+      const c = createCutaway(buildPart(key)!);
+      if (s.dielectric === 'electrolytic') {
+        expect(asPlates(c), key).not.toBeNull();
+        expect(asRoll(c), key).toBeNull();
+      } else if (s.dielectric === 'film') {
+        expect(asRoll(c), key).not.toBeNull();
+        expect(asPlates(c), key).toBeNull();
+      } else expect(c, key).toBeNull();
+      expect(asFilm(c), key).toBeNull();
+      c?.dispose();
+    }
   });
 });

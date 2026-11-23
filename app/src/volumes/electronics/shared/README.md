@@ -423,22 +423,26 @@ keeper.to(() => door.lens(door.rail.position), 1.2); // on the step's entry
   own `lens`, `lensTarget`, `lensCall` and `dive` have no say over the magnifier.
 - **The inside** (`cutaway.ts`, VISUAL §7): the door opens the inner view of its part's kind (a partial table; a kind
   with none stays whole on `inside`) by its `cut`, and every frame feeds it what the bench's model says of the part —
-  the current into its leg 0, its heat, whether it burnt (`follow`; the last good solve's while one fails). A resistor's
-  is its carbon film («inside» below), which took the place of E2-8's temporary cutaway. `door.cutaway` is the view;
-  `asFilm(door.cutaway)` (`shared/inside`) gives a resistor's film, its callouts' points and its numbers.
+  the current into its leg 0, its heat, whether it burnt, a capacitor's voltage across its capacitance
+  (`PartMemory.volts`: the operating point's until the bench counts in time) and whether it bulged (`follow`; the last
+  good solve's while one fails). A resistor's is its carbon film («inside» below), which took the place of E2-8's
+  temporary cutaway; a capacitor's is its dielectric's (`PARTS[key].dielectric`): an electrolytic's two plates, a film
+  box's roll, a ceramic disc none yet. `door.cutaway` is the view; `asFilm`, `asPlates`, `asRoll` (`shared/inside`)
+  give each its callouts' points and its numbers.
 
 For checks: `__app.read('electronics-dive')` → `{ part, ready, engaged, position, target, moving, min, floor, flying,
 bench, cut, open, inside, camera, aim, lens, atHolder, stops }` (the door's rail, the floor shown, whether it flies and
-`bench.flying`, the inner view: how far open and what it shows — a film's `FilmState`, below —, the camera and its
+`bench.flying`, the inner view: how far open and what it shows — a `FilmState`, `PlatesState` or `RollState`, below —, the camera and its
 aim, the lens's ring and whether it lies in its holder, the stops);
 probes `dive:end0`, `dive:end1` (the body's ends along its axis) and `dive:ring-top`, `dive:ring-bottom` (the ring's
 extent along the camera's up). One door per chapter: a second one's reader takes the name over. The sandbox's step
 `loupe` (a 4.7 kΩ in a5 … a9) and `qa/measure.mjs --only loupe` (a mouse, `--touch`) drive them.
 
-## `inside` — inside the parts (E3-5)
+## `inside` — inside the parts (E3-5, E4-I)
 
 The floor `inside` of the door's dive (VISUAL §7): the inner view of a part, opened on its place by the door's `cut`.
-The door makes and feeds it (`dive` above); a chapter reads it — `asFilm(door.cutaway)` — for its callouts and checks.
+The door makes and feeds it (`dive` above); a chapter reads it — `asFilm`, `asPlates`, `asRoll` of `door.cutaway` — for
+its callouts and checks.
 
 ```ts
 const film = createFilm(model); // a resistor's model of `shared/parts`, closed; a child of its body frame
@@ -477,6 +481,47 @@ path, amps, speed, electrons, shown, open, amount, heat, burnt, surface, drawCal
 whole view, the part's meshes with the inside's; `insideCalls` — the inside's own). The sandbox's step `film` (the
 red LED's loop, the value switch 330 Ω / 10 kΩ, probes `film:film`, `film:groove`, `film:rod`) and `qa/measure.mjs
 --only film` drive it.
+
+### Inside the capacitors (E4-I)
+
+`CUTAWAYS.capacitor` (`dive/cutaway.ts`) opens a capacitor by its dielectric: an electrolytic's plates
+(`plates.ts`), a film box's roll (`roll.ts`), a ceramic disc nothing (it stays whole on `inside`). Both cut the part in
+half on the reader's side — the upright plane through its axis — and lay what the plane meets as section faces:
+
+```ts
+const plates = asPlates(door.cutaway); // an electrolytic's: null for any other part
+plates.follow({ amps, heat, burnt, volts, bulged }, dt, t); // the door does it every frame (`volts`: across the capacitance)
+plates.anchor('plus' | 'minus' | 'insulator', out); // world points for the callouts, on the half the cut leaves
+const roll = asRoll(door.cutaway); // a film box's: static, no `follow`
+roll.anchor('metal' | 'film', out); // on the section over the axis: a metal layer near leg 0, a film layer near leg 1
+```
+
+- **The wedge** (`wedge.ts`): `createWedge(model, width, axisY, skip, { axis, upright })` cuts about the body's x (an
+  axial part, a film box's winding) or its vertical y (`axis: 'y'`, a radial can), its middle toward the camera — or,
+  `upright`, level toward the reader's side, so a half cut is the upright plane through the axis. `createSection(axis,
+  axisY, layers)` lays the two section faces of layers whose radii may change with the face's angle (a box, an oval
+  roll, a plate or a leg off the axis), one mesh, colours per vertex; `printKeeper` hides the print (which three's
+  clipping does not reach) with the half the cut takes.
+- **Plates** (`plates.ts`, VISUAL §7, plan decision 11 of batch E4): the can cut along its vertical axis and everything
+  in it — two steel plates over the legs (the plus over leg 0, the minus under the stripe), a thin `mist` insulator
+  between them (`sheath()`), the leads up through the bung, the dark inner wall; the section faces of the sleeve over
+  the aluminium wall (`mist` on the stripe's side), the bung, the top (domed when bulged), the plates, the leads, the
+  insulator. The charges are the library's orbs without glow, «+» (`coral`) and electrons (`cyan`) pair facing pair on
+  the plates' inner sides, `chargeCount(volts)` = round(60 · |V| / 9) on each (60 at 8.968 V, 13 at 2.02 V), on the
+  half the cut leaves; the other way round, the «+» sit on the minus plate. The legs' electrons drift at
+  `electronSpeed(amps)` (the resistor's rule): charging, down leg 0 and up leg 1. Bulged: a dark crack through the
+  insulator, no charges. Draw calls: the inside's six, nine with the part.
+- **Roll** (`roll.ts`): the box cut by the upright plane through the winding's axis; on the section the oval roll —
+  three turns of film (`mist`) and metal (`steel`) in turn on a flattened core, the first strip's metal from the end by
+  leg 0 with a bare edge by leg 1, the second's the other way —, the sprayed ends, the leads from the box's bottom up
+  against them, the potting, the shell. Static. Draw calls: the inside's one, three with the part.
+
+For checks: the door's reader has `PlatesState` — `{ volts, charges, count, positive, amps, speed, legElectrons,
+bulged, open, amount, printHidden, drawCalls, insideCalls }` — or `RollState` — `{ turns, open, amount, printHidden,
+drawCalls, insideCalls }` — under `inside`. The sandbox's steps `plates` (the board of `capacitor/store`, the can
+switch 10 / 100 / 470 / 1000 μF, the battery's switch working inside, probes `plates:plus`, `plates:minus`,
+`plates:insulator`) and `roll` (a 1 μF film box alone, probes `roll:metal`, `roll:film`) and `qa/measure.mjs --only
+plates,roll` drive them.
 
 ## Boards of the steps (`sim/board/presets.ts`, E3-5)
 

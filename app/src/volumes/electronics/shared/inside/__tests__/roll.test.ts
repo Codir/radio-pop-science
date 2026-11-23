@@ -1,0 +1,282 @@
+/**
+ * Inside a film capacitor (`roll.ts`, docs/volumes/electronics/VISUAL.md §7, batch E4): the box cut in half by the
+ * upright plane through the winding's axis (the body's x) on the reader's side, and on the section the roll of two
+ * metallised strips — film and metal taking turns, each strip's metal reaching its own sprayed end and stopping short
+ * of the other —, the sprayed ends, the leads from the box's bottom up against them, the potting and the box's shell.
+ * For both film boxes of the catalog: everything it draws within the part's box, one draw call of its own (three with
+ * the part), the callouts' points on the section's metal and film, nothing while the part is whole, the part given back
+ * whole. No WebGL: the scene graph and the numbers.
+ */
+import { Box3, Color, Matrix4, Vector3, type Material, type Mesh, type Object3D } from 'three';
+import { describe, expect, it } from 'vitest';
+import { col } from '@/style';
+import { PARTS } from '@electronics/sim/core';
+import { BOARD_SPEC } from '@electronics/sim/board';
+import { PART_VIEW } from '../../dive/poses';
+import { FILM as BOX, RADIAL_Y, buildPart, type PartModel } from '../../parts';
+import { LEG_COLOR } from '../../parts/part';
+import { ROLL, asRoll, boxReach, createRoll, ovalReach, rollLayout, uprightOnFace } from '../roll';
+import { CLOSED, INSET } from '../wedge';
+
+const P = BOARD_SPEC.pitch;
+const BOXES = Object.entries(PARTS)
+  .flatMap(([key, s]) => (s.kind === 'capacitor' && s.dielectric === 'film' ? [key] : []))
+  .sort();
+const make = (key = 'film-1u'): PartModel => {
+  const m = buildPart(key)!;
+  m.group.updateWorldMatrix(true, true);
+  return m;
+};
+/** The door's line of sight in the body frame of a part at the orientation 0: 60° over the board, from the reader. */
+const FRONT = new Vector3(0, Math.sin(PART_VIEW.elevation), Math.cos(PART_VIEW.elevation));
+const L = rollLayout();
+
+function drawn(root: Object3D): Mesh[] {
+  const out: Mesh[] = [];
+  root.traverse((o) => {
+    const m = o as Mesh;
+    if (!m.isMesh) return;
+    for (let p: Object3D | null = o; p && p !== root.parent; p = p.parent) if (!p.visible) return;
+    const material = m.material as Material | Material[];
+    if (Array.isArray(material) ? material.every((x) => !x.visible) : !material.visible) return;
+    out.push(m);
+  });
+  return out;
+}
+function clipped(m: Material, p: Vector3): boolean {
+  const planes = m.clippingPlanes ?? [];
+  if (planes.length === 0) return false;
+  const out = planes.map((pl) => pl.distanceToPoint(p) < 0);
+  return m.clipIntersection ? out.every(Boolean) : out.some(Boolean);
+}
+function opened(key = 'film-1u') {
+  const m = make(key);
+  const roll = createRoll(m);
+  roll.set(1, FRONT);
+  return { m, roll };
+}
+/** The section's quads (six vertices each, in order): their extent along x, their reach, their colour. */
+function quads(roll: { group: Object3D }) {
+  const faces = roll.group.getObjectByName('roll:faces') as Mesh;
+  const pos = faces.geometry.getAttribute('position');
+  const colors = faces.geometry.getAttribute('color');
+  const out: { x0: number; x1: number; r0: number; r1: number; color: string; face: 0 | 1 }[] = [];
+  for (let i = 0; i < pos.count; i += 6) {
+    const xs: number[] = [];
+    const rs: number[] = [];
+    for (let j = 0; j < 6; j++) {
+      xs.push(pos.getX(i + j));
+      rs.push(Math.hypot(pos.getY(i + j) - L.axisY, pos.getZ(i + j)));
+    }
+    out.push({
+      x0: Math.min(...xs),
+      x1: Math.max(...xs),
+      r0: Math.min(...rs),
+      r1: Math.max(...rs),
+      color: new Color(colors.getX(i), colors.getY(i), colors.getZ(i)).getHexString(),
+      face: i < pos.count / 2 ? 0 : 1,
+    });
+  }
+  return out;
+}
+
+describe('the reach of the box and of the roll from the winding’s axis', () => {
+  it('meets the box’s faces straight out and its rounded edge between them; the oval its half-axes', () => {
+    const { y, z, corner } = L.box;
+    expect(boxReach(y, z, corner, 0)).toBeCloseTo(y, 12);
+    expect(boxReach(y, z, corner, Math.PI / 2)).toBeCloseTo(z, 12);
+    expect(boxReach(y, z, corner, Math.PI)).toBeCloseTo(y, 12);
+    // toward the corner the rounded edge is nearer than the sharp corner, never farther
+    const toCorner = Math.atan2(z, y);
+    expect(boxReach(y, z, corner, toCorner)).toBeLessThan(Math.hypot(y, z));
+    expect(boxReach(y, z, corner, toCorner)).toBeGreaterThan(Math.hypot(y, z) - corner);
+    for (let k = 0; k < 72; k++) {
+      const th = (k / 72) * 2 * Math.PI;
+      const r = boxReach(y, z, corner, th);
+      const py = Math.abs(r * Math.cos(th));
+      const pz = Math.abs(r * Math.sin(th));
+      expect(py).toBeLessThanOrEqual(y + 1e-9);
+      expect(pz).toBeLessThanOrEqual(z + 1e-9);
+      // on the rounded box's surface
+      const dy = Math.max(py - (y - corner), 0);
+      const dz = Math.max(pz - (z - corner), 0);
+      if (dy > 0 && dz > 0) expect(Math.hypot(dy, dz)).toBeCloseTo(corner, 9);
+      else expect(Math.max(py - y, pz - z)).toBeCloseTo(0, 9);
+    }
+    expect(ovalReach(0.3, 0.1, 0)).toBeCloseTo(0.3, 12);
+    expect(ovalReach(0.3, 0.1, Math.PI / 2)).toBeCloseTo(0.1, 12);
+    // an upright bar under the axis: on the face straight down from its top to its bottom, on the face up only what of
+    // it stands over the axis; on a face across it, none
+    expect(uprightOnFace(0.675, 0.02, 0.3, 0.7, Math.PI)).toEqual([0, expect.closeTo(0.375, 12)]);
+    expect(uprightOnFace(0.675, 0.02, 0.3, 0.7, 0)).toEqual([0, expect.closeTo(0.025, 12)]);
+    const [a, b] = uprightOnFace(0.675, 0.02, 0.3, 0.7, Math.PI / 2);
+    expect(b).toBe(a);
+  });
+});
+
+describe('the roll inside a film capacitor (createRoll)', () => {
+  it('lays out the roll in the box: along the legs’ axis, flattened to the box, its ends sprayed, a lead on each', () => {
+    expect(L.axisY).toBeCloseTo(RADIAL_Y + BOX.height / 2, 12);
+    // the roll and its sprayed ends inside the box's shell, the ends wider than the roll by a little
+    expect(L.roll.y).toBeLessThan(L.inner.y);
+    expect(L.roll.z).toBeLessThan(L.inner.z);
+    expect(L.spray.y).toBeLessThanOrEqual(L.inner.y);
+    expect(L.spray.z).toBeLessThanOrEqual(L.inner.z);
+    expect(L.spray.end).toBeGreaterThan(L.roll.end);
+    // flattened like a real box's winding: taller than deep
+    expect(L.roll.y / L.roll.z).toBeGreaterThan(2);
+    // each lead stands on its leg's line (±P), against its sprayed end's outer face, from the box's bottom up over
+    // the axis (where the cut lays it open)
+    expect(L.lead.x).toBe(P);
+    expect(L.lead.x - L.lead.radius).toBeCloseTo(L.spray.end, 12);
+    expect(L.lead.x + L.lead.radius).toBeLessThan(L.inner.x);
+    expect(L.lead.bottom).toBe(RADIAL_Y);
+    expect(L.lead.top).toBeGreaterThan(L.axisY);
+    expect(L.lead.top).toBeLessThan(L.axisY + L.spray.y);
+    expect(L.lead.bottom).toBeLessThan(L.axisY - L.spray.y);
+  });
+
+  it('draws nothing while the box is whole, and cuts it in half by the upright plane through the winding’s axis', () => {
+    const m = make();
+    const roll = createRoll(m);
+    roll.set(0, FRONT);
+    expect(roll.open).toBe(false);
+    expect(drawn(roll.group)).toEqual([]);
+    roll.cut(1);
+    expect(roll.open).toBe(true);
+    const box = m.body[0]!;
+    // the half on the reader's side gone, over the axis and under it; the half behind kept, however high
+    for (const y of [L.axisY + 0.3, L.axisY, L.axisY - 0.3]) {
+      expect(clipped(box, new Vector3(0, y, 0.05))).toBe(true);
+      expect(clipped(box, new Vector3(0, y, -0.05))).toBe(false);
+    }
+    expect(((m.legs.material as Material).clippingPlanes ?? []).length).toBe(0);
+    roll.cut(CLOSED / 2);
+    expect(roll.open).toBe(false);
+    expect(drawn(roll.group)).toEqual([]);
+  });
+
+  it('stays inside the part’s box, for both film boxes', () => {
+    for (const key of BOXES) {
+      const { m, roll } = opened(key);
+      const box = new Box3().setFromCenterAndSize(m.hit.position.clone(), m.hit.scale.clone()).expandByScalar(1e-6);
+      m.bodyGroup.updateWorldMatrix(true, true);
+      const toBody = new Matrix4().copy(m.bodyGroup.matrixWorld).invert();
+      const meshes = drawn(roll.group);
+      expect(meshes.map((x) => x.name), key).toEqual(['roll:faces']);
+      for (const mesh of meshes) {
+        mesh.geometry.computeBoundingBox();
+        const b = mesh.geometry.boundingBox!.clone().applyMatrix4(new Matrix4().multiplyMatrices(toBody, mesh.matrixWorld));
+        expect(box.containsBox(b), `${key}: ${mesh.name}`).toBe(true);
+      }
+    }
+  });
+
+  it('costs one draw call of its own and three with the part', () => {
+    for (const key of BOXES) {
+      const { m, roll } = opened(key);
+      const calls = drawn(m.bodyGroup);
+      expect(calls.length, calls.map((c) => c.name).join(', ')).toBeLessThanOrEqual(3);
+      expect(roll.state().drawCalls).toBe(calls.length);
+      expect(roll.state().insideCalls).toBe(1);
+      expect(calls).toContain(m.legs);
+    }
+  });
+
+  it('lays its section in the upright plane of the cut, facing the reader, the leads in it', () => {
+    const { roll } = opened();
+    const faces = roll.group.getObjectByName('roll:faces') as Mesh;
+    const pos = faces.geometry.getAttribute('position');
+    const nor = faces.geometry.getAttribute('normal');
+    for (let i = 0; i < pos.count; i++) {
+      expect(pos.getZ(i)).toBeCloseTo(-INSET, 6);
+      expect(new Vector3().fromBufferAttribute(nor, i).distanceTo(new Vector3(0, 0, 1))).toBeLessThan(1e-6);
+    }
+    // each lead, on its leg's line, runs from the box's bottom (where the leg comes in) up over the axis, against its
+    // sprayed end
+    const leg = LEG_COLOR.getHexString();
+    for (const sign of [-1, 1]) {
+      const lead = quads(roll).filter((q) => q.color === leg && q.r1 - q.r0 > 1e-6 && Math.sign(q.x0 + q.x1) === sign);
+      expect(lead.length).toBe(2);
+      for (const q of lead) {
+        expect(Math.min(Math.abs(q.x0), Math.abs(q.x1))).toBeCloseTo(L.spray.end, 6);
+        expect(Math.max(Math.abs(q.x0), Math.abs(q.x1))).toBeCloseTo(P + L.lead.radius, 6);
+      }
+      const down = lead.find((q) => q.face === 1)!;
+      // (float32 positions: a micrometre of slack)
+      expect(L.axisY - down.r1).toBeCloseTo(RADIAL_Y, 5);
+      // from the axis (the quads' reach is measured off the face, INSET in front of the axis)
+      expect(down.r0).toBeLessThanOrEqual(INSET + 1e-6);
+      expect(lead.find((q) => q.face === 0)!.r1).toBeCloseTo(L.lead.top - L.axisY, 3);
+    }
+  });
+
+  it('shows film and metal taking turns: each strip’s metal from its own sprayed end, stopping short of the other', () => {
+    const { roll } = opened();
+    const steel = col('steel').getHexString();
+    const mist = col('mist').getHexString();
+    const E = L.roll.end;
+    for (const face of [0, 1] as const) {
+      const all = quads(roll).filter((q) => q.face === face && q.r1 - q.r0 > 1e-6 && q.x0 >= -E - 1e-6 && q.x1 <= E + 1e-6);
+      const metal = all.filter((q) => q.color === steel).sort((a, b) => a.r0 - b.r0);
+      // one layer of metal per strip and turn, all within the roll's oval on this face
+      expect(metal.length).toBe(2 * ROLL.turns);
+      metal.forEach((q, i) => {
+        if (i % 2 === 0) {
+          // the first strip: from the end by leg 0, bare by leg 1
+          expect(q.x0).toBeCloseTo(-E, 6);
+          expect(q.x1).toBeCloseTo(E - ROLL.margin, 6);
+        } else {
+          expect(q.x0).toBeCloseTo(-E + ROLL.margin, 6);
+          expect(q.x1).toBeCloseTo(E, 6);
+        }
+      });
+      // between every two metal layers, film; the roll's outer layer metal, inside the potting
+      for (let i = 1; i < metal.length; i++) {
+        const between = all.filter((q) => q.color === mist && q.r0 >= metal[i - 1]!.r1 - 1e-6 && q.r1 <= metal[i]!.r0 + 1e-6);
+        expect(between.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('gives its callouts points on the section: a layer of metal toward leg 0, a layer of film toward leg 1', () => {
+    for (const key of BOXES) {
+      const { m, roll } = opened(key);
+      m.bodyGroup.updateWorldMatrix(true, true);
+      const local = (name: 'metal' | 'film') => m.bodyGroup.worldToLocal(roll.anchor(name, new Vector3()));
+      const metal = local('metal');
+      const film = local('film');
+      const all = quads(roll);
+      const on = (p: Vector3, color: string): boolean => {
+        const r = Math.hypot(p.y - L.axisY, p.z);
+        return all.some((q) => q.color === color && q.x0 <= p.x && p.x <= q.x1 && q.r0 <= r && r <= q.r1);
+      };
+      for (const p of [metal, film]) {
+        // on the section's plane, over the axis
+        expect(p.z).toBeCloseTo(-INSET, 6);
+        expect(p.y).toBeGreaterThan(L.axisY);
+      }
+      expect(on(metal, col('steel').getHexString()), key).toBe(true);
+      expect(on(film, col('mist').getHexString()), key).toBe(true);
+      expect(metal.x).toBeLessThan(0);
+      expect(film.x).toBeGreaterThan(0);
+      // room for two tags side by side
+      expect(film.x - metal.x).toBeGreaterThanOrEqual(0.15);
+    }
+  });
+
+  it('is what the door finds for a film capacitor (`asRoll`), static, and gives the part back whole', () => {
+    const m = make();
+    const before = m.materials.map((x) => [x.clippingPlanes, x.clipIntersection]);
+    const roll = createRoll(m);
+    expect(asRoll(roll)).toBe(roll);
+    expect(asRoll(null)).toBeNull();
+    // nothing of the model moves it: it has no `follow`
+    expect(roll.follow).toBeUndefined();
+    roll.set(1, FRONT);
+    expect(roll.state().turns).toBe(3);
+    roll.dispose();
+    expect(m.materials.map((x) => [x.clippingPlanes, x.clipIntersection])).toEqual(before);
+    expect(roll.group.parent).toBeNull();
+  });
+});

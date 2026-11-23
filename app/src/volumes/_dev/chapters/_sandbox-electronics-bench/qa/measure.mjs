@@ -5,7 +5,7 @@
 // `qa/measure.mjs`, docs/volumes/electronics/REUSE.md «Копії»; the sections are the bench's own):
 //
 //   node app/src/volumes/_dev/chapters/_sandbox-electronics-bench/qa/measure.mjs --port 5480 --out <dir>
-//        [--only room,…,film] [--size 1280x720] [--touch]
+//        [--only room,…,film,plates,roll] [--size 1280x720] [--touch]
 //
 // Sections (`--only`, default all):
 //   room  — step `room` on a held page (`?freeze`): the bench's reader `electronics-bench` (204 sockets, 36 rows),
@@ -83,6 +83,23 @@
 //           switch to 10 kΩ — a new R1 of that value, more turns, a narrower and longer strip, the model's 0.73 mA and
 //           the speed that current times the same number, 29 times slower; back at 0 the film closed; the hue families
 //           (reported), the console; snapshots `film-<330|10k|board>-<size>.jpg`.
+//   plates — inside an electrolytic (E4-I, `shared/inside/plates.ts`) on a held page, step `plates` (the board of
+//           `capacitor/store`: the LED's loop and C1 470 μF across the rails, the switch closed, shot `board`): on the
+//           board's shot the cut is closed and the view already knows the model's voltage across the capacitance
+//           (8.968 V); the slider set to its end — the floor `inside`, the can cut in half, `chargeCount` of that
+//           voltage on each plate (60), the print taken with the cut half, the whole view ≤ 9 draw calls and the inside's
+//           ≤ 6, the frame ≤ 350, the callouts' points (`plates:plus`, `plates:minus`, `plates:insulator`) on screen in
+//           the free area, the legs' electrons at the speed of the model's current; the dock's toggle opens the switch
+//           while the camera is inside — the charges follow what the model keeps then, and the closed switch brings
+//           them back; the dock's switch puts each can (10, 100, 470, 1000 μF) in C1's sockets — open, 60 charges, the
+//           calls within bounds; back at 0 the can whole; the hue families ≤ 4; the console; snapshots
+//           `plates-<board|470|open|10u|100u|1000u>-<size>.jpg`.
+//   roll  — inside a film capacitor (E4-I, `shared/inside/roll.ts`) on a held page, step `roll` (C1 1 μF alone in
+//           e8/e10, shot `board`): on the board's shot the cut is closed; the floor `part` (rail 0.7) with the box whole;
+//           the slider set to its end — the floor `inside`, the box cut in half, three turns, the print taken with the
+//           cut half, the whole view ≤ 3 draw calls and the inside's 1, the callouts' points (`roll:metal`,
+//           `roll:film`) on screen in the free area; back at 0 the box whole; the hue families ≤ 4; the console;
+//           snapshots `roll-<board|part|inside>-<size>.jpg`.
 // Every section starts with the check `opened` and goes no further when it fails. The numbers go to
 // <out>/measure.json; the last line is `PASS sandbox-electronics-bench — <n> checks` (exit 0) or `FAIL <k> of <n>`
 // (exit 1). `--touch` runs a phone-like page (device pixel ratio 3, touch, quality tier picked by the app).
@@ -1730,9 +1747,208 @@ async function film(context) {
   await page.close();
 }
 
+/* ---------------------------------------------------------------------------------- sections plates, roll */
+
+/** `shared/inside/plates.ts`: the charges on each plate for the voltage across the capacitance. */
+const chargeCount = (v) => (Number.isFinite(v) ? Math.min(60, Math.round((60 * Math.abs(v)) / 9)) : 0);
+/** The electrons' speed in the legs: the resistor's own rule, −6 units/s per ampere, held at 0.6. */
+const legSpeed = (amps) => {
+  const v = 0 + PER_AMP * amps;
+  return Math.abs(v) > 0.6 ? Math.sign(v) * 0.6 : v;
+};
+
+/** A page of a dive step: its readers and the slider's stops with the flight waited out. */
+function diveKit(page) {
+  const dive = () => read(page, 'electronics-dive');
+  const settle = async (max = 400) => {
+    for (let i = 0; i < max; i++) {
+      const d = await dive();
+      if (!d.moving) return i;
+      await page.evaluate(() => window.__app.step(1 / 60, 1));
+    }
+    return max;
+  };
+  const to = async (slider) => {
+    await page.evaluate((v) => window.__ui.set('depth', v, true), slider);
+    await settle();
+    await advance(page, 0.3);
+    return dive();
+  };
+  return { dive, to };
+}
+
+async function plates(context) {
+  const n = (report.sections.plates = {});
+  const page = await context.newPage();
+  const pos = await open(page, 'plates').catch((err) => ({ error: String(err) }));
+  if (!check('opened', at(pos, 'plates'), where(pos))) {
+    await page.close();
+    return;
+  }
+  const { dive, to } = diveKit(page);
+  const model = () => read(page, 'electronics-model');
+  const board = () => read(page, 'electronics-board');
+  const snap = (what) => join(out, `plates-${what}-${tag}.jpg`);
+
+  // 0. on the board's shot: the cut closed, the model's voltage across C1's capacitance already known to the view
+  const d0 = await dive();
+  n.board = { open: d0?.inside?.open, volts: d0?.inside?.volts, charges: d0?.inside?.charges };
+  check('on the board’s shot the can is whole', d0?.ready && d0.cut === 0 && d0.inside?.open === false, JSON.stringify(n.board));
+  check(
+    'the model’s voltage across C1’s capacitance with the switch closed: 8.968 V (the script’s model run)',
+    Math.abs((d0?.inside?.volts ?? 0) - 8.968) < 0.001,
+    `${d0?.inside?.volts} V`,
+  );
+  await screenshot(page, snap('board'));
+
+  // 1. the dive to the end: the can cut in half, the charges, the calls, the callouts' points, the legs' electrons
+  const inside = await to(DEPTH);
+  const p470 = inside.inside;
+  const m470 = await model();
+  n.c470 = { floor: inside.floor, cut: inside.cut, ...p470 };
+  check(
+    'inside: the cut opens with the magnifier’s dive — the floor `inside`, the can open',
+    inside.position === 1 && inside.floor === 'inside' && inside.cut === 1 && p470?.open === true && p470?.amount === 1,
+    `position ${inside.position}, floor ${inside.floor}, cut ${inside.cut}, open ${p470?.open} ${p470?.amount}`,
+  );
+  check(
+    'on each plate `chargeCount` of the voltage across the capacitance: 60 at 8.968 V, «+» on the plate over leg 0',
+    p470?.charges === chargeCount(p470?.volts) && p470?.charges === 60 && p470?.positive === 'plus',
+    `${p470?.charges} of ${p470?.count} at ${p470?.volts} V, «+» on ${p470?.positive}`,
+  );
+  check('the print goes with the half the cut takes', p470?.printHidden === 1, `${p470?.printHidden} hidden`);
+  check(
+    'the whole view of the opened can ≤ 9 draw calls, the inside’s ≤ 6',
+    p470?.drawCalls >= 7 && p470?.drawCalls <= 9 && p470?.insideCalls >= 5 && p470?.insideCalls <= 6,
+    `${p470?.drawCalls} (the inside ${p470?.insideCalls}, the part ${p470?.drawCalls - p470?.insideCalls})`,
+  );
+  const calls = (n.drawCalls = await drawCalls(page));
+  check('draw calls of the frame inside ≤ 350', calls.engine > 0 && calls.engine <= DRAW_CALLS.gate, `${calls.engine}`);
+  const amps = m470?.parts?.C1?.i;
+  check(
+    'the legs’ electrons at the speed of the model’s current into leg 0',
+    p470?.amps === amps && Math.abs(p470.speed - legSpeed(amps)) <= 1e-12 && p470?.legElectrons > 0,
+    `speed ${p470?.speed} units/s at ${amps} A; ${p470?.legElectrons} shown`,
+  );
+  const probes = await onScreen(page, ['plates:plus', 'plates:minus', 'plates:insulator']);
+  n.anchors = probes.probes;
+  check(
+    'the callouts’ points — plus, minus, insulator — on screen in the free area',
+    Object.values(probes.probes).every((p) => p && p.inside),
+    Object.entries(probes.probes).map(([k, p]) => `${k} ${p ? `${round(p.x)},${round(p.y)}${p.inside ? '' : ' out'}` : 'none'}`).join('; '),
+  );
+  const png = decodePng(await page.screenshot({ type: 'png' }));
+  const hue = (n.hue = hueFamilies(png));
+  check('hue families inside ≤ 4', hue.families.length <= 4, `${hue.families.join(', ')} ${JSON.stringify(hue.shares)}`);
+  await screenshot(page, snap('470'));
+
+  // 2. the battery's switch opened from the dock while the camera is inside: the charges follow the model's voltage
+  await page.evaluate(() => window.__ui.set('plates-switch', false, true));
+  await advance(page, 1);
+  const dOpen = await dive();
+  n.open = dOpen.inside;
+  check(
+    'the switch opened inside (the dock’s toggle works there): the charges are what the model keeps now',
+    dOpen.floor === 'inside' && (await read(page, 'electronics-board'))?.settings?.SW === 0 &&
+      dOpen.inside?.charges === chargeCount(dOpen.inside?.volts),
+    `floor ${dOpen.floor}, ${dOpen.inside?.volts} V, ${dOpen.inside?.charges} charges`,
+  );
+  await screenshot(page, snap('open'));
+  await page.evaluate(() => window.__ui.set('plates-switch', true, true));
+  await advance(page, 0.3);
+  const dBack = await dive();
+  check(
+    'closed again: 60 charges back',
+    dBack.inside?.charges === 60 && Math.abs(dBack.inside?.volts - 8.968) < 0.001,
+    `${dBack.inside?.charges} at ${dBack.inside?.volts} V`,
+  );
+
+  // 3. every can in C1's sockets, the camera still inside
+  n.cans = {};
+  for (const [spec, label] of [
+    ['electrolytic-10u-16v', '10u'],
+    ['electrolytic-100u-16v', '100u'],
+    ['electrolytic-1000u-16v', '1000u'],
+  ]) {
+    await page.evaluate((v) => window.__ui.set('plates-can', v, true), spec);
+    await advance(page, 0.6);
+    const d = await dive();
+    const p = d.inside;
+    n.cans[label] = { spec: (await board())?.parts?.C1?.spec, floor: d.floor, ...p };
+    check(
+      `${label}: open inside, 60 charges, ≤ 9 calls (the inside ≤ 6)`,
+      n.cans[label].spec === spec && d.floor === 'inside' && p?.open && p?.charges === 60 && p?.drawCalls <= 9 && p?.insideCalls <= 6,
+      `C1 ${n.cans[label].spec}, floor ${d.floor}, ${p?.charges} charges at ${p?.volts} V, ${p?.drawCalls} calls`,
+    );
+    await screenshot(page, snap(label));
+  }
+  await page.evaluate(() => window.__ui.set('plates-can', 'electrolytic-470u-16v', true));
+  await advance(page, 0.3);
+
+  // 4. back at 0: the can whole
+  const home = await to(0);
+  check('back at 0: the can whole', home.cut === 0 && home.inside?.open === false && !home.flying, `cut ${home.cut}, open ${home.inside?.open}`);
+
+  const errors = await appErrors(page);
+  n.errors = errors;
+  check('console', errors.length === 0, consoleText(errors));
+  await page.close();
+}
+
+async function roll(context) {
+  const n = (report.sections.roll = {});
+  const page = await context.newPage();
+  const pos = await open(page, 'roll').catch((err) => ({ error: String(err) }));
+  if (!check('opened', at(pos, 'roll'), where(pos))) {
+    await page.close();
+    return;
+  }
+  const { dive, to } = diveKit(page);
+  const snap = (what) => join(out, `roll-${what}-${tag}.jpg`);
+  const d0 = await dive();
+  check('on the board’s shot the box is whole', d0?.ready && d0.cut === 0 && d0.inside?.open === false, JSON.stringify(d0?.inside));
+  await screenshot(page, snap('board'));
+  const part = await to(1.2);
+  check('the floor `part`: the box whole', part.floor === 'part' && part.cut === 0 && part.inside?.open === false, `floor ${part.floor}, cut ${part.cut}`);
+  await screenshot(page, snap('part'));
+  const inside = await to(DEPTH);
+  const r = inside.inside;
+  n.inside = { floor: inside.floor, cut: inside.cut, ...r };
+  check(
+    'inside: the box cut in half — the floor `inside`, open, three turns',
+    inside.position === 1 && inside.floor === 'inside' && inside.cut === 1 && r?.open === true && r?.turns === 3,
+    `position ${inside.position}, floor ${inside.floor}, cut ${inside.cut}, open ${r?.open}, turns ${r?.turns}`,
+  );
+  check('the print goes with the half the cut takes', r?.printHidden === 1, `${r?.printHidden} hidden`);
+  check(
+    'the whole view of the opened box ≤ 3 draw calls, the inside’s 1',
+    r?.drawCalls >= 2 && r?.drawCalls <= 3 && r?.insideCalls === 1,
+    `${r?.drawCalls} (the inside ${r?.insideCalls})`,
+  );
+  const calls = (n.drawCalls = await drawCalls(page));
+  check('draw calls of the frame inside ≤ 350', calls.engine > 0 && calls.engine <= DRAW_CALLS.gate, `${calls.engine}`);
+  const probes = await onScreen(page, ['roll:metal', 'roll:film']);
+  n.anchors = probes.probes;
+  check(
+    'the callouts’ points — metal, film — on screen in the free area',
+    Object.values(probes.probes).every((p) => p && p.inside),
+    Object.entries(probes.probes).map(([k, p]) => `${k} ${p ? `${round(p.x)},${round(p.y)}${p.inside ? '' : ' out'}` : 'none'}`).join('; '),
+  );
+  const png = decodePng(await page.screenshot({ type: 'png' }));
+  const hue = (n.hue = hueFamilies(png));
+  check('hue families inside ≤ 4', hue.families.length <= 4, `${hue.families.join(', ')} ${JSON.stringify(hue.shares)}`);
+  await screenshot(page, snap('inside'));
+  const home = await to(0);
+  check('back at 0: the box whole', home.cut === 0 && home.inside?.open === false && !home.flying, `cut ${home.cut}, open ${home.inside?.open}`);
+  const errors = await appErrors(page);
+  n.errors = errors;
+  check('console', errors.length === 0, consoleText(errors));
+  await page.close();
+}
+
 /* ---------------------------------------------------------------------------------------------- run */
 
-const SECTIONS = { room, shots, parts, hand, meter, heat, loupe, film };
+const SECTIONS = { room, shots, parts, hand, meter, heat, loupe, film, plates, roll };
 const only =
   typeof args.only === 'string'
     ? args.only

@@ -2,14 +2,16 @@
  * The door on a live bench (`mountBench` with a stub context and the real `CameraDirector`, no WebGL): `home` brings
  * it back to the step's shot with the lens to its holder — gliding, or at once (`instant`, a step entered without
  * motion: the rail on its start, the camera left on the shot the new step has put it on), so the keeper's pose
- * `door.lens(door.rail.position)` is the holder's and the next dive starts from the step's shot.
+ * `door.lens(door.rail.position)` is the holder's and the next dive starts from the step's shot; and what the door
+ * feeds the inner views from the bench's model — a resistor's film its current, an electrolytic's plates the voltage
+ * across its capacitance and its current — and a film box's roll opened.
  */
 import { Group, Vector3, type Object3D } from 'three';
 import { describe, expect, it } from 'vitest';
 import type { ChapterContext } from '@/engine/api';
 import { CameraDirector } from '@/engine/camera/director';
 import { benchShots, mountBench, type Bench } from '../../bench';
-import { asFilm, electronSpeed, filmTurns } from '../../inside';
+import { asFilm, asPlates, asRoll, chargeCount, electronSpeed, filmTurns } from '../../inside';
 import { partDoor, type Door } from '../door';
 
 /** A chapter context with only what the bench and the door use: the camera is the engine's own director. */
@@ -176,5 +178,78 @@ describe('the door into a resistor opens its carbon film, fed by the bench’s m
     door.home({ instant: true });
     frame(bench, door, t);
     expect(film!.state().open).toBe(false);
+  });
+});
+
+describe('the door into an electrolytic opens its plates, fed by the bench’s model', () => {
+  it('on `inside` the charges follow the model’s voltage across the capacitance, the legs its current', () => {
+    const { ctx, camera } = stubContext();
+    const bench = mountBench(ctx);
+    // the board of `capacitor/store`: the LED's loop, the 470 μF across the rails behind J3 and J4, the switch closed
+    bench.preset([
+      { id: 'J1', spec: 'jumper', at: '+5', to: 'a5' },
+      { id: 'R1', spec: 'resistor-330', at: 'b5' },
+      { id: 'LED1', spec: 'led-red', at: 'c9' },
+      { id: 'J2', spec: 'jumper', at: 'e10', to: '-10' },
+      { id: 'J3', spec: 'jumper', at: '+12', to: 'a12' },
+      { id: 'J4', spec: 'jumper', at: 'e13', to: '-13' },
+      { id: 'C1', spec: 'electrolytic-470u-16v', at: 'c12' },
+    ]);
+    bench.closed = 1;
+    bench.snap();
+    camera.go('board', { instant: true });
+    const door = partDoor(ctx, bench, 'C1', { lead: 'board' });
+    const t = { now: 0 };
+    frame(bench, door, t);
+    expect(door.ready).toBe(true);
+    door.travelTo(1);
+    for (let i = 0; i < 600 && door.rail.moving; i++) frame(bench, door, t);
+    frame(bench, door, t);
+    expect(door.floor).toBe('inside');
+    const plates = asPlates(door.cutaway);
+    expect(plates).not.toBeNull();
+    const s = plates!.state();
+    expect(s.open).toBe(true);
+    // the voltage across the capacitance the model keeps (its operating point: 8.968 V, the script's model run), not
+    // the voltage between the legs; as many charges as that says, the «+» on the plate over leg 0
+    const memory = bench.model.state.parts.get('C1')!;
+    expect(memory.volts).toBeCloseTo(8.968, 3);
+    expect(s.volts).toBe(memory.volts);
+    expect(s.charges).toBe(chargeCount(memory.volts!));
+    expect(s.charges).toBe(60);
+    expect(s.positive).toBe('plus');
+    // the current into leg 0 (its leak at the operating point) and the legs' electrons at its speed
+    const amps = bench.model.reading('C1')!.i;
+    expect(s.amps).toBe(amps);
+    expect(s.speed).toBeCloseTo(electronSpeed(amps), 12);
+    expect(s.bulged).toBe(false);
+    // the switch opened: whatever the model keeps now (the operating point until the bench counts in time), the
+    // charges say it
+    bench.closed = 0;
+    for (let i = 0; i < 10; i++) frame(bench, door, t);
+    const after = bench.model.state.parts.get('C1')!.volts ?? 0;
+    expect(plates!.state().volts).toBe(after);
+    expect(plates!.state().charges).toBe(chargeCount(after));
+    door.home({ instant: true });
+    frame(bench, door, t);
+    expect(plates!.state().open).toBe(false);
+  });
+
+  it('a film box opens its roll', () => {
+    const { ctx, camera } = stubContext();
+    const bench = mountBench(ctx);
+    bench.preset([{ id: 'C1', spec: 'film-1u', at: 'e8' }]);
+    bench.snap();
+    camera.go('board', { instant: true });
+    const door = partDoor(ctx, bench, 'C1', { lead: 'board' });
+    const t = { now: 0 };
+    frame(bench, door, t);
+    door.travelTo(1);
+    for (let i = 0; i < 600 && door.rail.moving; i++) frame(bench, door, t);
+    frame(bench, door, t);
+    const roll = asRoll(door.cutaway);
+    expect(roll).not.toBeNull();
+    expect(roll!.state().open).toBe(true);
+    expect(roll!.state().insideCalls).toBe(1);
   });
 });

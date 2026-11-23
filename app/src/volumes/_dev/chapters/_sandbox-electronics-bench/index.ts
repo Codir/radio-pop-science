@@ -11,7 +11,8 @@ import { defineChapter } from '@/engine/api';
  * `overload`, `lamp`) and the bulged electrolytic's look alone (`bulged-look`; E2-9 binds the state to the model in its
  * own step `bulged` and takes this one away); E2-8: the magnifier as the door from the board to a resistor and into it,
  * with the ladder «де ми» (step `loupe`); E3-5: inside the resistor — the carbon film, its groove for the value, the
- * electrons at the model's current (step `film`).
+ * electrons at the model's current (step `film`); E4-I: inside the capacitors — an electrolytic's two plates with the
+ * model's charges (step `plates`), a film capacitor's roll (step `roll`).
  * All the text of the sandbox is here; the scene has no words of its own.
  */
 export const SANDBOX = {
@@ -79,6 +80,16 @@ export const SANDBOX = {
       blurb:
         'Коло світлодіода з резистором 330 Ω, вимикач замкнено. Повзунок «Глибина» веде лупу на резистор і камеру всередину: лак розкривається з боку камери, видно білий керамічний стрижень, вугільну плівку з зернами й гвинтову канавку, ковпачки на кінцях. Електрони біжать доріжкою між витками зі швидкістю від струму моделі; перемикач «Резистор» ставить 10 kΩ — витків більше, доріжка вужча, а електрони повзуть.',
     },
+    plates: {
+      title: 'Усередині електроліта',
+      blurb:
+        'Коло світлодіода, а поруч, між шинами, — конденсатор 470 μF; вимикач замкнено. Повзунок «Глибина» веде лупу на конденсатор і камеру всередину: циліндр розрізано навпіл, і видно дві сталеві пластини над ніжками, тонкий ізолятор між ними, «+» на плюсовій і електрони на мінусовій — стільки, скільки каже напруга на конденсаторі за моделлю. Перемикач «Вимикач батареї» діє й усередині; перемикач «Конденсатор» ставить інший розмір.',
+    },
+    roll: {
+      title: 'Усередині плівкового конденсатора',
+      blurb:
+        'Плівковий конденсатор 1 μF сам на платі, вимикач розімкнено. Повзунок «Глибина» веде лупу на брусок і камеру всередину: брусок розрізано навпіл, і видно рулон із двох смужок плівки з шаром металу на кожній, торці, вкриті металом, і ніжки, що до них доходять. Вигляд статичний: брусок поза колом.',
+    },
   },
   /** The names under the pointer (tooltips) and on the dock's buttons of the tray (a phone). */
   names: {
@@ -107,6 +118,8 @@ export const SANDBOX = {
   meter: { readout: 'Мультиметр', mode: 'Режим', off: 'Вимкнено' },
   /** Step `film`: the switch of the resistor's value (the values are the code's numbers and units). */
   film: { value: 'Резистор' },
+  /** Step `plates`: the switch of the can in C1's sockets (its values are the tray's labels). */
+  plates: { can: 'Конденсатор' },
   /** The dive (step `loupe`): the depth slider, its marks — the floors where they begin — and the magnifier's name. */
   loupe: {
     depth: 'Глибина',

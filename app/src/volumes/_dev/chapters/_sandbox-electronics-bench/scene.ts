@@ -42,6 +42,15 @@
  *           current, the film's colour from the model's heat; the dock's switch `film-value` puts a 330 Ω or a 10 kΩ in
  *           R1's sockets (a new part under the same id, whole: the door follows it). Probes `film:film`, `film:groove`,
  *           `film:rod` — the callouts' points of the film.
+ *   plates — inside an electrolytic (E4-I, `shared/inside/plates.ts`), shot `board`: the board of `capacitor/store`
+ *           (the LED's loop, J3 + rail → 12ae, J4 13ae → − rail, C1 470 μF in c12/c13), the switch closed; the same door
+ *           and slider lead into C1, cut in half: two plates, the insulator, the charges from the model's voltage across
+ *           the capacitance, the electrons in the legs at its current. The dock's switch `plates-can` puts a 10, 100,
+ *           470 or 1000 μF can in C1's sockets; the toggle `plates-switch` is the battery's switch and works while the
+ *           camera is inside. Probes `plates:plus`, `plates:minus`, `plates:insulator` — the callouts' points;
+ *   roll  — inside a film capacitor (E4-I, `shared/inside/roll.ts`), shot `board`: C1 1 μF in e8/e10 alone (the board of
+ *           `capacitor-kinds/film`), the switch open; the door into C1, cut in half: the roll of metallised film, its
+ *           sprayed ends and the leads. Probes `roll:metal`, `roll:film` — the callouts' points.
  * Every other step has an empty board and an empty tray, and the probes at rest. Readers: the bench's own
  * `electronics-bench` (sockets, rows, draw calls, the print shown), `electronics-board` (the parts and their legs, the
  * plugs, the settings, the netlist's key), `electronics-parts` (every model: where, draw calls, its print),
@@ -73,7 +82,14 @@ import {
   partDoor,
   type Door,
 } from '@electronics/shared/dive';
-import { asFilm, type FilmAnchor } from '@electronics/shared/inside';
+import {
+  asFilm,
+  asPlates,
+  asRoll,
+  type FilmAnchor,
+  type PlatesAnchor,
+  type RollAnchor,
+} from '@electronics/shared/inside';
 import { SANDBOX } from './index';
 import { METER_MODES, type MeterMode } from '@electronics/shared/instruments';
 import { buildPart } from '@electronics/shared/parts';
@@ -169,13 +185,40 @@ const DEPTH = 1 + LENS_LEG;
 const FILM_VALUES = ['resistor-330', 'resistor-10k'] as const;
 const filmBoard = (spec: string): readonly PresetPart[] =>
   LED_LOOP.parts.map((p) => (p.id === 'R1' ? { ...p, spec } : p));
-/** The steps with the magnifier's door into R1. */
-const DOOR_STEPS: ReadonlySet<string> = new Set(['loupe', 'film']);
+/** Step `plates`: the cans the dock's switch puts in C1's sockets, and the board of `capacitor/store` with one. */
+const PLATES_CANS = [
+  'electrolytic-10u-16v',
+  'electrolytic-100u-16v',
+  'electrolytic-470u-16v',
+  'electrolytic-1000u-16v',
+] as const;
+const platesBoard = (spec: string): readonly PresetPart[] => [
+  ...LED_LOOP.parts,
+  { id: 'J3', spec: 'jumper', at: '+12', to: 'a12' },
+  { id: 'J4', spec: 'jumper', at: 'e13', to: '-13' },
+  { id: 'C1', spec, at: 'c12' },
+];
+/** Step `roll`: a film capacitor alone, as `capacitor-kinds/film` seats it. */
+const ROLL_BOARD: readonly PresetPart[] = [{ id: 'C1', spec: 'film-1u', at: 'e8' }];
+/** The steps with the magnifier's door, and the part it leads into. */
+const DOOR_PARTS: Readonly<Record<string, string>> = { loupe: 'R1', film: 'R1', plates: 'C1', roll: 'C1' };
+const DOOR_STEPS: ReadonlySet<string> = new Set(Object.keys(DOOR_PARTS));
 
 /** The steps whose circuit is on: the battery's switch closed. */
-const LIVE: ReadonlySet<string> = new Set(['divider', 'led', 'overload', 'lamp', 'film']);
+const LIVE: ReadonlySet<string> = new Set(['divider', 'led', 'overload', 'lamp', 'film', 'plates']);
 /** The steps where the reader may take everything (with a door only while the camera is on the board's shot). */
-const FREE: ReadonlySet<string> = new Set(['hand', 'meter', 'divider', 'led', 'overload', 'lamp', 'loupe', 'film']);
+const FREE: ReadonlySet<string> = new Set([
+  'hand',
+  'meter',
+  'divider',
+  'led',
+  'overload',
+  'lamp',
+  'loupe',
+  'film',
+  'plates',
+  'roll',
+]);
 /** Each step's circuit (every other step: an empty board) and its tray. */
 const PRESETS: Readonly<Record<string, readonly PresetPart[]>> = {
   parts: PARTS,
@@ -185,6 +228,8 @@ const PRESETS: Readonly<Record<string, readonly PresetPart[]>> = {
   lamp: LAMP,
   loupe: LOUPE,
   film: filmBoard(FILM_VALUES[0]),
+  plates: platesBoard('electrolytic-470u-16v'),
+  roll: ROLL_BOARD,
 };
 /** Each step's shot (the bench's names). */
 const CAMERAS: Readonly<Record<string, BenchShot>> = {
@@ -202,6 +247,8 @@ const CAMERAS: Readonly<Record<string, BenchShot>> = {
   'bulged-look': 'board',
   loupe: 'board',
   film: 'board',
+  plates: 'board',
+  roll: 'board',
 };
 const TRAYS: Readonly<Record<string, readonly string[]>> = { hand: TRAY, overload: ['resistor-100'] };
 
@@ -351,6 +398,33 @@ export default defineScene((ctx) => {
         },
       ],
     },
+    // step `plates`: the same dive into C1; the can in its sockets (a new part under the same id, the door follows
+    // it, the switch as it was) and the battery's switch, which works while the camera is inside
+    plates: {
+      controls: [
+        depth,
+        {
+          type: 'segmented' as const,
+          id: 'plates-can',
+          label: SANDBOX.plates.can,
+          items: PLATES_CANS.map((spec) => ({ id: spec, label: trayLabel(spec) })),
+          value: 'electrolytic-470u-16v',
+          onChange: (spec: string) => {
+            const closed = bench.closed;
+            bench.preset(platesBoard(spec));
+            bench.closed = closed;
+          },
+        },
+        {
+          type: 'toggle' as const,
+          id: 'plates-switch',
+          label: SANDBOX.names.switch,
+          value: true,
+          onChange: (on: boolean) => (bench.closed = on ? 1 : 0),
+        },
+      ],
+    },
+    roll: { controls: [depth] },
   });
   // the callouts' points of the film (checks): far below the bench while there is none
   const filmProbe = (name: FilmAnchor) => {
@@ -361,6 +435,23 @@ export default defineScene((ctx) => {
     };
   };
   for (const name of ['film', 'groove', 'rod'] as const) ctx.qa.probe(`film:${name}`, filmProbe(name));
+  // the callouts' points of a capacitor's inside (checks)
+  const platesProbe = (name: PlatesAnchor) => {
+    const v = new Vector3();
+    return (): Vector3 => {
+      const plates = asPlates(door?.cutaway ?? null);
+      return plates && plates.open ? plates.anchor(name, v) : v.set(0, -100, 0);
+    };
+  };
+  for (const name of ['plus', 'minus', 'insulator'] as const) ctx.qa.probe(`plates:${name}`, platesProbe(name));
+  const rollProbe = (name: RollAnchor) => {
+    const v = new Vector3();
+    return (): Vector3 => {
+      const roll = asRoll(door?.cutaway ?? null);
+      return roll && roll.open ? roll.anchor(name, v) : v.set(0, -100, 0);
+    };
+  };
+  for (const name of ['metal', 'film'] as const) ctx.qa.probe(`roll:${name}`, rollProbe(name));
   // a tap on the resting magnifier lays it over the part: the slider glides to the end of its lens leg
   ctx.input.register(bench.tools.lens.group, {
     cursor: 'pointer',
@@ -400,8 +491,9 @@ export default defineScene((ctx) => {
       ui.set('meter-mode', 'V');
       bench.hands.policy = FREE.has(id) ? { take: () => true, tooltip } : { take: () => false };
       if (id === 'film') ui.set('film-value', FILM_VALUES[0]);
+      if (id === 'plates') ui.set('plates-can', 'electrolytic-470u-16v');
       if (DOOR_STEPS.has(id)) {
-        door = partDoor(ctx, bench, 'R1', { lead: 'board' });
+        door = partDoor(ctx, bench, DOOR_PARTS[id]!, { lead: 'board' });
         const d = door;
         keeper.call = 1;
         if (info.instant) keeper.snap(() => d.lens(d.rail.position));
@@ -415,6 +507,7 @@ export default defineScene((ctx) => {
       // the dock's toggle shows the switch as it is (a step sets it, a tap on the slider flips it)
       const on = bench.closed >= 0.5;
       if (ui.value<boolean>('battery-switch') !== on) ui.set('battery-switch', on);
+      if (ctx.stage.current === 'plates' && ui.value<boolean>('plates-switch') !== on) ui.set('plates-switch', on);
       // the dive: the door after the bench (the parts stood on their legs), then the lens over everything
       if (door) {
         door.update(dt);
