@@ -84,8 +84,8 @@ the scope's probe.
   `riddle` and `map` say in their text where a phone (and for the map, a tablet) finds the board.
 - **The knock on closing the switch** (`loud`) shows on the bar (3,51 V, held 0,5 s): the model's (the script's
   «Бачимо»), not smoothed.
-- On a touch screen the jumpers' grips show in every step (the clone's `shared/hand`); the main tree's fix of E3-6
-  (grips only where the policy lets the hand take) comes with the merge.
+- On a touch screen, as with a mouse, a grip shows only on an end the step lets the hand take (the shared hand since
+  E3-6, here since the merge of E3-10): the amplifier's jumpers show none where a step takes nothing of the board.
 
 ## QA
 

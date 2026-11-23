@@ -257,8 +257,8 @@ export function createTray(): Tray {
       clear();
       hitGeometry.dispose();
       hitMaterial.dispose();
-      // the block's own geometry and materials: once the group leaves the tree, the chapter's teardown no longer
-      // reaches them (a geometry left behind by every mount, found by the sandbox's check `leaks`)
+      // the block and its foam: taken off the scene here, so the engine's sweep of the scene after the chapter's own
+      // disposal would never reach them (one geometry more on the GPU with every bench: the leak check)
       disposeTree(body);
       group.removeFromParent();
     },

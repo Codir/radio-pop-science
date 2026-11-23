@@ -42,10 +42,11 @@
 //           the dial on V (`__ui.set('meter-mode', 'V', true)`), the red probe by its grip into a7, the black into −3:
 //           the display's text «5,997 V» (decimal comma), the same text in the panel's readout `ctl-meter`, the value
 //           the model's row 7ae (`electronics-model`) and the circuit's shape untouched by the probes; Ω on the same
-//           probes — the divider with its battery out, «2,000 kΩ»; A — the jumper J2's end out of −11 by its capsule,
-//           the red probe into a11: the meter closes the branch, 9 / 3001,5 A — «2,998 mA» — text, panel and model
-//           agree; the model's last solve dcMs < 1 ms; draw calls ≤ 350; the console; snapshots
-//           `meter-<what>-<size>.jpg`.
+//           probes — «—» while the switch is closed (no resistance on a live circuit, plan E3 decision 5), and with the
+//           switch opened by the dock's toggle `battery-switch` the divider with its battery out, «2,000 kΩ» (closed
+//           again after); A — the jumper J2's end out of −11 by its capsule, the red probe into a11: the meter closes
+//           the branch, 9 / 3001,5 A — «2,998 mA» — text, panel and model agree; the model's last solve dcMs < 1 ms;
+//           draw calls ≤ 350; the console; snapshots `meter-<what>-<size>.jpg`.
 //   heat  — the model's state on the bench (E2-7) on held pages, the model's time stepped by `__app.step`:
 //           step `overload` (100 Ω between the rails) — R1 «гаряча» at once by its load and cold to the eye,
 //           then «згоріла» in E1-4's window (τ·ln((L − H) / (L − 1)) from the open page, within a frame), no
@@ -901,12 +902,26 @@ async function meter(context) {
   await screenshot(page, join(out, `meter-v-${tag}.jpg`));
 
   await mode('ohm');
+  // a resistance is measured without power (plan E3 decision 5): on the live divider the display says «—»
+  const live = (n.ohmLive = { meter: await meterNow(), panel: plain(await panel()) });
+  check(
+    'Ω on the live divider (the switch closed): «—», the panel the same',
+    live.meter?.text === '—' && live.panel === '—' && live.meter?.value === null,
+    `display «${plain(live.meter?.text)}», panel «${live.panel}», value ${live.meter?.value}`,
+  );
+  // the switch opened by the dock's toggle (a phone's way to it; on a desk it is hidden but takes the same value)
+  const toggle = async (on) => {
+    await page.evaluate((v) => window.__ui.set('battery-switch', v, true), on);
+    await advance(page, 0.5);
+  };
+  await toggle(false);
   const o = (n.ohm = { meter: await meterNow(), panel: plain(await panel()) });
   check(
-    `Ω: the divider with its battery out, «${METER_TEXT.ohm}», the panel the same`,
+    `Ω: the divider with its battery out (the switch open), «${METER_TEXT.ohm}», the panel the same`,
     plain(o.meter?.text) === METER_TEXT.ohm && o.panel === METER_TEXT.ohm && Math.abs(o.meter?.value / 2000.001 - 1) <= 1e-6,
     `display «${plain(o.meter?.text)}», panel «${o.panel}», value ${o.meter?.value}`,
   );
+  await toggle(true);
 
   // A: the meter in the branch instead of the jumper J2 — its end out of −11, lying beyond the rail; the red probe into
   // a11 (the row 11ae), the black stays on the − rail

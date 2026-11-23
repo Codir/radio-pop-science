@@ -66,8 +66,8 @@ currents, the oscilloscope's trace (the roll's newest points) and its crests (`S
   (`stand.ts`), only where a pointer hovers; the probes' and the jumper's are the hand's (`parts/policy.ts`).
 - **The player's toggle in the dock and a tap on its box** both set the model's `PLAYER` level (0,3 V or 0); the tap
   only in `wave` (the script: the hand takes the probes alone in `notes` and `twice`).
-- On a touch screen the jumpers' grips show in every step (the clone's `shared/hand`); the main tree's fix of E3-6
-  (grips only where the policy lets the hand take) comes with the merge.
+- On a touch screen, as with a mouse, a grip shows only on an end the step lets the hand take (the shared hand since
+  E3-6, here since the merge of E3-10): the amplifier's jumpers show none where a step takes nothing of the board.
 - **`amps` has its own shot on a desk and a tablet** (`parts/shots.ts` `AMPS_SHOT`, registered under the name `amps`,
   the bench's `phone` on a phone): the multimeter and the board's left half from the left and in front (≈ 26° round,
   ≈ 48° to the table). In the bench's `meter`, seen from the front, the reservoir's tall can C3 (e2/d2) stood before

@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { PARTS } from '@electronics/sim/core';
 import { AXIAL_Y, RESISTOR, buildPart, resistorRadius, type PartModel } from '../../parts';
 import { CLOSED } from '../wedge';
-import { FILM, createFilm, electronSpeed, filmTurns, stripGeometry } from '../film';
+import { ANCHOR_GAP, ANCHOR_X, FILM, FILM_SPAN, anchorX, createFilm, electronSpeed, filmTurns, stripGeometry } from '../film';
 
 const make = (key = 'resistor-330'): PartModel => {
   const m = buildPart(key)!;
@@ -322,6 +322,60 @@ describe('the film inside a resistor (createFilm)', () => {
       // within the opened wedge, toward the camera (+y)
       expect(p.y - AXIAL_Y, name).toBeGreaterThan(0);
       expect(Math.hypot(p.y - AXIAL_Y, p.z), name).toBeLessThanOrEqual(FILM.film + 1e-6);
+    }
+  });
+
+  it('keeps the callouts’ points on the open film, never under a cap: at 330 Ω and 10 kΩ, from every side', () => {
+    for (const key of ['resistor-330', 'resistor-10k']) {
+      for (let k = 0; k < 24; k++) {
+        const theta = (k / 24) * 2 * Math.PI;
+        const m = make(key);
+        const film = createFilm(m);
+        film.set(1, new Vector3(0, Math.cos(theta), Math.sin(theta)));
+        film.update(0, 0);
+        m.bodyGroup.updateWorldMatrix(true, true);
+        const { pitch } = film.state();
+        const g = Math.min(FILM.groove, pitch * 0.4);
+        const x = (name: 'film' | 'groove') => m.bodyGroup.worldToLocal(film.anchor(name, new Vector3())).x;
+        const at = `${key}, side ${k}/24`;
+        // the strip's middle: its whole width between the caps
+        expect(Math.abs(x('film')), at).toBeLessThanOrEqual(FILM_SPAN - pitch / 2 + 1e-9);
+        expect(Math.abs(x('groove')), at).toBeLessThanOrEqual(FILM_SPAN - g + 1e-9);
+        // still a groove's crossing and the middle of a strip at the wedge's middle: half a pitch apart
+        const off = (((x('film') - x('groove')) / pitch) % 1 + 1) % 1;
+        expect(Math.abs(off - 0.5), at).toBeLessThan(1e-6);
+        // toward leg 1 from the groove's, with room for two tags
+        expect(x('film') - x('groove'), at).toBeGreaterThanOrEqual(ANCHOR_GAP - 1e-9);
+        film.dispose();
+      }
+    }
+  });
+
+  it('puts the groove’s point by ANCHOR_X and the film’s a strip’s middle at least ANCHOR_GAP toward leg 1 from it', () => {
+    const at = (ohms: number) => {
+      const pitch = (2 * FILM_SPAN) / filmTurns(ohms);
+      return Array.from({ length: 48 }, (_, k) => {
+        const a = (k / 48) * 2 * Math.PI;
+        return { pitch, g: anchorX('groove', a, pitch, FILM.groove), f: anchorX('film', a, pitch, FILM.groove) };
+      });
+    };
+    // 10 kΩ, 6,5 turns: the groove’s crossing nearest ANCHOR_X, the film a turn and a half on (half a turn is too
+    // close for two tags side by side)
+    for (const { pitch, g, f } of at(10000)) {
+      expect(Math.abs(g - ANCHOR_X)).toBeLessThanOrEqual(pitch / 2 + 1e-9);
+      expect(f - g).toBeCloseTo(1.5 * pitch, 9);
+      expect(f).toBeLessThanOrEqual(FILM_SPAN - pitch / 2 + 1e-9);
+    }
+    // 330 Ω, 3,5 turns: the strip beside the groove; never the one half under the cap by leg 1 (x ≈ 0,19 from above)
+    for (const { pitch, g, f } of at(330)) {
+      expect(f - g).toBeCloseTo(pitch / 2, 9);
+      expect(f - g).toBeGreaterThanOrEqual(ANCHOR_GAP);
+      expect(f).toBeLessThanOrEqual(FILM_SPAN - pitch / 2 + 1e-9);
+    }
+    // one turn (10 Ω): no strip fits whole beside a groove; the crossing and the strip nearest the middle
+    for (const { pitch, g, f } of at(10)) {
+      expect(Math.abs(g)).toBeLessThanOrEqual(pitch / 2 + 1e-9);
+      expect(Math.abs(f)).toBeLessThanOrEqual(pitch / 2 + 1e-9);
     }
   });
 

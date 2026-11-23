@@ -1,11 +1,13 @@
 # `shared` — the bench of the volume «Радіоелектроніка»
 
 The scene's side of the volume: the dark room and the stand, the breadboard, the parts, the hand, the instruments, the
-speaker, the dive through the magnifier and the bench's link to the circuit model (`sim/core`, `sim/board`). No step
-logic lives here: a chapter mounts the bench, puts its step's board on it and says what the reader may take. The look
-and the numbers of all of it are fixed by `docs/volumes/electronics/VISUAL.md`. Batch E2
+speaker, the dive through the magnifier and the bench's link to the circuit model (`sim/core`, `sim/board`). No step's
+logic lives here: a chapter mounts the bench, puts its step's board on it and says what the reader may take; `steps`
+holds only the small pieces the chapters' steps share, with the chapters' words and numbers passed in. The look and
+the numbers of all of it are fixed by `docs/volumes/electronics/VISUAL.md`. Batch E2
 (`docs/superpowers/plans/2026-11-20-electronics/batch-E2.md`) built it one task at a time, E3-5 added the inside of a
-resistor and the boards of the pilot's steps; the batch's report is `docs/volumes/electronics/reports/batch-E2.md`.
+resistor and the boards of the pilot's steps, E3-7 the module `steps`; the batch's report is
+`docs/volumes/electronics/reports/batch-E2.md`.
 
 Each module has its public face in `shared/<module>/index.ts`; there is no `shared/index.ts`. The sandbox
 `_dev/chapters/_sandbox-electronics-bench` imports only `@electronics/shared/<module>`.
@@ -308,7 +310,8 @@ bench.hands.policy = {
   a probe click in when let go within `SNAP` (they cross many sockets on their way), and lie where they were let go
   otherwise (a probe let go off the base goes back to rest by the meter); a part's leg let go with no socket goes back.
 - On a touch screen the thing rides `LIFT` (48 px) above the finger and the grips are always shown; with a mouse they
-  come while the pointer is on the part and 1.5 s after. The grips' spheres never overlap (VISUAL §6 and §8: the tests
+  come while the pointer is on the part and 1.5 s after. Either way a grip shows only on an end the step's policy lets
+  the hand take (`policy.take` of `leg:…`, `lead:…`, `probe:…`): a grip says «this can be moved» (VISUAL §6). The grips' spheres never overlap (VISUAL §6 and §8: the tests
   cast rays from the cameras of `stand`, `board` and `phone`). On a phone the radial parts' tabs are hidden: those
   parts are carried whole.
 - The leads lie on the bench's ground and drape over what stands up: the board's body, the things on the base and the
@@ -323,7 +326,8 @@ bench.hands.policy = {
   follow the board's state at once (a step's `preset`, a test's `seatLeg`). `bench.preset` and `bench.clear` first let
   go of whatever the hand holds (`hands.reset`), and the model forgets every part they take off (`model.forget`, «model»
   below): a preset's parts are new and whole. The body's glow under the pointer is cyan emissive on the part's
-  `body` materials (E2-7's heat look shares them).
+  `body` materials (E2-7's heat look shares them); a mouse's pointer only — the engine keeps the last touched thing
+  «under» a lifted finger, and a glow left there would tint the part (a burnt LED's dark dome) until the next touch.
 - While the camera flies (`bench.flying`: the magnifier's dive, «dive» below) nothing can be taken: every handler is
   off, no grip is shown (on a touch screen neither) and no body glows.
 - `hand/swap.ts` (`createSwap`) is a scripted repair kept for the chapters: a still copy of a thing leaves along a way
@@ -348,6 +352,7 @@ model.sync(); // the board's netlist; a new shape compiles, a changed setting on
 model.ok; // the last solve succeeded; `failure` says why not ('singular', 'no-convergence')
 model.rowVolts('7ae'); // 5.997 V on the divider; `nodeVolts(n)`, `reading(id)` → { u, i, p }; null after a failure
 model.ohms(a, b); // what an ohmmeter reads between two nodes: Ω, Infinity (no path), null (no solve)
+model.powered(a, b); // a source that drives a current is in their island: the closed battery, a plugged player
 model.forget('R1'); // a new part goes under this id: its memory goes at once, the next sync solves again
 model.advance(dt); // the model's time passes (heat; a part that burns is solved out at once): the ids burnt now
 model.part('R1'); // { condition, load, heat, kelvin? } as the bench shows it; null while the last solve failed
@@ -372,6 +377,11 @@ model.part('R1'); // { condition, load, heat, kelvin? } as the bench shows it; n
   the meter's own source `OHMMETER` — 5 V behind 10 kΩ, at most 0.5 mA, so a lamp reads its cold 5.5 Ω — between the
   two nodes, and the voltage it makes over its current. It has a model state of its own (the burnt parts copied in as
   gaps): the bench's is untouched. Computed once per solve of the board and pair of nodes.
+- **Whether the probes touch a live circuit** (`powered`, task E3-6, plan decision 5 of batch E3): a source of the
+  circuit now on the board — the battery behind its switch, a plugged player — whose two terminals the rest of the
+  circuit joins (its loop closed: it drives a current), with that loop reaching one of the two nodes; joined through
+  the paths for direct current of every part at its setting (an open switch and a burnt part join nothing). The
+  multimeter's Ω mode reads nothing there («—»).
 - **Capacitors and transistors** (E1-5, E1-6) are parts of the board like any other: a board with them compiles and has
   its operating point (a capacitor open but for its leak), and the amplifier of `sim/core` (`amplifierNetlist`), every
   leg of every part in its node's row and the player's and the speaker's plugs too, has the very operating point of
@@ -449,7 +459,8 @@ bench.multimeter.put({ red: 'a7', black: '-3' }); // a step's own probes, at onc
   the meter is a wire between its probes (`METER`, the catalog's jumper, 1 mΩ) that the model driver takes into the
   circuit (`extra()`), the current into the red probe; across the battery an honest short, no fuse (plan decision 8);
   **Ω** — `model.ohms`, «OL» when no current flows or beyond `OHM_LIMIT` 40 MΩ (a pocket meter's top range; the
-  catalog's largest resistor is 10 MΩ). A probe out of a socket, or the meter off: «—». With the model's last solve
+  catalog's largest resistor is 10 MΩ); «—» while the probes touch a live circuit (`model.powered`: a resistance is
+  measured without power, plan decision 5 of batch E3 — task E3-6). A probe out of a socket, or the meter off: «—». With the model's last solve
   failed the display keeps what it shows.
 - **The display** (`createMeterDisplay`) shows four significant digits with a decimal comma and the range's SI prefix
   (V: mV, V; A: μA, mA, A; Ω: Ω, kΩ, MΩ), picked on the rounded value — «5,997 V», «4,700 kΩ», «500,0 mV», «2,998 mA»;
@@ -706,7 +717,8 @@ const film = createFilm(model); // a resistor's model of `shared/parts`, closed;
 film.set(cut, view); // open by `cut` 0 … 1 toward `view` (world, from the body to the camera): the door does it
 film.flow(amps); film.heat(share); film.burnt(on); film.update(dt, t); // the model's state; the door's `follow`
 film.turns(10_000); // the groove cut for another value (`filmTurns`); a new part under the door makes a new film
-film.anchor('film' | 'groove' | 'rod', out); // a world point for a callout, on the camera's side
+film.anchor('film' | 'groove' | 'rod', out); // a world point for a callout, on the camera's side (`anchorX`: the groove's
+// crossing by ANCHOR_X, the film's a strip's middle a turn or so toward leg 1 from it, both open between the caps)
 ```
 
 - **What it is** (`film.ts`): the white ceramic rod; the carbon film (`ink`) on it, a strip wound between the turns of
@@ -766,6 +778,42 @@ chapters:
   On the bench's shots the tall cans stand at the back (C1 and C2 on the line a, C3 across the channel at the left)
   and nothing tall in front of the volume knob, at the far right by the player; the speaker's coral lead lies over
   the knob's case on its way to `c10` (the speaker's row is left of the pot).
+
+## `steps` — what the chapters' steps build from (E3-7)
+
+The small pieces every chapter on the bench repeated, moved here from `chapters/resistor` once `resistor-pick` needed
+them too (REUSE.md, «Копії»). A chapter keeps its own words (captions), boards and hold times and passes them in.
+
+```ts
+const stand = createStepStand(ctx, { keepDoor }); // the chapter's `stand.ts`: the bench, the door, the lens keeper,
+// the ladder «де ми», the names under the pointer (`stand.naming`, set by each step), `stand.board(parts, leads)`
+const tally = createTally(['a', 'b'], HOLD.reading); // the chapter's `HOLD`; `rowsOf`, `sameRows`, `across`, `within`
+bench.hands.policy = handPolicy(bench, { part, leg, tray, probes, switch, flip, name }); // by kind (`kindOf`)
+trayButtons(bench, specs, label, stand.phone); switchToggle(bench, label, stand.phone); // a phone's dock
+meterSwitch(bench, label, ['off', 'V'], offWord, 'off'); meterReadout(bench, label); // the multimeter in the panel
+const depth = depthSlider(ctx, bench, ui, () => stand.door, () => here(S), end, { label, top, bottom });
+// controls: [depth.control, …]; enter: depth.reset(); update: depth.update()
+```
+
+- **`stand.ts`** — `createStepStand`: `mountBench` once, the magnifier's door into a part (`openDoor(partId, info,
+  lead)`; `closeDoor(info, then)` flies the rail home, then the step's shot; the door is given up once home), its lens
+  keeper over everything, the ladder, the names. Without `keepDoor` every `openDoor` makes a new door (`resistor`: one
+  dive step); with it a door the step before left open into the same part stays, its rail where it is, except on a
+  deep link (`resistor-pick`: `bands` → `series`).
+- **`goals.ts`** — the rows of sockets (null when one is out), two rows in any order, one row on each of two sides, a
+  number in a window; the tally of readings that each must hold `need` seconds in a row, counted once.
+- **`policy.ts`** — `HandPolicy` from a step's rules by kind: `part:` / `leg:` by the catalog key, `tray:` slots,
+  `probe:`, `switch`; plug leads never; the names under the pointer from the step's `name`.
+- **`names.ts`** — invisible twins of the parts' `hit` boxes and of the multimeter's case for the names of what a step
+  keeps in place; only where a pointer hovers.
+- **`dock.ts`**, **`meter.ts`** — a phone's dock buttons for the tray's slots and the battery's switch (shown on a phone
+  only); the dial's switch (`meter-mode`) and the number (`meter`).
+- **`depth.ts`** — the slider «Глибина» (`depth`): 0 … `end` + `LENS_LEG`, the rail at the slider − `LENS_LEG`; a drag
+  scrubs, a click glides; a tap on the resting lens lays it on the part; the fill follows the rail every frame.
+
+Tests: `__tests__/goals.test.ts` (rows, the tally), `rules.test.ts` (the hand's rules, the dock, the meter over a stub
+bench), `stand.test.ts` (a live bench with the engine's `CameraDirector`: the board, the door made anew or kept, given up
+once home; the depth slider's way, the lens's tap and the fill).
 
 ## Копії
 

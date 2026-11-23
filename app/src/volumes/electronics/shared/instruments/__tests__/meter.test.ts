@@ -11,6 +11,7 @@ import {
   createLayout,
   place,
   put,
+  seatLead,
   seatLeg,
   setSetting,
   type BoardState,
@@ -118,10 +119,48 @@ describe('the multimeter’s Ω mode', () => {
     expect(textOf('ohm', gap)).toBe('OL');
   });
 
-  it('measures the divider with its battery out: 2 kΩ to the − rail', () => {
-    const r = bench(divider(), 'ohm', { red: 'a7', black: '-3' }).read()!;
+  it('measures the divider with its battery out: 2 kΩ to the − rail, the switch open', () => {
+    const board = divider();
+    setSetting(board, 'SW', 0);
+    const r = bench(board, 'ohm', { red: 'a7', black: '-3' }).read()!;
     expect(Math.abs(r / (2000 + WIRE_OHMS) - 1)).toBeLessThanOrEqual(1e-6);
     expect(textOf('ohm', r)).toBe('2,000 kΩ');
+  });
+
+  it('says «—» on a live circuit: a closed battery or a plugged player in the probes’ island (plan E3, decision 5)', () => {
+    // the divider with its switch closed: no reading, on any pair of its rows
+    const live = bench(divider(), 'ohm', { red: 'a7', black: '-3' });
+    expect(live.read()).toBeNull();
+    expect(textOf('ohm', live.read())).toBe('—');
+    expect(bench(divider(), 'ohm', { red: 'a3', black: 'a7' }).read()).toBeNull();
+
+    // the red LED's loop of the chapter `resistor`: 330 Ω in it reads «—» while the switch is closed, 330 Ω open
+    const loop = (closed: boolean): BoardState => {
+      const s = createBoardState();
+      expect(put(layout, s, { id: 'J1', spec: 'jumper', legs: ['+5', 'a5'] })).toBe(true);
+      expect(place(layout, s, { id: 'R1', spec: 'resistor-330', anchor: 'b5', o: 0 })).toBe(true);
+      expect(place(layout, s, { id: 'LED1', spec: 'led-red', anchor: 'c9', o: 0 })).toBe(true);
+      expect(put(layout, s, { id: 'J2', spec: 'jumper', legs: ['e10', '-10'] })).toBe(true);
+      // a lone 1 kΩ on the near half, out of the loop
+      expect(place(layout, s, { id: 'R2', spec: 'resistor-1k', anchor: 'g2', o: 0 })).toBe(true);
+      setSetting(s, 'SW', closed ? 1 : 0);
+      return s;
+    };
+    expect(bench(loop(true), 'ohm', { red: 'a5', black: 'a9' }).read()).toBeNull();
+    const off = bench(loop(false), 'ohm', { red: 'a5', black: 'a9' }).read()!;
+    expect(textOf('ohm', off)).toBe('330,0 Ω');
+    // the lone resistor beside the live loop: its island has no source, it reads its value
+    const lone = bench(loop(true), 'ohm', { red: 'f2', black: 'f6' }).read()!;
+    expect(textOf('ohm', lone)).toBe('1,000 kΩ');
+
+    // the player's plugs in the rows of a resistor: «—»; a plug out, the resistor's value
+    const played = createBoardState();
+    expect(place(layout, played, { id: 'R1', spec: 'resistor-4k7', anchor: 'a3', o: 0 })).toBe(true);
+    expect(seatLead(layout, played, 'pl+', 'b3')).toBe(true);
+    expect(seatLead(layout, played, 'pl-', 'b7')).toBe(true);
+    expect(bench(played, 'ohm', { red: 'c3', black: 'c7' }).read()).toBeNull();
+    expect(seatLead(layout, played, 'pl-', null)).toBe(true);
+    expect(textOf('ohm', bench(played, 'ohm', { red: 'c3', black: 'c7' }).read())).toBe('4,700 kΩ');
   });
 
   it('says «OL» above its top range', () => {

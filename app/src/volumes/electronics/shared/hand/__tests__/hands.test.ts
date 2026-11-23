@@ -339,27 +339,80 @@ describe('gesture 2: one leg at a time', () => {
     expect(handlers.get(bench.parts.models.get('R1')!.hit)!.enabled!()).toBe(true);
   });
 
-  it('shows no grip and lights no body while the camera flies (a touch screen shows them otherwise)', () => {
+  it('shows no grip and lights no body while the camera flies (a touch screen shows the grips otherwise)', () => {
     const { bench, ctx, frames, handlers, grip } = setup();
-    (ctx.device as { hover: boolean }).hover = false;
     bench.preset([{ id: 'R1', spec: 'resistor-1k', at: 'a3' }], { 'spk+': 'c17' });
     frames(1 / 60);
     const r1 = bench.parts.models.get('R1')!;
+    // a mouse over the body: it glows, its grips come in
     handlers.get(r1.hit)!.hover?.(true, {} as PointerInfo);
     frames(0.3);
     const shown = (k: HandKey) => bench.hands.grip(k)!.shown.value;
     expect(shown('leg:R1:0')).toBe(1);
-    expect(shown('lead:spk+')).toBe(1);
     expect(r1.body[0]!.emissiveIntensity).toBeCloseTo(0.3, 9);
     bench.flying = true;
     frames(0.3);
     expect(shown('leg:R1:0')).toBe(0);
-    expect(shown('lead:spk+')).toBe(0);
     expect(r1.body[0]!.emissiveIntensity).toBe(0);
+    bench.flying = false;
+    handlers.get(r1.hit)!.hover?.(false, {} as PointerInfo);
+    // a touch screen: every grip the hand may take, always
+    (ctx.device as { hover: boolean }).hover = false;
+    frames(0.3);
+    expect(shown('leg:R1:0')).toBe(1);
+    expect(shown('lead:spk+')).toBe(1);
+    bench.flying = true;
+    frames(0.3);
+    expect(shown('leg:R1:0')).toBe(0);
+    expect(shown('lead:spk+')).toBe(0);
     bench.flying = false;
     frames(0.3);
     expect(shown('leg:R1:0')).toBe(1);
     expect(handlers.get(grip('leg:R1:0'))!.enabled!()).toBe(true);
+  });
+
+  it('shows a grip only on an end the step lets the hand take, on a touch screen too (VISUAL §6)', () => {
+    const { bench, ctx, frames, handlers, grip } = setup();
+    (ctx.device as { hover: boolean }).hover = false;
+    bench.preset(
+      [
+        { id: 'R1', spec: 'resistor-1k', at: 'a3' },
+        { id: 'J1', spec: 'jumper', at: '+5', to: 'a9' },
+      ],
+      { 'spk+': 'c17' },
+    );
+    // the step: R1's leg 0 and the probes; not R1's leg 1, not the jumper, not the speaker's plug
+    bench.hands.policy = { take: (k) => k === 'leg:R1:0' || k.startsWith('probe:') };
+    frames(0.3);
+    const shown = (k: HandKey) => bench.hands.grip(k)!.shown.value;
+    expect(shown('leg:R1:0')).toBe(1);
+    expect(shown('leg:R1:1')).toBe(0);
+    expect(shown('leg:J1:0')).toBe(0);
+    expect(shown('leg:J1:1')).toBe(0);
+    expect(shown('lead:spk+')).toBe(0);
+    expect(handlers.get(grip('leg:J1:1'))!.enabled!()).toBe(false);
+    // the step lets the jumper go: its capsules come in
+    bench.hands.policy = { take: () => true };
+    frames(0.3);
+    expect(shown('leg:J1:0')).toBe(1);
+    expect(shown('leg:J1:1')).toBe(1);
+    expect(shown('lead:spk+')).toBe(1);
+  });
+
+  it('leaves no glow on a body a finger touched (the engine keeps it «under» the lifted finger)', () => {
+    const { bench, ctx, frames, handlers } = setup();
+    (ctx.device as { hover: boolean }).hover = false;
+    bench.preset([{ id: 'R1', spec: 'resistor-1k', at: 'a3' }]);
+    frames(1 / 60);
+    const r1 = bench.parts.models.get('R1')!;
+    handlers.get(r1.hit)!.hover?.(true, {} as PointerInfo);
+    frames(0.5);
+    expect(r1.body[0]!.emissiveIntensity).toBe(0);
+    // a part waiting in the air for the finger (the phone's dock) still pulses
+    const id = bench.hands.offer('resistor-1k');
+    expect(id).not.toBeNull();
+    frames(0.2);
+    expect(bench.parts.models.get(id!)!.body[0]!.emissiveIntensity).toBeGreaterThan(0.1);
   });
 });
 

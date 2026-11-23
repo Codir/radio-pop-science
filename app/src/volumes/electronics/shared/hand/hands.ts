@@ -1240,9 +1240,10 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
       syncParts();
       syncSlots();
 
-      // the grips: shown on a touch screen always, with a mouse while the pointer is on the thing and 1.5 s after;
-      // hidden while the hand holds anything else, and on the parts the hand drives; while the camera flies (the
-      // magnifier's dive) nothing can be taken, so no grip is shown and no body glows
+      // the grips: shown on a touch screen always, with a mouse while the pointer is on the thing and 1.5 s after —
+      // only where the step lets the hand take that end (VISUAL §6: a grip says «this can be moved»); hidden while
+      // the hand holds anything else, and on the parts the hand drives; while the camera flies (the magnifier's dive)
+      // nothing can be taken, so no grip is shown and no body glows
       const touch = ctx.device.hover === false;
       const still = !world.flying();
       const phone = world.phone();
@@ -1262,16 +1263,18 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
             const g = rec.grips[s.leg];
             if (!g) continue;
             spots.push({ g, s });
-            const hide = s.kind === 'tab' && phone;
+            const hide = (s.kind === 'tab' && phone) || !live(g.key as HandKey);
             g.shown.go(want && !hide ? 1 : 0, 0.15);
           }
         }
-        // the body glows under the pointer (0.3) and pulses while it waits in the air (the phone's dock)
+        // the body glows under a mouse's pointer (0.3) and pulses while it waits in the air (the phone's dock); a
+        // finger is no pointer: the engine keeps the last touched thing «under» it after the finger is lifted, and a
+        // glow left there would tint the part until the next touch on the scene (a burnt LED's dark dome in cyan)
         const glow = !still
           ? 0
           : offered === rec.id
             ? 0.25 + 0.12 * Math.sin(t * 2.4)
-            : rec.over & 1 && held === null
+            : rec.over & 1 && held === null && !touch
               ? 0.3
               : 0;
         if (Math.abs(glow - rec.glow) > 1e-3) {
@@ -1282,7 +1285,12 @@ export function createHands(ctx: ChapterContext, world: HandsWorld): Hands {
       for (const rec of leadRecs.values()) {
         const l = rec.lead;
         rec.linger = rec.over ? LINGER : Math.max(rec.linger - Math.max(dt, 0), 0);
-        const want = still && (touch || rec.linger > 0) && (held === null || held === rec.grip.key) && rec.ready();
+        const want =
+          still &&
+          (touch || rec.linger > 0) &&
+          (held === null || held === rec.grip.key) &&
+          rec.ready() &&
+          live(rec.grip.key as HandKey);
         const at = l.gripAt(new Vector3());
         spots.push({ g: rec.grip, s: { leg: 0, kind: 'end', at, r: GRIP_R, axis: l.gripAxis(new Vector3()) } });
         rec.grip.shown.go(want ? 1 : 0, 0.15);
