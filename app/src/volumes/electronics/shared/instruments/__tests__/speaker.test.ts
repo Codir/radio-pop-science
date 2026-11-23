@@ -148,6 +148,8 @@ function rig(opts: { worker?: FakeWorker | (() => FakeWorker); setting?: number;
     mood: (on) => moods.push(on),
   });
   const currents: Float32Array[] = [];
+  /** The stream's index of each block's first sample, beside `currents`. */
+  const firsts: number[] = [];
   const worker = opts.worker;
   const live = createLive(ctx, model, {
     frozen: worker === undefined,
@@ -158,13 +160,14 @@ function rig(opts: { worker?: FakeWorker | (() => FakeWorker); setting?: number;
       heard: () => speaker.heard(),
       play: (first, current, steps) => {
         currents.push(current.slice(0, steps));
+        firsts.push(first);
         speaker.play(first, current, steps);
       },
     },
     makeWorker: worker === undefined ? undefined : () => (typeof worker === 'function' ? worker() : worker),
   });
   live.taps([{ node: 0 }, { node: 0 }]);
-  return { layout, board, model, speaker, live, currents, moods };
+  return { layout, board, model, speaker, live, currents, firsts, moods };
 }
 
 describe('the speaker’s scale (E2-10)', () => {
@@ -288,6 +291,60 @@ describe('the pace of the model by the output’s queue (E2-10)', () => {
     expect(speaker.wants()).toBe(false);
     clock.time += 0.05 + SECONDS + 1e-6; // the first has played
     expect(speaker.wants()).toBe(true);
+  });
+});
+
+describe('the speaker’s crest (E3-9): the largest voltage on it over the last seconds heard', () => {
+  /** `seconds` of frames of 1/60 s on the main thread. */
+  const run = (r: ReturnType<typeof rig>, seconds: number): void => {
+    for (let k = 0; k < Math.round(seconds * 60); k++) {
+      clock.time += 1 / 60;
+      r.model.sync();
+      r.live.update(1 / 60, true);
+    }
+  };
+  /** |I| × 8 Ω of every sample given, by the stream's index. */
+  const volts = (r: ReturnType<typeof rig>): Map<number, number> => {
+    const v = new Map<number, number>();
+    r.currents.forEach((c, b) => c.forEach((x, k) => v.set(r.firsts[b]! + k, Math.abs(x) * 8)));
+    return v;
+  };
+  const most = (v: Map<number, number>, from: number, to: number): number => {
+    let m = 0;
+    for (let i = Math.max(0, Math.floor(from)); i < to; i++) m = Math.max(m, v.get(i) ?? 0);
+    return m;
+  };
+
+  it('|I| × R of the samples heard, within a chunk of 10 ms at either end of the window; null before any block', () => {
+    const r = rig({ setting: 1 });
+    expect(r.speaker.peak(0.5)).toBeNull();
+    run(r, 2);
+    const heard = r.speaker.heard()!;
+    expect(heard).toBeGreaterThan(0.5 * RATE);
+    const v = volts(r);
+    const crest = r.speaker.peak(0.5)!;
+    // the player straight on the speaker: 0.3 V behind 32 Ω into 8 Ω ‖ 10 kΩ, at most ≈ 0.06 V
+    expect(crest).toBeGreaterThan(0.03);
+    expect(crest).toBeLessThan(0.3 * (8 / 40) + 1e-6);
+    // the window: the chunks of 240 samples wholly heard whose end lies within the last 0.5 s
+    expect(crest).toBeGreaterThanOrEqual(most(v, heard - 0.5 * RATE + 240, heard - 240) - 1e-9);
+    expect(crest).toBeLessThanOrEqual(most(v, heard - 0.5 * RATE - 240, heard) + 1e-9);
+    // a shorter window is never larger; a window of nothing is null
+    expect(r.speaker.peak(0.1)!).toBeLessThanOrEqual(crest);
+    expect(r.speaker.peak(0)).toBeNull();
+  });
+
+  it('the speaker out of the circuit: silence, 0 V once its window has passed; the knob at 0 next to nothing', () => {
+    const r = rig({ setting: 1 });
+    run(r, 1);
+    expect(r.speaker.peak(0.5)!).toBeGreaterThan(0.03);
+    r.board.leads.delete('spk+');
+    run(r, 1);
+    expect(r.speaker.peak(0.5)).toBe(0);
+    const q = rig({ setting: 0 });
+    run(q, 1);
+    // the 1 mΩ end of the track across the speaker: a few nanoamperes, some 10 nV on 8 Ω
+    expect(q.speaker.peak(0.5)!).toBeLessThan(1e-6);
   });
 });
 

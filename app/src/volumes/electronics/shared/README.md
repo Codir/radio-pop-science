@@ -21,7 +21,7 @@ Each module has its public face in `shared/<module>/index.ts`; there is no `shar
 | `parts` | every kind of part with the marks of the real one; the permanent things; the look of heat, the burn, the bulge | `part`, `resistor`, `capacitors`, `diode`, `led`, `transistor`, `pot`, `jumper`, `speaker`, `battery9v`, `player`, `bulb`, `code`, `look`, `heat-scale` | E2 · E2-4; the look E2-7; the catalog's marks E2-M; the bands' reader E3-5 |
 | `hand` | the two gestures, the grips and cues, the tray, the legs, the ground a lead lies on, the scripted swap | `hands`, `tray`, `leg`, `grips`, `cue`, `curves`, `glide`, `terrain`, `swap` | E2 · E2-5 |
 | `model` | the only caller of the circuit model (`driver`); the model in time for the scope and the speaker (`live`); the checks' hashes | `driver`, `live`, `hash` | E2 · E2-6; the model's time E2-7; `live`, `still` E2-9; the speaker's pace E2-10 |
-| `instruments` | the multimeter and its probes; the oscilloscope; the speaker in sound | `meter`, `meter-model`, `probe`; `scope`, `scope-model`, `sweep`; `speaker` | E2 · E2-6; E2-9; E2-10 |
+| `instruments` | the multimeter and its probes; the oscilloscope; the speaker in sound | `meter`, `meter-model`, `probe`; `scope`, `scope-model`, `sweep`; `speaker` | E2 · E2-6; E2-9; E2-10; the speaker's crest E3-9 |
 | `dive` | the magnifier as the door from the step's shot to a part and into it; the ladder «де ми» | `door`, `camera-rail`, `rail-math`, `poses`, `levels`, `lens-keeper`, `ladder`, `cutaway` | E2 · E2-8 |
 | `inside` | a resistor's carbon film, opened by the door | `film`, `wedge` | E3 · E3-5 |
 | `sound` | the volume's own sound output and the model playing in blocks (its own README) | `output`, `plan`, `stream`, `handler`, `protocol`, `model.worker`, `tape`, `board` | E1 · E1-9; probes, restart, damage E2-9 |
@@ -562,6 +562,11 @@ bench.speaker!.inCircuit; // both plugs in rows the circuit has: the speaker sou
 - **The mood**: while the speaker is in the circuit the chapter's ambient pad (`audio.mood`) is silent; it comes back
   — the chapter's theme's mood — when the speaker leaves. The bench says it every frame (`speaker.circuit(on)`); the
   speaker tells the platform only on a change.
+- **The crest** (`speaker.peak(seconds)`, E3-9): the largest voltage on the speaker — |I| × its 8 Ω of the model's
+  current, not the output's steps nor held to its full scale (a knock of 6,5 V reads 6,5 V) — over the last `seconds`
+  of the samples heard (up to `heard()`; the blocks planned ahead do not count yet), kept per chunk of `CREST_CHUNK`
+  240 samples (10 ms) as the blocks come, 2,56 s of them; null before any block. The prologue's bar «Хвиля на
+  динаміку» reads it from the first sample of its step's own board on (`bench.live.since` after the step's preset).
 - The output is made with the speaker and goes with the chapter (`ctx.onDispose`): its context closes, the background
   thread ends.
 

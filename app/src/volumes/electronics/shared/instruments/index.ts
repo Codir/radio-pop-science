@@ -71,6 +71,7 @@ export {
   type ScopeProbeName,
 } from './scope';
 export {
+  CREST_CHUNK,
   SPEAKER,
   createSpeaker,
   speakerFullScale,

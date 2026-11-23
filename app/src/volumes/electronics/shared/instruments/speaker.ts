@@ -16,6 +16,10 @@
  *   `AudioContext.currentTime`.
  * - **The mood**: while the speaker is in the circuit (both plugs in), the chapter's ambient pad is silent, and it
  *   comes back when the speaker leaves (VISUAL §1, principle 3: from the circuit one hears only the speaker).
+ * - **The crest** (`peak`, E3-9): the largest voltage on the speaker, |I| × R of the model's current (not of the
+ *   output's steps, nor held to its full scale), over the last seconds of the samples heard — kept per chunk of
+ *   `CREST_CHUNK` samples as the blocks come, looked back from the sample heard now: the prologue's «Хвиля на
+ *   динаміку», the same blocks that sound.
  *
  * The output is made with the speaker and freed with the chapter (`createSoundOut` puts its `dispose` into
  * `ctx.onDispose`).
@@ -43,6 +47,11 @@ export function speakerFullScale(ohms: number): number {
 }
 
 const STEPS = 2 ** (SPEAKER.bits - 1);
+
+/** The largest voltage on the speaker is kept for every this many samples (10 ms at 24 000 a second): `peak`. */
+export const CREST_CHUNK = 240;
+/** How many chunks are kept (2.56 s at 24 000 a second). */
+const CREST_CHUNKS = 256;
 
 /**
  * The output's samples of a speaker current (A): over `fullScale`, on the output's steps, held to ±1; from `steps` on
@@ -103,6 +112,12 @@ export interface Speaker extends LiveSound {
   readonly hash: string;
   /** Whether the speaker is in the circuit, as the bench last said. */
   readonly inCircuit: boolean;
+  /**
+   * The largest voltage on the speaker (V: |I| × its resistance, the model's current) over the last `seconds` of the
+   * samples heard (up to the one heard now; the samples planned ahead of it do not count yet), within a chunk of
+   * `CREST_CHUNK` samples at either end. Null before any block was heard, or for a window of nothing.
+   */
+  peak(seconds: number): number | null;
   /** The bench says, every frame, whether the speaker is in the circuit now (its mood follows a change). */
   circuit(on: boolean): void;
 }
@@ -119,6 +134,9 @@ export function createSpeaker(ctx: ChapterContext, opts: SpeakerOptions): Speake
   let blocks = 0;
   let hash = 0x811c9dc5;
   let inCircuit = false;
+  // the crests: the largest |I| of every chunk of CREST_CHUNK samples, a ring by the chunk's own index
+  const crestId = new Float64Array(CREST_CHUNKS).fill(-1);
+  const crestA = new Float32Array(CREST_CHUNKS);
 
   return {
     part: opts.part ?? 'SPK',
@@ -146,6 +164,18 @@ export function createSpeaker(ctx: ChapterContext, opts: SpeakerOptions): Speake
         bytes = new Uint8Array(samples.buffer);
       }
       speakerSamples(current, fullScale, samples, steps);
+      const good = Math.min(steps, current.length);
+      for (let k = Math.max(0, current.length - CREST_CHUNKS * CREST_CHUNK); k < current.length; k++) {
+        const chunk = Math.floor((first + k) / CREST_CHUNK);
+        const slot = chunk % CREST_CHUNKS;
+        if (crestId[slot] !== chunk) {
+          crestId[slot] = chunk;
+          crestA[slot] = 0;
+        }
+        // after the model's last good step the output plays zeros: so does the crest
+        const a = k < good ? Math.abs(current[k]!) : 0;
+        if (a > crestA[slot]!) crestA[slot] = a;
+      }
       let peak = 0;
       let sum = 0;
       for (const v of samples) {
@@ -163,6 +193,19 @@ export function createSpeaker(ctx: ChapterContext, opts: SpeakerOptions): Speake
       if (on === inCircuit) return;
       inCircuit = on;
       mood(on);
+    },
+    peak(seconds) {
+      const heard = output.heard();
+      if (heard === null || !(seconds > 0)) return null;
+      // the chunks wholly heard, whose end lies within the window
+      const last = Math.floor(heard / CREST_CHUNK) - 1;
+      const from = Math.max(Math.floor((heard - seconds * opts.rate) / CREST_CHUNK), last - CREST_CHUNKS + 1);
+      let best = -1;
+      for (let chunk = from; chunk <= last; chunk++) {
+        const slot = ((chunk % CREST_CHUNKS) + CREST_CHUNKS) % CREST_CHUNKS;
+        if (crestId[slot] === chunk && crestA[slot]! > best) best = crestA[slot]!;
+      }
+      return best < 0 ? null : best * opts.ohms;
     },
   };
 }
